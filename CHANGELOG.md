@@ -12,10 +12,11 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 - `LICENSE` — MIT, copyright 2026 Thomas Bjork.
 - Badge row at the top of `README.md`: GitHub repo, license, Go version,
-  latest release, pkg.go.dev, planned Homebrew tap formula
-  (`codedeviate/cli/sercon`). Style mirrors the
+  latest release, pkg.go.dev. Style mirrors the
   [`codedeviate/webrunner`](https://github.com/codedeviate/webrunner)
-  badges, with the `crates.io` slot replaced by `pkg.go.dev`.
+  badges, with the `crates.io` slot replaced by `pkg.go.dev`. A
+  Homebrew tap badge is staged in an HTML comment and will be enabled
+  once `sercon` lands in `codedeviate/homebrew-cli`.
 
 ### Changed
 

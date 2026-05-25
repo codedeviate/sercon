@@ -6,7 +6,10 @@
 <br/>
 [![Latest release](https://img.shields.io/github/v/release/codedeviate/sercon?logo=semanticrelease&label=release&color=blue)](https://github.com/codedeviate/sercon/releases)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-scriptengine-007d9c?logo=go)](https://pkg.go.dev/github.com/codedeviate/sercon/pkg/scriptengine)
+<!-- Homebrew tap formula not published yet — re-enable when sercon lands in codedeviate/homebrew-cli.
 [![Homebrew](https://img.shields.io/badge/homebrew-codedeviate%2Fcli%2Fsercon-fbb040?logo=homebrew)](https://github.com/codedeviate/homebrew-cli)
+-->
+
 
 Embeddable TypeScript script engine in Go. Pure Go (no cgo), no Node.
 
