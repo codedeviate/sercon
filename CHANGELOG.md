@@ -8,7 +8,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **BREAKING:** Renamed the project from `tsrun` to `sercon`. The Go module
+  path is now `github.com/codedeviate/sercon/...` and the CLI binary
+  built from `cmd/sercon` is `sercon`. The library package name
+  (`scriptengine`) is unchanged.
 
 ## [0.1.0] — 2026-05-25
 
@@ -38,7 +43,7 @@ Initial cut of the embeddable TypeScript script engine.
   - Interrupt-based timeout (`ErrScriptTimeout`) and `context.Context`
     cancellation, both routed through one watcher goroutine that calls
     `vm.Interrupt` plus `loop.Terminate`.
-- `cmd/tsrun` CLI with `-timeout`, `-root`, `-emit-dts`, `-v` flags and
+- `cmd/sercon` CLI with `-timeout`, `-root`, `-emit-dts`, `-v` flags and
   the example `api` namespace (`api.log`, `api.assert.*`, `api.http.*`,
   `api.time.*`, `api.env.get`).
 - Example scripts: `smoke.ts`, `async.ts`, `helpers/assert.ts`,

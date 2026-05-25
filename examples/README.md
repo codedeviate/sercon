@@ -1,14 +1,14 @@
-# tsrun examples
+# sercon examples
 
 Run the bundled example scripts:
 
 ```
-./tsrun examples/scripts/smoke.ts examples/scripts/async.ts
+./sercon examples/scripts/smoke.ts examples/scripts/async.ts
 ```
 
 ## Adding a new binding
 
-Bindings are wired in `cmd/tsrun/main.go` inside `registerExampleAPI`. The
+Bindings are wired in `cmd/sercon/main.go` inside `registerExampleAPI`. The
 example surface is a single namespace (`api`) registered via
 `RegisterNamespaceFactory` so each `Run` gets its own VM + event loop in
 scope when constructing the bindings.
@@ -35,7 +35,7 @@ goroutine and the resolution is scheduled back onto the event loop:
 After changing bindings, emit a fresh declaration file:
 
 ```
-go run ./cmd/tsrun -emit-dts examples/scripts/api.d.ts
+go run ./cmd/sercon -emit-dts examples/scripts/api.d.ts
 ```
 
 Editors that pick up sibling `.d.ts` files (VS Code with the TS plugin, for

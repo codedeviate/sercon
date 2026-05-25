@@ -1,9 +1,10 @@
-# tsrun / scriptengine
+# sercon
 
 Embeddable TypeScript script engine in Go. Pure Go (no cgo), no Node.
 
 - Library: `pkg/scriptengine` — embed in your own Go program and register Go-callable bindings.
-- CLI: `cmd/tsrun` — runs `.ts` files with a small example `api` surface.
+- CLI: `cmd/sercon` — runs `.ts` files with a small example `api` surface.
+  Planned for distribution via the `codedeviate/cli` Homebrew tap.
 
 Runtime: [goja](https://github.com/dop251/goja). TypeScript is transpiled
 in-process with [esbuild](https://github.com/evanw/esbuild/tree/main/pkg/api).
@@ -12,13 +13,13 @@ Promises, `setTimeout`, and `require` come from [goja_nodejs](https://github.com
 ## Quickstart
 
 ```
-go build -o tsrun ./cmd/tsrun
+go build -o sercon ./cmd/sercon
 
 cat > hello.ts <<'EOF'
 api.log("hello", await api.http.get("https://example.com").then(r => r.status));
 EOF
 
-./tsrun hello.ts
+./sercon hello.ts
 ```
 
 Library usage:
@@ -46,5 +47,5 @@ eng.RegisterFactory("httpGet", func(vm *goja.Runtime, loop *eventloop.EventLoop)
 Generate a `.d.ts` for editor autocomplete:
 
 ```
-./tsrun -emit-dts api.d.ts
+./sercon -emit-dts api.d.ts
 ```

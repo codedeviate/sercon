@@ -6,14 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 CGO_ENABLED=0 go build ./...               # whole repo (must stay cgo-free)
-go build -o tsrun ./cmd/tsrun              # the CLI binary
+go build -o sercon ./cmd/sercon            # the CLI binary
 go test ./...                              # all tests
 go test ./pkg/scriptengine -run TestRun_PromiseResolveAwait   # single test
 go test ./pkg/scriptengine -run TestWriteTypes_Golden -update # refresh golden .d.ts
 go vet ./...                               # must stay clean
-./tsrun examples/scripts/smoke.ts examples/scripts/async.ts   # smoke + async demo
-./tsrun -emit-dts /tmp/api.d.ts            # emit declaration file for the CLI's api surface
-./tsrun -timeout 200ms examples/scripts/hang.ts               # timeout demo (exits non-zero ~213ms)
+./sercon examples/scripts/smoke.ts examples/scripts/async.ts  # smoke + async demo
+./sercon -emit-dts /tmp/api.d.ts           # emit declaration file for the CLI's api surface
+./sercon -timeout 200ms examples/scripts/hang.ts              # timeout demo (exits non-zero ~213ms)
 ```
 
 ## Architecture
@@ -66,7 +66,7 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - `pkg/scriptengine/timeout.go` — `ErrScriptTimeout`, `withInterrupt` helper.
 - `pkg/scriptengine/dts.go` — declaration generator with cycle detection.
 - `pkg/scriptengine/engine_test.go` — 11 cases covering the 10 spec-required scenarios; uses `-update` flag for the golden `.d.ts`.
-- `cmd/tsrun/main.go` — CLI plus the example `api` namespace (registered as a factory).
+- `cmd/sercon/main.go` — CLI plus the example `api` namespace (registered as a factory).
 - `examples/scripts/` — runnable sample scripts; `hang.ts` is the timeout demo and must stay a single `while(true){}`.
 - `claude-code-prompt.md` — the original spec for this build. Refer to it before redesigning anything significant.
 
@@ -75,13 +75,13 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - Don't add cgo. The README and spec both lock this in; `CGO_ENABLED=0 go build ./...` is a deliverable check.
 - Don't introduce package-level state in `pkg/scriptengine` — everything hangs off `Engine`.
 - Errors returned as the second value of a Go binding surface as thrown JS exceptions automatically (via `vm.NewGoError`). Don't swallow them at the binding layer.
-- If you change the registered example surface in `cmd/tsrun/main.go`, regenerate the golden in `pkg/scriptengine/testdata/` only if you also touched bindings used by `TestWriteTypes_Golden` (it has its own minimal fixture set, not the CLI's `api`).
+- If you change the registered example surface in `cmd/sercon/main.go`, regenerate the golden in `pkg/scriptengine/testdata/` only if you also touched bindings used by `TestWriteTypes_Golden` (it has its own minimal fixture set, not the CLI's `api`).
 
 ## Versioning and commits
 
 This repo follows **Semantic Versioning** (semver.org): `MAJOR.MINOR.PATCH`.
 
-- **MAJOR** — incompatible changes to the `pkg/scriptengine` exported API or to the `tsrun` CLI flags/exit semantics.
+- **MAJOR** — incompatible changes to the `pkg/scriptengine` exported API or to the `sercon` CLI flags/exit semantics.
 - **MINOR** — new bindings, new registration kinds, new flags, additive d.ts emitter coverage. Backwards-compatible.
 - **PATCH** — bug fixes, doc updates, internal refactors with no API impact.
 
@@ -90,7 +90,7 @@ Tag releases as `vX.Y.Z` on the matching commit. Pre-1.0, breaking changes in MI
 Commit messages follow **Conventional Commits** (conventionalcommits.org). Header: `<type>(<scope>): <subject>`.
 
 - Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `chore`, `ci`, `revert`.
-- Scopes used in this repo: `scriptengine`, `tsrun`, `transpile`, `require`, `dts`, `eventloop`, `examples`, `docs`. Keep scopes lowercase and singular.
+- Scopes used in this repo: `scriptengine`, `sercon`, `transpile`, `require`, `dts`, `eventloop`, `examples`, `docs`. Keep scopes lowercase and singular.
 - Breaking changes: add `!` after the scope (`feat(scriptengine)!: ...`) **and** include a `BREAKING CHANGE:` footer describing the migration. This is what drives the MAJOR bump.
 - Subject is imperative, lowercase, no trailing period; soft cap 72 chars.
 - Body explains the *why* and any non-obvious mechanics (e.g. "esbuild forbids TLA in cjs so we …"). Wrap at ~72 chars.

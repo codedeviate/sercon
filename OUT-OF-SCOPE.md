@@ -74,7 +74,7 @@ from this list to a real issue or commit is the only way these become
 - **`-v` does very little.** Parsed but only used to print a duration
   on failure. Could surface the transpiled JS, the rewritten entry
   script, or per-require resolution traces.
-- **Stdin script support.** `tsrun -` to read a script from stdin would
+- **Stdin script support.** `sercon -` to read a script from stdin would
   be useful for one-liners and shell pipelines.
 - **Watch mode.** Re-run on file change for iterative work.
 - **Exit-code matrix.** Today the CLI returns 1 for any failure. Distinct

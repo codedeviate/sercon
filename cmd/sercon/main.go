@@ -20,20 +20,20 @@ import (
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "tsrun:", err)
+		fmt.Fprintln(os.Stderr, "sercon:", err)
 		os.Exit(1)
 	}
 }
 
 func run(args []string) error {
-	fs := flag.NewFlagSet("tsrun", flag.ContinueOnError)
+	fs := flag.NewFlagSet("sercon", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	timeout := fs.Duration("timeout", 10*time.Second, "Per-script timeout")
 	root := fs.String("root", "", "Script root for require resolution (default: dirname of first script)")
 	emitDTS := fs.String("emit-dts", "", "Write the .d.ts for the example bindings to this path and exit")
 	verbose := fs.Bool("v", false, "Verbose: log timing and full transpile output on error")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: tsrun [flags] <script.ts> [script.ts ...]")
+		fmt.Fprintln(os.Stderr, "Usage: sercon [flags] <script.ts> [script.ts ...]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
