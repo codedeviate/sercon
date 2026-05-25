@@ -5,15 +5,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Common commands
 
 ```bash
+make build                                 # debug CLI -> ./sercon
+make release                               # slim release CLI (-trimpath -s -w; ~30% smaller)
+make manual                                # MANUAL.md -> MANUAL.pdf via `recon --md-to-pdf`
+make test                                  # go test ./...
+make vet                                   # go vet ./...
+make clean                                 # rm -f sercon MANUAL.pdf
+
 CGO_ENABLED=0 go build ./...               # whole repo (must stay cgo-free)
-go build -o sercon ./cmd/sercon            # the CLI binary
-go test ./...                              # all tests
 go test ./pkg/scriptengine -run TestRun_PromiseResolveAwait   # single test
 go test ./pkg/scriptengine -run TestWriteTypes_Golden -update # refresh golden .d.ts
-go vet ./...                               # must stay clean
 ./sercon examples/scripts/smoke.ts examples/scripts/async.ts  # smoke + async demo
 ./sercon -emit-dts /tmp/api.d.ts           # emit declaration file for the CLI's api surface
 ./sercon -timeout 200ms examples/scripts/hang.ts              # timeout demo (exits non-zero ~213ms)
+./sercon --help | --examples | --version   # in-depth colourised help / feature tour / version
 ```
 
 ## Architecture
@@ -79,9 +84,10 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 
 ## Keeping docs in lockstep
 
-Four artifacts must stay aligned whenever the script/binding/feature surface changes:
+Five artifacts must stay aligned whenever the script/binding/feature surface changes:
 
 - `MANUAL.md` — long-form reference; covers the library API, CLI, script `api`, goja built-ins, eventloop additions.
+- `MANUAL.pdf` — regenerated from `MANUAL.md` via `make manual` (which calls `recon --md-to-pdf`). Run this whenever `MANUAL.md` changes and include the resulting `MANUAL.pdf` in the same commit.
 - `cmd/sercon/help.go::showHelp` — the `--help` / `-h` screen. Flags table must mirror the actual flags defined in `main.go`.
 - `cmd/sercon/help.go::showExamples` — the `--examples` walkthrough. The `exampleCount` constant must equal the number of `header(N, …)` calls.
 - `CHANGELOG.md` — every user-visible change lands here under `## [Unreleased]` (or the active version section) per Keep a Changelog.

@@ -8,7 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `Makefile` with `build`, `release`, `manual`, `test`, `vet`, `clean`
+  targets. `make release` builds with `-trimpath -ldflags='-s -w'` for
+  a roughly 30% smaller binary (~23 MB → ~16 MB on darwin/arm64).
+- `MANUAL.pdf` — PDF rendering of `MANUAL.md` produced by
+  `make manual` (uses `recon --md-to-pdf`). Regenerated whenever
+  `MANUAL.md` changes.
+
+### Changed
+
+- `CLAUDE.md` lockstep section now lists `MANUAL.pdf` and points at
+  `make manual`; the common-commands section uses `make` targets.
 
 ## [0.2.0] — 2026-05-25
 
