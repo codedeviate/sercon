@@ -8,6 +8,10 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] — 2026-05-25
+
 ### Added
 
 - `--help` / `-h`: in-depth, colourised help screen (sections, flag table,
