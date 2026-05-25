@@ -1,0 +1,54 @@
+# Changelog
+
+All notable changes to this project are documented here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
+
+## [Unreleased]
+
+Nothing yet.
+
+## [0.1.0] — 2026-05-25
+
+Initial cut of the embeddable TypeScript script engine.
+
+### Added
+
+- `pkg/scriptengine` library:
+  - `Engine`, `Options` (with `DisableConsole`, `Timeout`, `ScriptRoot`), `New`.
+  - `Register`, `RegisterNamespace`, `RegisterConstructor` for static
+    bindings; `RegisterFactory` / `RegisterNamespaceFactory` for bindings
+    that need the per-Run `*goja.Runtime` and `*eventloop.EventLoop`.
+  - `Run` / `RunFile` with a fresh runtime per call and a shared
+    `require.Registry` compile cache.
+  - `PromisifyAsync[T]` helper that schedules resolution back onto the
+    event loop and parks a `SetTimeout` sentinel so `loop.Run` waits for
+    the async tail.
+  - `Promised[T]` marker for d.ts return-type annotation.
+  - `WriteTypes` — `.d.ts` emitter with cycle protection
+    (visited-set + depth cap) and special cases for `goja.FunctionCall`
+    and `goja.Value`.
+  - Two-mode esbuild transpile: CJS for required modules, ESM-then-rewrite
+    for the entry script to support top-level `await`.
+  - TS-aware custom `require` source loader with Node-style extension
+    fallback (`.ts`, `.tsx`, `.js`, `.cjs`, `.mjs`, `.json` and
+    `index.*` for directories).
+  - Interrupt-based timeout (`ErrScriptTimeout`) and `context.Context`
+    cancellation, both routed through one watcher goroutine that calls
+    `vm.Interrupt` plus `loop.Terminate`.
+- `cmd/tsrun` CLI with `-timeout`, `-root`, `-emit-dts`, `-v` flags and
+  the example `api` namespace (`api.log`, `api.assert.*`, `api.http.*`,
+  `api.time.*`, `api.env.get`).
+- Example scripts: `smoke.ts`, `async.ts`, `helpers/assert.ts`,
+  `helpers/fixtures.ts`, `hang.ts` (timeout demo).
+- Test suite (11 cases) covering the 10 spec-required scenarios plus a
+  bare-specifier require-resolution sanity check. Golden `.d.ts` fixture
+  refreshable via `go test -update`.
+- READMEs at the repo root and under `examples/`.
+- `CLAUDE.md` describing non-obvious architecture and the project's
+  semver + Conventional Commits conventions.
+
+[Unreleased]: about:blank
+[0.1.0]: about:blank
