@@ -8,7 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `LICENSE` — MIT, copyright 2026 Thomas Bjork.
+- Badge row at the top of `README.md`: GitHub repo, license, Go version,
+  latest release, pkg.go.dev, planned Homebrew tap formula
+  (`codedeviate/cli/sercon`). Style mirrors the
+  [`codedeviate/webrunner`](https://github.com/codedeviate/webrunner)
+  badges, with the `crates.io` slot replaced by `pkg.go.dev`.
+
+### Changed
+
+- `go.mod`: lowered the `go` directive from `1.26.3` to `1.22` to
+  match the README's "Go 1.22+" claim and the project's original
+  compatibility target. `go mod tidy` also split direct/indirect
+  requires into separate blocks.
 
 ## [0.2.1] — 2026-05-25
 
