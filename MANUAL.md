@@ -557,7 +557,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.2.1. Whenever you add, remove, or change a
+*This manual covers sercon v0.2.2. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

@@ -8,6 +8,10 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.2] — 2026-05-25
+
 ### Added
 
 - `LICENSE` — MIT, copyright 2026 Thomas Bjork.
