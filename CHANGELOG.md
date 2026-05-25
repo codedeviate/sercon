@@ -8,6 +8,10 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.3] — 2026-05-25
+
 ### Added
 
 - `MANUAL.md` now opens with an HTML `<div class="cover">` cover page
