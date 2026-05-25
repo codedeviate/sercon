@@ -8,16 +8,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-### Changed
-
-- **BREAKING:** Renamed the project from `tsrun` to `sercon`. The Go module
-  path is now `github.com/codedeviate/sercon/...` and the CLI binary
-  built from `cmd/sercon` is `sercon`. The library package name
-  (`scriptengine`) is unchanged.
+Nothing yet.
 
 ## [0.1.0] — 2026-05-25
 
-Initial cut of the embeddable TypeScript script engine.
+Initial cut of the embeddable TypeScript script engine. The project went
+through an intra-day rename from `tsrun` to `sercon` before being
+tagged; the final names below are the ones that ship in 0.1.0.
 
 ### Added
 
