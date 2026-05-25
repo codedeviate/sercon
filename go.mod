@@ -1,4 +1,4 @@
-module github.com/codedeviate/tsrun
+module github.com/codedeviate/sercon
 
 go 1.26.3
 

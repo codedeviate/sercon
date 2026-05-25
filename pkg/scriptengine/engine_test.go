@@ -14,7 +14,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 
-	"github.com/codedeviate/tsrun/pkg/scriptengine"
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 var updateGolden = flag.Bool("update", false, "regenerate golden files in testdata/")
