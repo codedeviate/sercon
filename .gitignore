@@ -3,3 +3,6 @@
 *.test
 *.out
 .DS_Store
+
+# Tracked despite a global ignore rule in ~/.gitignore_global.
+!CLAUDE.md
