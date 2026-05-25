@@ -1,0 +1,43 @@
+# tsrun examples
+
+Run the bundled example scripts:
+
+```
+./tsrun examples/scripts/smoke.ts examples/scripts/async.ts
+```
+
+## Adding a new binding
+
+Bindings are wired in `cmd/tsrun/main.go` inside `registerExampleAPI`. The
+example surface is a single namespace (`api`) registered via
+`RegisterNamespaceFactory` so each `Run` gets its own VM + event loop in
+scope when constructing the bindings.
+
+To add a synchronous binding, add an entry to the members map:
+
+```go
+"upper": func(s string) string { return strings.ToUpper(s) },
+```
+
+To add an I/O / async binding, use `PromisifyAsync` so the work runs in a
+goroutine and the resolution is scheduled back onto the event loop:
+
+```go
+"sleep": scriptengine.PromisifyAsync(vm, loop,
+    func(ctx context.Context, call goja.FunctionCall) (any, error) {
+        time.Sleep(time.Duration(call.Argument(0).ToInteger()) * time.Millisecond)
+        return nil, nil
+    }),
+```
+
+## Regenerating `api.d.ts`
+
+After changing bindings, emit a fresh declaration file:
+
+```
+go run ./cmd/tsrun -emit-dts examples/scripts/api.d.ts
+```
+
+Editors that pick up sibling `.d.ts` files (VS Code with the TS plugin, for
+example) will then show types and signatures for the `api.*` calls inside
+the example scripts.
