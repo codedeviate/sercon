@@ -8,7 +8,27 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `--help` / `-h`: in-depth, colourised help screen (sections, flag table,
+  examples, exit codes, see-also). Colour is auto-disabled when stdout is
+  not a TTY and on `NO_COLOR=1`; force on with `FORCE_COLOR=1`.
+- `--examples`: colourised walkthrough of every script feature
+  (logging, assertions, http, time, env, imports, require, promises,
+  error handling, timeouts, goja built-ins, eventloop additions).
+- `--version`: prints the engine version (`scriptengine.Version`) plus
+  goja / goja_nodejs / esbuild versions read from `runtime/debug`
+  build info.
+- `MANUAL.md`: long-form reference covering the library API, CLI, the
+  built-in `api` surface, goja built-ins, eventloop additions, top-level
+  await mechanics, module resolution, error semantics, and limitations.
+- `pkg/scriptengine.Version` constant, bumped in lockstep with the git
+  tag.
+
+### Changed
+
+- `CLAUDE.md` now documents the lockstep update rule for `MANUAL.md`,
+  `--help`, `--examples`, and `CHANGELOG.md`.
 
 ## [0.1.0] — 2026-05-25
 

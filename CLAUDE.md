@@ -77,6 +77,19 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - Errors returned as the second value of a Go binding surface as thrown JS exceptions automatically (via `vm.NewGoError`). Don't swallow them at the binding layer.
 - If you change the registered example surface in `cmd/sercon/main.go`, regenerate the golden in `pkg/scriptengine/testdata/` only if you also touched bindings used by `TestWriteTypes_Golden` (it has its own minimal fixture set, not the CLI's `api`).
 
+## Keeping docs in lockstep
+
+Four artifacts must stay aligned whenever the script/binding/feature surface changes:
+
+- `MANUAL.md` — long-form reference; covers the library API, CLI, script `api`, goja built-ins, eventloop additions.
+- `cmd/sercon/help.go::showHelp` — the `--help` / `-h` screen. Flags table must mirror the actual flags defined in `main.go`.
+- `cmd/sercon/help.go::showExamples` — the `--examples` walkthrough. The `exampleCount` constant must equal the number of `header(N, …)` calls.
+- `CHANGELOG.md` — every user-visible change lands here under `## [Unreleased]` (or the active version section) per Keep a Changelog.
+
+Whenever you add a flag: update the flag block in `main.go`, the `FLAGS` section in `showHelp`, mention it in `MANUAL.md § CLI`, add a CHANGELOG entry. Whenever you add a script-side binding: update `showExamples` (and bump `exampleCount`), add the signature to `MANUAL.md § Built-in script api`, refresh `.d.ts` documentation (and the golden if it touches `TestWriteTypes_Golden`), add a CHANGELOG entry.
+
+Version bumps: edit `pkg/scriptengine/version.go`, add a new section to `CHANGELOG.md`, then tag `vX.Y.Z`. `--version` reads `scriptengine.Version`, so it follows the constant automatically — goja / esbuild versions in the same output come from `runtime/debug.ReadBuildInfo` and update with `go.mod`.
+
 ## Versioning and commits
 
 This repo follows **Semantic Versioning** (semver.org): `MAJOR.MINOR.PATCH`.

@@ -32,12 +32,25 @@ func run(args []string) error {
 	root := fs.String("root", "", "Script root for require resolution (default: dirname of first script)")
 	emitDTS := fs.String("emit-dts", "", "Write the .d.ts for the example bindings to this path and exit")
 	verbose := fs.Bool("v", false, "Verbose: log timing and full transpile output on error")
-	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: sercon [flags] <script.ts> [script.ts ...]")
-		fs.PrintDefaults()
-	}
+	helpShort := fs.Bool("h", false, "Show in-depth, colorized help and exit")
+	helpLong := fs.Bool("help", false, "Show in-depth, colorized help and exit")
+	examples := fs.Bool("examples", false, "Show in-depth, colorized script examples of all features and exit")
+	version := fs.Bool("version", false, "Print the engine version and exit")
+	fs.Usage = func() { showHelp(os.Stderr) }
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	switch {
+	case *helpShort || *helpLong:
+		showHelp(os.Stdout)
+		return nil
+	case *version:
+		showVersion(os.Stdout)
+		return nil
+	case *examples:
+		showExamples(os.Stdout)
+		return nil
 	}
 
 	scripts := fs.Args()
