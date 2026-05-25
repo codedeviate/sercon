@@ -8,7 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `MANUAL.md` now opens with an HTML `<div class="cover">` cover page
+  (title, subtitle, version, date, repo & licence) styled by recon's
+  bundled CSS, matching the
+  [`codedeviate/recon`](https://github.com/codedeviate/recon) manual.
+
+### Changed
+
+- `make manual` now passes `--unsafe-html` (so the cover-page `<div>`
+  renders) and `--page-break-on-h1` (so every top-level section starts
+  on a fresh PDF page). Updated `--doc-*` metadata to "sercon User
+  Manual" with keywords.
 
 ## [0.2.2] — 2026-05-25
 

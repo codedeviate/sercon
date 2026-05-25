@@ -28,10 +28,11 @@ release:
 
 manual:
 	$(RECON) --md-to-pdf MANUAL.md -o MANUAL.pdf \
-		--gfm --toc \
-		--doc-title "sercon manual" \
+		--gfm --toc --unsafe-html --page-break-on-h1 \
+		--doc-title "sercon User Manual" \
 		--doc-author "Thomas Bjork" \
-		--doc-subject "Embeddable TypeScript script engine"
+		--doc-subject "Embeddable TypeScript script engine — reference and script-engine guide" \
+		--doc-keywords "sercon, typescript, scripting, goja, esbuild, embedded"
 
 test:
 	$(GO) test ./...

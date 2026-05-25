@@ -1,3 +1,15 @@
+<div class="cover">
+<h1>sercon</h1>
+<div class="subtitle">User Manual</div>
+<hr>
+<div class="version">Version 0.2.2</div>
+<div class="date">2026-05-25</div>
+<div class="meta">
+Repository · https://github.com/codedeviate/sercon<br>
+License · MIT
+</div>
+</div>
+
 # sercon manual
 
 Long-form reference for the `pkg/scriptengine` library, the `sercon` CLI,
