@@ -10,6 +10,63 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.5] — 2026-05-26
+
+Sixth Moderate cut. **`api.encrypt.*`** — age X25519 encryption.
+First slice of the five-function OUT-OF-SCOPE entry: the core
+round-trip (keygen / encrypt / decrypt). Armoured ASCII output,
+rekeying, and the recipient-format dispatcher are left as
+follow-up entries. One new dep: `filippo.io/age v1.3.1` (pure-Go
+reference implementation).
+
+### Added
+
+- `api.encrypt.keygen()` — Generate a fresh X25519 identity.
+  Returns `{ publicKey, privateKey }` as the bech32 strings age
+  writes to disk: `publicKey` is the `age1...` recipient,
+  `privateKey` is the `AGE-SECRET-KEY-1...` identity.
+- `api.encrypt.encrypt(data, recipients)` — Seal data to one or
+  more recipients. Input accepts string / Uint8Array / ArrayBuffer.
+  `recipients` accepts a single string or an array. Output is the
+  binary age format as Uint8Array. Multi-recipient encryption uses
+  age's native header — any one of the listed identities can
+  decrypt without re-encryption per reader.
+- `api.encrypt.decrypt(ciphertext, identities)` — Open an age
+  payload with one of the supplied identities. Returns Uint8Array
+  plaintext; scripts decode via `api.text.decode(bytes, "utf-8")`
+  for text payloads (goja doesn't ship TextDecoder).
+- All three members are synchronous. Encryption is pure CPU work
+  with a small API surface; matching the call shape of the other
+  crypto bindings (`api.jwt`, `api.hash`) keeps things uniform.
+- **Cross-checks at the binding boundary** with named-key hints:
+  - Private key passed as a recipient throws "looks like a
+    private key (AGE-SECRET-KEY-...); recipients are public keys
+    (age1...)". Catches the most common JS-side mix-up before
+    age's bech32 parser produces a cryptic error.
+  - Public key passed as an identity throws the inverse hint.
+- `TestEncrypt*` (13 sub-tests covering: keygen shape, two-calls-
+  differ entropy sanity, single-recipient round-trip,
+  multi-recipient round-trip, wrong-identity error, both
+  cross-check paths, four input-validation cases, non-age
+  ciphertext path).
+- `examples/scripts/encrypt.ts` walks through keygen, single +
+  multi-recipient round-trips, both cross-check throws, and a
+  binary payload round-trip. Pure stdlib + age (pure-Go) so it's
+  in the CI offline subset.
+- `--examples` step 32 covers the binding; MANUAL §5 gains the
+  `api.encrypt` ts block plus a paragraph per op and a
+  cross-check / wrong-identity rationale section.
+- `cmd/sercon/api_docs.go` grows three entries so the emitted
+  `api.d.ts` carries hover docs.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s five-function `encrypt::*` entry collapsed
+  to three forward-looking entries: `encryptArmored` (armoured
+  ASCII format via `filippo.io/age/armor`), `rekey` (two-step
+  decrypt-then-encrypt API design), and `detectBackend` (age vs
+  PGP dispatcher — brings PGP support as a side effect).
+
 ## [0.5.4] — 2026-05-26
 
 Fifth Moderate cut. **`api.barcode.decode`** — symmetric counterpart

@@ -56,7 +56,8 @@ jobs:
             examples/scripts/exec-shell.ts \
             examples/scripts/git.ts \
             examples/scripts/preg.ts \
-            examples/scripts/jwt.ts
+            examples/scripts/jwt.ts \
+            examples/scripts/encrypt.ts
 
   lint:
     name: golangci-lint

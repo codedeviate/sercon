@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.4</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.5</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -661,6 +661,18 @@ declare const api: {
      | { valid: false; reason: string };
   };
 
+  encrypt: {
+    keygen(): { publicKey: string; privateKey: string };
+    encrypt(
+      data: string | Uint8Array | ArrayBuffer,
+      recipients: string | string[],          // age1... public keys
+    ): Uint8Array;                             // binary age format
+    decrypt(
+      ciphertext: string | Uint8Array | ArrayBuffer,
+      identities: string | string[],          // AGE-SECRET-KEY-1... private keys
+    ): Uint8Array;
+  };
+
   gh: {
     authStatus(): Promise<{
       authenticated: boolean;
@@ -1187,6 +1199,57 @@ failures.
   from the key shape because that would make the wrong default
   silent.
 
+Age encryption (`api.encrypt.*`) wraps
+[`filippo.io/age`](https://github.com/FiloSottile/age), the pure-Go
+reference implementation. v0.5.5 ships the core round-trip
+(keygen / encrypt / decrypt) over the X25519 identity flavour —
+`age1...` recipients (safe to share) and
+`AGE-SECRET-KEY-1...` identities (must be kept secret). Armoured
+ASCII output, rekeying, and the recipient-format dispatcher are on
+the backlog.
+
+All three members are synchronous: encryption is pure CPU work
+with a small API surface, matching the call shape of the other
+crypto bindings (`api.jwt`, `api.hash`).
+
+- **`keygen()`** — Generate a fresh X25519 identity. Returns
+  `{ publicKey, privateKey }` as the bech32 strings age writes to
+  disk. Two consecutive calls produce different keys; entropy
+  comes from `crypto/rand` via age. Destructure to use one or the
+  other separately.
+- **`encrypt(data, recipients)`** — Seal `data` to one or more
+  recipients. Input accepts `string` / `Uint8Array` /
+  `ArrayBuffer`; `recipients` accepts a single string or an array.
+  Output is the binary age format as `Uint8Array`. Multi-recipient
+  encryption uses age's native multi-recipient header — any one
+  of the listed identities can decrypt the resulting ciphertext,
+  no re-encryption per reader needed.
+- **`decrypt(ciphertext, identities)`** — Open an age-encrypted
+  payload with one of the supplied identities. age walks the
+  identities and uses the first that matches a stanza in the
+  header. Returns `Uint8Array`; let scripts decode to a string via
+  `api.text.decode(bytes, "utf-8")` if appropriate (goja doesn't
+  ship `TextDecoder`).
+
+Cross-checks fire at the binding boundary so the common JS-side
+mistakes throw with named-key hints rather than cryptic bech32
+errors deep inside age:
+
+- **Private key as recipient** ("looks like a private key
+  (AGE-SECRET-KEY-...); recipients are public keys (age1...)") —
+  catches a script that mixed up the two halves on the encrypt
+  call.
+- **Public key as identity** ("looks like a public key (age1...);
+  identities are private keys (AGE-SECRET-KEY-1...)") — inverse
+  guard on the decrypt call.
+
+Decryption with an identity that wasn't on the recipient list
+throws with age's own wording forwarded through:
+`"identity did not match any of the recipients: incorrect identity
+for recipient block"`. Scripts that want to silently try multiple
+identities should pass them all in one call (age tries each in
+turn internally) rather than catching this error.
+
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
 spec uses the underscore so the JS name matches recon's). BLAKE3 uses
@@ -1651,7 +1714,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.4. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.5. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

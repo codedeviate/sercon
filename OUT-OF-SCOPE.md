@@ -129,24 +129,26 @@ the situation changes.
   match in pure Go; alternatively hand-roll a small `crypto/rsa`
   / `crypto/ecdsa` / `crypto/ed25519` decoder since the JWK shape
   is well-specified.
-- **`encrypt::keygen()`** — Generate a fresh age X25519 keypair
-  (script: `encrypt.rhai`). **Library:** `filippo.io/age` (pure Go,
-  reference implementation).
-- **`encrypt::encrypt(data, recipients)`** /
-  **`encrypt::encrypt_armored(...)`** — Encrypt for age public keys
-  (script: `encrypt.rhai`). **Library:** `filippo.io/age` (+
-  `filippo.io/age/armor`).
-- **`encrypt::decrypt(cipher, identities)`** — Decrypt with age
-  identities (script: `encrypt.rhai`). **Library:** `filippo.io/age`.
-- **`encrypt::rekey(cipher, old_ids, new_recipients)`** — Re-encrypt
-  between recipient sets (script: `encrypt.rhai`). **Library:**
-  `filippo.io/age` (two-step decrypt+encrypt; moderate for the API
-  shape, not the crypto).
-- **`encrypt::detect_backend(recipient_str)`** — Dispatch age vs PGP
-  by recipient format (script: `encrypt.rhai`). **Library:**
-  `filippo.io/age` for age recipient parsing; `github.com/ProtonMail/go-crypto/openpgp`
-  (pure Go, maintained PGP fork) for PGP recognition. Moderate because
-  we have to pick one PGP path and the surface is small but real.
+- **`api.encrypt.encryptArmored(data, recipients)`** — Same as
+  `encrypt` but produces the age ASCII-armoured format (BEGIN
+  AGE ENCRYPTED FILE banner + base64 body). Useful for embedding
+  in JSON / YAML / email. **Library:** `filippo.io/age/armor`
+  layered on top of the existing `filippo.io/age` dep. Could ship
+  as a third arg on `encrypt` (`opts.armored?: boolean`) instead of
+  a separate function — pick the API shape before adding.
+- **`api.encrypt.rekey(ciphertext, oldIdentities, newRecipients)`**
+  — Re-seal a payload for a new recipient set without exposing the
+  plaintext to the caller. Two-step decrypt-then-encrypt
+  internally; the work is the API shape (single call vs explicit
+  intermediate buffer). **Library:** `filippo.io/age` (already
+  on).
+- **`api.encrypt.detectBackend(recipientStr)`** — Dispatch age vs
+  PGP by recipient format (script: `encrypt.rhai`). **Library:**
+  `filippo.io/age` for age recipient parsing;
+  `github.com/ProtonMail/go-crypto/openpgp` (pure Go, maintained
+  PGP fork) for PGP recognition. Brings PGP support as a side
+  effect; moderate because we have to pick one PGP path and the
+  surface is small but real.
 
 ### Encoding / decoding / barcodes
 

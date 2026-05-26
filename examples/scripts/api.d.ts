@@ -60,6 +60,14 @@ declare const api: {
     /** Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua. */
     tlsRpt(...args: unknown[]): Promise<Record<string, unknown>>;
   };
+  encrypt: {
+    /** Open an age payload with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error. */
+    decrypt(arg0: unknown, arg1: unknown): unknown;
+    /** Seal data to one or more recipients (age1... public keys). Multi-recipient encryption lets any listed identity decrypt. Returns Uint8Array binary ciphertext. */
+    encrypt(arg0: unknown, arg1: unknown): unknown;
+    /** Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }. */
+    keygen(): unknown;
+  };
   env: {
     /** Read an environment variable. Returns undefined when unset (not empty string). */
     get(...args: unknown[]): unknown;

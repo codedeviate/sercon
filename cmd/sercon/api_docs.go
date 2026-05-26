@@ -141,5 +141,10 @@ func apiDocs() map[string]string {
 		"jwt.sign":     "Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA. opts.algorithm defaults to HS256. Cross-check (PEM + HMAC, or bytes + asymmetric) throws.",
 		"jwt.view":     "Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws.",
 		"jwt.validate": "Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }; only structural input errors throw.",
+
+		// Age encryption (X25519 identity flavour)
+		"encrypt.keygen":  "Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.",
+		"encrypt.encrypt": "Seal data to one or more recipients (age1... public keys). Multi-recipient encryption lets any listed identity decrypt. Returns Uint8Array binary ciphertext.",
+		"encrypt.decrypt": "Open an age payload with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error.",
 	}
 }

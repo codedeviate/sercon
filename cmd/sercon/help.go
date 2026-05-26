@@ -578,10 +578,25 @@ const c = await api.barcode.decode(png, "qr");
 api.log(api.barcode.decodableFormats());`)
 	note("Code 39 returns the Mod-43 checksum char; codabar strips A…A wrappers; EAN/UPC need a quiet zone in the input (boombuler's encoder doesn't add one).")
 
+	header(32, "Age encryption (api.encrypt.*)")
+	code(`// Keygen — bech32 age1... public + AGE-SECRET-KEY-1... private.
+const { publicKey, privateKey } = api.encrypt.keygen();
+
+// Encrypt (binary age format). recipients can be one key or an array
+// for multi-recipient (any listed identity can decrypt).
+const ct = api.encrypt.encrypt("hello world", publicKey);
+const ct2 = api.encrypt.encrypt(payloadBytes, [alicePub, bobPub]);
+
+// Decrypt — pass any identity that matches the header. Returns
+// Uint8Array; use api.text.decode(bytes, "utf-8") for a string.
+const plain = api.encrypt.decrypt(ct, privateKey);
+api.log(await api.text.decode(plain, "utf-8"));`)
+	note("Cross-checks catch private-as-recipient and public-as-identity mix-ups with named-key hints. Armoured / rekey / detect_backend land in later cuts.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 31
+const exampleCount = 32
