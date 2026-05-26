@@ -69,11 +69,6 @@ the situation changes.
 
 ### Protocol probes & connectivity
 
-- **`smtp(url, opts?)`** — SMTP capability probe, STARTTLS availability,
-  AUTH mechanisms (script: `smtp.rhai`). **Library:** `net/smtp`
-  (stdlib) for the wire protocol; moderate because we need EHLO
-  capability parsing and a clean output shape rather than a send
-  pipeline.
 - **`wss(url)`** — WebSocket handshake with ping/pong round-trip
   (script: `ws.rhai`). **Library:** `nhooyr.io/websocket` (now
   `github.com/coder/websocket`, pure Go, modern) or

@@ -47,3 +47,14 @@ api.log("=== api.net.ping (TCP mode) ===");
 const ping = await api.net.ping("github.com", { mode: "tcp", port: "443", count: 3 });
 api.log(`  ${ping.host} (${ping.ip}): ${ping.received}/${ping.sent} received, ${ping.lossPercent}% loss, avg ${ping.avgMs.toFixed(1)}ms`);
 api.log("  (mode 'icmp' available too — needs raw-socket privileges)");
+
+api.log("");
+api.log("=== api.net.smtp (capability probe) ===");
+try {
+  const smtp = await api.net.smtp("smtp.gmail.com", { port: "587", timeout: 5000 });
+  api.log("  banner:", smtp.banner.slice(0, 50));
+  api.log("  STARTTLS:", smtp.starttls, " AUTH:", smtp.authMechanisms.join(", ") || "(none advertised pre-TLS)");
+  api.log("  SIZE limit:", smtp.sizeLimit, " extensions:", smtp.extensions.length);
+} catch (e) {
+  api.log("  smtp probe skipped:", String(e).slice(0, 60));
+}

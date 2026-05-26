@@ -163,6 +163,8 @@ declare const api: {
     ntp(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw. */
     ping(...args: unknown[]): Promise<Record<string, unknown>>;
+    /** SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw. */
+    smtp(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Dial a TCP target and report latency + resolved IP. Default timeout 5s. */
     tcp(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary. */

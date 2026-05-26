@@ -10,6 +10,31 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.19] — 2026-05-26
+
+Adds **`api.net.smtp(host, opts?)`** — an SMTP capability probe
+(EHLO + parse advertised extensions). No mail is sent. Hand-rolled
+over `net/textproto`; no new dependency.
+
+### Added
+
+- Opens the connection, reads the banner, sends EHLO, parses the
+  250 response into `{ host, port, banner, ehloDomain, extensions,
+  starttls, authMechanisms, sizeLimit }`, then QUITs.
+- `starttls` is a boolean; `authMechanisms` is the parsed AUTH
+  mechanism list (e.g. `["PLAIN", "LOGIN"]`); `sizeLimit` is the
+  SIZE extension's value. A server advertising none reports
+  `false` / `[]` / `0` — a finding, not an error. Connection /
+  protocol failures throw.
+- 3 tests against an in-process fake SMTP listener: full
+  capability parse, no-STARTTLS server, connection-refused throws.
+- `examples/scripts/net-probe.ts` grows a guarded smtp section
+  (smtp.gmail.com); MANUAL §5 `api.net` ts + prose bullet.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `smtp` entry resolved.
+
 ## [0.5.18] — 2026-05-26
 
 Adds **`api.net.ping(host, opts?)`** — reachability probe in TCP

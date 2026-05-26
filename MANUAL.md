@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.18</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.19</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -619,6 +619,15 @@ declare const api: {
       host: string; ip: string; mode: string;
       sent: number; received: number; lossPercent: number;
       minMs: number; avgMs: number; maxMs: number;
+    }>;
+    smtp(host: string, opts?: {
+      port?: string;           // default "25"
+      timeout?: number;        // ms; default 10000
+      ehloName?: string;       // default "localhost"
+    }): Promise<{
+      host: string; port: string; banner: string; ehloDomain: string;
+      extensions: string[]; starttls: boolean;
+      authMechanisms: string[]; sizeLimit: number;
     }>;
   };
 
@@ -1635,6 +1644,16 @@ an optional `{ timeout: <ms> }` second arg; the default is 5 seconds.
   minMs, avgMs, maxMs }`. An unreachable host resolves with
   `received: 0` / `lossPercent: 100` — "down" is a normal outcome,
   not a throw; only DNS-resolution failure and bad arguments throw.
+- **`smtp(host, opts?)`** — SMTP capability probe (not a send
+  pipeline). Opens the connection, reads the banner, sends EHLO,
+  and reports the advertised extensions: `starttls` (boolean),
+  `authMechanisms` (e.g. `["PLAIN", "LOGIN"]`), `sizeLimit`, and
+  the raw `extensions` list. Hand-rolled over `net/textproto`
+  (net/smtp doesn't expose the banner or full extension list as
+  data). No mail is sent — it QUITs after EHLO. Connection /
+  protocol failures throw; a server that doesn't advertise
+  STARTTLS / AUTH reports them as `false` / `[]` (a finding, not
+  an error).
 
 Email-authentication probes (`api.email.*`) read DNS records and
 surface the published policy. They all return `{ present: false }`
@@ -2026,7 +2045,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.18. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.19. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
