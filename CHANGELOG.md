@@ -10,6 +10,57 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.8] — 2026-05-26
+
+Ninth Moderate cut. Adds **`api.encrypt.detectBackend`** — a pure
+classifier that routes recipient / identity strings to the right
+encryption backend by prefix matching. No new dependencies; no
+parsing or I/O. The actual PGP encrypt/decrypt backend (which
+`detectBackend` enables scripts to dispatch on) is left as a
+forward-looking entry — the classifier is useful standalone for
+hybrid age/PGP workflows where one branch uses sercon and the
+other shells out to `gpg`.
+
+### Added
+
+- `api.encrypt.detectBackend(input)` → `{ backend: "age" | "pgp" |
+  "unknown", kind?: "public" | "private" }`. Recognises three age
+  forms (`age1...` X25519 recipients, `AGE-SECRET-KEY-1...`
+  identities, and SSH public keys — `ssh-rsa` / `ssh-ed25519` —
+  which age accepts natively) plus PGP armored block markers
+  (`-----BEGIN PGP PUBLIC KEY BLOCK-----` /
+  `-----BEGIN PGP PRIVATE KEY BLOCK-----`). The `kind` field is
+  only present on identified backends; unknown returns
+  `{ backend: "unknown" }` with no kind.
+- Whitespace tolerance: leading and trailing whitespace are
+  stripped before matching, so input read from a config file with
+  surrounding newlines still classifies correctly.
+- `TestEncryptDetectBackend` runs 16 input cases through the
+  classifier (every age + PGP branch, three whitespace cases, six
+  unknown cases including PEM keys that share the `-----BEGIN`
+  prefix to confirm no false positives).
+  `TestEncryptDetectBackend_AgreesWithRoundTrip` proves that an
+  "age public" classification means encrypt() accepts that input
+  and an "age private" classification means decrypt() accepts it
+  — the classifier and the encrypt/decrypt paths agree.
+- `toJSStringLit` test helper for safely embedding arbitrary
+  strings (including newlines and quote chars) into JS source as
+  string literals.
+- `examples/scripts/encrypt.ts` grows a `detectBackend` section
+  iterating over six sample inputs and printing the classification.
+- `--examples` step 32 extended to mention the classifier with
+  the dispatch idiom; MANUAL §5 prose gains a paragraph describing
+  what the classifier covers and the false-negative-on-unfamiliar
+  policy.
+- `cmd/sercon/api_docs.go` entry added.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `detectBackend` entry rewritten as a
+  forward-looking "PGP backend for `api.encrypt.*`" — the
+  classifier shipped, but actually using PGP recipients in
+  `encrypt` / `decrypt` is the substantial next slice.
+
 ## [0.5.7] — 2026-05-26
 
 Eighth Moderate cut. Adds **`api.encrypt.rekey`** — re-encrypt

@@ -35,7 +35,69 @@ func encryptNamespace(vm *goja.Runtime) map[string]any {
 		"rekey": func(ciphertext, oldIdentities, newRecipients, opts goja.Value) goja.Value {
 			return encryptRekey(vm, ciphertext, oldIdentities, newRecipients, opts)
 		},
+		"detectBackend": func(input string) goja.Value { return encryptDetectBackend(vm, input) },
 	}
+}
+
+// encryptDetectBackend classifies a recipient or identity string by
+// the encryption backend it belongs to. Pure prefix matching — no
+// parsing, no I/O, no new dependencies. Useful for scripts that need
+// to dispatch on the format ("is this an age recipient or a PGP
+// public key block?") before deciding which encrypt path to take.
+//
+// Return shape:
+//
+//	{ backend: "age" | "pgp" | "unknown", kind?: "public" | "private" }
+//
+// `kind` is only present when the backend was identified. age has
+// three input forms — bech32 X25519 (`age1...`) and SSH public-key
+// formats (`ssh-rsa ...`, `ssh-ed25519 ...`) are recipients;
+// `AGE-SECRET-KEY-1...` is an identity. PGP armored blocks
+// (`-----BEGIN PGP PUBLIC KEY BLOCK-----` / `... PRIVATE KEY BLOCK-----`)
+// classify cleanly. Anything else returns `{ backend: "unknown" }`
+// so callers can branch deterministically without parsing the input.
+//
+// This v0.5.8 cut is the classifier only — sercon's actual
+// `encrypt` / `decrypt` paths still only handle age. A future cut
+// would extend the encrypt path to also accept PGP recipients
+// detected here. The classifier is useful standalone for routing
+// (e.g., a script that reads recipient strings from a config file
+// and decides whether to call `api.encrypt.encrypt` or shell out
+// to `gpg --encrypt`).
+func encryptDetectBackend(vm *goja.Runtime, input string) goja.Value {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return vm.ToValue(map[string]any{"backend": "unknown"})
+	}
+
+	// Age — bech32 X25519 forms come first because they're the
+	// canonical case sercon's own encrypt/decrypt already accepts.
+	if strings.HasPrefix(trimmed, "age1") {
+		return vm.ToValue(map[string]any{"backend": "age", "kind": "public"})
+	}
+	if strings.HasPrefix(strings.ToUpper(trimmed), "AGE-SECRET-KEY-") {
+		return vm.ToValue(map[string]any{"backend": "age", "kind": "private"})
+	}
+	// SSH public keys age accepts as recipients. We don't try to
+	// recognise SSH private keys (PEM-style `-----BEGIN OPENSSH ...`)
+	// because age 1.x doesn't accept those as identities through the
+	// X25519Identity path our binding uses — adding them would need a
+	// new code path and is left for the future PGP cut to design
+	// alongside.
+	if strings.HasPrefix(trimmed, "ssh-rsa ") || strings.HasPrefix(trimmed, "ssh-ed25519 ") {
+		return vm.ToValue(map[string]any{"backend": "age", "kind": "public"})
+	}
+
+	// PGP — armored block markers. Trimming TrimSpace at the top
+	// already handled leading whitespace; the markers are exact.
+	switch {
+	case strings.HasPrefix(trimmed, "-----BEGIN PGP PUBLIC KEY BLOCK-----"):
+		return vm.ToValue(map[string]any{"backend": "pgp", "kind": "public"})
+	case strings.HasPrefix(trimmed, "-----BEGIN PGP PRIVATE KEY BLOCK-----"):
+		return vm.ToValue(map[string]any{"backend": "pgp", "kind": "private"})
+	}
+
+	return vm.ToValue(map[string]any{"backend": "unknown"})
 }
 
 // encryptKeygen creates a fresh X25519 identity and returns both

@@ -512,3 +512,119 @@ func TestEncryptRekey_InputValidation(t *testing.T) {
 		})
 	}
 }
+
+// detectBackend classifies recipient / identity strings into the
+// backend they belong to plus public/private kind. Pure prefix
+// matching; no parsing or I/O.
+func TestEncryptDetectBackend(t *testing.T) {
+	cases := []struct {
+		name, input, wantBackend, wantKind string
+	}{
+		// age — bech32 forms
+		{"age1 recipient", "age1abcdef1234567890", "age", "public"},
+		{"AGE-SECRET-KEY identity", "AGE-SECRET-KEY-1XYZ123", "age", "private"},
+		{"age-secret-key lowercase", "age-secret-key-1xyz123", "age", "private"},
+		// age — SSH recipient forms (age accepts these natively)
+		{"ssh-rsa recipient", "ssh-rsa AAAAB3NzaC1yc2E...", "age", "public"},
+		{"ssh-ed25519 recipient", "ssh-ed25519 AAAAC3NzaC1lZDI1...", "age", "public"},
+		// PGP — armored block markers
+		{"PGP public key block", "-----BEGIN PGP PUBLIC KEY BLOCK-----\nVersion...", "pgp", "public"},
+		{"PGP private key block", "-----BEGIN PGP PRIVATE KEY BLOCK-----\nVersion...", "pgp", "private"},
+		// Whitespace tolerance
+		{"leading whitespace", "  \nage1xyz", "age", "public"},
+		{"trailing whitespace", "age1xyz   ", "age", "public"},
+		// Unknown cases — anything that doesn't match should NOT be
+		// guessed at, even if it looks key-shaped. False positives
+		// here would route plaintext to the wrong backend.
+		{"empty string", "", "unknown", ""},
+		{"plain text", "hello world", "unknown", ""},
+		{"PEM private key", "-----BEGIN PRIVATE KEY-----\n...", "unknown", ""},
+		{"RSA PRIVATE KEY", "-----BEGIN RSA PRIVATE KEY-----", "unknown", ""},
+		{"PGP message block", "-----BEGIN PGP MESSAGE-----", "unknown", ""},
+		{"ssh-dss not supported", "ssh-dss AAAA...", "unknown", ""},
+		{"agent-1 (not age)", "agent-1xyz", "unknown", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runEncryptScript(t, `
+				const r = encrypt.detectBackend(`+toJSStringLit(tc.input)+`);
+				const __result = JSON.stringify(r);
+			`)
+			gotStr, _ := got.(string)
+			wantBackend := `"backend":"` + tc.wantBackend + `"`
+			if !strings.Contains(gotStr, wantBackend) {
+				t.Errorf("backend: got %v, want substring %s", gotStr, wantBackend)
+			}
+			if tc.wantKind != "" {
+				wantKind := `"kind":"` + tc.wantKind + `"`
+				if !strings.Contains(gotStr, wantKind) {
+					t.Errorf("kind: got %v, want substring %s", gotStr, wantKind)
+				}
+			} else {
+				if strings.Contains(gotStr, `"kind"`) {
+					t.Errorf("expected no kind field for unknown backend; got %v", gotStr)
+				}
+			}
+		})
+	}
+}
+
+// toJSStringLit returns a JS source-code string literal for s — backtick
+// would be cleaner but s can contain `${`, so go with double quotes plus
+// careful escaping. Newlines, double quotes, and backslashes get escaped;
+// other control chars get \xHH form.
+func toJSStringLit(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, c := range s {
+		switch c {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if c < 32 {
+				b.WriteString("\\x")
+				const hex = "0123456789abcdef"
+				b.WriteByte(hex[(c>>4)&0xF])
+				b.WriteByte(hex[c&0xF])
+			} else {
+				b.WriteRune(c)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// Round-trip integration: detectBackend agrees with what encrypt and
+// rekey accept. An "age public" classification means encrypt-ing TO
+// that input works; an "age private" classification means
+// decrypt-ing WITH it works.
+func TestEncryptDetectBackend_AgreesWithRoundTrip(t *testing.T) {
+	got := runEncryptScript(t, `
+		const k = encrypt.keygen();
+		const pubClass = encrypt.detectBackend(k.publicKey);
+		const privClass = encrypt.detectBackend(k.privateKey);
+
+		// Confirm the classification corresponds to what the binding accepts.
+		const ct = encrypt.encrypt("x", k.publicKey);   // uses age public
+		const pt = encrypt.decrypt(ct, k.privateKey);   // uses age private
+		const ptStr = Array.from(pt).map(b => String.fromCharCode(b)).join("");
+
+		const __result = [
+			pubClass.backend === "age" && pubClass.kind === "public",
+			privClass.backend === "age" && privClass.kind === "private",
+			ptStr === "x",
+		].join(",");
+	`)
+	if got != "true,true,true" {
+		t.Errorf("classification / round-trip integration: %v", got)
+	}
+}

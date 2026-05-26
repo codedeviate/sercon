@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.7</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.8</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -678,6 +678,10 @@ declare const api: {
       newRecipients: string | string[],
       opts?: { armored?: boolean },           // default: preserve input format
     ): Uint8Array;
+    detectBackend(input: string):
+      | { backend: "age";     kind: "public" | "private" }
+      | { backend: "pgp";     kind: "public" | "private" }
+      | { backend: "unknown" };
   };
 
   gh: {
@@ -1211,10 +1215,12 @@ Age encryption (`api.encrypt.*`) wraps
 reference implementation. The round-trip core (keygen / encrypt /
 decrypt) lands in v0.5.5; v0.5.6 adds ASCII-armoured output via
 `opts.armored`; v0.5.7 adds `rekey` for rotating recipients
-without exposing plaintext. The recipient-format dispatcher
-(which would also bring PGP support) remains on the backlog.
-Identities use the X25519 flavour: `age1...` recipients (safe to
-share) and `AGE-SECRET-KEY-1...` identities (must be kept secret).
+without exposing plaintext; v0.5.8 adds `detectBackend` for
+classifying recipient / identity strings. A future cut will
+extend `encrypt` / `decrypt` to also accept PGP recipients
+recognised by `detectBackend`. Identities use the X25519 flavour:
+`age1...` recipients (safe to share) and `AGE-SECRET-KEY-1...`
+identities (must be kept secret).
 
 All three members are synchronous: encryption is pure CPU work
 with a small API surface, matching the call shape of the other
@@ -1260,6 +1266,24 @@ crypto bindings (`api.jwt`, `api.hash`).
   `encrypt` and `decrypt`: same cross-checks (private as
   recipient, public as identity), same auto-detect on the input
   side, same multi-recipient handling on the output side.
+- **`detectBackend(input)`** — Classify a recipient or identity
+  string by encryption backend without parsing or I/O. Returns
+  `{ backend: "age" | "pgp" | "unknown", kind?: "public" | "private" }`.
+  Age recognises three input forms: bech32 X25519 (`age1...`,
+  classified `kind: "public"`), `AGE-SECRET-KEY-1...`
+  (`kind: "private"`), and SSH public keys (`ssh-rsa` /
+  `ssh-ed25519`, classified `kind: "public"` since age accepts
+  them as recipients). PGP recognises armored block markers
+  (`-----BEGIN PGP PUBLIC KEY BLOCK-----` /
+  `-----BEGIN PGP PRIVATE KEY BLOCK-----`). Anything else returns
+  `{ backend: "unknown" }` — false-negative on unfamiliar input
+  is the safer default than guessing. v0.5.8 ships the
+  classifier only; sercon's actual `encrypt` / `decrypt` paths
+  still handle age recipients only. Useful for scripts that need
+  to dispatch on the format ("is this an age recipient or a PGP
+  block?") before deciding which encrypt path — e.g., a config
+  loader that routes some recipients through `api.encrypt.encrypt`
+  and shells out to `gpg --encrypt` for others.
 
 Cross-checks fire at the binding boundary so the common JS-side
 mistakes throw with named-key hints rather than cryptic bech32
@@ -1744,7 +1768,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.7. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.8. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

@@ -129,13 +129,20 @@ the situation changes.
   match in pure Go; alternatively hand-roll a small `crypto/rsa`
   / `crypto/ecdsa` / `crypto/ed25519` decoder since the JWK shape
   is well-specified.
-- **`api.encrypt.detectBackend(recipientStr)`** — Dispatch age vs
-  PGP by recipient format (script: `encrypt.rhai`). **Library:**
-  `filippo.io/age` for age recipient parsing;
+- **PGP backend for `api.encrypt.*`.** v0.5.8 shipped
+  `api.encrypt.detectBackend` as a classifier (returns
+  `{ backend: "age" | "pgp" | "unknown", kind: "public" | "private" }`)
+  but the actual `encrypt` / `decrypt` paths still only handle
+  age. Extending them to also encrypt FOR PGP public keys and
+  decrypt PGP messages with private keys would round out the
+  namespace. **Library:**
   `github.com/ProtonMail/go-crypto/openpgp` (pure Go, maintained
-  PGP fork) for PGP recognition. Brings PGP support as a side
-  effect; moderate because we have to pick one PGP path and the
-  surface is small but real.
+  PGP fork). Moderate because the design decision is which PGP
+  subset to expose (default keys vs detached signatures vs ASCII
+  armor vs binary), plus a clean way to thread the chosen
+  backend through `encrypt(data, recipients, opts?)` — likely
+  auto-detection from the recipient format using the v0.5.8
+  classifier internally.
 
 ### Encoding / decoding / barcodes
 

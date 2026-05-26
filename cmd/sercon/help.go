@@ -597,8 +597,14 @@ const plain = api.encrypt.decrypt(ct, privateKey);
 
 // Rekey — rotate recipients without exposing plaintext. Output
 // format defaults to match the input (binary / armored).
-const rotated = api.encrypt.rekey(ct, privateKey, newPublicKey);`)
-	note("Cross-checks catch private-as-recipient and public-as-identity mix-ups with named-key hints. Recipient-format dispatcher (age + PGP) lands in a later cut.")
+const rotated = api.encrypt.rekey(ct, privateKey, newPublicKey);
+
+// detectBackend — classify a recipient string by backend.
+// { backend: "age" | "pgp" | "unknown", kind?: "public" | "private" }
+const c = api.encrypt.detectBackend(somePubKey);
+if (c.backend === "age") /* use api.encrypt.encrypt */;
+else if (c.backend === "pgp") /* shell out to gpg --encrypt */;`)
+	note("Cross-checks catch private-as-recipient and public-as-identity mix-ups with named-key hints. PGP encrypt/decrypt backend lands in a later cut.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

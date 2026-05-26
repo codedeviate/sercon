@@ -63,6 +63,8 @@ declare const api: {
   encrypt: {
     /** Open an age payload (binary or armored, auto-detected) with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error. */
     decrypt(arg0: unknown, arg1: unknown): unknown;
+    /** Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown', kind?: 'public'|'private' }. Pure prefix matching; no parsing or I/O. PGP encrypt/decrypt is a future cut — classifier is useful standalone. */
+    detectBackend(arg0: string): unknown;
     /** Seal data to one or more recipients (age1... public keys). Default output is binary; opts.armored=true wraps in age's ASCII armor for JSON/YAML/email embedding. Multi-recipient encryption lets any listed identity decrypt. */
     encrypt(arg0: unknown, arg1: unknown, arg2: unknown): unknown;
     /** Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }. */

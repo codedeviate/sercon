@@ -88,3 +88,21 @@ try {
 } catch (e) {
   api.log("alice locked out:", String(e).slice(0, 70) + "…");
 }
+
+api.log("");
+api.log("=== detectBackend: classify recipient / identity strings ===");
+// Classifier — useful when a script reads recipient strings from a
+// config file and needs to know whether to call api.encrypt.* or
+// shell out to gpg / a different backend.
+const samples: Array<[string, string]> = [
+  ["age public",    alice.publicKey],
+  ["age private",   alice.privateKey],
+  ["ssh-rsa",       "ssh-rsa AAAAB3NzaC1yc2E..."],
+  ["pgp public",    "-----BEGIN PGP PUBLIC KEY BLOCK-----\n..."],
+  ["pgp private",   "-----BEGIN PGP PRIVATE KEY BLOCK-----\n..."],
+  ["plain text",    "just some text"],
+];
+for (const [label, input] of samples) {
+  const c = api.encrypt.detectBackend(input);
+  api.log(label.padEnd(14), "->", c.backend, c.kind ? "(" + c.kind + ")" : "");
+}
