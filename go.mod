@@ -10,7 +10,9 @@ require (
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/dsnet/compress v0.0.1
 	github.com/evanw/esbuild v0.28.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang/snappy v1.0.0
+	github.com/itchyny/gojq v0.12.19
 	github.com/klauspost/compress v1.18.6
 	github.com/likexian/whois v1.15.7
 	github.com/likexian/whois-parser v1.24.21
@@ -27,7 +29,6 @@ require (
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 // indirect
-	github.com/itchyny/gojq v0.12.19 // indirect
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/likexian/gokit v0.25.16 // indirect

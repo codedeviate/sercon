@@ -120,11 +120,17 @@ the situation changes.
 
 ### TLS / encryption / signing
 
-- **`jwt::sign(claims, secret)`** / **`jwt::view(token)`** /
-  **`jwt::validate(token, secret)`** — Create, decode, verify JWTs
-  (script: `jwt.rhai`). **Library:** `github.com/golang-jwt/jwt/v5`
-  (pure Go, de facto standard). Moderate because supporting the full
-  matrix of HMAC/RSA/ECDSA/EdDSA key shapes coming from JS is the work.
+- **Asymmetric JWT algorithms.** `api.jwt.sign` / `view` / `validate`
+  (shipped in v0.5.2) currently accept HMAC algorithms only
+  (HS256 / HS384 / HS512). Extend the binding to recognise the
+  asymmetric families: RSA (RS256 / RS384 / RS512 / PS256 / PS384 /
+  PS512), ECDSA (ES256 / ES384 / ES512), and EdDSA. **Library:** the
+  existing `github.com/golang-jwt/jwt/v5` dep already supports them
+  — the work is the JS-side key shape: a PEM-string heuristic
+  (recognise `-----BEGIN`) for the simple case, optional
+  `format: "jwk"` for a JWK object, or a dedicated `api.jwt.parseKey`
+  helper to keep `sign` / `validate` unaware of the underlying
+  encoding. Pick the design before adding the algo dispatcher.
 - **`encrypt::keygen()`** — Generate a fresh age X25519 keypair
   (script: `encrypt.rhai`). **Library:** `filippo.io/age` (pure Go,
   reference implementation).

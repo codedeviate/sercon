@@ -126,6 +126,14 @@ declare const api: {
     /** Run a jq filter and drain the iterator into an array. */
     queryAll(...args: unknown[]): Promise<unknown[]>;
   };
+  jwt: {
+    /** Sign a claims object with secret. opts.algorithm defaults to HS256. Asymmetric algos (RS*/ES*/EdDSA) throw a named error — that surface lands in a later cut. */
+    sign(arg0: Record<string, unknown>, arg1: string, arg2: unknown): unknown;
+    /** Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. Resolves { valid:true, claims } or { valid:false, reason }; only structural input errors throw. */
+    validate(arg0: string, arg1: string, arg2: unknown): unknown;
+    /** Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws. */
+    view(arg0: string): unknown;
+  };
   /** Stringify each argument and print one space-separated line to stdout. The script-side equivalent of console.log without buffering. */
   log(...args: unknown[]): unknown;
   net: {

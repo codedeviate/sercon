@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.1</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.2</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -619,6 +619,29 @@ declare const api: {
     replace(pattern: string, replacement: string, subject: string): string;
   };
 
+  jwt: {
+    sign(
+      claims: Record<string, unknown>,
+      secret: string,
+      opts?: { algorithm?: "HS256" | "HS384" | "HS512" },   // default "HS256"
+    ): string;
+    view(token: string): {
+      header: Record<string, unknown>;
+      payload: Record<string, unknown>;
+      signature: string;          // raw base64url, no padding
+    };
+    validate(
+      token: string,
+      secret: string,
+      opts?: {
+        algorithm?: "HS256" | "HS384" | "HS512";
+        audience?: string;
+        issuer?: string;
+      },
+    ): { valid: true; claims: Record<string, unknown> }
+     | { valid: false; reason: string };
+  };
+
   gh: {
     authStatus(): Promise<{
       authenticated: boolean;
@@ -1037,6 +1060,43 @@ says so.
   translated — that would conflict with `\\` escapes that are
   already legitimate in the replacement. Use `$1` / `${1}` as in
   Go.
+
+JWT bindings (`api.jwt.*`) wrap
+[`golang-jwt/jwt/v5`](https://github.com/golang-jwt/jwt). v0.5.2
+ships **HMAC support only** (`HS256` / `HS384` / `HS512`); the
+asymmetric algorithms (RSA / ECDSA / EdDSA) need a key-shape mapping
+design (PEM string vs JWK object vs raw bytes) and land in a
+follow-up cut. Unsupported algorithm names — including `RS256`,
+`ES256`, `EdDSA`, and the special `"none"` value — throw with a
+named-algorithm message at `sign` / `validate` time rather than
+silently falling through.
+
+- **`sign(claims, secret, opts?)`** — Produces a compact-serialised
+  signed JWT. `claims` is passed straight through to jwt-go's
+  `MapClaims`, which recognises the RFC 7519 reserved claims
+  (`exp`, `nbf`, `iat`, `aud`, `iss`, `sub`, `jti`) and lets you
+  layer arbitrary application claims alongside them. Missing
+  reserved claims aren't synthesised — scripts that want `iat` set
+  should compute it explicitly (e.g.
+  `Math.floor(api.time.nowMs() / 1000)`).
+- **`view(token)`** — Decodes the header + payload **without
+  verifying the signature**. Useful for debugging auth flows or
+  surfacing `aud` / `iss` to the user before deciding whether to
+  trust the token. `signature` comes back as the raw
+  base64url-encoded segment (no padding); decode it yourself if
+  you need the bytes. Malformed input — wrong segment count,
+  invalid base64, invalid JSON — throws.
+- **`validate(token, secret, opts?)`** — Verifies the signature
+  using `secret` and the algorithm declared in the token's
+  header. Standard-claim validation (`exp`, `nbf`, `iat`) is
+  delegated to jwt-go. `opts.audience` / `opts.issuer` are
+  cross-checked against `aud` / `iss` when set. The contract is
+  **resolve, don't throw, on validation failure**:
+  `{ valid: false, reason: "…" }` for bad signature, expired,
+  audience mismatch, issuer mismatch. Only structural input
+  errors (not a JWT at all) and empty secret / empty token throw,
+  because those aren't validation failures — pattern-matching on
+  `valid: false` shouldn't accidentally accept a garbage string.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1502,7 +1562,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.1. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.2. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

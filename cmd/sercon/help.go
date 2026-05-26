@@ -544,10 +544,26 @@ api.preg.match("/HELLO/i", "Hello world");
 api.preg.matchAll("/^x/m", "x\\nx\\nx");`)
 	note("RE2 is UTF-8 by default — the `u` flag is unnecessary and explicitly errors. Optional groups that didn't match surface as empty strings.")
 
+	header(30, "JWT — HMAC sign / view / validate (api.jwt.*)")
+	code(`// Sign — opts.algorithm defaults to HS256; HS384 and HS512 also supported.
+const token = api.jwt.sign(
+  { sub: "alice", iat: Math.floor(Date.now() / 1000), exp: ... + 3600 },
+  "shared-secret",
+);
+
+// view decodes header + payload WITHOUT verifying — debug auth flows safely.
+const { header, payload, signature } = api.jwt.view(token);
+
+// validate resolves, doesn't throw, on bad sig / expired / audience mismatch.
+const ok = api.jwt.validate(token, "shared-secret");
+if (ok.valid) api.log(ok.claims.sub);
+else api.log("rejected:", ok.reason);`)
+	note("HMAC only for now (HS256 / HS384 / HS512). Asymmetric algos (RSA / ECDSA / EdDSA) need key-shape design and land in a future cut.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 29
+const exampleCount = 30

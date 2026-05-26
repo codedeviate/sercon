@@ -10,6 +10,68 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.2] — 2026-05-26
+
+Third Moderate cut. **`api.jwt.*`** — sign / view / validate over
+HMAC-signed JWTs. New dependency:
+`github.com/golang-jwt/jwt/v5 v5.3.1` (pure Go, de facto standard).
+Asymmetric algorithms (RSA / ECDSA / EdDSA) are deliberately split
+off into a follow-up cut so the JS-side key-shape design can be
+done in isolation.
+
+### Added
+
+- `api.jwt.sign(claims, secret, opts?)` produces a
+  compact-serialisation signed JWT. `opts.algorithm` defaults to
+  `"HS256"`; `"HS384"` and `"HS512"` are also supported. Claims
+  pass straight through to jwt-go's `MapClaims`, so RFC 7519
+  reserved claims (`exp`, `nbf`, `iat`, `aud`, `iss`, `sub`,
+  `jti`) work alongside arbitrary application claims. Missing
+  reserved claims aren't synthesised.
+- `api.jwt.view(token)` decodes header + payload **without
+  verifying the signature** and returns `{ header, payload,
+  signature }`. Useful for debugging auth flows or surfacing
+  `aud` / `iss` to the user before deciding to trust the token.
+  Both `RawURLEncoding` (no padding) and the padded `URLEncoding`
+  form are accepted on input; the returned `signature` is the
+  raw base64url segment as it appeared in the token.
+- `api.jwt.validate(token, secret, opts?)` verifies the signature
+  + standard claims and resolves with
+  `{ valid: true, claims }` or `{ valid: false, reason }`. The
+  resolve-don't-throw contract is the key design point: scripts
+  branch on `valid` for bad signature / expired / nbf / aud
+  mismatch / iss mismatch. Only structural input errors (wrong
+  segment count, invalid base64, invalid JSON, empty secret /
+  empty token) throw — those aren't validation failures and a
+  script pattern-matching on `valid: false` shouldn't
+  accidentally accept a garbage string.
+- `opts.audience` / `opts.issuer` propagate into jwt-go's
+  `WithAudience` / `WithIssuer` parser options when set; absent,
+  jwt-go skips those checks.
+- Unsupported algorithm names — including `RS256`, `ES256`,
+  `EdDSA`, and the special `"none"` value — throw at `sign` /
+  `validate` time with a named-algorithm error. Silent fallback
+  to a weaker algorithm than requested would be a security
+  footgun.
+- `TestJwt*` (19 sub-tests covering: round-trip per algorithm
+  HS256/HS384/HS512, view-without-secret, bad-signature
+  resolve-false, expired-token resolve-false, audience and issuer
+  mismatch resolve-false, four asymmetric-algo rejections, four
+  malformed-input throws, empty-secret throws on both sign and
+  validate).
+- `examples/scripts/jwt.ts` walks through every form; pure stdlib
+  so it runs in the CI offline subset.
+- `--examples` step 30 covers the binding; MANUAL section 5 gains
+  the `api.jwt` block plus a paragraph per op.
+- `cmd/sercon/api_docs.go` grows three entries so the emitted
+  `api.d.ts` carries hover docs.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s JWT entry rewritten: HMAC support is shipped;
+  the asymmetric matrix (RSA / ECDSA / EdDSA) is now an explicit
+  follow-up item with notes on the JS-side key-shape design.
+
 ## [0.5.1] — 2026-05-26
 
 Second Moderate cut. **`api.preg.*`** — PHP-style `/pattern/flags`
