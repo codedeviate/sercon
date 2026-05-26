@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.5</div>
+<div class="version">Version 0.4.6</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -364,6 +364,25 @@ declare const api: {
     blake3(data: string): string;
     crc32(data: string): string;
   };
+
+  net: {
+    tcp(target: string, opts?: { timeout?: number; port?: string }): Promise<{
+      host: string; port: number; ip: string; latencyMs: number;
+    }>;
+    dns(host: string, opts?: { types?: ("a" | "aaaa" | "mx" | "txt" | "cname" | "ns")[] }): Promise<{
+      a?: string[]; aaaa?: string[];
+      mx?: { preference: number; host: string }[];
+      txt?: string[]; cname?: string; ns?: string[];
+    }>;
+    tls(target: string, opts?: { timeout?: number }): Promise<{
+      cn: string; issuer: string;
+      notBefore: string; notAfter: string;
+      daysRemaining: number;
+      dnsNames: string[];
+      serialNumber: string;
+      fingerprintSha256: string;
+    }>;
+  };
 };
 ```
 
@@ -425,6 +444,25 @@ and month names are in English. Pass a third-argument IANA zone name
 (e.g. `"UTC"`, `"America/New_York"`) to render in that zone; if
 omitted, the host's `time.Local` is used. Unknown `%X` tokens are
 emitted verbatim so a typo is visible rather than silently dropped.
+
+Protocol probes (`api.net.*`) are stdlib-backed and hit the real
+network. All three return Promises (via `PromisifyAsync`) and accept
+an optional `{ timeout: <ms> }` second arg; the default is 5 seconds.
+
+- **`tcp(target, opts?)`** — dials TCP, measures round-trip from
+  resolution to handshake. `target` is `"host:port"` or just `"host"`
+  (with `opts.port` overriding the default `80`). Resolves to the
+  remote IP, port, and `latencyMs`.
+- **`dns(host, opts?)`** — looks up A, AAAA, MX, TXT, CNAME, and NS
+  records via `net.Resolver`. Pass `opts.types` to scope the query;
+  empty record sets are omitted from the result object so scripts
+  can probe membership with `if ("mx" in result)`.
+- **`tls(target, opts?)`** — connects with `InsecureSkipVerify` so
+  even expired or hostname-mismatched certs come back inspectable.
+  Returns the leaf cert's CN, issuer CN, validity window,
+  `daysRemaining`, `dnsNames`, serial number, and a SHA-256
+  fingerprint (lowercase hex). Default port is `443`. Hosts that
+  care about validity should re-validate the cert themselves.
 
 ## 6. JavaScript runtime built-ins (goja)
 
@@ -744,7 +782,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.5. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.6. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

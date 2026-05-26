@@ -10,6 +10,51 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.6] — 2026-05-26
+
+First of two cuts on **Easy / Protocol probes & connectivity**. This
+one covers the stdlib-only items — `tcp`, `dns`, `tls` — so no new
+`go.mod` entries. `ntp` and `whois` (which need third-party libs)
+land in v0.4.7.
+
+### Added
+
+- `api.net.tcp(target, opts?)`: TCP connect probe. Resolves the host,
+  dials, and reports `{ host, port, ip, latencyMs }`. `target` is
+  `"host:port"` or `"host"` (with `opts.port` overriding the default
+  `"80"`). Optional `{ timeout: ms }`, default 5s. Backed by
+  `net.Dialer.DialContext`.
+- `api.net.dns(host, opts?)`: DNS lookups via `net.Resolver`. Returns
+  `{ a, aaaa, mx, txt, cname, ns }` with empty record sets omitted so
+  scripts can probe membership. `opts.types` scopes the query (case-
+  insensitive subset of `"a" | "aaaa" | "mx" | "txt" | "cname" | "ns"`).
+- `api.net.tls(target, opts?)`: leaf-certificate inspection. Returns
+  `{ cn, issuer, notBefore, notAfter, daysRemaining, dnsNames,
+  serialNumber, fingerprintSha256 }`. Dials with `InsecureSkipVerify`
+  so even expired / hostname-mismatched certs come back inspectable.
+  Default port is `443`. Hosts wanting validity verification should
+  re-run `crypto/x509.Verify` themselves.
+- `cmd/sercon/api_net_test.go`: four local-fixture tests covering
+  TCP against a localhost listener, DNS against `localhost`, DNS
+  types-filter behaviour, and TLS against a self-signed ECDSA server.
+  No external network access — all four pass offline.
+- `examples/scripts/net-probe.ts` demonstrates the three probes
+  against `example.com`. Excluded from the CI offline subset; runs
+  via local `make demo`.
+- `--examples` walkthrough gains step 16 ("Protocol probes
+  (api.net.*)"); `exampleCount` is now 16.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the new `net` shape, plus a
+  prose block calling out the timeout default, `target` parsing
+  rules, the `InsecureSkipVerify` policy on `tls`, and the
+  empty-set-omission behaviour on `dns`.
+- `examples/README.md` table and `Makefile`'s `DEMO_SCRIPTS` gain
+  `net-probe.ts`. CI workflow's "smoke examples" step explicitly
+  enumerates the offline subset and notes the network-dependent ones
+  in a comment.
+
 ## [0.4.5] — 2026-05-26
 
 Fifth slice of the **Easy** bucket — the **Repo / tooling**

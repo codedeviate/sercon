@@ -184,7 +184,7 @@ func classifyErr(err error) int {
 
 // registerExampleAPI wires the small example binding surface advertised by
 // the README: api.log, api.assert.*, api.http.*, api.time.*, api.env.get,
-// api.hash.*, api.str.*, api.path.*.
+// api.hash.*, api.str.*, api.path.*, api.net.*.
 func registerExampleAPI(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("api", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
@@ -269,6 +269,7 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 			"hash": hashNamespace(vm),
 			"str":  strNamespace(vm),
 			"path": pathNamespace(vm),
+			"net":  netNamespace(vm, loop),
 		}
 	}); err != nil {
 		return err

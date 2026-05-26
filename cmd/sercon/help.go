@@ -342,10 +342,22 @@ api.log(api.path.basename("/a/b/c.txt", ".txt")); // "c"
 api.log(api.time.format(api.time.nowMs(), "%F %T", "UTC"));
 // strftime tokens supported: %Y %y %m %d %H %M %S %F %T %j %A %a %B %b %z %Z %%`)
 
+	header(16, "Protocol probes (api.net.*)")
+	code(`// All three return Promises; they hit the real network.
+const t = await api.net.tcp("example.com:443");
+api.log("ip:", t.ip, "latencyMs:", t.latencyMs);
+
+const d = await api.net.dns("example.com", { types: ["a", "mx"] });
+api.log("ips:", d.a, "mx:", d.mx);
+
+const c = await api.net.tls("example.com");
+api.log("cn:", c.cn, "issuer:", c.issuer, "daysRemaining:", c.daysRemaining);`)
+	note("Optional opts: { timeout: ms }. tcp port defaults to 80, tls port to 443.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 15
+const exampleCount = 16

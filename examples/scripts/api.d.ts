@@ -24,6 +24,11 @@ declare const api: {
     post(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   log(...args: unknown[]): unknown;
+  net: {
+    dns(...args: unknown[]): Promise<Record<string, unknown>>;
+    tcp(...args: unknown[]): Promise<Record<string, unknown>>;
+    tls(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   path: {
     basename(...args: unknown[]): unknown;
     dirname(...args: unknown[]): unknown;

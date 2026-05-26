@@ -48,7 +48,8 @@ DEMO_SCRIPTS = \
 	examples/scripts/default-export.ts \
 	examples/scripts/tsx-demo.ts \
 	examples/scripts/json-import.ts \
-	examples/scripts/pkg-resolution.ts
+	examples/scripts/pkg-resolution.ts \
+	examples/scripts/net-probe.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

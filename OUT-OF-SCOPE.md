@@ -48,17 +48,6 @@ the situation changes.
 
 ### Protocol probes & connectivity
 
-- **`tcp(url, opts?)`** — TCP connect probe with resolved IP and
-  latency reporting (script: `tcp.rhai`). **Library:** `net` (stdlib)
-  with `net.DialTimeout` and `time.Since`.
-- **`dns(host, types?)`** — DNS lookups with flexible record-type
-  filtering (script: `dns.rhai`). **Library:** `net` (stdlib
-  `LookupHost/MX/TXT/...`) covers the basics; reach for
-  `github.com/miekg/dns` (pure Go, de facto standard) if arbitrary
-  record types or custom resolvers are required.
-- **`tls(host, port?)`** — Certificate inspection: CN, issuer, expiry,
-  days-remaining (script: `tls.rhai`). **Library:** `crypto/tls` +
-  `crypto/x509` (stdlib).
 - **`ntp(host)`** — NTP clock offset and round-trip delay measurement
   (script: `ntp.rhai`). **Library:** `github.com/beevik/ntp` (pure Go,
   well-maintained, de facto standard).

@@ -25,6 +25,7 @@ Or pick individual scripts:
 | `tsx-demo.ts` | `.tsx` module loading with a local `@jsx h` factory |
 | `json-import.ts` | `import data from "./data.json"` and `require("./data.json")` |
 | `pkg-resolution.ts` | `package.json` `source` field preferred over `main` |
+| `net-probe.ts` | `api.net.tcp/dns/tls` — hits the real network (not in CI). |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
