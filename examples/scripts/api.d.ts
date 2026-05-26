@@ -160,6 +160,10 @@ declare const api: {
   };
   /** Stringify each argument and print one space-separated line to stdout. The script-side equivalent of console.log without buffering. */
   log(...args: unknown[]): unknown;
+  memcached: {
+    /** Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?). */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   net: {
     /** Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five. */
     dns(...args: unknown[]): Promise<Record<string, unknown>>;

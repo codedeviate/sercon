@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.23</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.24</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -656,6 +656,14 @@ declare const api: {
     }>;
   };
 
+  memcached: {
+    open(addr: string): Promise<{                // host:port
+      get(key: string): Promise<string | null>;  // null on cache miss
+      set(key: string, value: string | Uint8Array, expirySeconds?: number): Promise<void>;
+      delete(key: string): Promise<boolean>;      // true if the key existed
+    }>;
+  };
+
   browser: {
     open(): Promise<{                            // stateful HTTP session
       setUserAgent(ua: string): void;
@@ -1202,6 +1210,16 @@ becomes JS `null` rather than throwing, so
 `await r.do("GET", "absent")` is `null`. Redis-level errors
 (WRONGTYPE, unknown command) throw. Offline-testable via
 `alicebob/miniredis`.
+
+Memcached (`api.memcached.open(addr)`) is a stateful-handle binding
+over [`bradfitz/gomemcache`](https://github.com/bradfitz/gomemcache)
+(the de facto standard client). `addr` is `host:port`; gomemcache
+pools connections lazily so there's no PING-on-open (the first op
+surfaces a bad address) and no close. Resolves to
+`{ get, set, delete }`: `get` returns the stored string or `null`
+on a cache miss; `set(key, value, expirySeconds?)` stores bytes
+(0 / omitted = never expire); `delete` returns `true` if the key
+existed, `false` on a miss. Server errors throw.
 
 Browser sessions (`api.browser.open()`) give a stateful HTTP
 client — an automatic cookie jar (`net/http/cookiejar` with the
@@ -2130,7 +2148,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.23. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.24. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

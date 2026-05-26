@@ -10,6 +10,29 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.24] — 2026-05-26
+
+Adds **`api.memcached`** — text-protocol client over
+`bradfitz/gomemcache`. Stateful-handle binding. New dependency:
+`github.com/bradfitz/gomemcache`.
+
+### Added
+
+- `api.memcached.open(addr)` (host:port) → `{ get, set, delete }`.
+  `get` returns the string or `null` on a cache miss; `set(key,
+  value, expirySeconds?)` stores bytes (0 = never expire);
+  `delete` returns `true` if the key existed.
+- 3 tests against an in-process fake memcached (minimal text-protocol
+  stand-in — no maintained pure-Go in-process server exists):
+  set/get/delete round-trip, delete-miss-returns-false,
+  empty-addr-throws.
+- `examples/scripts/memcached.ts` gracefully degrades without a
+  server (in the CI offline subset); MANUAL §5 ts block + prose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `memcached` entry resolved.
+
 ## [0.5.23] — 2026-05-26
 
 Adds **`api.redis`** — RESP client over `redis/go-redis/v9`. A

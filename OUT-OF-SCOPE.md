@@ -72,10 +72,6 @@ the situation changes.
 
 ### Remote services & caching
 
-- **`memcached(url)`** — Memcached text protocol, version and stats
-  (script: `memcached.rhai`). **Library:**
-  `github.com/bradfitz/gomemcache/memcache` (pure Go, de facto
-  standard).
 - **`ldap(url)`** — Anonymous LDAP bind + RootDSE attribute query
   (script: `ldap.rhai`). **Library:**
   `github.com/go-ldap/ldap/v3` (pure Go, well-maintained).
