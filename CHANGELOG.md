@@ -10,6 +10,30 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.25] — 2026-05-26
+
+Adds **`api.ldap`** — anonymous LDAP query over `go-ldap/v3`.
+Stateful-handle binding (read / inspection surface, no modify).
+New dependency: `github.com/go-ldap/ldap/v3`.
+
+### Added
+
+- `api.ldap.open(url, opts?)` dials `ldap://` / `ldaps://`, binds
+  anonymously (or with `opts.bindDN` / `opts.password`), resolves
+  to `{ rootDSE, search, close }`.
+- `rootDSE()` reads the server metadata entry; `search(baseDN,
+  filter, attrs?)` runs a subtree search returning `{ dn,
+  <attr>: [values] }` per entry (attributes stay arrays).
+- 3 tests (validation / error paths — LDAP round-trip needs a
+  live server): empty-URL throws, bad-URL throws,
+  connection-refused throws.
+- `examples/scripts/ldap.ts` gracefully degrades; hits a public
+  test LDAP (`make demo` only, not CI). MANUAL §5 ts block + prose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `ldap` entry resolved.
+
 ## [0.5.24] — 2026-05-26
 
 Adds **`api.memcached`** — text-protocol client over

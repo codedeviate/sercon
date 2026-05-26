@@ -158,6 +158,10 @@ declare const api: {
     /** Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws. */
     view(arg0: string): unknown;
   };
+  ldap: {
+    /** Dial LDAP (ldap://host:port), anonymous bind (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata. */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   /** Stringify each argument and print one space-separated line to stdout. The script-side equivalent of console.log without buffering. */
   log(...args: unknown[]): unknown;
   memcached: {

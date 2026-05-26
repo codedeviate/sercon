@@ -72,9 +72,6 @@ the situation changes.
 
 ### Remote services & caching
 
-- **`ldap(url)`** — Anonymous LDAP bind + RootDSE attribute query
-  (script: `ldap.rhai`). **Library:**
-  `github.com/go-ldap/ldap/v3` (pure Go, well-maintained).
 - **`dict(url, word?)`** — RFC 2229 DICT protocol word lookup (script:
   `dict.rhai`). **Library:** no popular pure-Go DICT client; hand-roll
   the protocol over `net.Dial` (it is a simple line-based protocol).

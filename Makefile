@@ -72,7 +72,8 @@ DEMO_SCRIPTS = \
 	examples/scripts/encrypt.ts \
 	examples/scripts/sqlite.ts \
 	examples/scripts/redis.ts \
-	examples/scripts/memcached.ts
+	examples/scripts/memcached.ts \
+	examples/scripts/ldap.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.24</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.25</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -664,6 +664,14 @@ declare const api: {
     }>;
   };
 
+  ldap: {
+    open(url: string, opts?: { bindDN?: string; password?: string }): Promise<{
+      rootDSE(): Promise<Record<string, unknown>>;            // server metadata entry
+      search(baseDN: string, filter: string, attrs?: string[]): Promise<Array<Record<string, unknown>>>;
+      close(): Promise<void>;
+    }>;
+  };
+
   browser: {
     open(): Promise<{                            // stateful HTTP session
       setUserAgent(ua: string): void;
@@ -1220,6 +1228,17 @@ surfaces a bad address) and no close. Resolves to
 on a cache miss; `set(key, value, expirySeconds?)` stores bytes
 (0 / omitted = never expire); `delete` returns `true` if the key
 existed, `false` on a miss. Server errors throw.
+
+LDAP (`api.ldap.open(url)`) is a stateful-handle binding over
+[`go-ldap/v3`](https://github.com/go-ldap/ldap). Dials
+`ldap://host:port` (or `ldaps://`), does an anonymous bind by
+default (or a simple bind with `opts.bindDN` / `opts.password`),
+and resolves to `{ rootDSE, search, close }`. `rootDSE()` reads
+the server's anonymous metadata entry (naming contexts, supported
+controls, vendor); `search(baseDN, filter, attrs?)` runs a
+subtree search and returns `{ dn, <attr>: [values] }` per entry
+(attributes stay arrays since LDAP is multi-valued). A read /
+inspection surface — no modify / add / delete.
 
 Browser sessions (`api.browser.open()`) give a stateful HTTP
 client — an automatic cookie jar (`net/http/cookiejar` with the
@@ -2148,7 +2167,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.24. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.25. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

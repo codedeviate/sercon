@@ -171,5 +171,6 @@ func apiDocs() map[string]string {
 		// Remote data stores (stateful handles; graceful-degrade in demos)
 		"redis.open": "Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses.",
 		"memcached.open": "Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?).",
+		"ldap.open": "Dial LDAP (ldap://host:port), anonymous bind (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata.",
 	}
 }

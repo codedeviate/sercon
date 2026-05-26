@@ -47,6 +47,7 @@ Or pick individual scripts:
 | `sqlite.ts` | `api.sqlite.*` — in-memory SQLite handle: schema, parameterised insert/query/queryValue, mutations with rowsAffected, BLOB round-trip, close. |
 | `redis.ts` | `api.redis.*` — RESP client (do/ping/close); gracefully degrades without a server. |
 | `memcached.ts` | `api.memcached.*` — get/set/delete; gracefully degrades without a server. |
+| `ldap.ts` | `api.ldap.*` — anonymous bind + rootDSE / search; gracefully degrades, hits a public test LDAP (not in CI). |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
