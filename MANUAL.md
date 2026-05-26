@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.9</div>
+<div class="version">Version 0.4.10</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -365,6 +365,18 @@ declare const api: {
     crc32(data: string): string;
   };
 
+  compression: {
+    algos(): string[];
+    compress(
+      algo: "gzip" | "deflate" | "zlib" | "bzip2" | "zstd" | "brotli" | "lz4" | "xz" | "snappy",
+      data: string | ArrayBuffer | Uint8Array,
+    ): Promise<ArrayBuffer>;
+    decompress(
+      algo: "gzip" | "deflate" | "zlib" | "bzip2" | "zstd" | "brotli" | "lz4" | "xz" | "snappy",
+      data: string | ArrayBuffer | Uint8Array,
+    ): Promise<ArrayBuffer>;
+  };
+
   net: {
     tcp(target: string, opts?: { timeout?: number; port?: string }): Promise<{
       host: string; port: number; ip: string; latencyMs: number;
@@ -493,6 +505,26 @@ api.log(api.hash.sha256("abc"));
 HTTP bindings use `net/http` with a 5-second default per-request timeout
 and surface real `Promise<…>` values through the event loop. They are
 *not* mockable from JS — they go to the real network.
+
+Compression bindings (`api.compression.*`) cover nine pure-Go
+algorithms behind a uniform interface. Inputs are either strings
+(interpreted as UTF-8 byte sequences) or any `ArrayBuffer` /
+`Uint8Array`; outputs are `ArrayBuffer` (wrap with
+`new Uint8Array(...)` to iterate). Every algorithm round-trips:
+
+| Algorithm | Library |
+|---|---|
+| `gzip` / `deflate` / `zlib` | stdlib `compress/*` |
+| `bzip2` | stdlib `compress/bzip2` for read; [`github.com/dsnet/compress/bzip2`](https://github.com/dsnet/compress) for write |
+| `zstd` | [`github.com/klauspost/compress/zstd`](https://github.com/klauspost/compress) |
+| `brotli` | [`github.com/andybalholm/brotli`](https://github.com/andybalholm/brotli) |
+| `lz4` | [`github.com/pierrec/lz4/v4`](https://github.com/pierrec/lz4) |
+| `xz` | [`github.com/ulikunitz/xz`](https://github.com/ulikunitz/xz) |
+| `snappy` | [`github.com/golang/snappy`](https://github.com/golang/snappy) |
+
+`api.compression.algos()` returns the supported names so scripts can
+iterate without hard-coding the list. Unknown algorithm names throw
+a clear error rather than silently returning empty bytes.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -925,7 +957,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.9. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.10. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

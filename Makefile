@@ -50,7 +50,8 @@ DEMO_SCRIPTS = \
 	examples/scripts/json-import.ts \
 	examples/scripts/pkg-resolution.ts \
 	examples/scripts/net-probe.ts \
-	examples/scripts/email-auth.ts
+	examples/scripts/email-auth.ts \
+	examples/scripts/compression.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

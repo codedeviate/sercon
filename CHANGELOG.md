@@ -10,6 +10,60 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.10] — 2026-05-26
+
+Sole cut on **Easy / Hashing & compression** — the compression piece.
+Hashing already shipped in v0.3.1; this rounds out the sub-section.
+
+### Added
+
+- `api.compression.*`: a uniform compress / decompress surface over
+  **nine pure-Go algorithms**:
+  - **stdlib**: `gzip`, `deflate`, `zlib`, `bzip2` (read only — see
+    below).
+  - **third-party (pure Go)**: `bzip2` write via `dsnet/compress/bzip2`,
+    `zstd` via `klauspost/compress`, `brotli` via `andybalholm/brotli`,
+    `lz4` via `pierrec/lz4/v4`, `xz` via `ulikunitz/xz`, `snappy`
+    via `golang/snappy`.
+  - `api.compression.compress(algo, data)` / `decompress(algo, data)`
+    accept `string` (UTF-8) or `ArrayBuffer` / `Uint8Array` input
+    and return `ArrayBuffer`. `api.compression.algos()` returns the
+    supported list so scripts can iterate without hard-coding.
+- `compressBytes` / `decompressBytes` route by algorithm in a flat
+  switch — each branch handles writer creation, write, and Close in
+  the order each compressor's framing demands.
+- `TestCompression_RoundTrip` (9 sub-tests) — every algorithm
+  round-trips a ~960 B payload byte-for-byte.
+- `TestCompression_UnknownAlgorithm` — unknown algo names surface a
+  clean error rather than silently returning empty bytes.
+- `examples/scripts/compression.ts` iterates `algos()` and reports
+  compressed size + ratio for each. Verified live:
+  brotli=5.4%, deflate=6.4%, zlib=7.1%, zstd=7.8%, gzip=8.4%,
+  snappy/lz4=10.0%, xz=13.3%, bzip2=17.7% on the demo corpus.
+- `--examples` step 17 added; existing email step shifts to 18.
+  `exampleCount` is now 18.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the `compression` shape with
+  the full algo-set typed in the union, plus a prose section
+  cross-referencing the upstream lib for each algorithm.
+- `Makefile`'s `DEMO_SCRIPTS` and `examples/README.md` table absorb
+  `compression.ts`. CI workflow's offline subset includes it too —
+  compression doesn't touch the network.
+- `OUT-OF-SCOPE` / Easy / Hashing & compression section is empty
+  (hashing landed in v0.3.1; compression closes the slot now).
+
+### Dependencies
+
+- New direct (all pure Go):
+  `github.com/klauspost/compress v1.18.6`,
+  `github.com/andybalholm/brotli v1.2.1`,
+  `github.com/pierrec/lz4/v4 v4.1.26`,
+  `github.com/ulikunitz/xz v0.5.15`,
+  `github.com/golang/snappy v1.0.0`,
+  `github.com/dsnet/compress v0.0.1`.
+
 ## [0.4.9] — 2026-05-26
 
 Second cut on **Easy / Email authentication**, completing the

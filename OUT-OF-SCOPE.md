@@ -46,17 +46,6 @@ the situation changes.
   bottleneck. **Library:** `googleapis/release-please-action` (GitHub
   Action, not a Go dep).
 
-### Hashing & compression
-
-- **`compression::compress(algo, bytes)`** /
-  **`compression::decompress(...)`** — gzip, deflate, zstd, brotli,
-  bzip2, lz4, xz, snappy, zlib (script: `compression.rhai`).
-  **Library:** `compress/gzip`, `compress/flate`, `compress/zlib`,
-  `compress/bzip2` (stdlib); `github.com/klauspost/compress/zstd` and
-  `s2/snappy` (pure Go, very popular); `github.com/andybalholm/brotli`
-  (pure Go); `github.com/pierrec/lz4/v4` (pure Go);
-  `github.com/ulikunitz/xz` (pure Go).
-
 ### Encoding / decoding / barcodes
 
 - **`encode::qr(data)`** — QR code as PNG blob (script: `encode.rhai`).

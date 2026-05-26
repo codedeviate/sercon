@@ -5,6 +5,11 @@ declare const api: {
     equal(arg0: unknown, arg1: unknown, arg2: unknown[]): void;
     ok(arg0: unknown, arg1: unknown[]): void;
   };
+  compression: {
+    algos(): string[];
+    compress(...args: unknown[]): Promise<Uint8Array>;
+    decompress(...args: unknown[]): Promise<Uint8Array>;
+  };
   email: {
     all(...args: unknown[]): Promise<Record<string, unknown>>;
     bimi(...args: unknown[]): Promise<Record<string, unknown>>;

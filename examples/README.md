@@ -26,7 +26,8 @@ Or pick individual scripts:
 | `json-import.ts` | `import data from "./data.json"` and `require("./data.json")` |
 | `pkg-resolution.ts` | `package.json` `source` field preferred over `main` |
 | `net-probe.ts` | `api.net.tcp/dns/tls/ntp/whois` — hits the real network (not in CI). |
-| `email-auth.ts` | `api.email.spf/dmarc` — hits the real DNS (not in CI). |
+| `email-auth.ts` | `api.email.spf/dmarc/mtaSts/tlsRpt/bimi/all` — hits real DNS (not in CI). |
+| `compression.ts` | `api.compression.compress/decompress` round-trip across all 9 algos. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't

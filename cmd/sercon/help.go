@@ -360,7 +360,19 @@ const w = await api.net.whois("example.com");
 api.log("registrar:", w.registrar?.name, "expires:", w.domain?.expirationDate);`)
 	note("Optional { timeout: ms } on every probe. Default ports: tcp 80, tls 443, ntp 123.")
 
-	header(17, "Email authentication (api.email.*)")
+	header(17, "Compression (api.compression.*)")
+	code(`// Nine pure-Go algorithms with a uniform interface. Inputs are strings
+// (UTF-8) or ArrayBuffer; outputs are ArrayBuffer.
+api.log(api.compression.algos().join(", "));
+
+const c = await api.compression.compress("zstd", "hello world");
+api.log("zstd:", new Uint8Array(c).length, "bytes");
+
+const back = await api.compression.decompress("zstd", c);
+api.log("round-trip ok:", Array.from(new Uint8Array(back)).map(b => String.fromCharCode(b)).join(""));`)
+	note("All algos round-trip byte-for-byte. gzip / deflate / zlib / bzip2 use stdlib; the others are klauspost / brotli / lz4 / xz / snappy.")
+
+	header(18, "Email authentication (api.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
 // { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
 // or missing record rather than throwing.
@@ -382,4 +394,4 @@ api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 17
+const exampleCount = 18
