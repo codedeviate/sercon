@@ -48,13 +48,6 @@ the situation changes.
 
 ### External tool integrations
 
-- **`git(repo_path)`** — Wrap the `git` CLI: `branch()`, `is_clean()`,
-  `rev_parse()`, `status()`, `add()`, `commit()`, `log()`,
-  `diff_stat()`, `run_text()` (script: `git.rhai`). Requires `git` on
-  `PATH`. **Library:** `os/exec` (stdlib). A pure-Go alternative
-  (`github.com/go-git/go-git/v5`) exists but is heavier and changes
-  behaviour vs. the user's installed git — stick with shelling out for
-  parity with recon.
 - **`gh()`** — Wrap the GitHub `gh` CLI: `auth_status()`,
   `pr_list()`, `repo_view()` (script: `gh.rhai`). Requires `gh` on
   `PATH` and authentication. **Library:** `os/exec` (stdlib);

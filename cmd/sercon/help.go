@@ -494,10 +494,30 @@ const p = await api.exec.http("POST", "https://httpbin.org/post", {
 api.log("echo:", JSON.parse(p.body).data);`)
 	note("4xx/5xx resolve as status; transport errors and timeouts throw. opts: timeout, follow, insecure, backend.")
 
+	header(27, "Git CLI wrapper (api.git.*)")
+	code(`// Read-only ops — branch / isClean / revParse / status / log /
+// diffStat — plus add / commit and a runText escape hatch.
+const b = await api.git.branch();              // current + all locals
+const head = await api.git.revParse("HEAD");   // 40-char SHA
+const clean = await api.git.isClean();         // porcelain check
+
+// log fields: sha, shortSha, author, email, timestamp (unix s), subject.
+const recent = await api.git.log({ limit: 3 });
+recent.forEach(c => api.log(c.shortSha, c.subject));
+
+// diffStat aggregates --shortstat output.
+const stat = await api.git.diffStat({ revRange: "HEAD~1..HEAD" });
+api.log("+" + stat.insertions, "-" + stat.deletions);
+
+// Escape hatch: non-zero exits surface as data, not a throw.
+const r = await api.git.runText(["config", "user.email"]);
+api.log(r.stdout.trim());`)
+	note("All bindings accept opts.cwd. add/commit are mutating — guard with isClean / revParse before chaining.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 26
+const exampleCount = 27

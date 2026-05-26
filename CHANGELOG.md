@@ -10,6 +10,69 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.19] — 2026-05-26
+
+Third slice of **Easy / External tool integrations**: a wrapper
+around the host `git` CLI. `api.gh` is split off into the next cut
+(v0.4.20) — given the size of the git surface, packing both
+together would have made one over-large release. No new
+dependencies — `os/exec` and a single `regexp` for diffStat are all
+this needs.
+
+### Added
+
+- `api.git.branch(opts?)` → `Promise<{ current, detached, all }>` —
+  current branch (empty on detached HEAD), detached flag derived
+  from git's own exit code on `symbolic-ref --short HEAD`, and the
+  list of local branches.
+- `api.git.isClean(opts?)` → `Promise<boolean>` — convenience
+  boolean over `git status --porcelain` emptiness.
+- `api.git.revParse(rev, opts?)` → `Promise<string>` — full 40-char
+  SHA. Invalid refs throw with git's stderr message in the chain.
+- `api.git.status(opts?)` → `Promise<Array<{ path, indexStatus,
+  workingStatus }>>` — parsed porcelain v1 output. The status
+  fields are the raw single-char codes (`M`, `A`, `D`, `R`, `?`, …)
+  so scripts can dispatch without re-parsing.
+- `api.git.add(paths, opts?)` — stages one path or a list. `--` is
+  inserted between `add` and the paths so leading-dash values work.
+- `api.git.commit(message, opts?)` → `Promise<{ sha }>` — empty
+  message throws before spawning. `allowEmpty:true` toggles
+  `--allow-empty`. Returns the post-commit HEAD SHA.
+- `api.git.log(opts?)` → `Promise<Array<{ sha, shortSha, author,
+  email, timestamp, subject }>>` — `limit` (default 50) most-recent
+  commits in `revRange` (default `HEAD`). Tab-separated format
+  string keeps parsing one-line-per-commit.
+- `api.git.diffStat(opts?)` → `Promise<{ files, insertions,
+  deletions }>` — aggregates `git diff --shortstat`. Default range
+  is `HEAD~1..HEAD`. Pure-add or pure-delete diffs return zero on
+  the missing side instead of throwing.
+- `api.git.runText(args, opts?)` → `Promise<{ stdout, stderr,
+  exitCode }>` — escape hatch for invocations the typed bindings
+  don't cover. Non-zero exits surface as data (not a throw); spawn
+  failures and context cancellation still throw.
+- All bindings accept `opts.cwd` so a single engine can work across
+  multiple checkouts.
+- `TestGit*` (10 sub-tests): fresh repo, dirty-tree status,
+  revParse + invalid ref, add + commit round-trip, empty-message
+  guard, log ordering and fields, diffStat counters, runText
+  non-zero exit, runText input validation, detached-HEAD reporting.
+- `examples/scripts/git.ts` builds a throwaway temp repo, exercises
+  the read-only ops, demonstrates runText, then cleans up after
+  itself. Included in `make demo` and the CI offline subset (git is
+  on PATH everywhere we care about).
+- `--examples` step 27 covers the binding; MANUAL section 5 gains
+  the `api.git` block plus a paragraph per op.
+- `examples/scripts/api.d.ts` regenerated.
+
+### Changed
+
+- `optInt` (previously private to barcode) now accepts plain Go
+  `int` and `nil` opts maps in addition to `int64` / `float64`.
+  Mirrors the `optMillis` change from v0.4.18 and lets test
+  harnesses hand in maps without `int64()` casts.
+- `OUT-OF-SCOPE.md`'s Easy / External tool integrations list drops
+  the `git(repo_path)` entry. `gh()` remains as the v0.4.20 cut.
+
 ## [0.4.18] — 2026-05-26
 
 Second slice of **Easy / External tool integrations**: HTTP via

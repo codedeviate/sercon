@@ -132,9 +132,13 @@ func buildBarcode(format, data string) (barcode.Barcode, error) {
 }
 
 // optInt pulls a numeric option from a JS opts object. Accepts int64 /
-// float64 (the two numeric types goja exports a JS number to) and falls
-// back to `fallback` for everything else.
+// int / float64 (int64 is what goja exports for JS integers; int shows
+// up when Go-side test harnesses build the map directly; float64 covers
+// non-integer JS literals). Falls back for everything else.
 func optInt(opts map[string]any, key string, fallback int) int {
+	if opts == nil {
+		return fallback
+	}
 	v, ok := opts[key]
 	if !ok {
 		return fallback
@@ -142,6 +146,8 @@ func optInt(opts map[string]any, key string, fallback int) int {
 	switch t := v.(type) {
 	case int64:
 		return int(t)
+	case int:
+		return t
 	case float64:
 		return int(t)
 	}

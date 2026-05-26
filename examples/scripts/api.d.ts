@@ -42,6 +42,17 @@ declare const api: {
     http(...args: unknown[]): Promise<Record<string, unknown>>;
     shell(...args: unknown[]): Promise<Record<string, unknown>>;
   };
+  git: {
+    add(...args: unknown[]): Promise<Record<string, unknown>>;
+    branch(...args: unknown[]): Promise<Record<string, unknown>>;
+    commit(...args: unknown[]): Promise<Record<string, unknown>>;
+    diffStat(...args: unknown[]): Promise<Record<string, unknown>>;
+    isClean(...args: unknown[]): Promise<boolean>;
+    log(...args: unknown[]): Promise<Record<string, unknown>[]>;
+    revParse(...args: unknown[]): Promise<string>;
+    runText(...args: unknown[]): Promise<Record<string, unknown>>;
+    status(...args: unknown[]): Promise<Record<string, unknown>[]>;
+  };
   hash: {
     blake3(...args: unknown[]): unknown;
     crc32(...args: unknown[]): unknown;

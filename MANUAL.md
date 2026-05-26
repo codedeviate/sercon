@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.18</div>
+<div class="version">Version 0.4.19</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -528,6 +528,41 @@ declare const api: {
     }>;
   };
 
+  git: {
+    branch(opts?: { cwd?: string }): Promise<{
+      current: string;           // branch name; empty on detached HEAD
+      detached: boolean;
+      all: string[];             // local branches
+    }>;
+    isClean(opts?: { cwd?: string }): Promise<boolean>;
+    revParse(rev: string, opts?: { cwd?: string }): Promise<string>;
+    status(opts?: { cwd?: string }): Promise<Array<{
+      path: string;
+      indexStatus: string;       // single-char porcelain code
+      workingStatus: string;
+    }>>;
+    add(paths: string | string[], opts?: { cwd?: string }): Promise<{ paths: string[] }>;
+    commit(message: string, opts?: { cwd?: string; allowEmpty?: boolean }): Promise<{ sha: string }>;
+    log(opts?: { cwd?: string; limit?: number; revRange?: string }): Promise<Array<{
+      sha: string;
+      shortSha: string;
+      author: string;
+      email: string;
+      timestamp: number;         // unix seconds
+      subject: string;
+    }>>;
+    diffStat(opts?: { cwd?: string; revRange?: string }): Promise<{
+      files: number;
+      insertions: number;
+      deletions: number;
+    }>;
+    runText(args: string[], opts?: { cwd?: string }): Promise<{
+      stdout: string;
+      stderr: string;
+      exitCode: number;          // surfaced as data — does NOT throw
+    }>;
+  };
+
   email: {
     spf(domain: string): Promise<
       | { present: false }
@@ -816,6 +851,45 @@ the only entry today; `http` (recon-with-curl-fallback) and `git` /
   errors (DNS, connection refused, TLS handshake), and context
   deadline / cancellation throw. The error message includes the
   backend's stderr when present.
+
+Git bindings (`api.git.*`) shell out to the host `git` binary; no
+pure-Go alternative (`go-git` is heavier and would drift from the
+user's installed git). Every binding accepts an `opts.cwd` so a
+single engine can work across multiple checkouts.
+
+- **`branch(opts?)`** — Reports the current branch (empty string when
+  HEAD is detached) plus every local branch from `for-each-ref
+  refs/heads`. `detached` is true exactly when `symbolic-ref --short
+  HEAD` exited non-zero, which is git's own signal for the state.
+- **`isClean(opts?)`** — Convenience boolean over
+  `git status --porcelain`. True when the porcelain output is empty.
+- **`revParse(rev, opts?)`** — Returns the 40-char SHA for `rev`.
+  Invalid refs throw with git's stderr message included.
+- **`status(opts?)`** — Parses `--porcelain` v1 output into
+  `{ path, indexStatus, workingStatus }`. The two single-char status
+  codes are the raw porcelain codes (`M`, `A`, `D`, `R`, `?`, …) so
+  scripts can dispatch on them without re-parsing strings.
+- **`add(paths, opts?)`** — Stages one path (string) or a list
+  (string[]). `--` is inserted between `add` and the paths so values
+  that look like flags work too. Returns the resolved paths array.
+- **`commit(message, opts?)`** — Creates a new commit; the post-commit
+  HEAD SHA is returned. `allowEmpty:true` toggles `--allow-empty`.
+  An empty message throws before spawning.
+- **`log(opts?)`** — Returns `limit` (default 50) most-recent commits
+  in `revRange` (default `HEAD`). Format string
+  `%H%x09%h%x09%an%x09%ae%x09%at%x09%s` tab-separates SHA, short
+  SHA, author name, email, unix timestamp, and subject. Newlines and
+  tabs in subjects are already collapsed by git so the parse stays
+  one-line-per-commit.
+- **`diffStat(opts?)`** — Aggregates `git diff --shortstat` into
+  `{ files, insertions, deletions }`. Default range is
+  `HEAD~1..HEAD`. A pure-add or pure-delete diff returns zero for
+  the missing side instead of throwing.
+- **`runText(args, opts?)`** — Escape hatch. Surfaces `{ stdout,
+  stderr, exitCode }` for any `git <args>` invocation. Non-zero
+  exits do **not** throw — that's the whole point of having a
+  generic wrapper; callers branch on `exitCode`. Spawn failures and
+  context cancellation still throw.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1248,7 +1322,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.18. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.19. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
