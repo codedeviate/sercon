@@ -702,3 +702,52 @@ func TestWriteTypes_DocsEmptyStringRemoves(t *testing.T) {
 		t.Errorf("expected no JSDoc block after clear; got:\n%s", got)
 	}
 }
+
+// ModuleLoader serves a module from memory instead of disk. The loader
+// matches the `.ts` candidate by suffix; sercon transpiles it like a
+// disk read. Proves the virtualisation hook works end-to-end.
+func TestModuleLoader_ServesFromMemory(t *testing.T) {
+	virtual := map[string]string{
+		"greeting.ts": `export function hi(name: string): string { return "hi " + name; }`,
+	}
+	root := t.TempDir()
+	eng := scriptengine.New(scriptengine.Options{
+		ScriptRoot:     root,
+		DisableConsole: true,
+		ModuleLoader: func(path string) (string, bool, error) {
+			for name, src := range virtual {
+				if strings.HasSuffix(path, name) {
+					return src, true, nil
+				}
+			}
+			return "", false, nil
+		},
+	})
+	_, err := eng.Run(context.Background(), filepath.Join(root, "main.ts"), `
+		import { hi } from "./greeting";
+		if (hi("alice") !== "hi alice") throw new Error("got: " + hi("alice"));
+	`)
+	if err != nil {
+		t.Fatalf("module loader run: %v", err)
+	}
+}
+
+// A loader returning an error aborts resolution with that error.
+func TestModuleLoader_ErrorAborts(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{
+		ScriptRoot:     t.TempDir(),
+		DisableConsole: true,
+		ModuleLoader: func(path string) (string, bool, error) {
+			if strings.HasSuffix(path, "boom.ts") {
+				return "", false, errors.New("loader exploded")
+			}
+			return "", false, nil
+		},
+	})
+	_, err := eng.Run(context.Background(), "/tmp/main.ts", `
+		import "./boom";
+	`)
+	if err == nil || !strings.Contains(err.Error(), "loader exploded") {
+		t.Fatalf("expected loader error, got %v", err)
+	}
+}

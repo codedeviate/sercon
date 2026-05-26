@@ -10,6 +10,33 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.28] — 2026-05-26
+
+Adds a custom **`Options.ModuleLoader`** hook to `pkg/scriptengine`
+— a library-side API (no script binding) that lets embedders serve
+modules from somewhere other than disk: an in-memory FS, a network
+source, an embedded bundle.
+
+### Added
+
+- `Options.ModuleLoader func(candidatePath string) (source string,
+  found bool, err error)`. Consulted for every require/import
+  candidate before the filesystem. The engine probes the bare path
+  plus the usual extension fallbacks (`.ts` / `.tsx` / `.js` /
+  `.mjs` / `.cjs` / `.json`) so a loader can match on a plain
+  suffix; a `.ts` / `.tsx` source is transpiled like a disk read.
+  `found: false` falls through to disk; a returned error aborts
+  resolution.
+- 2 tests: serve-from-memory (in-memory module map matched by
+  suffix, imported and called) and error-aborts.
+- MANUAL §3 (library API) documents the hook with an example. The
+  `Verbose` Options field is now shown in the struct listing too
+  (it existed but was undocumented in the §3 snippet).
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s "Custom `PathResolver`" entry resolved.
+
 ## [0.5.27] — 2026-05-26
 
 Adds **`api.ai`** — run one-shot prompts through a coding-assistant

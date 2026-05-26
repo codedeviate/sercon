@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.27</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.28</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -105,9 +105,35 @@ type Options struct {
     Timeout        time.Duration // wall-clock limit per Run; 0 disables
     ScriptRoot     string        // base for require/import resolution
     DisableConsole bool          // turn off the goja_nodejs console module
+    Verbose        io.Writer     // diagnostic traces, prefixed "[sercon] "
+    ModuleLoader   func(candidatePath string) (source string, found bool, err error)
 }
 
 func New(opts Options) *Engine
+```
+
+`ModuleLoader`, when non-nil, is consulted for every
+require/import candidate path **before** the filesystem — the hook
+for embedders that want to serve modules from somewhere other than
+disk (an in-memory FS, a network source, an embedded bundle).
+goja probes several candidates per specifier (`./x`, `./x.ts`,
+`./x/index.ts`, …); the engine also tries the bare path plus the
+usual extension fallbacks (`.ts` / `.tsx` / `.js` / `.mjs` /
+`.cjs` / `.json`) against the loader, so a loader can match on a
+plain suffix. Return `(source, true, nil)` to serve the module
+(transpiled when the path ends in `.ts` / `.tsx`, exactly like a
+disk read); `("", false, nil)` to fall through to the filesystem;
+`("", false, err)` to abort resolution.
+
+```go
+eng := scriptengine.New(scriptengine.Options{
+    ModuleLoader: func(path string) (string, bool, error) {
+        if strings.HasSuffix(path, "greeting.ts") {
+            return `export const hi = (n: string) => "hi " + n;`, true, nil
+        }
+        return "", false, nil // fall through to disk
+    },
+})
 ```
 
 `Engine` is the host of all registered bindings. Construct it once, then
@@ -2215,7 +2241,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.27. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.28. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

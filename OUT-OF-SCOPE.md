@@ -57,16 +57,6 @@ the situation changes.
   file. Either way the design — what we extract and how we feed it back
   into the rewriter — is the moderate part.
 
-### Require / module loading
-
-- **Custom `PathResolver`.** Currently relies on
-  `require.DefaultPathResolver`. Hosts that want sandboxed or virtualised
-  module trees (in-memory FS, network sources) need to fall back to
-  registering their own `Registry`, bypassing parts of the engine.
-  **Library:** extends `github.com/dop251/goja_nodejs/require`; design
-  work is around the resolver signature and how it interacts with the
-  existing TS loader.
-
 ### Protocol probes & connectivity
 
 

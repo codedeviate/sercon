@@ -38,6 +38,43 @@ func (e *Engine) newSourceLoader() require.SourceLoader {
 		// any module resolution; rewrite `main` -> the TS source when a
 		// `source` field is present. Done here rather than in the path
 		// resolver because the registry needs the bytes back, not a path.
+		// Custom module loader takes precedence over the filesystem so
+		// embedders can virtualise the module tree. Consulted with the raw
+		// candidate path; a `.ts` / `.tsx` source is transpiled the same
+		// way a disk read would be. `found == false` falls through to the
+		// normal disk resolution below.
+		if e.opts.ModuleLoader != nil {
+			// goja hands us the extensionless candidate ("./greeting"),
+			// so probe the loader with the bare path plus the same
+			// extension fallbacks the disk resolver uses. First hit wins.
+			candidates := []string{reqPath}
+			if filepath.Ext(reqPath) == "" {
+				for _, ext := range []string{".ts", ".tsx", ".js", ".mjs", ".cjs", ".json"} {
+					candidates = append(candidates, reqPath+ext)
+				}
+			}
+			for _, cand := range candidates {
+				src, found, err := e.opts.ModuleLoader(cand)
+				if err != nil {
+					return nil, err
+				}
+				if !found {
+					continue
+				}
+				e.trace("require served by ModuleLoader: %s", cand)
+				switch filepath.Ext(cand) {
+				case ".ts", ".tsx":
+					res, terr := transpileTS(src, cand)
+					if terr != nil {
+						return nil, terr
+					}
+					return []byte(res.JS), nil
+				default:
+					return []byte(src), nil
+				}
+			}
+		}
+
 		if filepath.Base(reqPath) == "package.json" {
 			if data, ok := e.maybeRewritePackageJSON(reqPath); ok {
 				return data, nil

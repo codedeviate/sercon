@@ -33,6 +33,22 @@ type Options struct {
 	// are prefixed with `[sercon] ` so they're easy to grep. Most callers
 	// leave this nil; the sercon CLI plugs in os.Stderr behind `-v`.
 	Verbose io.Writer
+	// ModuleLoader, when non-nil, is consulted for every require/import
+	// candidate path BEFORE the filesystem — the hook for embedders that
+	// want to serve modules from somewhere other than disk (an in-memory
+	// FS, a network source, an embedded bundle). It receives each candidate
+	// path goja probes during resolution and returns:
+	//
+	//	(source, true,  nil) — serve the module from `source` (transpiled
+	//	                       when the path ends in .ts / .tsx)
+	//	("",     false, nil) — not handled; fall through to the filesystem
+	//	("",     false, err) — abort resolution with err
+	//
+	// Because goja probes several candidate paths per specifier (`./x`,
+	// `./x.ts`, `./x/index.ts`, …), a loader typically matches on a
+	// suffix or basename rather than an exact path. Returning source for a
+	// `.ts` candidate gets it transpiled just like a disk read would.
+	ModuleLoader func(candidatePath string) (source string, found bool, err error)
 }
 
 // Engine is the embeddable TypeScript script engine.
