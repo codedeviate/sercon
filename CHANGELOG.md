@@ -10,6 +10,31 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.29] — 2026-05-26
+
+Hardens the entry-script ESM→CJS rewriter against **interleaved
+comments and irregular whitespace** in multi-line imports. Library-
+internal; no new dependency, no API change.
+
+### Added
+
+- `stripComments` removes `// line` and `/* block */` comments from
+  an import statement before the regex match, and is string-literal
+  aware (a `//` inside a quoted module path isn't mistaken for a
+  comment). Applied in both `importStatementComplete` (so a
+  commented import still terminates on its closing quote) and
+  `convertImport`.
+- `convertImport` now collapses whitespace runs (`strings.Fields`)
+  so ragged indentation / alignment in a multi-line import doesn't
+  defeat the token regexes.
+- `TestRun_AwkwardImports`: a multi-line named import with a
+  trailing line comment, an inner block comment, and uneven
+  whitespace now rewrites and runs correctly.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s "Robust import parsing" entry resolved.
+
 ## [0.5.28] — 2026-05-26
 
 Adds a custom **`Options.ModuleLoader`** hook to `pkg/scriptengine`

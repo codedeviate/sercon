@@ -45,18 +45,6 @@ the situation changes.
   graph; intersect against the changed-file set on each tick.
   Engine-level work, no new library.
 
-### Transpile / entry rewriter
-
-- **Robust import parsing.** `rewriteEntryESMToCJS` is a line scanner
-  with a handful of regexes. It handles the cases in the test suite,
-  but multi-line imports with comments, complex destructuring, or unusual
-  whitespace are not guaranteed. A small AST-based parser (using
-  `esbuild` Parse output, or a tiny hand-rolled one) would be more
-  durable. **Library:** `github.com/evanw/esbuild` Parse API is the
-  obvious lever; alternatively a hand-rolled tokenizer in a single Go
-  file. Either way the design — what we extract and how we feed it back
-  into the rewriter — is the moderate part.
-
 ### Protocol probes & connectivity
 
 

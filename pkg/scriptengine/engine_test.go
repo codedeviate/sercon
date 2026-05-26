@@ -751,3 +751,31 @@ func TestModuleLoader_ErrorAborts(t *testing.T) {
 		t.Fatalf("expected loader error, got %v", err)
 	}
 }
+
+// Robust import parsing: multi-line named imports with interleaved
+// comments and irregular whitespace must still rewrite correctly.
+func TestRun_AwkwardImports(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mod.ts"), []byte(`
+export const a = 1;
+export const b = 2;
+export const c = 3;
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	// A multi-line import with a trailing line comment, a block comment,
+	// and ragged whitespace — all of which the old line-scanner could trip on.
+	_, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+import {
+    a,   // first
+    b,   /* second */
+    c
+} from "./mod"; // trailing
+if (a + b + c !== 6) throw new Error("sum: " + (a + b + c));
+`)
+	if err != nil {
+		t.Fatalf("awkward imports: %v", err)
+	}
+}
+

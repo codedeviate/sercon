@@ -128,15 +128,55 @@ func isImportStart(trim string) bool {
 
 // importStatementComplete heuristically detects when an import statement is
 // terminated. esbuild's ESM output uses `from "..."` (or `from '...'`) followed
-// by an optional semicolon; side-effect imports lack the `from` clause.
+// by an optional semicolon; side-effect imports lack the `from` clause. Inline
+// comments (a `// trailing note` or a `/* block */`) are stripped first so a
+// commented import still terminates on its closing quote.
 func importStatementComplete(stmtLines []string) bool {
-	joined := strings.Join(stmtLines, " ")
+	joined := stripComments(strings.Join(stmtLines, " "))
 	// Strip trailing semicolons/whitespace.
 	joined = strings.TrimRight(joined, "; \t")
 	if strings.HasSuffix(joined, "\"") || strings.HasSuffix(joined, "'") {
 		return true
 	}
 	return false
+}
+
+// stripComments removes `// line` and `/* block */` comments from an import
+// statement before parsing. It's comment-aware of string literals so a `//`
+// inside a quoted module path (rare, but legal) isn't mistaken for a comment.
+// Deliberately small — it only needs to handle the shapes that appear in
+// esbuild's ESM import output, not arbitrary JS.
+func stripComments(s string) string {
+	var b strings.Builder
+	inStr := byte(0)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inStr != 0 {
+			b.WriteByte(c)
+			if c == inStr && (i == 0 || s[i-1] != '\\') {
+				inStr = 0
+			}
+			continue
+		}
+		switch {
+		case c == '"' || c == '\'':
+			inStr = c
+			b.WriteByte(c)
+		case c == '/' && i+1 < len(s) && s[i+1] == '/':
+			// Line comment — drop the rest of the (already-joined) statement.
+			return b.String()
+		case c == '/' && i+1 < len(s) && s[i+1] == '*':
+			// Block comment — skip to the closing */.
+			end := strings.Index(s[i+2:], "*/")
+			if end < 0 {
+				return b.String()
+			}
+			i += 2 + end + 1 // advance past "*/"
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 var (
@@ -151,8 +191,13 @@ var (
 // multiple lines) into one or more CommonJS-style declarations using require().
 // Defaults are interop-aware: `__esModule ? m.default : m`.
 func convertImport(stmt string) string {
-	stmt = strings.TrimSpace(stmt)
 	stmt = strings.ReplaceAll(stmt, "\n", " ")
+	stmt = stripComments(stmt)
+	// Collapse runs of whitespace so unusual indentation / alignment in a
+	// multi-line import doesn't defeat the regexes (which expect single
+	// spaces between tokens).
+	stmt = strings.Join(strings.Fields(stmt), " ")
+	stmt = strings.TrimSpace(stmt)
 	if m := reImportBare.FindStringSubmatch(stmt); m != nil {
 		return fmt.Sprintf(`require(%q);`, m[1])
 	}
