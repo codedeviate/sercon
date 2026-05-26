@@ -46,14 +46,6 @@ the situation changes.
   bottleneck. **Library:** `googleapis/release-please-action` (GitHub
   Action, not a Go dep).
 
-### Encoding / decoding / barcodes
-
-- **`checkdigit::inspect(algo, input)`** — Luhn, ISBN, EAN, …
-  verification/creation (script: `checkdigit.rhai`). **Library:**
-  trivial hand-rolled Luhn / ISBN / EAN check digits; or
-  `github.com/ShiraazMoollatjie/goluhn` for Luhn specifically. Small
-  enough to write inline.
-
 ### Archives & document handling
 
 - **`archive::create(path, files)`** / **`archive::extract(path, dest)`**

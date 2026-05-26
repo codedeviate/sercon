@@ -47,7 +47,8 @@ jobs:
             examples/scripts/pkg-resolution.ts \
             examples/scripts/compression.ts \
             examples/scripts/barcode.ts \
-            examples/scripts/charset.ts
+            examples/scripts/charset.ts \
+            examples/scripts/checkdigit.ts
 
   lint:
     name: golangci-lint

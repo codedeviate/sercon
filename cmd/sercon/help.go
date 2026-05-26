@@ -398,7 +398,17 @@ const back = await api.text.decode(sjis, "Shift_JIS");
 api.log("back to utf-8:", back);`)
 	note("Charset names follow WHATWG aliases (UTF-8, ISO-8859-1, Windows-1252, Shift_JIS, GBK, …).")
 
-	header(20, "Email authentication (api.email.*)")
+	header(20, "Check digits (api.checkdigit.*)")
+	code(`api.log(api.checkdigit.validate("luhn",   "4532015112830366")); // true
+api.log(api.checkdigit.validate("isbn13", "9780306406157"));      // true
+api.log(api.checkdigit.compute("luhn",  "453201511283036"));      // "6"
+api.log(api.checkdigit.compute("isbn10", "048665088"));           // "X"
+
+const r = api.checkdigit.inspect("luhn", "4532015112830366");
+api.log(r.valid, r.given, r.computed); // true "6" "6"`)
+	note("Supported algos: luhn, isbn10, isbn13, ean13, ean8, upca. Sync — no Promise.")
+
+	header(21, "Email authentication (api.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
 // { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
 // or missing record rather than throwing.
@@ -420,4 +430,4 @@ api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 20
+const exampleCount = 21

@@ -9,6 +9,12 @@ declare const api: {
     encode(...args: unknown[]): Promise<Uint8Array>;
     formats(): string[];
   };
+  checkdigit: {
+    algos(): string[];
+    compute(arg0: string, arg1: string): string;
+    inspect(arg0: string, arg1: string): Record<string, unknown>;
+    validate(arg0: string, arg1: string): boolean;
+  };
   compression: {
     algos(): string[];
     compress(...args: unknown[]): Promise<Uint8Array>;

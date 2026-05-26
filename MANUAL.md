@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.12</div>
+<div class="version">Version 0.4.13</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -399,6 +399,28 @@ declare const api: {
     encode(text: string, charset: string): Promise<Uint8Array>;
   };
 
+  checkdigit: {
+    algos(): string[];
+    validate(
+      algo: "luhn" | "isbn10" | "isbn13" | "ean13" | "ean8" | "upca",
+      input: string,
+    ): boolean;
+    compute(
+      algo: "luhn" | "isbn10" | "isbn13" | "ean13" | "ean8" | "upca",
+      partial: string,
+    ): string;
+    inspect(
+      algo: "luhn" | "isbn10" | "isbn13" | "ean13" | "ean8" | "upca",
+      input: string,
+    ): {
+      algo: string;
+      input: string;
+      valid: boolean;
+      given: string;
+      computed: string;
+    };
+  };
+
   net: {
     tcp(target: string, opts?: { timeout?: number; port?: string }): Promise<{
       host: string; port: number; ip: string; latencyMs: number;
@@ -590,6 +612,29 @@ that `golang.org/x/text/encoding/htmlindex.Get` accepts —
 `UTF-8`, `ISO-8859-1`, `Windows-1252`, `Shift_JIS`, `GBK`,
 `GB18030`, `Big5`, `EUC-JP`, `EUC-KR`, etc., plus all documented
 aliases. Unknown names throw a clear error.
+
+Check-digit bindings (`api.checkdigit.*`) verify and compute the
+trailing check digit of common numeric codes. All three members are
+synchronous — the algorithms are small bits of modular arithmetic,
+no I/O or library dependency. Supported algorithms (returned by
+`algos()`):
+
+| Algorithm | Input length | Notes |
+|---|---|---|
+| `luhn` | any ≥ 2 | Credit cards, IMEI, social-security-style IDs. Mod-10 with right-to-left doubling. |
+| `isbn10` | 10 | Last position may be `X` (= 10). Mod-11 with weighted sum. |
+| `isbn13` | 13 | Alias of `ean13` — same algorithm; the 978 / 979 prefix is the only thing that distinguishes ISBN-13 syntactically. |
+| `ean13` | 13 | Mod-10, weights `1, 3, 1, 3, …` from position 0. |
+| `ean8` | 8 | Mod-10, weights `3, 1, 3, 1, …`. |
+| `upca` | 12 | Mod-10, weights `3, 1, 3, 1, …`. |
+
+`validate(algo, input)` returns a plain boolean — non-digit
+characters, wrong length, and unknown algorithm names all surface
+as `false` so scripts can run quick presence checks without
+try/catch. `compute(algo, partial)` takes the input *without* its
+check digit and returns just that digit (or `"X"` for ISBN-10
+position 10). `inspect(algo, input)` returns the union of both
+views — useful when you want to display the diagnosis to a human.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1022,7 +1067,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.12. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.13. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

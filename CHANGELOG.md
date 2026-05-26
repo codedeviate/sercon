@@ -10,6 +10,58 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.13] — 2026-05-26
+
+Third and final cut on **Easy / Encoding / decoding / barcodes** —
+the check-digit helpers. Pure stdlib math, no new deps. After this
+release Easy / Encoding is empty (the scanner mentioned in v0.4.11's
+plan lives in Moderate, not Easy).
+
+### Added
+
+- `api.checkdigit.*`:
+  - `algos()` → `string[]` (`luhn`, `isbn10`, `isbn13`, `ean13`,
+    `ean8`, `upca`).
+  - `validate(algo, input)` → `boolean`. Non-digit characters,
+    wrong-length input, and unknown algorithm names all return
+    `false` — scripts can probe candidates without wrapping in
+    try/catch.
+  - `compute(algo, partial)` → `string`. Takes the input *without*
+    its check digit and returns just that digit (or `"X"` for
+    ISBN-10 position 10).
+  - `inspect(algo, input)` → `{ algo, input, valid, given,
+    computed }`. Union of validate + compute, useful for
+    "tell me everything" diagnostics in interactive tools.
+- Synchronous (no Promise) because the algorithms are local math
+  with no I/O — sub-microsecond per call.
+- Six algorithms implemented inline:
+  - **Luhn** (right-to-left doubling, mod-10).
+  - **ISBN-10** (weighted sum mod-11; position 10 encoded as `X`).
+  - **ISBN-13** / **EAN-13** (weights `1,3,1,3,…`, mod-10). Aliased
+    because the math is identical.
+  - **EAN-8** / **UPC-A** (weights `3,1,3,1,…`, mod-10).
+- `TestCheckdigit_KnownVectors` — every algorithm validates a
+  well-known good vector, rejects a single-digit-flipped variant,
+  and reconstructs the original check digit from the partial.
+  Includes both numeric and `X`-suffix ISBN-10 cases.
+- `TestCheckdigit_UnknownAlgorithm` — clean error paths.
+- `TestCheckdigit_BadInput` (18 sub-cases) — empty, non-digit,
+  and wrong-length inputs all surface false rather than panicking.
+- `TestCheckdigit_InspectShape` — pins the inspect-return key set.
+- `examples/scripts/checkdigit.ts` — validates + computes + inspects
+  across all six algorithms. Verified live: every known vector
+  validates and every partial reconstructs to the original check
+  digit (including ISBN-10 `X`).
+- `--examples` step 20 added; existing email step shifts to 21.
+  `exampleCount` is now 21.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the `checkdigit` shape and
+  the per-algorithm input-length / weighting table. Notes the
+  validate→`boolean`, compute→`string`, inspect→`object`
+  signatures and the sync-vs-Promise distinction.
+
 ## [0.4.12] — 2026-05-26
 
 Second of three cuts on **Easy / Encoding / decoding / barcodes** —

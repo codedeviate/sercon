@@ -30,6 +30,7 @@ Or pick individual scripts:
 | `compression.ts` | `api.compression.compress/decompress` round-trip across all 9 algos. |
 | `barcode.ts` | `api.barcode.encode` over all 10 supported symbologies. |
 | `charset.ts` | `api.text.detect/encode/decode` — 5-charset round-trip + Latin-1 detection. |
+| `checkdigit.ts` | `api.checkdigit.validate/compute/inspect` over Luhn, ISBN-10/13, EAN-13/8, UPC-A. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
