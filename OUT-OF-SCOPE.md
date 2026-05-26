@@ -69,13 +69,6 @@ the situation changes.
 
 ### Protocol probes & connectivity
 
-- **`http(url, opts?)`** — HTTP(S) requests with status assertion, body
-  handling, proxy opts, retry, auth, conditional fetches (script:
-  `http.rhai`). Extends the current `api.http.get/post`. **Library:**
-  `net/http` (stdlib); moderate because the options surface (retry,
-  conditional fetches, body-handling modes, proxy override per-call) is
-  what the recon script API exposes and shaping that into a JS-friendly
-  options object is the work.
 - **`ping(host, count?)`** — TCP or ICMP ping with RTT min/avg/max
   and packet loss (script: `ping.rhai`). **Library:**
   `github.com/prometheus-community/pro-bing` (pure Go, maintained

@@ -555,6 +555,19 @@ api.preg2.matchAll("/\\d+/", "a1 b22");             // [1, 22]
 api.preg2.replace("/(\\w+)@(\\w+)/", "$2/$1", "alice@corp");`)
 	note("No linear-time guarantee — regexp2 backtracks. Prefer api.preg (RE2) unless you need a PCRE feature; keep a timeout around untrusted input.")
 
+	header(35, "HTTP — full client (api.http.request)")
+	code(`// Beyond api.http.get/post: headers, body, timeout, retry, auth,
+// redirect control. Returns { status, ok, headers, body, url }.
+const r = await api.http.request("POST", "https://api.example/v1", {
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ q: "search" }),
+  timeout: 5000,
+  retry: 2,                  // re-attempt on transport error / 5xx
+  username: "user", password: "pass",   // basic auth
+});
+if (r.ok) api.log(r.body); else api.log("HTTP", r.status);`)
+	note("4xx/5xx are normal responses (r.ok = status in [200,400)); transport errors and timeouts throw. retry never re-attempts 4xx. follow:false surfaces 3xx directly.")
+
 	header(30, "JWT — sign / view / validate (api.jwt.*)")
 	code(`// HMAC — opts.algorithm defaults to HS256.
 const t = api.jwt.sign(
@@ -649,4 +662,4 @@ await db.close();   // no finalizer — always close.`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 34
+const exampleCount = 35

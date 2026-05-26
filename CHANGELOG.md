@@ -10,6 +10,32 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.17] — 2026-05-26
+
+Adds **`api.http.request(method, url, opts?)`** — the full HTTP
+client beyond the two-line `get` / `post`. Pure `net/http`, no new
+dependency.
+
+### Added
+
+- Per-call `headers`, `body`, `timeout` (default 30s), `retry`
+  (re-attempts on transport errors + 5xx, never 4xx; linear
+  backoff capped at 1s), `follow` (redirect control; default true),
+  and basic-auth `username` / `password`.
+- Result `{ status, ok, headers, body, url }` — `ok` is status in
+  [200,400), `headers` lower-cased name→value, `url` the final URL
+  after redirects. 4xx/5xx surface via `status`/`ok` (no throw);
+  transport errors and context deadline throw.
+- 7 tests via httptest: get status/headers/body, post + headers +
+  basic auth, 4xx-doesn't-throw, retry-on-5xx (counts attempts),
+  no-follow sees the 3xx, transport-error throws, input validation.
+- `examples/scripts/http-request.ts` (hits httpbin.org, network
+  demo only); `--examples` step 35; MANUAL §5 ts block + prose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `http(url, opts?)` entry resolved.
+
 ## [0.5.16] — 2026-05-26
 
 Adds the **PGP backend** to `api.encrypt`, completing the

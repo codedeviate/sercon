@@ -137,6 +137,8 @@ declare const api: {
     get(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Perform an HTTP POST with a 5-second default timeout. Returns { status, body }. */
     post(...args: unknown[]): Promise<Record<string, unknown>>;
+    /** Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx. */
+    request(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   jq: {
     /** Run a jq filter over data and return the first emitted value (or null). */

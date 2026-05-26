@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.16</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.17</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -409,6 +409,25 @@ declare const api: {
   http: {
     get(url: string): Promise<{ status: number; body: string }>;
     post(url: string, body?: string): Promise<{ status: number; body: string }>;
+    request(
+      method: string,
+      url: string,
+      opts?: {
+        headers?: Record<string, string>;
+        body?: string;
+        timeout?: number;        // ms; default 30000
+        retry?: number;          // re-attempts on transport error / 5xx; default 0
+        follow?: boolean;        // follow redirects; default true
+        username?: string;       // basic auth
+        password?: string;
+      },
+    ): Promise<{
+      status: number;
+      ok: boolean;               // status in [200, 400)
+      headers: Record<string, string>;  // lower-cased names
+      body: string;
+      url: string;               // final URL after redirects
+    }>;
   };
 
   time: {
@@ -897,6 +916,17 @@ const home = api.env.get("HOME") ?? "(none)";
 api.log(api.hash.sha256("abc"));
 // → ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 ```
+
+`api.http.request(method, url, opts?)` is the full-featured client
+beyond `get` / `post`: per-call `headers`, `body`, `timeout`
+(default 30s), `retry` (re-attempts on transport errors and 5xx —
+never 4xx, which are deterministic; linear backoff capped at 1s),
+`follow` (redirect control; default true), and basic-auth
+`username` / `password`. The result is `{ status, ok, headers,
+body, url }` — `ok` is `status` in [200,400), `headers` is a
+lower-cased name→value map, `url` is the final URL after
+redirects. HTTP 4xx / 5xx don't throw (surfaced via `status` /
+`ok`); transport errors and context deadline do.
 
 HTTP bindings use `net/http` with a 5-second default per-request timeout
 and surface real `Promise<…>` values through the event loop. They are
@@ -1975,7 +2005,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.16. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.17. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

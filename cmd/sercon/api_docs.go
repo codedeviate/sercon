@@ -20,6 +20,7 @@ func apiDocs() map[string]string {
 		// HTTP (built-in)
 		"http.get":  "Perform an HTTP GET with a 5-second default timeout. Returns { status, body }.",
 		"http.post": "Perform an HTTP POST with a 5-second default timeout. Returns { status, body }.",
+		"http.request": "Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.",
 
 		// Time
 		"time.nowMs":  "Wall-clock milliseconds since the Unix epoch.",

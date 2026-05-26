@@ -242,6 +242,7 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 					}
 					return httpDo(ctx, http.MethodPost, url, body)
 				}),
+				"request": scriptengine.PromisifyAsync(vm, loop, httpRequestCall),
 			},
 			"time": map[string]any{
 				"nowMs": func() int64 { return time.Now().UnixMilli() },

@@ -36,6 +36,7 @@ Or pick individual scripts:
 | `jq.ts` | `api.jq.query/queryAll` — jq filters over JS data structures. |
 | `exec-shell.ts` | `api.exec.shell` — subprocess runner; POSIX-only (uses `/bin/echo` / `/usr/bin/tr` / `sleep`). |
 | `exec-http.ts` | `api.exec.http` — recon-with-curl-fallback HTTP client; hits httpbin.org (not in CI). |
+| `http-request.ts` | `api.http.request` — full HTTP client (headers/body/timeout/retry/auth/redirect) over net/http; hits httpbin.org (not in CI). |
 | `git.ts` | `api.git.*` — branch / isClean / revParse / status / add / commit / log / diffStat / runText; uses a throwaway temp repo so the host checkout is untouched. |
 | `gh.ts` | `api.gh.*` — authStatus / prList / repoView; gracefully degrades when gh is missing or unauthenticated (not in CI for that reason). |
 | `preg.ts` | `api.preg.*` — PHP-style `/pattern/flags` syntax over Go's RE2: match / matchAll / replace; demonstrates supported i/m/s flags and the clean error for unsupported flags. |

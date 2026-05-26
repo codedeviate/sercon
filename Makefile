@@ -62,6 +62,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/jq.ts \
 	examples/scripts/exec-shell.ts \
 	examples/scripts/exec-http.ts \
+	examples/scripts/http-request.ts \
 	examples/scripts/git.ts \
 	examples/scripts/gh.ts \
 	examples/scripts/preg.ts \
