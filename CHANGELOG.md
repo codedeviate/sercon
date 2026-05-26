@@ -10,6 +10,59 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.9] — 2026-05-26
+
+Second cut on **Easy / Email authentication**, completing the
+sub-section. Adds MTA-STS, TLS-RPT, BIMI, and a parallel
+`email.all` aggregator on top of v0.4.8's SPF + DMARC. Still
+stdlib-only.
+
+### Added
+
+- `api.email.mtaSts(domain)` — looks up `TXT(_mta-sts.<domain>)`,
+  parses the `v=STSv1; id=…` marker, then fetches and parses the
+  RFC 8461 policy file at
+  `https://mta-sts.<domain>/.well-known/mta-sts.txt`. Returns
+  `{ present, record, txt: { v, id }, policy?: { version, mode,
+  mx[], maxAge }, policyError? }`. Policy-fetch failures (TLS error,
+  4xx, timeout) don't fail the binding — the TXT view is still
+  returned and the fetch error surfaces as a string under
+  `policyError`.
+- `api.email.tlsRpt(domain)` — `TXT(_smtp._tls.<domain>)` lookup,
+  parses `v=TLSRPTv1; rua=…` into a flat tag map and surfaces
+  `rua` separately.
+- `api.email.bimi(domain, opts?)` — looks up
+  `<selector>._bimi.<domain>`, selector defaulting to `default`
+  (override via `opts.selector`). Surfaces the logo URL `l` and
+  VMC URL `a`.
+- `api.email.all(domain)` — runs every probe in parallel via
+  goroutines and returns an aggregate object keyed by probe name.
+  Per-probe failures surface under `<probe>.error` so a partial
+  result is still useful (e.g. SPF + DMARC found, MTA-STS policy
+  fetch timed out).
+- `parseMTASTSPolicy` — RFC 8461 line-based `key: value` parser.
+  Repeated `mx:` lines aggregate into a slice; `max_age` coerces
+  to an int when numeric.
+- `TestParseMTASTSPolicy` — three table cases covering the
+  canonical form, CRLF + comments + leading whitespace tolerance,
+  and the non-numeric `max_age` fallback.
+- `TestEmailNamespace_HandlesMissing` extended to cover all five
+  individual probes plus the `email.all` aggregator.
+
+### Changed
+
+- Renamed `parseDMARCTags` to `parseTagMap` (the format is shared
+  with BIMI / TLS-RPT / the MTA-STS TXT marker). Kept the old name
+  as a thin alias so the existing test continues to compile.
+- `examples/scripts/email-auth.ts` now demos all five probes and
+  the aggregator against `google.com`.
+- `--examples` step 17 absorbs the new bindings.
+- `MANUAL.md` § Built-in `api` declares the three new shapes + the
+  aggregator return type; a new prose block covers each probe's
+  semantics and the MTA-STS policy-error fallback behaviour.
+- `OUT-OF-SCOPE` / Easy / Email authentication section is now
+  empty.
+
 ## [0.4.8] — 2026-05-26
 
 First of two cuts on **Easy / Email authentication**. This one covers

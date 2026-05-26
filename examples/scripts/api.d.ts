@@ -6,8 +6,12 @@ declare const api: {
     ok(arg0: unknown, arg1: unknown[]): void;
   };
   email: {
+    all(...args: unknown[]): Promise<Record<string, unknown>>;
+    bimi(...args: unknown[]): Promise<Record<string, unknown>>;
     dmarc(...args: unknown[]): Promise<Record<string, unknown>>;
+    mtaSts(...args: unknown[]): Promise<Record<string, unknown>>;
     spf(...args: unknown[]): Promise<Record<string, unknown>>;
+    tlsRpt(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   env: {
     get(...args: unknown[]): unknown;

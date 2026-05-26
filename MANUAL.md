@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.8</div>
+<div class="version">Version 0.4.9</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -427,6 +427,49 @@ declare const api: {
           ruf?: string;
         }
     >;
+    mtaSts(domain: string): Promise<
+      | { present: false }
+      | {
+          present: true;
+          record: string;
+          txt: { v: string; id: string };
+          policy?: {
+            version?: string;
+            mode?: "enforce" | "testing" | "none" | string;
+            mx?: string[];
+            maxAge?: number | string;
+          };
+          policyError?: string;
+        }
+    >;
+    tlsRpt(domain: string): Promise<
+      | { present: false }
+      | {
+          present: true;
+          record: string;
+          tags: Record<string, string>;
+          rua?: string;
+        }
+    >;
+    bimi(domain: string, opts?: { selector?: string }): Promise<
+      | { present: false; selector: string }
+      | {
+          present: true;
+          selector: string;
+          record: string;
+          tags: Record<string, string>;
+          l?: string;
+          a?: string;
+        }
+    >;
+    all(domain: string): Promise<{
+      domain: string;
+      spf:    unknown;
+      dmarc:  unknown;
+      mtaSts: unknown;
+      tlsRpt: unknown;
+      bimi:   unknown;
+    }>;
   };
 };
 ```
@@ -543,9 +586,26 @@ presence-check pattern across the family.
   `policy` / `subdomain` / `percent` / `rua` / `ruf` are surfaced
   separately because those are the fields most scripts care about.
 
-MTA-STS, TLS-RPT, BIMI, and a combined `api.email.all()` aggregate
-land in a follow-up cut once the parsers for the three remaining
-record types are wired in.
+- **`mtaSts(domain)`** — looks up `TXT(_mta-sts.<domain>)` and, on
+  success, fetches the policy file at
+  `https://mta-sts.<domain>/.well-known/mta-sts.txt`. The TXT carries
+  a versioned `id` for change detection; the policy file is where
+  the actual `mode` + `mx` list live. RFC 8461 format (line-based,
+  `key: value`, `mx:` repeats) is parsed inline. Policy-fetch
+  failures (TLS errors, 4xx, timeout) don't fail the binding — the
+  TXT part is still returned, and the fetch error surfaces under
+  `policyError` so scripts can decide what to do.
+- **`tlsRpt(domain)`** — looks up `TXT(_smtp._tls.<domain>)` and
+  parses the `v=TLSRPTv1; rua=…` form into a tag map. `rua` is
+  surfaced separately because that's the actionable bit.
+- **`bimi(domain, opts?)`** — looks up
+  `<selector>._bimi.<domain>`, selector defaulting to `default`.
+  Surfaces the logo URL (`l`) and VMC URL (`a`) from the tag map.
+- **`all(domain)`** — runs every probe above in parallel via
+  goroutines and returns a single aggregate object keyed by probe
+  name. Per-probe failures don't fail the aggregate — they surface
+  under `<probe>.error` so a partial result is still useful (e.g.
+  SPF + DMARC found, MTA-STS policy fetch timed out).
 
 ## 6. JavaScript runtime built-ins (goja)
 
@@ -865,7 +925,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.8. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.9. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

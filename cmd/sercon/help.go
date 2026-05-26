@@ -361,14 +361,20 @@ api.log("registrar:", w.registrar?.name, "expires:", w.domain?.expirationDate);`
 	note("Optional { timeout: ms } on every probe. Default ports: tcp 80, tls 443, ntp 123.")
 
 	header(17, "Email authentication (api.email.*)")
-	code(`// Both return { present: boolean, ... } and resolve `+"`present: false`"+`
-// for NXDOMAIN / missing record rather than throwing.
-const spf = await api.email.spf("google.com");
-api.log("spf:", spf.allPolicy, "from", spf.record);
+	code(`// Five individual probes plus an aggregate. All return
+// { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
+// or missing record rather than throwing.
+const spf    = await api.email.spf("google.com");
+const dmarc  = await api.email.dmarc("google.com");
+const mtaSts = await api.email.mtaSts("google.com");
+const tlsRpt = await api.email.tlsRpt("google.com");
+const bimi   = await api.email.bimi("google.com");
 
-const dmarc = await api.email.dmarc("google.com");
-api.log("dmarc policy:", dmarc.policy, "rua:", dmarc.rua);`)
-	note("MTA-STS / TLS-RPT / BIMI + an aggregate api.email.all() come in a later cut.")
+// Or all five in parallel:
+const all = await api.email.all("google.com");
+api.log("dmarc policy:", all.dmarc.policy);
+api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
+	note("BIMI accepts opts.selector (defaults to 'default').")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
