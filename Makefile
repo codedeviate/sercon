@@ -66,7 +66,8 @@ DEMO_SCRIPTS = \
 	examples/scripts/gh.ts \
 	examples/scripts/preg.ts \
 	examples/scripts/jwt.ts \
-	examples/scripts/encrypt.ts
+	examples/scripts/encrypt.ts \
+	examples/scripts/sqlite.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

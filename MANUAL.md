@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.9</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.10</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -736,6 +736,18 @@ declare const api: {
       | { backend: "unknown" };
   };
 
+  sqlite: {
+    open(path: string): Promise<{               // ":memory:" or a filesystem path
+      exec(sql: string, ...params: unknown[]): Promise<{
+        rowsAffected: number;
+        lastInsertId: number;
+      }>;
+      query(sql: string, ...params: unknown[]): Promise<Array<Record<string, unknown>>>;
+      queryValue(sql: string, ...params: unknown[]): Promise<unknown>;  // first column of first row, or null
+      close(): Promise<void>;
+    }>;
+  };
+
   gh: {
     authStatus(): Promise<{
       authenticated: boolean;
@@ -1356,6 +1368,47 @@ for recipient block"`. Scripts that want to silently try multiple
 identities should pass them all in one call (age tries each in
 turn internally) rather than catching this error.
 
+SQLite (`api.sqlite.*`) is sercon's first **stateful-handle**
+binding — the shape future protocol bindings (redis / ldap / …)
+will reuse. The namespace exposes only `open`; the object it
+resolves to carries the real surface. The driver is
+[`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite), the
+pure-Go SQLite translation — no cgo, so the project's cgo-free
+rule is preserved.
+
+- **`open(path)`** — Connect to a database. `":memory:"` is an
+  in-RAM database that evaporates when the handle is closed; any
+  other string is a filesystem path (created if absent). The
+  connection is `Ping`-ed before `open` resolves, so a bad path
+  surfaces here rather than at the first query. Resolves to a
+  handle object: `{ exec, query, queryValue, close }`.
+- **`exec(sql, ...params)`** — Run a non-query statement (DDL,
+  INSERT, UPDATE, DELETE). Returns `{ rowsAffected, lastInsertId }`
+  — both are driver-reported and may be zero for statements that
+  don't populate them (e.g. `CREATE TABLE`).
+- **`query(sql, ...params)`** — Run a SELECT and return one object
+  per row, keyed by column name. Column types map as: INTEGER →
+  number, REAL → number, TEXT → string, NULL → `null`, BLOB →
+  `Uint8Array` (unless the bytes are valid UTF-8, in which case
+  they promote to a string — SQLite stores TEXT and BLOB the same
+  way at the storage layer, so this heuristic recovers the
+  common TEXT case while keeping genuinely-binary BLOBs as bytes).
+- **`queryValue(sql, ...params)`** — Run a statement expected to
+  produce a scalar and return the first column of the first row,
+  or `null` when no rows match. Rows beyond the first are
+  discarded. Ideal for `SELECT count(*)`, `PRAGMA user_version`,
+  single-column lookups.
+- **`close()`** — Release the connection. There's no finalizer —
+  scripts that forget to close leak a connection until the
+  process exits. The documented pattern is open / use / close.
+
+Parameters bind positionally as `?` placeholders, in argument
+order. goja exports JS numbers as int64 / float64, strings as
+string, `null` as nil, and `Uint8Array` as `[]byte` — all of
+which the driver accepts directly, so no per-type coercion is
+needed on the script side. All four handle methods are async
+(Promise-returning); `open` is too.
+
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
 spec uses the underscore so the JS name matches recon's). BLAKE3 uses
@@ -1820,7 +1873,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.9. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.10. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

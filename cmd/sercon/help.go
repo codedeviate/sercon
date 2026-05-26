@@ -607,10 +607,26 @@ if (c.backend === "age") /* use api.encrypt.encrypt */;
 else if (c.backend === "pgp") /* shell out to gpg --encrypt */;`)
 	note("Cross-checks catch private-as-recipient and public-as-identity mix-ups with named-key hints. PGP encrypt/decrypt backend lands in a later cut.")
 
+	header(33, "SQLite — stateful DB handle (api.sqlite.*)")
+	code(`// open() returns a handle: { exec, query, queryValue, close }.
+// ":memory:" is in-RAM; any other string is a file path.
+const db = await api.sqlite.open(":memory:");
+
+await db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
+const ins = await db.exec("INSERT INTO users (name) VALUES (?)", "alice");
+api.log("new id:", ins.lastInsertId, "rows:", ins.rowsAffected);
+
+// query → array of row objects; queryValue → first column of first row.
+const rows = await db.query("SELECT id, name FROM users");
+const count = await db.queryValue("SELECT count(*) FROM users");
+
+await db.close();   // no finalizer — always close.`)
+	note("Pure-Go driver (modernc.org/sqlite, no cgo). Params bind as ? placeholders. BLOBs round-trip as Uint8Array; TEXT as string. First stateful-handle binding.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 32
+const exampleCount = 33

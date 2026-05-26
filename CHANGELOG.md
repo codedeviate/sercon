@@ -10,6 +10,69 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.10] — 2026-05-26
+
+Eleventh Moderate cut. Adds **`api.sqlite`** — sercon's first
+stateful-handle binding. `open()` returns a handle object whose
+methods (`exec` / `query` / `queryValue` / `close`) are bound to
+the underlying connection. New dependency:
+`modernc.org/sqlite v1.50.1` — the pure-Go SQLite translation (no
+cgo, so the project's cgo-free rule holds; `mattn/go-sqlite3` is
+ruled out for needing cgo).
+
+### Added
+
+- `api.sqlite.open(path)` → `Promise<handle>`. `":memory:"` for an
+  in-RAM database, any other string for a file path (created if
+  absent). The connection is `Ping`-ed before `open` resolves so a
+  bad path surfaces at open() rather than the first query.
+- `handle.exec(sql, ...params)` → `{ rowsAffected, lastInsertId }`.
+  For DDL / INSERT / UPDATE / DELETE. Both counters are
+  driver-reported; `CREATE TABLE` reports zero for both.
+- `handle.query(sql, ...params)` → array of row objects keyed by
+  column name. Type mapping: INTEGER / REAL → number, TEXT →
+  string, NULL → null, BLOB → Uint8Array (with a UTF-8 promotion
+  to string, since SQLite stores TEXT and BLOB identically and the
+  heuristic recovers the common TEXT case while keeping genuine
+  binary BLOBs as bytes).
+- `handle.queryValue(sql, ...params)` → first column of the first
+  row, or null when no rows match. For `SELECT count(*)`, PRAGMAs,
+  single-column lookups.
+- `handle.close()` → release the connection. No finalizer — the
+  documented pattern is open / use / close.
+- Parameters bind positionally as `?` placeholders. goja's native
+  type exports (int64 / float64 / string / nil / []byte) pass
+  straight to the driver, so no script-side coercion is needed.
+- All handle methods plus `open` are async (Promise-returning).
+- **Implementation note**: the handle methods are
+  `PromisifyAsync(...).Func` — the raw `func(goja.FunctionCall)
+  goja.Value` — not the `AsyncBinding` carrier. The engine only
+  unwraps `AsyncBinding` to a goja-callable at *registration*
+  time; the handle map is built at script-run time (inside the
+  `open()` resolution), past that unwrap point, so taking `.Func`
+  directly is required. Without it the methods export as plain
+  objects and `db.exec(...)` throws "Not a function". This is the
+  reusable wrinkle for every future stateful-handle binding.
+- `TestSQLite_*` (10 tests): in-memory round-trip, exec counters
+  for DDL/UPDATE/DELETE, ordered query, queryValue + null-on-no-row,
+  every parameter type, BLOB round-trip staying binary, file-backed
+  persistence across handles, invalid-SQL throw with prefix,
+  empty-path throw with :memory: hint, use-after-close error.
+- `examples/scripts/sqlite.ts` walks the full lifecycle; pure-Go so
+  it's in the CI offline subset.
+- `--examples` step 33 covers the binding; MANUAL §5 gains the
+  `api.sqlite` ts block plus a paragraph per method and a note on
+  the stateful-handle pattern.
+- `cmd/sercon/api_docs.go` gains a `sqlite.open` entry (the handle
+  methods aren't registered bindings so they don't appear in the
+  d.ts namespace tree).
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s SQLite entry resolved; replaced with a
+  forward-looking "transactions + prepared statements" entry
+  (`handle.begin()` / `handle.prepare()` for batch workloads).
+
 ## [0.5.9] — 2026-05-26
 
 Tenth Moderate cut. Adds **`sercon --watch`** — re-run on file

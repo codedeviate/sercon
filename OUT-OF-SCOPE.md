@@ -115,12 +115,16 @@ the situation changes.
 - **`dict(url, word?)`** — RFC 2229 DICT protocol word lookup (script:
   `dict.rhai`). **Library:** no popular pure-Go DICT client; hand-roll
   the protocol over `net.Dial` (it is a simple line-based protocol).
-- **`sqlite(path_or_memory)`** — In-memory or file-backed SQLite;
-  `exec()`, `query()`, `query_value()` (script: `sqlite.rhai`).
-  **Library:** `modernc.org/sqlite` (pure Go, no cgo — the project's
-  cgo-free rule rules out `mattn/go-sqlite3`). Moderate because
-  surfacing a stateful DB handle to JS with `exec`/`query`/
-  `query_value` is real handle-lifetime work.
+- **SQLite transactions + prepared statements.** v0.5.10 shipped
+  `api.sqlite.open` with `exec` / `query` / `queryValue` / `close`.
+  A `handle.begin()` → transaction object (with `commit` /
+  `rollback`) and a `handle.prepare(sql)` → reusable statement
+  handle would round out the binding for batch-insert workloads
+  where the per-statement parse cost matters. **Library:** the
+  existing `modernc.org/sqlite` + `database/sql` `Tx` / `Stmt`
+  types; the design work is the handle-lifetime story (a
+  transaction that outlives its `begin()` call, statements that
+  must be closed).
 
 ### TLS / encryption / signing
 

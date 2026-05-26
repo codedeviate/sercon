@@ -148,5 +148,8 @@ func apiDocs() map[string]string {
 		"encrypt.decrypt": "Open an age payload (binary or armored, auto-detected) with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error.",
 		"encrypt.rekey":   "Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop.",
 		"encrypt.detectBackend": "Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown', kind?: 'public'|'private' }. Pure prefix matching; no parsing or I/O. PGP encrypt/decrypt is a future cut — classifier is useful standalone.",
+
+		// SQLite — pure-Go (modernc.org/sqlite, no cgo). open() returns a handle.
+		"sqlite.open": "Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, close }. Connection is Ping-ed before resolving.",
 	}
 }
