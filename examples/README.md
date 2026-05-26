@@ -3,8 +3,30 @@
 Run the bundled example scripts:
 
 ```
+make demo
+```
+
+Or pick individual scripts:
+
+```
 ./sercon examples/scripts/smoke.ts examples/scripts/async.ts
 ```
+
+## What's here
+
+| Script | Demonstrates |
+|---|---|
+| `smoke.ts` | `api.log` and `api.assert.*` |
+| `async.ts` | `api.http.get`, `api.time.sleep`, top-level `await`, `import` from a sibling helper |
+| `hash.ts` | `api.hash.*` — all nine algorithms |
+| `strings.ts` | `api.str.*` — trim/pad/reverse/strip/encode/sprintf |
+| `path-and-time.ts` | `api.path.*` and `api.time.format` (strftime tokens, IANA zones) |
+| `default-export.ts` | ESM `export default` interop via the entry rewriter |
+| `tsx-demo.ts` | `.tsx` module loading with a local `@jsx h` factory |
+| `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
+
+Helpers under `helpers/` are sibling-imported by the above; they aren't
+runnable on their own.
 
 ## Adding a new binding
 

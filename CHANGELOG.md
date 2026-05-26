@@ -10,6 +10,42 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.1] — 2026-05-26
+
+Example coverage for everything that landed in 0.3.x – 0.4.0. Pure
+docs/examples patch; no behaviour change.
+
+### Added
+
+- `examples/scripts/hash.ts` — every `api.hash.*` algorithm + a known
+  SHA-256 vector check.
+- `examples/scripts/strings.ts` — `api.str.*` tour (trim with mask,
+  pad, reverse, stripHtml, base64, url, html-entity, sprintf,
+  normalizeNewlines).
+- `examples/scripts/path-and-time.ts` — `api.path.*` and
+  `api.time.format` with both an IANA zone and a local-zone variant.
+- `examples/scripts/default-export.ts` (+ `helpers/answer.ts`) — proves
+  the entry rewriter's `__esModule ? .default : module` unwrap.
+- `examples/scripts/tsx-demo.ts` (+ `helpers/el.tsx`) — TSX module
+  loading with an `@jsx h` pragma so JSX rewrites to a local factory.
+- `make demo` Makefile target — runs every success-path example as a
+  single command. Excludes `hang.ts` (intentional timeout demo).
+  `DEMO_SCRIPTS` variable enumerates the list so future additions only
+  need a one-line update.
+
+### Changed
+
+- `examples/README.md` gains a table of bundled scripts and what each
+  demonstrates.
+- `MANUAL.md` § Quickstart points at `make demo` and lists the demo
+  inventory.
+- `CLAUDE.md` "Keeping docs in lockstep" gains a sixth artifact:
+  `examples/scripts/`. Any change to a user-visible binding, flag, or
+  script-facing behaviour now must add or update the relevant example
+  there and pass `make demo`. The rule explicitly carves out
+  library-only changes (`WithScriptRoot`, `Engine.Reset()`) which
+  don't need example growth.
+
 ## [0.4.0] — 2026-05-26
 
 Opening cut of the **Easy** backlog bucket — the **Transpile / entry

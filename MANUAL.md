@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.0</div>
+<div class="version">Version 0.4.1</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -72,6 +72,12 @@ Run one of the bundled examples:
 ```bash
 sercon examples/scripts/smoke.ts examples/scripts/async.ts
 ```
+
+…or run them all via `make demo`. `examples/scripts/` ships a runnable
+`.ts` (or `.tsx`) file per feature area — `hash.ts`, `strings.ts`,
+`path-and-time.ts`, `default-export.ts`, `tsx-demo.ts`, and the
+original `smoke.ts` / `async.ts` / `hang.ts` (`hang.ts` is the timeout
+demo and intentionally exits non-zero).
 
 Generate a declaration file for editor autocomplete:
 
@@ -693,7 +699,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.0. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.1. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

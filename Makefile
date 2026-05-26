@@ -11,6 +11,9 @@
 #            If golangci-lint isn't on PATH, falls back to a one-shot
 #            `go run` of the pinned version so contributors don't need to
 #            install anything globally.
+#   demo     Run every success-path example under examples/scripts/ so the
+#            user-facing surface is exercised end-to-end. Excludes hang.ts
+#            (intentional timeout that exits non-zero — verify separately).
 #   clean    Remove built artifacts
 #
 # release and manual are intentionally separate from `build` so an
@@ -22,7 +25,16 @@ GOLANGCI_VERSION  ?= v2.12.2
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 
-.PHONY: build release manual test vet lint clean
+.PHONY: build release manual test vet lint demo clean
+
+DEMO_SCRIPTS = \
+	examples/scripts/smoke.ts \
+	examples/scripts/async.ts \
+	examples/scripts/hash.ts \
+	examples/scripts/strings.ts \
+	examples/scripts/path-and-time.ts \
+	examples/scripts/default-export.ts \
+	examples/scripts/tsx-demo.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon
@@ -56,6 +68,10 @@ lint:
 		echo "golangci-lint not installed; falling back to one-shot go run @$(GOLANGCI_VERSION)"; \
 		$(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run ./... ; \
 	fi
+
+demo: build
+	@./$(BIN) $(DEMO_SCRIPTS)
+	@echo "All example scripts passed. (hang.ts is the timeout demo — run separately.)"
 
 clean:
 	rm -f $(BIN) MANUAL.pdf
