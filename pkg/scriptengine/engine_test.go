@@ -591,3 +591,114 @@ if (box.children[0] !== "hello") throw new Error("expected first child = hello, 
 		t.Fatalf("tsx module: %v", err)
 	}
 }
+
+// SetDocs decorates a top-level binding with a JSDoc block above its
+// declaration. Single-line docs collapse to /** … */.
+func TestWriteTypes_DocsSingleLineTopLevel(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.Register("greet", func(name string) string { return "hi " + name }); err != nil {
+		t.Fatal(err)
+	}
+	eng.SetDocs("greet", "Greet someone by name.")
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "/** Greet someone by name. */\ndeclare function greet") {
+		t.Errorf("single-line JSDoc above greet missing; got:\n%s", got)
+	}
+}
+
+// Multi-line docs expand to a standard `* `-prefixed JSDoc block,
+// preserving blank lines.
+func TestWriteTypes_DocsMultiLineExpands(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.Register("explain", func(s string) string { return s }); err != nil {
+		t.Fatal(err)
+	}
+	eng.SetDocs("explain", "First line.\n\nSecond paragraph after a blank line.\nThird line.")
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	want := "/**\n * First line.\n *\n * Second paragraph after a blank line.\n * Third line.\n */\ndeclare function explain"
+	if !strings.Contains(got, want) {
+		t.Errorf("multi-line JSDoc malformed; got:\n%s", got)
+	}
+}
+
+// SetMemberDocs decorates each member of a namespace; the namespace
+// itself can be documented separately via SetDocs.
+func TestWriteTypes_DocsNamespaceMembers(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.RegisterNamespace("math2", map[string]any{
+		"pi":      3.14,
+		"squared": func(n float64) float64 { return n * n },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng.SetDocs("math2", "Tiny math helpers.")
+	eng.SetMemberDocs("math2", map[string]string{
+		"pi":      "Circumference / diameter ratio.",
+		"squared": "Multiply a number by itself.",
+	})
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	for _, want := range []string{
+		"/** Tiny math helpers. */\ndeclare const math2: {",
+		"  /** Circumference / diameter ratio. */\n  pi: number;",
+		"  /** Multiply a number by itself. */\n  squared(",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, got)
+		}
+	}
+}
+
+// Bindings without a SetDocs call must produce no JSDoc block — the
+// emitter shouldn't insert empty `/** */` placeholders.
+func TestWriteTypes_DocsAbsentNoBlock(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.Register("undocumented", func(s string) string { return s }); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if strings.Contains(got, "/**") {
+		t.Errorf("expected no JSDoc block; got:\n%s", got)
+	}
+	// And the declaration itself is still there, unchanged in shape.
+	if !strings.Contains(got, "declare function undocumented") {
+		t.Errorf("declaration missing entirely; got:\n%s", got)
+	}
+}
+
+// SetDocs with an empty doc removes any previously-set doc rather than
+// rendering an empty JSDoc block.
+func TestWriteTypes_DocsEmptyStringRemoves(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.Register("toggle", func(s string) string { return s }); err != nil {
+		t.Fatal(err)
+	}
+	eng.SetDocs("toggle", "Original.")
+	eng.SetDocs("toggle", "") // ← removes
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if strings.Contains(got, "Original") {
+		t.Errorf("expected doc to be cleared; got:\n%s", got)
+	}
+	if strings.Contains(got, "/**") {
+		t.Errorf("expected no JSDoc block after clear; got:\n%s", got)
+	}
+}

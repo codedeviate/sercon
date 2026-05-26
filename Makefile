@@ -113,7 +113,8 @@ release-prep:
 	@sed -i.bak -E 's/(^const Version = ")[^"]+(")/\1$(VERSION)\2/' pkg/scriptengine/version.go
 	@sed -i.bak -E 's|(<div class="version">Version )[^<]+(</div>)|\1$(VERSION)\2|' MANUAL.md
 	@sed -i.bak -E 's/(\*This manual covers sercon v)[0-9.]+(\.)/\1$(VERSION)\2/' MANUAL.md
-	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak
+	@sed -i.bak -E 's|(": ")[0-9.]+(")|\1$(VERSION)\2|' .release-please-manifest.json
+	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak .release-please-manifest.json.bak
 	@$(MAKE) --no-print-directory version-check
 	@echo ""
 	@echo "Next steps:"
@@ -127,12 +128,13 @@ version-check:
 	@const=$$(sed -nE 's|^const Version = "([^"]+)".*$$|\1|p' pkg/scriptengine/version.go); \
 	cover=$$(sed -nE 's|.*<div class="version">Version ([^<]+)</div>.*|\1|p' MANUAL.md); \
 	footer=$$(sed -nE 's|\*This manual covers sercon v([0-9.]+)\..*|\1|p' MANUAL.md); \
-	if [ -z "$$const" ] || [ -z "$$cover" ] || [ -z "$$footer" ]; then \
-		echo "version markers not found: code='$$const' cover='$$cover' footer='$$footer'"; \
+	manifest=$$(sed -nE 's|.*"\.": "([^"]+)".*|\1|p' .release-please-manifest.json); \
+	if [ -z "$$const" ] || [ -z "$$cover" ] || [ -z "$$footer" ] || [ -z "$$manifest" ]; then \
+		echo "version markers not found: code='$$const' cover='$$cover' footer='$$footer' manifest='$$manifest'"; \
 		exit 1; \
 	fi; \
-	if [ "$$const" != "$$cover" ] || [ "$$const" != "$$footer" ]; then \
-		echo "version mismatch: code=$$const cover=$$cover footer=$$footer"; \
+	if [ "$$const" != "$$cover" ] || [ "$$const" != "$$footer" ] || [ "$$const" != "$$manifest" ]; then \
+		echo "version mismatch: code=$$const cover=$$cover footer=$$footer manifest=$$manifest"; \
 		exit 1; \
 	fi; \
 	echo "version markers in sync at $$const"

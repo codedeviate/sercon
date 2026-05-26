@@ -10,6 +10,62 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.0] — 2026-05-26
+
+First Moderate cut: **JSDoc support in the `.d.ts` emitter.** Editor
+hover for `api.*` bindings is now populated, and library embedders
+have a first-class way to attach docs without writing struct tags or
+sibling registration data.
+
+Bumped to 0.5.0 by convention (Moderate bucket → 0.5.x); the
+release-please manifest follows along. No new runtime dependencies.
+
+### Added
+
+- `Engine.SetDocs(path, doc)` and `Engine.SetMemberDocs(namespace, docs)`
+  attach JSDoc strings to registered bindings. `path` is the dotted
+  lookup key — a bare name for top-level bindings (`"log"`,
+  `"http"`), or `"namespace.member"` for namespace members
+  (`"http.get"`, `"exec.shell"`). The doc map lives on the engine
+  rather than the registration, so the same `SetDocs` call works
+  regardless of which of the five `Register…` variants was used.
+- Multi-line docs (split on `\n`) expand to a standard
+  `* `-prefixed JSDoc block, preserving blank lines as bare `*`
+  lines. Single-line docs collapse to `/** … */`. Bindings without
+  a doc entry emit no JSDoc block at all (no empty `/** */`
+  placeholders).
+- Calling `SetDocs` with an empty string removes any previously
+  set doc for that path; that's also the documented way to undo a
+  doc entry.
+- `TestWriteTypes_Docs*` (5 sub-tests in `engine_test.go`):
+  single-line top-level, multi-line expansion with blank-line
+  handling, namespace member docs, absent-doc-no-block, empty-string
+  removes.
+- `cmd/sercon/api_docs.go` ships a curated doc map for every
+  binding under `api.*`. The CLI calls `Engine.SetDocs("api", …)`
+  and `Engine.SetMemberDocs("api", apiDocs())` so the emitted
+  `examples/scripts/api.d.ts` now grows readable editor hover for
+  the example surface.
+- MANUAL.md gains a `SetDocs` / `SetMemberDocs` subsection in §3
+  (library API) and a JSDoc-on-declarations subsection in §13
+  (type generation).
+
+### Changed
+
+- `writeDTS` now accepts an `(regs, docs)` pair; `Engine.WriteTypes`
+  passes the engine's doc map through.
+- `writeMemberObject` carries a path prefix so nested sub-namespaces
+  look up docs under the right dotted key.
+- The lockstep checklist in CLAUDE.md grows a seventh artifact:
+  `cmd/sercon/api_docs.go` must be updated when adding or changing
+  a binding.
+- `make version-check` and `make release-prep` now include
+  `.release-please-manifest.json` as a fourth version marker so
+  it stays in sync with the Go const and the two MANUAL.md
+  strings.
+- `OUT-OF-SCOPE.md`'s Moderate / `.d.ts` generator subsection is
+  removed; this was its only entry.
+
 ## [0.4.21] — 2026-05-26
 
 Repo / tooling cut — no new bindings, no script-API surface change.

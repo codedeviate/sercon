@@ -34,15 +34,6 @@ the situation changes.
 
 ## Moderate
 
-### `.d.ts` generator
-
-- **JSDoc comments on emitted declarations.** Generated output is
-  pure types — no `/** ... */` blocks. Pulling doc strings from a
-  per-binding metadata map would make editor hover useful.
-  **Approach:** API design (where do doc strings come from — a metadata
-  map, struct tags, or a sibling registration call?) plus emitter work;
-  no library.
-
 ### CLI
 
 - **Watch mode.** Re-run on file change for iterative work.

@@ -287,6 +287,11 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 	}); err != nil {
 		return err
 	}
+	// Decorate the registered surface with JSDoc strings so the emitted
+	// .d.ts grows useful editor hover. Docs are gathered in api_docs.go
+	// (centralised so lockstep updates touch one file).
+	e.SetDocs("api", "sercon's built-in script surface. The full reference lives in MANUAL.md; the JSDoc blocks here are the at-a-glance summary.")
+	e.SetMemberDocs("api", apiDocs())
 	return nil
 }
 

@@ -43,6 +43,15 @@ type Engine struct {
 	regMu         sync.RWMutex
 	registrations []registration
 
+	// docs maps a dotted registration path to its documentation string.
+	// Top-level bindings use the bare name ("log", "http"); namespace
+	// members use "namespace.member" ("http.get", "exec.shell"). The d.ts
+	// emitter consults this map to render JSDoc blocks above each
+	// declaration. Lives on the engine (not the registration) so the same
+	// SetDocs call can attach docs to a registration that was made via
+	// any of the five Register variants.
+	docs map[string]string
+
 	// regCache reuses a Registry across runs so compiled module bytecode is
 	// cached on the Engine. Module exports remain per-runtime because each
 	// run gets a fresh runtime via a new eventloop.
@@ -138,6 +147,60 @@ func (e *Engine) RegisterNamespaceFactory(name string, factory func(vm *goja.Run
 
 type namespaceFactoryMarker struct {
 	fn func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any
+}
+
+// SetDocs attaches a documentation string to a registered binding so the
+// .d.ts emitter renders it as a JSDoc comment above the declaration.
+// `path` is the dotted lookup key: a bare name for a top-level binding
+// ("log", "http"), or "namespace.member" for namespace members
+// ("http.get", "exec.shell"). Multi-line docs use `\n`; each line is
+// emitted as a separate `*` line inside the JSDoc block.
+//
+// SetDocs is additive: calling it for a path that already has a doc
+// string replaces the previous value. Calling SetDocs before the
+// matching Register / RegisterNamespace / RegisterFactory call is
+// allowed — the doc is held until the emitter runs.
+//
+// Concurrency: like the Register methods, SetDocs must not race with a
+// Run / WriteTypes / Reset on the same engine.
+func (e *Engine) SetDocs(path, doc string) {
+	if path == "" {
+		return
+	}
+	e.regMu.Lock()
+	defer e.regMu.Unlock()
+	if e.docs == nil {
+		e.docs = map[string]string{}
+	}
+	if doc == "" {
+		delete(e.docs, path)
+		return
+	}
+	e.docs[path] = doc
+}
+
+// SetMemberDocs is a convenience for documenting many members of a
+// namespace in one call. The keys are bare member names (no dots);
+// SetMemberDocs prepends the namespace prefix when storing them. The
+// namespace itself can be documented separately via
+// `SetDocs("namespace", ...)`.
+func (e *Engine) SetMemberDocs(namespace string, docs map[string]string) {
+	if namespace == "" {
+		return
+	}
+	e.regMu.Lock()
+	defer e.regMu.Unlock()
+	if e.docs == nil {
+		e.docs = map[string]string{}
+	}
+	for member, doc := range docs {
+		key := namespace + "." + member
+		if doc == "" {
+			delete(e.docs, key)
+			continue
+		}
+		e.docs[key] = doc
+	}
 }
 
 func (e *Engine) registry() *require.Registry {
@@ -363,7 +426,7 @@ func jsErrToGo(vm *goja.Runtime, v goja.Value) error {
 func (e *Engine) WriteTypes(w io.Writer) error {
 	e.regMu.RLock()
 	defer e.regMu.RUnlock()
-	return writeDTS(w, e.registrations)
+	return writeDTS(w, e.registrations, e.docs)
 }
 
 // trace writes one diagnostic line to Options.Verbose when set. Each line is
