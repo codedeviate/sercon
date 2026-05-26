@@ -10,6 +10,61 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.11] — 2026-05-26
+
+First of three cuts on **Easy / Encoding / decoding / barcodes** — the
+encoder side, covering ten barcode symbologies under one entry point.
+Charset detection / round-tripping lands in v0.4.12; check-digit
+helpers and a scanner (decode-from-image) in v0.4.13.
+
+### Added
+
+- `api.barcode.*`:
+  - `encode(format, data, opts?)` → `Promise<Uint8Array>` (PNG bytes).
+    Ten supported formats: `qr`, `datamatrix`, `aztec`, `pdf417` (2D);
+    `code128`, `code39`, `codabar` (linear text); `ean13`, `ean8`,
+    `upca` (retail).
+  - `formats()` → string list so scripts can iterate.
+  - Default size: 256×256 for 2D codes, 400×120 for linear / retail.
+    Override via `opts.width` / `opts.height`.
+- Format-appropriate encoder defaults: QR uses medium error
+  correction + auto mode; Code 39 includes a Mod-43 checksum;
+  PDF417 uses security level 5; Aztec runs at 33% ECC with
+  auto-selected layers.
+- `TestBarcode_EncodeAllFormats` — every supported format produces
+  a valid PNG (signature + header + size check) against an
+  appropriate payload. Sized assertions confirm the default-sizing
+  logic picks 256×256 vs 400×120 correctly.
+- `TestBarcode_UnknownFormat` — unknown format names surface a
+  clean error mentioning the supported list.
+- `examples/scripts/barcode.ts` iterates `formats()`, encodes a
+  format-appropriate sample for each, and verifies the PNG
+  signature. Also demos a custom-sized QR.
+- `--examples` step 18 ("Barcodes (api.barcode.*)"); the existing
+  email step shifts to 19. `exampleCount` is 19.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the `barcode` shape with
+  the full format union; new prose block covers the format
+  categories (2D / linear / retail) and the encoder-specific
+  defaults.
+- `MANUAL.md` correction: the compression section claimed the
+  return type was `ArrayBuffer`, but goja actually surfaces a Go
+  `[]byte` return as `Uint8Array` (you read `.length`, not
+  `.byteLength`). Both the type declaration and the prose now say
+  `Uint8Array`.
+- `examples/scripts/compression.ts` already used `new Uint8Array(...)`
+  so the script was correct; only the doc was off.
+- `OUT-OF-SCOPE / Easy / Encoding / decoding / barcodes` lost the
+  three encoder bullets; charset detect / decode / encode and
+  check-digit remain.
+
+### Dependencies
+
+- New direct (pure Go):
+  `github.com/boombuler/barcode v1.1.0`.
+
 ## [0.4.10] — 2026-05-26
 
 Sole cut on **Easy / Hashing & compression** — the compression piece.

@@ -45,7 +45,8 @@ jobs:
             examples/scripts/tsx-demo.ts \
             examples/scripts/json-import.ts \
             examples/scripts/pkg-resolution.ts \
-            examples/scripts/compression.ts
+            examples/scripts/compression.ts \
+            examples/scripts/barcode.ts
 
   lint:
     name: golangci-lint

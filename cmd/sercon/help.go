@@ -372,7 +372,20 @@ const back = await api.compression.decompress("zstd", c);
 api.log("round-trip ok:", Array.from(new Uint8Array(back)).map(b => String.fromCharCode(b)).join(""));`)
 	note("All algos round-trip byte-for-byte. gzip / deflate / zlib / bzip2 use stdlib; the others are klauspost / brotli / lz4 / xz / snappy.")
 
-	header(18, "Email authentication (api.email.*)")
+	header(18, "Barcodes (api.barcode.*)")
+	code(`// 10 symbologies (QR, DataMatrix, Aztec, PDF417, Code128, Code39,
+// Codabar, EAN-13, EAN-8, UPC-A) behind one encode() call. Output is
+// a PNG payload (Uint8Array).
+api.log(api.barcode.formats().join(", "));
+
+const qrPng = await api.barcode.encode("qr", "hello", { width: 256, height: 256 });
+api.log("QR PNG:", new Uint8Array(qrPng).length, "bytes");
+
+const ean = await api.barcode.encode("ean13", "5901234123457");
+api.log("EAN-13 PNG:", new Uint8Array(ean).length, "bytes");`)
+	note("Decoders / scanners ship in a later cut (Easy / Encoding part 3).")
+
+	header(19, "Email authentication (api.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
 // { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
 // or missing record rather than throwing.
@@ -394,4 +407,4 @@ api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 18
+const exampleCount = 19

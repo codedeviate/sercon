@@ -5,6 +5,10 @@ declare const api: {
     equal(arg0: unknown, arg1: unknown, arg2: unknown[]): void;
     ok(arg0: unknown, arg1: unknown[]): void;
   };
+  barcode: {
+    encode(...args: unknown[]): Promise<Uint8Array>;
+    formats(): string[];
+  };
   compression: {
     algos(): string[];
     compress(...args: unknown[]): Promise<Uint8Array>;

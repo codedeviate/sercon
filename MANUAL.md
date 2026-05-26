@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.10</div>
+<div class="version">Version 0.4.11</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -370,11 +370,22 @@ declare const api: {
     compress(
       algo: "gzip" | "deflate" | "zlib" | "bzip2" | "zstd" | "brotli" | "lz4" | "xz" | "snappy",
       data: string | ArrayBuffer | Uint8Array,
-    ): Promise<ArrayBuffer>;
+    ): Promise<Uint8Array>;
     decompress(
       algo: "gzip" | "deflate" | "zlib" | "bzip2" | "zstd" | "brotli" | "lz4" | "xz" | "snappy",
       data: string | ArrayBuffer | Uint8Array,
-    ): Promise<ArrayBuffer>;
+    ): Promise<Uint8Array>;
+  };
+
+  barcode: {
+    formats(): string[];
+    encode(
+      format: "qr" | "datamatrix" | "aztec" | "pdf417"
+            | "code128" | "code39" | "codabar"
+            | "ean13" | "ean8" | "upca",
+      data: string,
+      opts?: { width?: number; height?: number },
+    ): Promise<Uint8Array>;
   };
 
   net: {
@@ -509,8 +520,10 @@ and surface real `Promise<…>` values through the event loop. They are
 Compression bindings (`api.compression.*`) cover nine pure-Go
 algorithms behind a uniform interface. Inputs are either strings
 (interpreted as UTF-8 byte sequences) or any `ArrayBuffer` /
-`Uint8Array`; outputs are `ArrayBuffer` (wrap with
-`new Uint8Array(...)` to iterate). Every algorithm round-trips:
+`Uint8Array`; outputs are `Uint8Array` — goja's representation of a
+Go `[]byte` return is a `Uint8Array`, so scripts can read `.length`
+and iterate directly without an `ArrayBuffer` view. Every algorithm
+round-trips:
 
 | Algorithm | Library |
 |---|---|
@@ -525,6 +538,25 @@ algorithms behind a uniform interface. Inputs are either strings
 `api.compression.algos()` returns the supported names so scripts can
 iterate without hard-coding the list. Unknown algorithm names throw
 a clear error rather than silently returning empty bytes.
+
+Barcode encoders (`api.barcode.*`) cover ten symbologies through one
+`encode(format, data, opts?)` entry point, all backed by the pure-Go
+[`github.com/boombuler/barcode`](https://github.com/boombuler/barcode)
+toolkit. Output is a PNG payload as `Uint8Array`; size defaults to
+`256x256` for 2D codes (QR / DataMatrix / Aztec) and `400x120` for
+linear ones, overridable via `opts.width` / `opts.height`.
+
+- 2D: `qr` (medium error correction, auto mode), `datamatrix`,
+  `aztec` (33% ECC, auto layers), `pdf417` (security level 5).
+- Linear: `code128`, `code39` (Mod-43 checksum, ASCII-only),
+  `codabar`.
+- Retail: `ean13`, `ean8`, `upca` — content must be numeric and the
+  right length; `boombuler/ean.Encode` dispatches by length so all
+  three variants share the same encoder.
+
+`api.barcode.formats()` returns the supported names. A separate cut
+will add a scanner (QR / DataMatrix / 1D decode from PNG/JPEG via
+`makiuchi-d/gozxing`).
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -957,7 +989,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.10. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.11. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

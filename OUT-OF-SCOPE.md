@@ -48,17 +48,6 @@ the situation changes.
 
 ### Encoding / decoding / barcodes
 
-- **`encode::qr(data)`** — QR code as PNG blob (script: `encode.rhai`).
-  **Library:** `github.com/skip2/go-qrcode` (pure Go, well-known) or
-  `github.com/boombuler/barcode/qr` if you want a single barcode
-  toolkit covering all linear/2D formats.
-- **`encode::datamatrix(data)`** — DataMatrix 2D code as PNG (script:
-  `encode.rhai`). **Library:** `github.com/boombuler/barcode/datamatrix`
-  (part of the boombuler barcode toolkit, pure Go).
-- **`encode::barcode(format, data)`** — Linear barcode (UPC, Code128,
-  …) as PNG (script: `encode.rhai`). **Library:**
-  `github.com/boombuler/barcode` (pure Go, de facto choice for 1D/2D
-  barcodes in Go).
 - **`text::detect(bytes)`** — Charset detection with BOM awareness
   (script: `text.rhai`). **Library:** `github.com/saintfish/chardet`
   (pure Go) for detection; BOM handling via
