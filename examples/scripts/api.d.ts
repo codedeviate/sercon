@@ -72,6 +72,11 @@ declare const api: {
     urlDecode(...args: unknown[]): unknown;
     urlEncode(...args: unknown[]): unknown;
   };
+  text: {
+    decode(...args: unknown[]): Promise<string>;
+    detect(...args: unknown[]): Promise<Record<string, unknown>>;
+    encode(...args: unknown[]): Promise<Uint8Array>;
+  };
   time: {
     format(...args: unknown[]): unknown;
     nowMs(): number;

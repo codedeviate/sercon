@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.11</div>
+<div class="version">Version 0.4.12</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -388,6 +388,17 @@ declare const api: {
     ): Promise<Uint8Array>;
   };
 
+  text: {
+    detect(data: string | ArrayBuffer | Uint8Array): Promise<{
+      charset: string;
+      confidence: number;
+      language?: string;
+      candidates: Array<{ charset: string; confidence: number; language?: string }>;
+    }>;
+    decode(data: string | ArrayBuffer | Uint8Array, charset: string): Promise<string>;
+    encode(text: string, charset: string): Promise<Uint8Array>;
+  };
+
   net: {
     tcp(target: string, opts?: { timeout?: number; port?: string }): Promise<{
       host: string; port: number; ip: string; latencyMs: number;
@@ -557,6 +568,28 @@ linear ones, overridable via `opts.width` / `opts.height`.
 `api.barcode.formats()` returns the supported names. A separate cut
 will add a scanner (QR / DataMatrix / 1D decode from PNG/JPEG via
 `makiuchi-d/gozxing`).
+
+Charset bindings (`api.text.*`) cover detection plus byte-side
+round-tripping:
+
+- **`detect(data)`** — runs [`saintfish/chardet`](https://github.com/saintfish/chardet)
+  over the input and returns the top guess (`charset`,
+  `confidence` on a 0–100 scale, optional `language` hint) plus
+  the full candidate list. Input is bytes (string, `ArrayBuffer`,
+  or `Uint8Array`).
+- **`encode(text, charset)`** — converts a UTF-8 string to bytes in
+  the target encoding. Characters with no representation in
+  the target encoding cause the encoder to error out rather
+  than silently lose them; pre-process the input yourself if you
+  want lossy behaviour.
+- **`decode(data, charset)`** — the inverse: bytes-in-charset →
+  UTF-8 string.
+
+Charset names follow the WHATWG Encoding Living Standard aliases
+that `golang.org/x/text/encoding/htmlindex.Get` accepts —
+`UTF-8`, `ISO-8859-1`, `Windows-1252`, `Shift_JIS`, `GBK`,
+`GB18030`, `Big5`, `EUC-JP`, `EUC-KR`, etc., plus all documented
+aliases. Unknown names throw a clear error.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -989,7 +1022,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.11. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.12. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

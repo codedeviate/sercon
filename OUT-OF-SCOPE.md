@@ -48,13 +48,6 @@ the situation changes.
 
 ### Encoding / decoding / barcodes
 
-- **`text::detect(bytes)`** — Charset detection with BOM awareness
-  (script: `text.rhai`). **Library:** `github.com/saintfish/chardet`
-  (pure Go) for detection; BOM handling via
-  `golang.org/x/text/encoding/unicode`.
-- **`text::decode(bytes, charset)`** / **`text::encode(string, charset)`**
-  — Charset round-tripping (script: `text.rhai`). **Library:**
-  `golang.org/x/text/encoding` family (pure Go).
 - **`checkdigit::inspect(algo, input)`** — Luhn, ISBN, EAN, …
   verification/creation (script: `checkdigit.rhai`). **Library:**
   trivial hand-rolled Luhn / ISBN / EAN check digits; or

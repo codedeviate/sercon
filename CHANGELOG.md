@@ -10,6 +10,57 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.12] — 2026-05-26
+
+Second of three cuts on **Easy / Encoding / decoding / barcodes** —
+the charset side. v0.4.11 covered barcode encoders; v0.4.13 will
+add check-digit helpers and a scanner. Two new pure-Go deps.
+
+### Added
+
+- `api.text.detect(data)`: charset detection via
+  [`saintfish/chardet`](https://github.com/saintfish/chardet).
+  Returns `{ charset, confidence, language?, candidates: [...] }`
+  where `confidence` is the 0–100 scale chardet publishes.
+- `api.text.encode(text, charset)`: UTF-8 string → bytes in target
+  charset. Lossy conversion fails rather than silently dropping
+  characters with no representation; callers wanting lossy
+  behaviour pre-process the input.
+- `api.text.decode(data, charset)`: bytes-in-charset → UTF-8 string.
+  Mirror of `encode`; combined they round-trip every charset
+  htmlindex knows.
+- Charset names follow the WHATWG Encoding Living Standard aliases
+  via `golang.org/x/text/encoding/htmlindex.Get` — UTF-8,
+  ISO-8859-1, Windows-1252, Shift_JIS, GBK, GB18030, Big5,
+  EUC-JP, EUC-KR, etc., plus every documented alias. Unknown
+  names throw a clear error.
+- `TestText_RoundTrip` (5 sub-tests): encode → decode round-trip
+  across UTF-8 / Latin-1 / Windows-1252 / Shift_JIS / GBK.
+- `TestText_UnknownCharset`: clean error from `htmlindex.Get` for
+  bogus names.
+- `TestText_DetectLatin1NotUTF8`: chardet must NOT classify
+  Latin-1 bytes containing `0xE9` (è / é) as UTF-8.
+- `examples/scripts/charset.ts` — round-trips five representative
+  charsets and runs detect against a long Latin-1 sample.
+  Verified live: chardet picks Windows-1252 at 78% confidence
+  with French as the language hint.
+- `--examples` step 19 added; the email step shifts to 20.
+  `exampleCount` is now 20.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the `text` shape; new
+  prose block calls out the WHATWG-alias charset names, the
+  encoder's strict (non-lossy) behaviour, and the
+  candidate-list shape that `detect` returns.
+
+### Dependencies
+
+- New direct (pure Go):
+  `github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d`,
+  `golang.org/x/text v0.37.0` (promoted from indirect — the
+  encoding family is needed at top level).
+
 ## [0.4.11] — 2026-05-26
 
 First of three cuts on **Easy / Encoding / decoding / barcodes** — the

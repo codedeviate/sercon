@@ -385,7 +385,20 @@ const ean = await api.barcode.encode("ean13", "5901234123457");
 api.log("EAN-13 PNG:", new Uint8Array(ean).length, "bytes");`)
 	note("Decoders / scanners ship in a later cut (Easy / Encoding part 3).")
 
-	header(19, "Email authentication (api.email.*)")
+	header(19, "Charset detection + conversion (api.text.*)")
+	code(`// Detect: feed bytes, get the top guess + a candidate list.
+const sample = await api.text.encode("café crème", "ISO-8859-1");
+const det    = await api.text.detect(sample);
+api.log("guess:", det.charset, "@", det.confidence + "%", det.language);
+
+// Round-trip a Japanese string through Shift_JIS.
+const sjis = await api.text.encode("こんにちは", "Shift_JIS");
+api.log("sjis bytes:", new Uint8Array(sjis).length);
+const back = await api.text.decode(sjis, "Shift_JIS");
+api.log("back to utf-8:", back);`)
+	note("Charset names follow WHATWG aliases (UTF-8, ISO-8859-1, Windows-1252, Shift_JIS, GBK, …).")
+
+	header(20, "Email authentication (api.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
 // { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
 // or missing record rather than throwing.
@@ -407,4 +420,4 @@ api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 19
+const exampleCount = 20

@@ -29,6 +29,7 @@ Or pick individual scripts:
 | `email-auth.ts` | `api.email.spf/dmarc/mtaSts/tlsRpt/bimi/all` — hits real DNS (not in CI). |
 | `compression.ts` | `api.compression.compress/decompress` round-trip across all 9 algos. |
 | `barcode.ts` | `api.barcode.encode` over all 10 supported symbologies. |
+| `charset.ts` | `api.text.detect/encode/decode` — 5-charset round-trip + Latin-1 detection. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
