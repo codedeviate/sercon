@@ -59,6 +59,13 @@ type Engine struct {
 	regMu         sync.RWMutex
 	registrations []registration
 
+	// resolveHook, when set, is called with the absolute path of every
+	// module file the require loader resolves during a Run. The sercon
+	// CLI's --watch mode uses it to build a per-entry import graph so a
+	// file change re-runs only the entries that import the changed file.
+	// Set via SetResolveHook; not safe to swap concurrently with a Run.
+	resolveHook func(absPath string)
+
 	// docs maps a dotted registration path to its documentation string.
 	// Top-level bindings use the bare name ("log", "http"); namespace
 	// members use "namespace.member" ("http.get", "exec.shell"). The d.ts
@@ -224,6 +231,18 @@ func (e *Engine) registry() *require.Registry {
 		e.reg = require.NewRegistry(require.WithLoader(e.newSourceLoader()))
 	})
 	return e.reg
+}
+
+// ResetModuleCache discards the cached module registry so the next Run
+// re-reads and re-compiles every imported module from source. The
+// registry otherwise caches compiled bytecode across runs (a speed
+// win), which means edits to imported files wouldn't be seen — the
+// CLI's --watch mode calls this before each re-run so a changed
+// module's new source actually takes effect. Not safe to call
+// concurrently with a Run.
+func (e *Engine) ResetModuleCache() {
+	e.regOnce = sync.Once{}
+	e.reg = nil
 }
 
 // RunOption customises a single Run / RunFile invocation without rebuilding
@@ -436,6 +455,14 @@ func jsErrToGo(vm *goja.Runtime, v goja.Value) error {
 		}
 	}
 	return errors.New(v.String())
+}
+
+// SetResolveHook installs (or clears, with nil) a callback invoked
+// with the absolute path of each module file resolved during a Run.
+// Used by the CLI's --watch mode to capture per-entry import graphs.
+// Must not be swapped concurrently with a Run on the same engine.
+func (e *Engine) SetResolveHook(fn func(absPath string)) {
+	e.resolveHook = fn
 }
 
 // WriteTypes emits a TypeScript declaration file for the registered surface.

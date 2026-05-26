@@ -95,6 +95,11 @@ func (e *Engine) newSourceLoader() require.SourceLoader {
 		if err != nil {
 			return nil, err
 		}
+		if e.resolveHook != nil {
+			if abs, aerr := filepath.Abs(resolved); aerr == nil {
+				e.resolveHook(abs)
+			}
+		}
 
 		switch filepath.Ext(resolved) {
 		case ".ts", ".tsx":

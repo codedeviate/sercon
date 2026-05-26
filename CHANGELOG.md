@@ -10,6 +10,41 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.30] — 2026-05-26
+
+Adds **module-graph invalidation to `--watch`** — a file change now
+re-runs only the entry scripts that import the changed file, not
+every entry. Library-internal additions to support it; no new
+dependency. **This empties the Moderate bucket** of
+`OUT-OF-SCOPE.md` (only the library-less PDF417 decoder remains).
+
+### Added
+
+- `Engine.SetResolveHook(fn)` — fires with the absolute path of
+  every module file the require loader resolves during a Run.
+  `--watch` uses it to capture each entry's import graph.
+- `Engine.ResetModuleCache()` — discards the cached module registry
+  so the next Run re-reads + re-compiles imported modules from
+  source. `--watch` calls it before each re-run so an edited
+  import's new source actually takes effect (the registry
+  otherwise caches compiled bytecode across runs — without this,
+  watch re-runs showed stale module content).
+- The watch loop builds a per-entry import graph (entry file + all
+  resolved deps), accumulates changed paths across the debounce
+  window, and re-runs only the entries whose graph intersects the
+  changed set. stdin entries and not-yet-graphed entries re-run
+  unconditionally (conservative). `affectedEntries` is unit-tested
+  (5 cases: shared-dep-hits-only-importer, entry's-own-file,
+  unrelated-change-no-rerun, stdin-always, ungraphed-always).
+- `TestModuleLoader_*` plus the existing engine suite confirm the
+  resolve hook doesn't disturb normal resolution.
+
+### Changed
+
+- MANUAL §4's `--watch` section gains a "Module-graph invalidation"
+  paragraph. `OUT-OF-SCOPE.md`'s Moderate bucket collapsed to a
+  one-line "everything shipped" note + the deferred PDF417 item.
+
 ## [0.5.29] — 2026-05-26
 
 Hardens the entry-script ESM→CJS rewriter against **interleaved

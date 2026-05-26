@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.29</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.30</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -418,6 +418,19 @@ The watcher reuses the same `Engine` across runs. Each `Run` already
 gets a fresh `*goja.Runtime`, so re-running is just re-invoking
 `runOne` on the existing engine — there's no per-iteration setup
 cost beyond the transpile + module-resolution work.
+
+**Module-graph invalidation.** Watch mode tracks each entry
+script's import graph (its own file plus every module it resolves,
+captured via `Engine.SetResolveHook`) during the run. On a file
+change it re-runs **only the entries whose graph includes the
+changed file** — editing a helper that just one of three entry
+scripts imports re-runs that one entry, not all three. An entry's
+own file counts (editing it re-runs it); stdin entries and any
+entry whose graph isn't known yet re-run unconditionally
+(conservative). Before each re-run the module cache is busted
+(`Engine.ResetModuleCache`) so an edited import's new source
+actually takes effect — the registry otherwise caches compiled
+bytecode across runs.
 
 ## 5. Built-in script `api`
 
@@ -2241,7 +2254,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.29. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.30. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

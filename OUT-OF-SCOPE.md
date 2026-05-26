@@ -34,25 +34,14 @@ the situation changes.
 
 ## Moderate
 
-### CLI
-
-- **Module-graph invalidation in `--watch`.** v0.5.9 shipped
-  watch mode with a coarse-grained policy — every watched-file
-  change re-runs every entry script. A smarter loop would build
-  the module graph during the first Run, then on a file change
-  re-run only the entries whose graph includes the touched file.
-  **Approach:** capture each `require` call into a per-script
-  graph; intersect against the changed-file set on each tick.
-  Engine-level work, no new library.
-
-### Protocol probes & connectivity
-
-
-### Remote services & caching
-
-
-### TLS / encryption / signing
-
+Every other Moderate item shipped across v0.5.0 – v0.5.30 (the
+`.d.ts` JSDoc generator, `api.preg` / `api.preg2`, the full `api.jwt`
++ `api.encrypt` crypto surfaces, barcode decode + quiet-zone,
+`api.http.request`, the `api.net` probe family, `api.netstatus`,
+`api.browser`, `api.sqlite`, `api.redis` / `api.memcached` /
+`api.ldap` / `api.dict`, `api.ai`, the `--watch` CLI flag with
+module-graph invalidation, the `Options.ModuleLoader` hook, and
+robust import parsing). The one remaining item has no library:
 
 ### Encoding / decoding / barcodes
 
@@ -62,8 +51,6 @@ the situation changes.
   obvious maintained library exists — porting ZXing's Java PDF417
   reader would be the realistic path. Defer until someone actually
   needs PDF417 round-tripping.
-
-### AI agent integrations
 
 
 ## Hard

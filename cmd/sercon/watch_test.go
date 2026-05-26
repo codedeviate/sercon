@@ -124,3 +124,43 @@ func TestAddRecursive_MissingRootErrors(t *testing.T) {
 		t.Fatal("expected error for missing root")
 	}
 }
+
+// affectedEntries scopes re-runs to entries whose import graph
+// includes a changed file. Entry's own file and transitive deps both
+// count; stdin and ungraphed entries always re-run (conservative).
+func TestAffectedEntries(t *testing.T) {
+	graphs := map[string]map[string]bool{
+		"a.ts": {"/p/a.ts": true, "/p/helper.ts": true},
+		"b.ts": {"/p/b.ts": true},
+	}
+	cases := []struct {
+		name    string
+		scripts []string
+		changed map[string]bool
+		want    []string
+	}{
+		{"shared dep hits only importer", []string{"a.ts", "b.ts"},
+			map[string]bool{"/p/helper.ts": true}, []string{"a.ts"}},
+		{"entry's own file", []string{"a.ts", "b.ts"},
+			map[string]bool{"/p/b.ts": true}, []string{"b.ts"}},
+		{"unrelated change → none", []string{"a.ts", "b.ts"},
+			map[string]bool{"/p/zzz.ts": true}, nil},
+		{"stdin always re-runs", []string{"-"},
+			map[string]bool{"/p/anything.ts": true}, []string{"-"}},
+		{"ungraphed entry always re-runs", []string{"new.ts"},
+			map[string]bool{"/p/x.ts": true}, []string{"new.ts"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := affectedEntries(tc.scripts, graphs, tc.changed)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("got %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}

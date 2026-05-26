@@ -70,10 +70,20 @@ func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string,
 	}
 	fmt.Fprintf(out, "sercon: --watch  root=%s  dirs=%d  Ctrl-C to exit\n", scriptRoot, added)
 
+	// graphs maps each entry script to the set of absolute file paths it
+	// resolved (its own file + every module it imported, transitively).
+	// Built during each run via the engine's resolve hook; a file change
+	// then re-runs only the entries whose graph includes it.
+	graphs := map[string]map[string]bool{}
+
 	// Initial run. Always happens regardless of what the watcher
 	// later picks up so the user sees output immediately rather
-	// than after the first edit.
-	runOnceForWatch(eng, scripts, verbose, out, "initial run")
+	// than after the first edit. Builds the initial import graphs.
+	runOnceForWatch(eng, scripts, graphs, verbose, out, "initial run")
+
+	// changed accumulates the absolute paths touched during a debounce
+	// window, so the re-run can scope itself to the affected entries.
+	changed := map[string]bool{}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -119,6 +129,9 @@ func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string,
 			if !isWatchableFile(ev.Name) {
 				continue
 			}
+			if abs, err := filepath.Abs(ev.Name); err == nil {
+				changed[abs] = true
+			}
 			if debounceTimer == nil {
 				debounceTimer = time.AfterFunc(watchDebounce, func() {
 					select {
@@ -130,12 +143,21 @@ func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string,
 				debounceTimer.Reset(watchDebounce)
 			}
 		case <-rerunReady:
-			// debounce window elapsed since the last event — re-run.
-			// The timer has already fired; clearing the pointer lets
-			// the next event start a fresh window.
+			// debounce window elapsed since the last event — re-run only
+			// the entries whose import graph includes a changed file.
+			// The timer has already fired; clearing the pointer lets the
+			// next event start a fresh window.
 			debounceTimer = nil
+			affected := affectedEntries(scripts, graphs, changed)
+			changed = map[string]bool{}
+			if len(affected) == 0 {
+				continue // nothing depends on the changed files
+			}
+			// Bust the module cache so edited imports are re-read; the
+			// registry otherwise caches compiled bytecode across runs.
+			eng.ResetModuleCache()
 			fmt.Fprintln(out, "")
-			runOnceForWatch(eng, scripts, verbose, out, "re-run")
+			runOnceForWatch(eng, affected, graphs, verbose, out, "re-run")
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return exitOK
@@ -145,14 +167,28 @@ func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string,
 	}
 }
 
-// runOnceForWatch is the per-iteration body — does what `main`'s
-// non-watch loop would do for one pass, then prints a separator so
-// the next iteration's output is visually distinct. The `reason`
-// label distinguishes the initial run from re-runs in the banner.
-func runOnceForWatch(eng *scriptengine.Engine, scripts []string, verbose bool, out io.Writer, reason string) {
+// runOnceForWatch runs the given entries, rebuilding each one's import
+// graph as it goes (via the engine's resolve hook), then prints a
+// separator. The `reason` label distinguishes the initial run from
+// re-runs in the banner.
+func runOnceForWatch(eng *scriptengine.Engine, scripts []string, graphs map[string]map[string]bool, verbose bool, out io.Writer, reason string) {
 	fmt.Fprintf(out, "--- sercon %s @ %s ---\n", reason, time.Now().Format("15:04:05"))
 	for _, s := range scripts {
-		if err := runOne(eng, s, verbose); err != nil {
+		// Capture the dep set this run resolves. The entry's own file is
+		// seeded in so a change to it re-runs the entry too (the entry
+		// itself isn't reported through the require hook).
+		deps := map[string]bool{}
+		if s != "-" {
+			if abs, err := filepath.Abs(s); err == nil {
+				deps[abs] = true
+			}
+		}
+		eng.SetResolveHook(func(abs string) { deps[abs] = true })
+		err := runOne(eng, s, verbose)
+		eng.SetResolveHook(nil)
+		graphs[s] = deps
+
+		if err != nil {
 			label := s
 			if s == "-" {
 				label = "<stdin>"
@@ -160,6 +196,33 @@ func runOnceForWatch(eng *scriptengine.Engine, scripts []string, verbose bool, o
 			fmt.Fprintf(out, "FAIL %s: %s\n", label, err)
 		}
 	}
+}
+
+// affectedEntries returns the entries that should re-run given the set
+// of changed absolute paths. An entry re-runs when: it reads from stdin
+// (can't be graphed, so always conservatively re-run), its graph is
+// unknown (e.g. the initial run failed before recording it), or its
+// import graph includes a changed file.
+func affectedEntries(scripts []string, graphs map[string]map[string]bool, changed map[string]bool) []string {
+	var out []string
+	for _, s := range scripts {
+		if s == "-" {
+			out = append(out, s)
+			continue
+		}
+		graph, ok := graphs[s]
+		if !ok {
+			out = append(out, s)
+			continue
+		}
+		for path := range changed {
+			if graph[path] {
+				out = append(out, s)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // isWatchableFile reports whether `path` is a source file whose
