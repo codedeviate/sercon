@@ -78,6 +78,9 @@ func apiDocs() map[string]string {
 		// Aggregate connectivity probe
 		"netstatus.check": "Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws.",
 
+		// Browser — stateful HTTP session (cookie jar + replayed headers)
+		"browser.open": "Open a stateful HTTP session: { setUserAgent, setHeader, get, post, cookies }. Cookie jar + default headers persist across requests (like a browser).",
+
 		// Email auth probes
 		"email.spf":    "Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.",
 		"email.dmarc":  "Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.",

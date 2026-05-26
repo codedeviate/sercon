@@ -24,6 +24,10 @@ declare const api: {
     /** Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca). */
     formats(): string[];
   };
+  browser: {
+    /** Open a stateful HTTP session: { setUserAgent, setHeader, get, post, cookies }. Cookie jar + default headers persist across requests (like a browser). */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   checkdigit: {
     /** Supported algorithms (luhn / isbn10 / isbn13 / ean13 / ean8 / upca). */
     algos(): string[];

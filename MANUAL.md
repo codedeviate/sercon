@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.21</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.22</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -648,6 +648,16 @@ declare const api: {
     }>;
   };
 
+  browser: {
+    open(): Promise<{                            // stateful HTTP session
+      setUserAgent(ua: string): void;
+      setHeader(name: string, value: string): void;
+      get(url: string): Promise<{ status: number; ok: boolean; headers: Record<string, string>; body: string; url: string }>;
+      post(url: string, body?: string): Promise<{ status: number; ok: boolean; headers: Record<string, string>; body: string; url: string }>;
+      cookies(url: string): Promise<Array<{ name: string; value: string }>>;
+    }>;
+  };
+
   exec: {
     shell(
       cmd: string | string[],
@@ -1170,6 +1180,19 @@ HTTP are reported but don't gate it (a plain-HTTP host or one
 with an expired cert is still "reachable"). Only a missing host
 argument throws. No new library — it composes `net` /
 `crypto/tls` / `net/http` directly.
+
+Browser sessions (`api.browser.open()`) give a stateful HTTP
+client — an automatic cookie jar (`net/http/cookiejar` with the
+`golang.org/x/net/publicsuffix` list, so cookies scope correctly
+across subdomains) plus default headers replayed on every request.
+A second stateful-handle binding in the same shape as
+`api.sqlite`: `open()` resolves to `{ setUserAgent, setHeader,
+get, post, cookies }`. A login POST followed by a GET replays the
+session cookie without the script touching it; `cookies(url)`
+inspects the jar (handy for asserting a login set what you
+expect). `get` / `post` return the same `{ status, ok, headers,
+body, url }` shape as `api.http.request`. No explicit close — the
+session is GC'd with the handle.
 
 Subprocess bindings (`api.exec.*`) wrap Go's `os/exec`. `shell` is
 the only entry today; `http` (recon-with-curl-fallback) and `git` /
@@ -2085,7 +2108,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.21. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.22. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

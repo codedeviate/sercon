@@ -10,6 +10,33 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.22] — 2026-05-26
+
+Adds **`api.browser`** — a stateful HTTP session with an automatic
+cookie jar and replayed default headers. Second stateful-handle
+binding (same shape as `api.sqlite`). Pure stdlib: `net/http` +
+`net/http/cookiejar` + `golang.org/x/net/publicsuffix`.
+
+### Added
+
+- `api.browser.open()` → handle `{ setUserAgent, setHeader, get,
+  post, cookies }`. The cookie jar persists across requests (a
+  login POST followed by a GET replays the session cookie
+  automatically); default headers set via `setUserAgent` /
+  `setHeader` are replayed on every request. `cookies(url)`
+  inspects the jar.
+- `get` / `post` return the `{ status, ok, headers, body, url }`
+  shape from `api.http.request`. No explicit close — the session
+  is GC'd with the handle.
+- 4 tests against an httptest cookie server: cookie-jar persists,
+  headers replayed, cookies-inspection, empty-URL throws.
+- `examples/scripts/browser.ts` (hits httpbin.org, network demo
+  only); MANUAL §5 ts block + prose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `browser()` entry resolved.
+
 ## [0.5.21] — 2026-05-26
 
 Adds **`api.netstatus.check(host, opts?)`** — an aggregate

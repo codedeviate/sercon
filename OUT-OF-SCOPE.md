@@ -100,16 +100,6 @@ the situation changes.
   reader would be the realistic path. Defer until someone actually
   needs PDF417 round-tripping.
 
-### Browser-like HTTP session
-
-- **`browser()`** — Stateful HTTP session with automatic cookie jar
-  and header replay. Methods: `set_user_agent`, `set_header`, `get`,
-  `post` (Maps auto-serialised to JSON), `cookies` (script: `browser.rhai`).
-  **Library:** `net/http` + `net/http/cookiejar` +
-  `golang.org/x/net/publicsuffix` (stdlib-ish). Moderate because we are
-  exposing a stateful session handle to JS with mutable headers and a
-  cookie jar, which is more than a single function call.
-
 ### AI agent integrations
 
 - **`ai::request()`** — Builder chain: `.system()`, `.context()`,
