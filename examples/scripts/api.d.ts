@@ -161,6 +161,8 @@ declare const api: {
     dns(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / dispersion. */
     ntp(...args: unknown[]): Promise<Record<string, unknown>>;
+    /** Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw. */
+    ping(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Dial a TCP target and report latency + resolved IP. Default timeout 5s. */
     tcp(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary. */

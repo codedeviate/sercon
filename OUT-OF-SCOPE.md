@@ -69,12 +69,6 @@ the situation changes.
 
 ### Protocol probes & connectivity
 
-- **`ping(host, count?)`** — TCP or ICMP ping with RTT min/avg/max
-  and packet loss (script: `ping.rhai`). **Library:**
-  `github.com/prometheus-community/pro-bing` (pure Go, maintained
-  successor to `sparrc/go-ping`). Moderate because ICMP needs raw
-  sockets / privileges on most platforms; TCP-ping fallback is
-  straightforward `net.Dial`.
 - **`smtp(url, opts?)`** — SMTP capability probe, STARTTLS availability,
   AUTH mechanisms (script: `smtp.rhai`). **Library:** `net/smtp`
   (stdlib) for the wire protocol; moderate because we need EHLO

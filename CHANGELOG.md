@@ -10,6 +10,32 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.18] — 2026-05-26
+
+Adds **`api.net.ping(host, opts?)`** — reachability probe in TCP
+(default, no privileges) or ICMP modes. New dependency:
+`github.com/prometheus-community/pro-bing` (for the ICMP path).
+
+### Added
+
+- TCP mode dials `host:port` `count` times and measures connect
+  RTT — works in containers / CI, no raw-socket privileges. ICMP
+  mode does real echo via pro-bing (needs root / CAP_NET_RAW;
+  opt-in).
+- Returns `{ host, ip, mode, sent, received, lossPercent, minMs,
+  avgMs, maxMs }`. An unreachable host resolves with `received: 0`
+  / `lossPercent: 100` — "down" is a normal outcome, not a throw.
+  DNS-resolution failure and bad arguments throw.
+- 4 tests: TCP reachable (localhost listener, 0% loss), TCP
+  unreachable (closed port, 100% loss, no throw), bad-host throws,
+  validation (unknown mode / empty host).
+- `examples/scripts/net-probe.ts` grows a ping section; MANUAL §5
+  `api.net` ts block + prose bullet.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `ping` entry resolved.
+
 ## [0.5.17] — 2026-05-26
 
 Adds **`api.http.request(method, url, opts?)`** — the full HTTP

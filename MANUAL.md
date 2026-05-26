@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.17</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.18</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -609,6 +609,16 @@ declare const api: {
         createdDate?: string; updatedDate?: string; expirationDate?: string;
       };
       registrar?: { name?: string };
+    }>;
+    ping(host: string, opts?: {
+      count?: number;          // default 4
+      timeout?: number;        // ms; default 5000
+      mode?: "tcp" | "icmp";   // default "tcp"
+      port?: string;           // tcp mode; default "80"
+    }): Promise<{
+      host: string; ip: string; mode: string;
+      sent: number; received: number; lossPercent: number;
+      minMs: number; avgMs: number; maxMs: number;
     }>;
   };
 
@@ -1614,6 +1624,17 @@ an optional `{ timeout: <ms> }` second arg; the default is 5 seconds.
   only `raw`). The whois library doesn't accept a `context.Context`
   — `opts.timeout` is plumbed through its own per-client setting and
   the engine's `Options.Timeout` watchdog catches the outer call.
+- **`ping(host, opts?)`** — Reachability probe in two modes.
+  `"tcp"` (default) dials `host:port` `count` times and measures
+  connect RTT — no privileges, works in containers / CI, and
+  "can I open a connection" is what most liveness checks actually
+  want. `"icmp"` does real ICMP echo via
+  [`pro-bing`](https://github.com/prometheus-community/pro-bing)
+  but needs raw-socket privileges (root / CAP_NET_RAW), so it's
+  opt-in. Returns `{ host, ip, mode, sent, received, lossPercent,
+  minMs, avgMs, maxMs }`. An unreachable host resolves with
+  `received: 0` / `lossPercent: 100` — "down" is a normal outcome,
+  not a throw; only DNS-resolution failure and bad arguments throw.
 
 Email-authentication probes (`api.email.*`) read DNS records and
 surface the published policy. They all return `{ present: false }`
@@ -2005,7 +2026,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.17. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.18. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

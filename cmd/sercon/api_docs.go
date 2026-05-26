@@ -71,6 +71,7 @@ func apiDocs() map[string]string {
 		"net.tls":   "Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary.",
 		"net.ntp":   "Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / dispersion.",
 		"net.whois": "Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text.",
+		"net.ping":  "Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.",
 
 		// Email auth probes
 		"email.spf":    "Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.",

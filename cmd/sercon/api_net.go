@@ -32,6 +32,7 @@ func netNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		"tls":   scriptengine.PromisifyAsync(vm, loop, tlsProbe),
 		"ntp":   scriptengine.PromisifyAsync(vm, loop, ntpQuery),
 		"whois": scriptengine.PromisifyAsync(vm, loop, whoisLookup),
+		"ping":  scriptengine.PromisifyAsync(vm, loop, pingProbe),
 	}
 }
 

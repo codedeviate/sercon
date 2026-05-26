@@ -41,3 +41,9 @@ if (w.domain) {
 if (w.registrar) {
   api.log("registrar:    ", w.registrar.name);
 }
+
+api.log("");
+api.log("=== api.net.ping (TCP mode) ===");
+const ping = await api.net.ping("github.com", { mode: "tcp", port: "443", count: 3 });
+api.log(`  ${ping.host} (${ping.ip}): ${ping.received}/${ping.sent} received, ${ping.lossPercent}% loss, avg ${ping.avgMs.toFixed(1)}ms`);
+api.log("  (mode 'icmp' available too — needs raw-socket privileges)");
