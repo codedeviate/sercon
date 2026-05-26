@@ -58,8 +58,36 @@ await db.exec("INSERT INTO files (name, data) VALUES (?, ?)", "logo.png", new Ui
 const data = await db.queryValue("SELECT data FROM files WHERE name = ?", "logo.png");
 api.log("PNG magic bytes:", Array.from(data).map((b) => b.toString(16)).join(" "));
 
+// === transactions: begin() returns a nested handle ===
+api.log("");
+api.log("=== transactions ===");
+// commit makes the batch visible atomically.
+const tx = await db.begin();
+await tx.exec("INSERT INTO users (name, age, email) VALUES (?, ?, ?)", "Dave", 50, "dave@example.com");
+await tx.exec("INSERT INTO users (name, age, email) VALUES (?, ?, ?)", "Eve", 22, "eve@example.com");
+api.log("inside tx, user count:", await tx.queryValue("SELECT count(*) FROM users"));
+await tx.commit();
+api.log("after commit, user count:", await db.queryValue("SELECT count(*) FROM users"));
+
+// rollback discards everything since begin().
+const tx2 = await db.begin();
+await tx2.exec("DELETE FROM users");
+api.log("inside tx2 (after DELETE):", await tx2.queryValue("SELECT count(*) FROM users"));
+await tx2.rollback();
+api.log("after rollback:", await db.queryValue("SELECT count(*) FROM users"));
+
+// A constraint violation throws; roll back and the table is untouched.
+const tx3 = await db.begin();
+try {
+  await tx3.exec("INSERT INTO users (id, name) VALUES (?, ?)", 1, "duplicate-id"); // PK clash
+} catch (e) {
+  api.log("constraint caught:", String(e).slice(0, 60) + "…");
+}
+await tx3.rollback();
+
 // Always close — there's no finalizer; an un-closed handle leaks the
-// connection until the process exits.
+// connection until the process exits. Same for transactions: every
+// begin() must reach a commit() or rollback().
 await db.close();
 api.log("");
 api.log("handle closed");

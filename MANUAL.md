@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.10</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.11</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -744,6 +744,13 @@ declare const api: {
       }>;
       query(sql: string, ...params: unknown[]): Promise<Array<Record<string, unknown>>>;
       queryValue(sql: string, ...params: unknown[]): Promise<unknown>;  // first column of first row, or null
+      begin(): Promise<{                         // transaction handle
+        exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number; lastInsertId: number }>;
+        query(sql: string, ...params: unknown[]): Promise<Array<Record<string, unknown>>>;
+        queryValue(sql: string, ...params: unknown[]): Promise<unknown>;
+        commit(): Promise<void>;
+        rollback(): Promise<void>;
+      }>;
       close(): Promise<void>;
     }>;
   };
@@ -1398,6 +1405,21 @@ rule is preserved.
   or `null` when no rows match. Rows beyond the first are
   discarded. Ideal for `SELECT count(*)`, `PRAGMA user_version`,
   single-column lookups.
+- **`begin()`** — Open a transaction; resolves to a nested handle
+  with the same `exec` / `query` / `queryValue` surface plus
+  `commit()` and `rollback()`. The transaction reuses the exact
+  same code paths as the top-level handle (via an internal
+  executor interface that both `*sql.DB` and `*sql.Tx` satisfy) —
+  only the error prefix differs (`sqlite.tx.exec:` vs
+  `sqlite.exec:`). A transaction holds a pooled connection until
+  it commits or rolls back, so **every `begin()` must reach one
+  of them** — there's no auto-rollback on handle close in this
+  cut. Once finalized, the transaction is spent: further calls
+  throw `sql: transaction has already been committed or rolled
+  back`, and so do double-commit / commit-after-rollback. A
+  constraint violation inside the transaction throws (with the
+  `sqlite.tx.exec:` prefix) but doesn't auto-roll-back — the
+  script decides whether to retry or roll back.
 - **`close()`** — Release the connection. There's no finalizer —
   scripts that forget to close leak a connection until the
   process exits. The documented pattern is open / use / close.
@@ -1406,8 +1428,8 @@ Parameters bind positionally as `?` placeholders, in argument
 order. goja exports JS numbers as int64 / float64, strings as
 string, `null` as nil, and `Uint8Array` as `[]byte` — all of
 which the driver accepts directly, so no per-type coercion is
-needed on the script side. All four handle methods are async
-(Promise-returning); `open` is too.
+needed on the script side. Every handle and transaction method is
+async (Promise-returning); `open` and `begin` are too.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1873,7 +1895,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.10. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.11. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

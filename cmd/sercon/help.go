@@ -620,8 +620,13 @@ api.log("new id:", ins.lastInsertId, "rows:", ins.rowsAffected);
 const rows = await db.query("SELECT id, name FROM users");
 const count = await db.queryValue("SELECT count(*) FROM users");
 
+// Transactions: begin() returns a nested handle. commit / rollback.
+const tx = await db.begin();
+await tx.exec("INSERT INTO users (name) VALUES (?)", "bob");
+await tx.commit();   // or tx.rollback() to discard
+
 await db.close();   // no finalizer — always close.`)
-	note("Pure-Go driver (modernc.org/sqlite, no cgo). Params bind as ? placeholders. BLOBs round-trip as Uint8Array; TEXT as string. First stateful-handle binding.")
+	note("Pure-Go driver (modernc.org/sqlite, no cgo). Every begin() must commit or rollback. Params bind as ? placeholders; BLOBs round-trip as Uint8Array, TEXT as string.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

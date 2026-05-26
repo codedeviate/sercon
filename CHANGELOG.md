@@ -10,6 +10,52 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.11] — 2026-05-26
+
+Twelfth Moderate cut. Adds **transactions** to `api.sqlite` —
+`handle.begin()` resolves to a nested transaction handle. No new
+dependencies; extends v0.5.10's binding. Exercises the
+nested-handle pattern: a handle method that itself returns a
+handle.
+
+### Added
+
+- `handle.begin()` → `Promise<tx>` where `tx` is
+  `{ exec, query, queryValue, commit, rollback }`. The exec /
+  query / queryValue methods have the same shape and semantics as
+  the top-level handle's, scoped to the transaction.
+- `tx.commit()` / `tx.rollback()` finalize the transaction.
+  Once finalized it's spent — further exec/query/commit/rollback
+  calls throw `sql: transaction has already been committed or
+  rolled back` via the `sqlite.tx.*:` prefix.
+- A constraint violation inside a transaction throws (prefixed
+  `sqlite.tx.exec:`) but doesn't auto-roll-back — the script
+  decides whether to retry or roll back. Rolling back after a
+  caught error preserves the pre-transaction state.
+- 6 new tests: commit-visible, rollback-discards, tx query,
+  constraint-then-rollback (table untouched), use-after-commit
+  throws, double-commit throws. The sqlite suite is now 16 tests.
+- `examples/scripts/sqlite.ts` grows a transactions section
+  (commit, rollback, caught-constraint-then-rollback).
+- `--examples` step 33 extended with a begin/commit snippet;
+  MANUAL §5 gains the `begin()` ts block + a prose bullet on the
+  transaction lifetime contract.
+
+### Changed
+
+- **Internal refactor**: `sqliteExec` / `sqliteQuery` /
+  `sqliteQueryValue` now take an `sqlExecutor` interface
+  (`ExecContext` + `QueryContext`, satisfied by both `*sql.DB`
+  and `*sql.Tx`) plus an error-prefix label, instead of a
+  concrete `*sql.DB`. The transaction handle reuses the exact
+  same code paths as the top-level handle — only the executor
+  and the label differ. Row scanning is extracted into a shared
+  `scanRows` helper. No behaviour change for the existing
+  top-level methods.
+- `OUT-OF-SCOPE.md`'s SQLite entry narrowed from "transactions +
+  prepared statements" to prepared statements only (transactions
+  shipped here).
+
 ## [0.5.10] — 2026-05-26
 
 Eleventh Moderate cut. Adds **`api.sqlite`** — sercon's first

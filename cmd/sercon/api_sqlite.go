@@ -85,13 +85,16 @@ func sqliteHandle(vm *goja.Runtime, loop *eventloop.EventLoop, db *sql.DB) map[s
 	// function".
 	return map[string]any{
 		"exec": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return sqliteExec(ctx, db, call)
+			return sqliteExec(ctx, db, call, "sqlite.exec")
 		}).Func,
 		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
-			return sqliteQuery(ctx, db, call)
+			return sqliteQuery(ctx, db, call, "sqlite.query")
 		}).Func,
 		"queryValue": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			return sqliteQueryValue(ctx, db, call)
+			return sqliteQueryValue(ctx, db, call, "sqlite.queryValue")
+		}).Func,
+		"begin": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+			return sqliteBegin(vm, loop, ctx, db)
 		}).Func,
 		"close": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			if err := db.Close(); err != nil {
@@ -102,21 +105,79 @@ func sqliteHandle(vm *goja.Runtime, loop *eventloop.EventLoop, db *sql.DB) map[s
 	}
 }
 
+// sqliteBegin opens a transaction and returns its handle object —
+// the same { exec, query, queryValue } surface as the top-level
+// handle, plus commit / rollback to finalize. The transaction
+// reuses the exec/query/queryValue helpers through the sqlExecutor
+// interface; *sql.Tx satisfies it.
+//
+// Lifetime: a transaction holds a connection out of the pool until
+// it's committed or rolled back. Scripts MUST call one of them —
+// a leaked transaction pins a connection until GC. There's no
+// auto-rollback on handle close in this cut; the documented
+// pattern is begin / … / commit-or-rollback in a try/finally.
+//
+// Once committed or rolled back, the *sql.Tx is spent: further
+// exec/query calls return `sql.ErrTxDone`, which surfaces to the
+// script as a thrown `sqlite.tx.*: ...` error. commit-after-commit
+// and rollback-after-commit behave the same way.
+func sqliteBegin(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, db *sql.DB) (map[string]any, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite.begin: %w", err)
+	}
+	return map[string]any{
+		"exec": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+			return sqliteExec(ctx, tx, call, "sqlite.tx.exec")
+		}).Func,
+		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+			return sqliteQuery(ctx, tx, call, "sqlite.tx.query")
+		}).Func,
+		"queryValue": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			return sqliteQueryValue(ctx, tx, call, "sqlite.tx.queryValue")
+		}).Func,
+		"commit": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			if err := tx.Commit(); err != nil {
+				return nil, fmt.Errorf("sqlite.tx.commit: %w", err)
+			}
+			return nil, nil
+		}).Func,
+		"rollback": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			if err := tx.Rollback(); err != nil {
+				return nil, fmt.Errorf("sqlite.tx.rollback: %w", err)
+			}
+			return nil, nil
+		}).Func,
+	}, nil
+}
+
+// sqlExecutor is the slice of database/sql both *sql.DB and *sql.Tx
+// satisfy. The exec / query / queryValue helpers take it (rather
+// than a concrete *sql.DB) so the transaction handle from begin()
+// reuses the exact same code paths as the top-level handle — only
+// the executor differs.
+type sqlExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 // sqliteExec runs a non-query statement (DDL, INSERT, UPDATE,
 // DELETE) and reports row counters. The SQL string is the first
 // arg; all remaining args bind as `?` placeholders in order. Both
 // lastInsertId and rowsAffected are pulled out via driver methods —
 // not all statements populate them, so callers should expect zero
-// values for e.g. CREATE TABLE.
-func sqliteExec(ctx context.Context, db *sql.DB, call goja.FunctionCall) (map[string]any, error) {
+// values for e.g. CREATE TABLE. `label` prefixes errors so a
+// transaction's exec reports `sqlite.tx.exec:` rather than the
+// top-level `sqlite.exec:`.
+func sqliteExec(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label string) (map[string]any, error) {
 	if len(call.Arguments) < 1 {
-		return nil, errors.New("sqlite.exec: sql argument required")
+		return nil, fmt.Errorf("%s: sql argument required", label)
 	}
 	stmt := call.Argument(0).String()
 	args := sqlitePositionalArgs(call)
-	res, err := db.ExecContext(ctx, stmt, args...)
+	res, err := ex.ExecContext(ctx, stmt, args...)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite.exec: %w", err)
+		return nil, fmt.Errorf("%s: %w", label, err)
 	}
 	rowsAffected, _ := res.RowsAffected()
 	lastInsertID, _ := res.LastInsertId()
@@ -131,21 +192,27 @@ func sqliteExec(ctx context.Context, db *sql.DB, call goja.FunctionCall) (map[st
 // possible when joining tables) overwrite earlier values — SQL
 // scripts that need both should alias one. Column types are mapped
 // by sqliteScanValue.
-func sqliteQuery(ctx context.Context, db *sql.DB, call goja.FunctionCall) ([]map[string]any, error) {
+func sqliteQuery(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label string) ([]map[string]any, error) {
 	if len(call.Arguments) < 1 {
-		return nil, errors.New("sqlite.query: sql argument required")
+		return nil, fmt.Errorf("%s: sql argument required", label)
 	}
 	stmt := call.Argument(0).String()
 	args := sqlitePositionalArgs(call)
-	rows, err := db.QueryContext(ctx, stmt, args...)
+	rows, err := ex.QueryContext(ctx, stmt, args...)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite.query: %w", err)
+		return nil, fmt.Errorf("%s: %w", label, err)
 	}
 	defer func() { _ = rows.Close() }()
+	return scanRows(rows, label)
+}
 
+// scanRows drains a *sql.Rows into one column-name-keyed map per
+// row. Shared by the handle, transaction, and (future) prepared-
+// statement query paths.
+func scanRows(rows *sql.Rows, label string) ([]map[string]any, error) {
 	cols, err := rows.Columns()
 	if err != nil {
-		return nil, fmt.Errorf("sqlite.query: columns: %w", err)
+		return nil, fmt.Errorf("%s: columns: %w", label, err)
 	}
 	out := []map[string]any{}
 	for rows.Next() {
@@ -155,7 +222,7 @@ func sqliteQuery(ctx context.Context, db *sql.DB, call goja.FunctionCall) ([]map
 			ptrs[i] = &raw[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return nil, fmt.Errorf("sqlite.query: scan: %w", err)
+			return nil, fmt.Errorf("%s: scan: %w", label, err)
 		}
 		row := make(map[string]any, len(cols))
 		for i, name := range cols {
@@ -164,7 +231,7 @@ func sqliteQuery(ctx context.Context, db *sql.DB, call goja.FunctionCall) ([]map
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("sqlite.query: iterate: %w", err)
+		return nil, fmt.Errorf("%s: iterate: %w", label, err)
 	}
 	return out, nil
 }
@@ -174,27 +241,27 @@ func sqliteQuery(ctx context.Context, db *sql.DB, call goja.FunctionCall) ([]map
 // `PRAGMA user_version`. Returns the first column of the first
 // row, or `nil` (JS null) when no rows match. Anything beyond the
 // first row is discarded.
-func sqliteQueryValue(ctx context.Context, db *sql.DB, call goja.FunctionCall) (any, error) {
+func sqliteQueryValue(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label string) (any, error) {
 	if len(call.Arguments) < 1 {
-		return nil, errors.New("sqlite.queryValue: sql argument required")
+		return nil, fmt.Errorf("%s: sql argument required", label)
 	}
 	stmt := call.Argument(0).String()
 	args := sqlitePositionalArgs(call)
-	rows, err := db.QueryContext(ctx, stmt, args...)
+	rows, err := ex.QueryContext(ctx, stmt, args...)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite.queryValue: %w", err)
+		return nil, fmt.Errorf("%s: %w", label, err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("sqlite.queryValue: %w", err)
+			return nil, fmt.Errorf("%s: %w", label, err)
 		}
 		return nil, nil
 	}
 	var raw any
 	if err := rows.Scan(&raw); err != nil {
-		return nil, fmt.Errorf("sqlite.queryValue: scan: %w", err)
+		return nil, fmt.Errorf("%s: scan: %w", label, err)
 	}
 	return sqliteScanValue(raw), nil
 }

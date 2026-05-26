@@ -258,3 +258,133 @@ func runSQLiteScriptWithVar(t *testing.T, varName, varVal, body string) any {
 	}
 	return captured
 }
+
+// Transaction commit makes inserts visible to the outer handle.
+func TestSQLite_TxCommit(t *testing.T) {
+	got := runSQLiteScript(t, `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (v TEXT)");
+		const tx = await db.begin();
+		await tx.exec("INSERT INTO t (v) VALUES ('a'), ('b')");
+		const insideCount = await tx.queryValue("SELECT count(*) FROM t");
+		await tx.commit();
+		const outsideCount = await db.queryValue("SELECT count(*) FROM t");
+		await db.close();
+		__capture([insideCount, outsideCount].join(","));
+	`)
+	if got != "2,2" {
+		t.Errorf("tx commit: %v (want 2,2)", got)
+	}
+}
+
+// Transaction rollback discards inserts — the outer handle never
+// sees them.
+func TestSQLite_TxRollback(t *testing.T) {
+	got := runSQLiteScript(t, `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (v TEXT)");
+		await db.exec("INSERT INTO t (v) VALUES ('seed')");
+		const tx = await db.begin();
+		await tx.exec("INSERT INTO t (v) VALUES ('discarded')");
+		const insideCount = await tx.queryValue("SELECT count(*) FROM t");
+		await tx.rollback();
+		const outsideCount = await db.queryValue("SELECT count(*) FROM t");
+		await db.close();
+		__capture([insideCount, outsideCount].join(","));
+	`)
+	// Inside the tx: seed + discarded = 2. After rollback: just seed = 1.
+	if got != "2,1" {
+		t.Errorf("tx rollback: %v (want 2,1)", got)
+	}
+}
+
+// tx.query returns rows the same shape as the handle's query.
+func TestSQLite_TxQuery(t *testing.T) {
+	got := runSQLiteScript(t, `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)");
+		const tx = await db.begin();
+		await tx.exec("INSERT INTO t (name) VALUES ('alice'), ('bob')");
+		const rows = await tx.query("SELECT name FROM t ORDER BY name");
+		await tx.commit();
+		await db.close();
+		__capture(rows.map(r => r.name).join(","));
+	`)
+	if got != "alice,bob" {
+		t.Errorf("tx query: %v", got)
+	}
+}
+
+// A constraint violation inside a transaction throws (with the
+// sqlite.tx.exec prefix); the script can then roll back cleanly and
+// the seed row is preserved.
+func TestSQLite_TxConstraintThenRollback(t *testing.T) {
+	got := runSQLiteScript(t, `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (v TEXT UNIQUE)");
+		await db.exec("INSERT INTO t (v) VALUES ('dup')");
+		const tx = await db.begin();
+		let caught = "";
+		try {
+			await tx.exec("INSERT INTO t (v) VALUES ('dup')");  // UNIQUE violation
+		} catch (e) {
+			caught = String(e);
+		}
+		await tx.rollback();
+		const count = await db.queryValue("SELECT count(*) FROM t");
+		await db.close();
+		__capture([caught.includes("sqlite.tx.exec"), count].join(","));
+	`)
+	if got != "true,1" {
+		t.Errorf("tx constraint+rollback: %v (want true,1)", got)
+	}
+}
+
+// Using a transaction after commit throws with sql.ErrTxDone surfaced
+// through the sqlite.tx.* prefix.
+func TestSQLite_TxUseAfterCommitThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
+	if err := eng.RegisterNamespaceFactory("sqlite", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return sqliteNamespace(vm, loop)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "x.ts", `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (v TEXT)");
+		const tx = await db.begin();
+		await tx.exec("INSERT INTO t (v) VALUES ('x')");
+		await tx.commit();
+		await tx.exec("INSERT INTO t (v) VALUES ('y')");  // tx is spent
+	`)
+	if err == nil {
+		t.Fatal("expected throw for use-after-commit")
+	}
+	if !strings.Contains(err.Error(), "sqlite.tx.exec") {
+		t.Errorf("expected sqlite.tx.exec: prefix; got %v", err)
+	}
+}
+
+// Double commit throws (sql.ErrTxDone via sqlite.tx.commit).
+func TestSQLite_TxDoubleCommitThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
+	if err := eng.RegisterNamespaceFactory("sqlite", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return sqliteNamespace(vm, loop)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "x.ts", `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (v TEXT)");
+		const tx = await db.begin();
+		await tx.exec("INSERT INTO t (v) VALUES ('x')");
+		await tx.commit();
+		await tx.commit();
+	`)
+	if err == nil {
+		t.Fatal("expected throw for double commit")
+	}
+	if !strings.Contains(err.Error(), "sqlite.tx.commit") {
+		t.Errorf("expected sqlite.tx.commit: prefix; got %v", err)
+	}
+}
