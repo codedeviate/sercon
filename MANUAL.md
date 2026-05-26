@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.25</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.26</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -672,6 +672,16 @@ declare const api: {
     }>;
   };
 
+  dict: {
+    define(host: string, word: string, opts?: { database?: string; port?: string; timeout?: number }): Promise<{
+      word: string; found: boolean;
+      definitions: Array<{ db: string; dbName: string; text: string }>;
+    }>;
+    match(host: string, word: string, opts?: { database?: string; strategy?: string; port?: string; timeout?: number }): Promise<{
+      word: string; matches: Array<{ db: string; word: string }>;
+    }>;
+  };
+
   browser: {
     open(): Promise<{                            // stateful HTTP session
       setUserAgent(ua: string): void;
@@ -1239,6 +1249,17 @@ controls, vendor); `search(baseDN, filter, attrs?)` runs a
 subtree search and returns `{ dn, <attr>: [values] }` per entry
 (attributes stay arrays since LDAP is multi-valued). A read /
 inspection surface — no modify / add / delete.
+
+DICT (`api.dict.*`) is an RFC 2229 dictionary-server client. No
+maintained pure-Go DICT library exists, so the protocol is
+hand-rolled over `net/textproto` (a simple line-based status-code
+protocol, much like SMTP). `define(host, word, opts?)` returns
+`{ word, found, definitions: [{ db, dbName, text }] }`; a word
+with no entry resolves `found: false` (not an error).
+`match(host, word, opts?)` returns words matching under
+`opts.strategy` (default `prefix`). Both are one-shot
+(connect → query → QUIT); `opts.database` (default `*` = all),
+`opts.port` (default 2628).
 
 Browser sessions (`api.browser.open()`) give a stateful HTTP
 client — an automatic cookie jar (`net/http/cookiejar` with the
@@ -2167,7 +2188,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.25. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.26. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

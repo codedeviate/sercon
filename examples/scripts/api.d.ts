@@ -46,6 +46,12 @@ declare const api: {
     /** Decompress data previously produced by compress (same algorithm name required). */
     decompress(...args: unknown[]): Promise<Uint8Array>;
   };
+  dict: {
+    /** RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error). */
+    define(...args: unknown[]): Promise<Record<string, unknown>>;
+    /** RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database, opts.port (default 2628). */
+    match(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   diff: {
     /** Unified-diff two text inputs. opts: context (default 3), fromFile / toFile (default 'a' / 'b'). Binary inputs return { binary: true } with an empty diff. */
     compare(...args: unknown[]): Promise<Record<string, unknown>>;

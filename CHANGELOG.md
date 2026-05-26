@@ -10,6 +10,32 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.26] — 2026-05-26
+
+Adds **`api.dict`** — RFC 2229 DICT protocol client. No maintained
+pure-Go DICT library exists, so the protocol is hand-rolled over
+`net/textproto`. No new dependency.
+
+### Added
+
+- `api.dict.define(host, word, opts?)` → `{ word, found,
+  definitions: [{ db, dbName, text }] }`; `found: false` on no
+  match (data, not an error).
+- `api.dict.match(host, word, opts?)` → `{ word, matches: [{ db,
+  word }] }`. `opts.strategy` (default `prefix`), `opts.database`
+  (default `*`), `opts.port` (default 2628).
+- 5 tests against an in-process fake DICT server: define, define-
+  not-found, match, validation, and a `dictFields` quote-aware
+  tokeniser unit test. The textproto `StartResponse`/`EndResponse`
+  pairing is required around the read sequence (without it the
+  pipeline deadlocks — caught during development).
+- `examples/scripts/dict.ts` gracefully degrades; hits dict.org
+  (`make demo` only, not CI). MANUAL §5 ts block + prose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `dict` entry resolved.
+
 ## [0.5.25] — 2026-05-26
 
 Adds **`api.ldap`** — anonymous LDAP query over `go-ldap/v3`.
