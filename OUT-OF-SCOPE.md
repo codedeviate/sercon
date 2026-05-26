@@ -34,14 +34,6 @@ the situation changes.
 
 ## Trivial
 
-### Hashing & compression
-
-- **`hash(algo, payload)`** — md5, sha1, sha256, sha384, sha512,
-  sha3_256, sha3_512, blake3, crc32 (script: `hash.rhai`).
-  **Library:** `crypto/md5`, `crypto/sha1`, `crypto/sha256`,
-  `crypto/sha512`, `hash/crc32` (stdlib); `golang.org/x/crypto/sha3` for
-  SHA-3; `lukechampine.com/blake3` (pure Go) for BLAKE3.
-
 ### String utilities & formatting
 
 - **`trim`**, **`ltrim`**, **`rtrim`**, **`strrev`**, **`strip_html`**,

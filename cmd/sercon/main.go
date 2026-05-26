@@ -118,7 +118,8 @@ func runOne(eng *scriptengine.Engine, path string, verbose bool) error {
 }
 
 // registerExampleAPI wires the small example binding surface advertised by
-// the README: api.log, api.assert.*, api.http.*, api.time.*, api.env.get.
+// the README: api.log, api.assert.*, api.http.*, api.time.*, api.env.get,
+// api.hash.*.
 func registerExampleAPI(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("api", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
@@ -187,6 +188,7 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 					return goja.Undefined()
 				},
 			},
+			"hash": hashNamespace(vm),
 		}
 	}); err != nil {
 		return err

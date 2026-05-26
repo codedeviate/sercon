@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.3.0</div>
+<div class="version">Version 0.3.1</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -290,6 +290,18 @@ declare const api: {
   env: {
     get(name: string): string | undefined;
   };
+
+  hash: {
+    md5(data: string): string;
+    sha1(data: string): string;
+    sha256(data: string): string;
+    sha384(data: string): string;
+    sha512(data: string): string;
+    sha3_256(data: string): string;
+    sha3_512(data: string): string;
+    blake3(data: string): string;
+    crc32(data: string): string;
+  };
 };
 ```
 
@@ -304,11 +316,21 @@ api.assert.ok(r.status === 200, `expected 200, got ${r.status}`);
 
 await api.time.sleep(50);
 const home = api.env.get("HOME") ?? "(none)";
+
+api.log(api.hash.sha256("abc"));
+// → ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 ```
 
 HTTP bindings use `net/http` with a 5-second default per-request timeout
 and surface real `Promise<…>` values through the event loop. They are
 *not* mockable from JS — they go to the real network.
+
+Hash bindings interpret the input as a UTF-8 byte sequence and return
+lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
+spec uses the underscore so the JS name matches recon's). BLAKE3 uses
+the upstream `lukechampine.com/blake3` reference implementation with a
+32-byte output. `crc32` is the IEEE polynomial, zero-padded to 8 hex
+chars.
 
 ## 6. JavaScript runtime built-ins (goja)
 
@@ -596,7 +618,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.3.0. Whenever you add, remove, or change a
+*This manual covers sercon v0.3.1. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

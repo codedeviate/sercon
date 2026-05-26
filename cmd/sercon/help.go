@@ -311,10 +311,18 @@ api.log(Math.PI.toFixed(3), new Date().toISOString());`)
 setTimeout(() => console.log("tick"), 10);
 await api.time.sleep(50);`)
 
+	header(13, "Hashing (api.hash.*)")
+	code(`api.log(api.hash.md5("abc"));      // 900150983cd24fb0d6963f7d28e17f72
+api.log(api.hash.sha256("abc"));   // ba7816bf...
+api.log(api.hash.sha3_512("abc")); // SHA-3
+api.log(api.hash.blake3("abc"));   // BLAKE3
+api.log(api.hash.crc32("abc"));    // 352441c2`)
+	note("All algos take a UTF-8 string and return lowercase hex (crc32 is zero-padded to 8 chars).")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 12
+const exampleCount = 13

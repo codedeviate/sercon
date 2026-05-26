@@ -10,6 +10,40 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.3.1] — 2026-05-26
+
+Second slice of the **Trivial** backlog bucket — the
+**Hashing & compression** sub-section. (Compression is rated Easy
+rather than Trivial in OUT-OF-SCOPE.md, so this cut covers hashing
+only.)
+
+### Added
+
+- `api.hash.*` script binding: nine algorithms returning lowercase hex
+  digests of the UTF-8 input.
+  - `md5`, `sha1`, `sha256`, `sha384`, `sha512` (stdlib `crypto/*`)
+  - `sha3_256`, `sha3_512` (`golang.org/x/crypto/sha3`)
+  - `blake3` — 32-byte output (`lukechampine.com/blake3`,
+    pure-Go BLAKE3)
+  - `crc32` — IEEE polynomial, zero-padded to 8 hex chars (stdlib
+    `hash/crc32`)
+- `cmd/sercon/api_hash_test.go`: per-algorithm vectors for the empty
+  string and the canonical "abc" input.
+- `--examples` walkthrough gains a "Hashing (api.hash.*)" section
+  (`exampleCount` is now 13).
+
+### Changed
+
+- `MANUAL.md` declares the new `api.hash` shape in its built-in `api`
+  declaration block and explains the UTF-8 / lowercase-hex / crc32-IEEE
+  semantics.
+
+### Dependencies
+
+- New direct: `lukechampine.com/blake3 v1.4.1`,
+  `golang.org/x/crypto v0.52.0` (pulls in `klauspost/cpuid/v2` for
+  blake3's CPU feature detection — still pure Go).
+
 ## [0.3.0] — 2026-05-26
 
 First minor focusing on the **Trivial** backlog bucket, starting with
