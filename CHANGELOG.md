@@ -10,6 +10,42 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.16] — 2026-05-26
+
+Adds the **PGP backend** to `api.encrypt`, completing the
+two-backend design `detectBackend` (v0.5.8) anticipated. `encrypt`
+/ `decrypt` now auto-dispatch between age and PGP based on the
+key/ciphertext format — one API, two backends. New dependency:
+`github.com/ProtonMail/go-crypto/openpgp` (the maintained pure-Go
+PGP fork; x/crypto/openpgp is frozen).
+
+### Added
+
+- `api.encrypt.keygenPgp(opts?)` → armored `{ publicKey, privateKey }`
+  PGP key blocks (RSA 2048). `opts.name` / `opts.email` populate the
+  primary user ID.
+- `api.encrypt.encrypt` routes to PGP when the first recipient is a
+  PGP public-key block; output is always ASCII-armored
+  (`-----BEGIN PGP MESSAGE-----`). Multi-recipient works the same as
+  age (any recipient's private key decrypts).
+- `api.encrypt.decrypt` routes to PGP when an identity is a PGP
+  private-key block or the ciphertext is an armored PGP message.
+  Accepts armored or binary PGP ciphertext.
+- age and PGP recipient sets can't be mixed in one call (the
+  formats are incompatible) — the backend is picked from the first
+  recipient / the identity / the ciphertext.
+- A deliberately small PGP subset: keygen + encrypt + decrypt. No
+  signing, subkey management, or web-of-trust.
+- `TestEncrypt_PGPRoundTrip`, `TestEncrypt_PGPDetectBackend`,
+  `TestEncrypt_PGPWrongKeyThrows`, `TestEncrypt_AgeAndPGPDontCross`
+  (regression guard that the two backends stay independent).
+- `examples/scripts/encrypt.ts` grows a PGP section; MANUAL §5
+  rewritten to describe the two-backend dispatch + `keygenPgp`.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s PGP-backend entry resolved.
+
 ## [0.5.15] — 2026-05-26
 
 Adds **JWK (JSON Web Key) support** to `api.jwt`. The `secret`

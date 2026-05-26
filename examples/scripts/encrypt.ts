@@ -106,3 +106,13 @@ for (const [label, input] of samples) {
   const c = api.encrypt.detectBackend(input);
   api.log(label.padEnd(14), "->", c.backend, c.kind ? "(" + c.kind + ")" : "");
 }
+
+api.log("");
+api.log("=== PGP backend (auto-dispatched from key format) ===");
+// keygenPgp returns armored PGP key blocks. encrypt / decrypt route to
+// the PGP path automatically when they see a PGP block — same API as age.
+const pgp = api.encrypt.keygenPgp({ name: "Sercon Demo", email: "demo@example.com" });
+api.log("key type:", api.encrypt.detectBackend(pgp.publicKey).backend);
+const pgpCt = api.encrypt.encrypt("encrypted with PGP", pgp.publicKey);
+api.log("ciphertext:", (await api.text.decode(pgpCt, "utf-8")).split("\n")[0]);
+api.log("decrypted:", await api.text.decode(api.encrypt.decrypt(pgpCt, pgp.privateKey), "utf-8"));

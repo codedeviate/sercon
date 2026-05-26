@@ -147,10 +147,11 @@ func apiDocs() map[string]string {
 		"jwt.view":     "Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws.",
 		"jwt.validate": "Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.",
 
-		// Age encryption (X25519 identity flavour)
-		"encrypt.keygen":  "Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.",
-		"encrypt.encrypt": "Seal data to one or more recipients (age1... public keys). Default output is binary; opts.armored=true wraps in age's ASCII armor for JSON/YAML/email embedding. Multi-recipient encryption lets any listed identity decrypt.",
-		"encrypt.decrypt": "Open an age payload (binary or armored, auto-detected) with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error.",
+		// Encryption — age (default) + PGP backends, auto-dispatched
+		"encrypt.keygen":    "Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.",
+		"encrypt.keygenPgp": "Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. Returns armored { publicKey, privateKey } blocks. encrypt/decrypt auto-route to PGP when they see these.",
+		"encrypt.encrypt": "Seal data to recipients. age public keys (age1...) → age backend (opts.armored for ASCII); PGP public-key blocks → PGP backend (always armored). Auto-dispatched on key format. Multi-recipient: any listed identity decrypts.",
+		"encrypt.decrypt": "Open a payload with one of the supplied identities. Routes to age or PGP based on the identity / ciphertext format. age: binary or armored auto-detected. Wrong identity throws.",
 		"encrypt.rekey":   "Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop.",
 		"encrypt.detectBackend": "Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown', kind?: 'public'|'private' }. Pure prefix matching; no parsing or I/O. PGP encrypt/decrypt is a future cut — classifier is useful standalone.",
 

@@ -36,7 +36,28 @@ func encryptNamespace(vm *goja.Runtime) map[string]any {
 			return encryptRekey(vm, ciphertext, oldIdentities, newRecipients, opts)
 		},
 		"detectBackend": func(input string) goja.Value { return encryptDetectBackend(vm, input) },
+		"keygenPgp": func(opts goja.Value) goja.Value {
+			name := optString(asMap(opts), "name", "")
+			email := optString(asMap(opts), "email", "")
+			pub, priv, err := pgpKeygen(name, email)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("encrypt.keygenPgp: %w", err)))
+			}
+			return vm.ToValue(map[string]any{"publicKey": pub, "privateKey": priv})
+		},
 	}
+}
+
+// isPGPPublicBlock / isPGPPrivateBlock cheaply classify a key string
+// so encrypt / decrypt can route to the PGP path. The exact armor
+// banner is the discriminator (age keys are bech32, never start with
+// `-----BEGIN PGP`).
+func isPGPPublicBlock(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(s), "-----BEGIN PGP PUBLIC KEY BLOCK-----")
+}
+
+func isPGPPrivateBlock(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(s), "-----BEGIN PGP PRIVATE KEY BLOCK-----")
 }
 
 // encryptDetectBackend classifies a recipient or identity string by
@@ -147,6 +168,19 @@ func encryptEncrypt(vm *goja.Runtime, dataArg, recipientsArg, optsArg goja.Value
 		panic(vm.NewGoError(errors.New("encrypt.encrypt: at least one recipient required")))
 	}
 
+	// PGP dispatch: if the first recipient is a PGP public-key block,
+	// route the whole call through openpgp. Mixed age + PGP recipient
+	// sets aren't supported — the formats are incompatible, so all
+	// recipients must be the same backend. opts.armored is ignored on
+	// the PGP path (PGP output is always ASCII-armored).
+	if isPGPPublicBlock(recipientStrs[0]) {
+		out, err := pgpEncrypt(data, recipientStrs)
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("encrypt.encrypt: %w", err)))
+		}
+		return vm.ToValue(out)
+	}
+
 	recipients := make([]age.Recipient, 0, len(recipientStrs))
 	for _, s := range recipientStrs {
 		r, err := parseRecipientStrict(s)
@@ -215,6 +249,17 @@ func encryptDecrypt(vm *goja.Runtime, ciphertextArg, identitiesArg goja.Value) g
 	}
 	if len(identityStrs) == 0 {
 		panic(vm.NewGoError(errors.New("encrypt.decrypt: at least one identity required")))
+	}
+
+	// PGP dispatch: route through openpgp when the identities are PGP
+	// private-key blocks, or the ciphertext is an armored PGP message.
+	// Either signal is sufficient; in practice they travel together.
+	if isPGPPrivateBlock(identityStrs[0]) || looksPGPMessage(ciphertext) {
+		out, err := pgpDecrypt(ciphertext, identityStrs)
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("encrypt.decrypt: %w", err)))
+		}
+		return vm.ToValue(out)
 	}
 
 	identities := make([]age.Identity, 0, len(identityStrs))

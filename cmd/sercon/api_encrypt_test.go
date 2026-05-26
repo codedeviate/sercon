@@ -628,3 +628,77 @@ func TestEncryptDetectBackend_AgreesWithRoundTrip(t *testing.T) {
 		t.Errorf("classification / round-trip integration: %v", got)
 	}
 }
+
+// PGP keygen + encrypt + decrypt round-trip. keygenPgp returns
+// armored public + private blocks; encrypt produces an armored PGP
+// MESSAGE; decrypt with the private block recovers the plaintext.
+func TestEncrypt_PGPRoundTrip(t *testing.T) {
+	got := runEncryptScript(t, `
+		const k = encrypt.keygenPgp({ name: "Alice", email: "alice@example.com" });
+		const ct = encrypt.encrypt("pgp secret", k.publicKey);
+		const pt = encrypt.decrypt(ct, k.privateKey);
+		const ptStr = Array.from(pt).map(b => String.fromCharCode(b)).join("");
+		const __result = [
+			k.publicKey.startsWith("-----BEGIN PGP PUBLIC KEY BLOCK-----"),
+			k.privateKey.startsWith("-----BEGIN PGP PRIVATE KEY BLOCK-----"),
+			ptStr,
+		].join("|");
+	`)
+	if got != "true|true|pgp secret" {
+		t.Errorf("PGP round-trip: %v", got)
+	}
+}
+
+// detectBackend already classifies the PGP keys keygenPgp produces.
+func TestEncrypt_PGPDetectBackend(t *testing.T) {
+	got := runEncryptScript(t, `
+		const k = encrypt.keygenPgp({});
+		const pub = encrypt.detectBackend(k.publicKey);
+		const priv = encrypt.detectBackend(k.privateKey);
+		const __result = [pub.backend, pub.kind, priv.backend, priv.kind].join(",");
+	`)
+	if got != "pgp,public,pgp,private" {
+		t.Errorf("detectBackend on PGP keys: %v", got)
+	}
+}
+
+// A PGP message decrypted with the wrong private key throws (no
+// matching key in the keyring).
+func TestEncrypt_PGPWrongKeyThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 10 * time.Second})
+	if err := eng.RegisterNamespaceFactory("encrypt", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return encryptNamespace(vm)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "x.ts", `
+		const owner = encrypt.keygenPgp({});
+		const eve = encrypt.keygenPgp({});
+		const ct = encrypt.encrypt("secret", owner.publicKey);
+		encrypt.decrypt(ct, eve.privateKey);
+	`)
+	if err == nil {
+		t.Fatal("expected throw for wrong PGP key")
+	}
+	if !strings.Contains(err.Error(), "encrypt.decrypt") {
+		t.Errorf("expected encrypt.decrypt prefix; got %v", err)
+	}
+}
+
+// age and PGP stay independent — an age payload doesn't accidentally
+// route through the PGP path and vice versa. (Regression guard for
+// the dispatch.)
+func TestEncrypt_AgeAndPGPDontCross(t *testing.T) {
+	got := runEncryptScript(t, `
+		const age = encrypt.keygen();
+		const pgp = encrypt.keygenPgp({});
+		const ageCt = encrypt.encrypt("age msg", age.publicKey);
+		const pgpCt = encrypt.encrypt("pgp msg", pgp.publicKey);
+		const a = Array.from(encrypt.decrypt(ageCt, age.privateKey)).map(b=>String.fromCharCode(b)).join("");
+		const p = Array.from(encrypt.decrypt(pgpCt, pgp.privateKey)).map(b=>String.fromCharCode(b)).join("");
+		const __result = [a, p].join("|");
+	`)
+	if got != "age msg|pgp msg" {
+		t.Errorf("age/PGP independence: %v", got)
+	}
+}

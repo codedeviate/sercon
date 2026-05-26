@@ -118,20 +118,6 @@ the situation changes.
 
 ### TLS / encryption / signing
 
-- **PGP backend for `api.encrypt.*`.** v0.5.8 shipped
-  `api.encrypt.detectBackend` as a classifier (returns
-  `{ backend: "age" | "pgp" | "unknown", kind: "public" | "private" }`)
-  but the actual `encrypt` / `decrypt` paths still only handle
-  age. Extending them to also encrypt FOR PGP public keys and
-  decrypt PGP messages with private keys would round out the
-  namespace. **Library:**
-  `github.com/ProtonMail/go-crypto/openpgp` (pure Go, maintained
-  PGP fork). Moderate because the design decision is which PGP
-  subset to expose (default keys vs detached signatures vs ASCII
-  armor vs binary), plus a clean way to thread the chosen
-  backend through `encrypt(data, recipients, opts?)` — likely
-  auto-detection from the recipient format using the v0.5.8
-  classifier internally.
 
 ### Encoding / decoding / barcodes
 

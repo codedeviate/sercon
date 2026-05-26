@@ -61,14 +61,16 @@ declare const api: {
     tlsRpt(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   encrypt: {
-    /** Open an age payload (binary or armored, auto-detected) with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error. */
+    /** Open a payload with one of the supplied identities. Routes to age or PGP based on the identity / ciphertext format. age: binary or armored auto-detected. Wrong identity throws. */
     decrypt(arg0: unknown, arg1: unknown): unknown;
     /** Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown', kind?: 'public'|'private' }. Pure prefix matching; no parsing or I/O. PGP encrypt/decrypt is a future cut — classifier is useful standalone. */
     detectBackend(arg0: string): unknown;
-    /** Seal data to one or more recipients (age1... public keys). Default output is binary; opts.armored=true wraps in age's ASCII armor for JSON/YAML/email embedding. Multi-recipient encryption lets any listed identity decrypt. */
+    /** Seal data to recipients. age public keys (age1...) → age backend (opts.armored for ASCII); PGP public-key blocks → PGP backend (always armored). Auto-dispatched on key format. Multi-recipient: any listed identity decrypts. */
     encrypt(arg0: unknown, arg1: unknown, arg2: unknown): unknown;
-    /** Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }. */
+    /** Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }. */
     keygen(): unknown;
+    /** Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. Returns armored { publicKey, privateKey } blocks. encrypt/decrypt auto-route to PGP when they see these. */
+    keygenPgp(arg0: unknown): unknown;
     /** Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop. */
     rekey(arg0: unknown, arg1: unknown, arg2: unknown, arg3: unknown): unknown;
   };
@@ -143,9 +145,9 @@ declare const api: {
     queryAll(...args: unknown[]): Promise<unknown[]>;
   };
   jwt: {
-    /** Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA. opts.algorithm defaults to HS256. Cross-check (PEM + HMAC, or bytes + asymmetric) throws. */
+    /** Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA; or a JWK JSON object (kty picks the key type) for any algorithm. opts.algorithm defaults to HS256. */
     sign(arg0: Record<string, unknown>, arg1: string, arg2: unknown): unknown;
-    /** Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }; only structural input errors throw. */
+    /** Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }. */
     validate(arg0: string, arg1: string, arg2: unknown): unknown;
     /** Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws. */
     view(arg0: string): unknown;
