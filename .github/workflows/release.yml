@@ -1,5 +1,13 @@
 name: release
 
+# Fires on `vX.Y.Z` tag push from either path:
+#   - release-please.yml merged its release PR (the tag was pushed by
+#     the release-please action).
+#   - A maintainer pushed a manual tag (escape hatch for hotfixes or
+#     when the release-please flow needs to be bypassed).
+# Either way, goreleaser builds and uploads the cross-platform binaries
+# to the GitHub Release (auto-created from the tag if not already there).
+
 on:
   push:
     tags: ['v*.*.*']

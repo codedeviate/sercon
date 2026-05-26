@@ -1,6 +1,8 @@
 package scriptengine
 
 // Version is the released version of the scriptengine library and the
-// bundled sercon CLI. Bump it in lockstep with the git tag (semver, no
-// `v` prefix here — the prefix lives on the tag).
-const Version = "0.4.20"
+// bundled sercon CLI. Bumped automatically by release-please from the
+// release PR; the `x-release-please-version` marker below tells the
+// generic file updater which line to rewrite. The git tag (with `v`
+// prefix) is created in the same release-please commit.
+const Version = "0.4.21" // x-release-please-version

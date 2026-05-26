@@ -10,6 +10,54 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.21] — 2026-05-26
+
+Repo / tooling cut — no new bindings, no script-API surface change.
+Wires `release-please` as the primary release driver, retiring the
+manual "edit CHANGELOG, `git tag`, push" flow. Closes the Easy
+bucket of `OUT-OF-SCOPE.md` (every entry shipped across v0.3.0 –
+v0.4.21).
+
+### Added
+
+- `.github/workflows/release-please.yml` runs `googleapis/release-please-action@v4`
+  on every master push. The action maintains a "chore: release
+  X.Y.Z" PR built from Conventional-Commits subjects since the last
+  tag. Merging the PR bumps version markers, updates
+  `CHANGELOG-AUTO.md`, and pushes a `vX.Y.Z` tag. `skip-github-release: true`
+  is set so the existing tag-triggered release workflow keeps
+  ownership of binary publishing.
+- `release-please-config.json` — `release-type: simple`,
+  `changelog-path: CHANGELOG-AUTO.md` (so the hand-curated
+  CHANGELOG.md is never overwritten), and `extra-files` pointing at
+  `pkg/scriptengine/version.go` and `MANUAL.md` so all three
+  version markers are rewritten as one unit. `changelog-sections`
+  surfaces `feat` / `fix` / `perf` / `refactor` / `docs` / `build` /
+  `ci` and hides `chore`.
+- `.release-please-manifest.json` pinned at `0.4.21` so
+  release-please knows where to start counting from.
+- `x-release-please-version` end-of-line marker comments on each
+  versioned line: the `const Version` in `pkg/scriptengine/version.go`
+  and the two MANUAL.md version strings (cover block + footer).
+  The generic file updater finds these markers and rewrites just the
+  version digits on the line, leaving everything else intact.
+
+### Changed
+
+- `.github/workflows/release.yml` is now documented as fired from
+  either path — release-please merge or manual `git tag` — and the
+  goreleaser job description acknowledges both entry points.
+- `make release-prep VERSION=x.y.z` is reframed in the Makefile
+  comment as a manual fallback for ad-hoc local bumps. The sed
+  patterns were tightened with capture groups so they preserve the
+  trailing marker comments. The `version-check` target's sed regex
+  was anchored to end-of-line so the captured value isn't polluted
+  by the marker comment.
+- `CLAUDE.md`'s Versioning, CI, and release-flow sections now
+  describe release-please as the primary driver.
+- `OUT-OF-SCOPE.md`'s Easy bucket no longer has a Repo / tooling
+  subsection — the only remaining entry shipped here.
+
 ## [0.4.20] — 2026-05-26
 
 Final slice of **Easy / External tool integrations**: a wrapper

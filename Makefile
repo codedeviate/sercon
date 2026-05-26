@@ -18,10 +18,12 @@
 #            binding surface (the on-disk file is the source of truth for
 #            editor autocomplete and the public api shape).
 #   release-prep VERSION=x.y.z
-#            Bump every version marker (Go const + MANUAL cover + footer)
-#            and remind you to move the CHANGELOG Unreleased block into
-#            the new section. CI cuts artifacts on tag push; this target
-#            handles the part that has to happen on master first.
+#            Manual fallback: bump every version marker (Go const + MANUAL
+#            cover + footer). Normally release-please does this in CI
+#            (driven by Conventional Commits on master, see
+#            release-please-config.json + .github/workflows/release-please.yml);
+#            use this target only for ad-hoc local bumps when you're not
+#            going through the release-please PR flow.
 #   version-check
 #            Verify the version markers in pkg/scriptengine/version.go and
 #            MANUAL.md all agree. Run by release-prep; useful standalone
@@ -108,9 +110,9 @@ release-prep:
 		echo "usage: make release-prep VERSION=x.y.z"; exit 2; \
 	fi
 	@echo "Bumping version markers to $(VERSION)..."
-	@sed -i.bak -E 's/^const Version = "[^"]+"/const Version = "$(VERSION)"/' pkg/scriptengine/version.go
-	@sed -i.bak -E 's|<div class="version">Version [^<]+</div>|<div class="version">Version $(VERSION)</div>|' MANUAL.md
-	@sed -i.bak -E 's/\*This manual covers sercon v[0-9.]+\./*This manual covers sercon v$(VERSION)./' MANUAL.md
+	@sed -i.bak -E 's/(^const Version = ")[^"]+(")/\1$(VERSION)\2/' pkg/scriptengine/version.go
+	@sed -i.bak -E 's|(<div class="version">Version )[^<]+(</div>)|\1$(VERSION)\2|' MANUAL.md
+	@sed -i.bak -E 's/(\*This manual covers sercon v)[0-9.]+(\.)/\1$(VERSION)\2/' MANUAL.md
 	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak
 	@$(MAKE) --no-print-directory version-check
 	@echo ""
@@ -122,9 +124,9 @@ release-prep:
 	@echo "  5) git push origin master v$(VERSION)  # CI publishes binaries via goreleaser"
 
 version-check:
-	@const=$$(sed -nE 's/^const Version = "([^"]+)"/\1/p' pkg/scriptengine/version.go); \
-	cover=$$(sed -nE 's|<div class="version">Version ([^<]+)</div>|\1|p' MANUAL.md); \
-	footer=$$(sed -nE 's/\*This manual covers sercon v([0-9.]+)\..*/\1/p' MANUAL.md); \
+	@const=$$(sed -nE 's|^const Version = "([^"]+)".*$$|\1|p' pkg/scriptengine/version.go); \
+	cover=$$(sed -nE 's|.*<div class="version">Version ([^<]+)</div>.*|\1|p' MANUAL.md); \
+	footer=$$(sed -nE 's|\*This manual covers sercon v([0-9.]+)\..*|\1|p' MANUAL.md); \
 	if [ -z "$$const" ] || [ -z "$$cover" ] || [ -z "$$footer" ]; then \
 		echo "version markers not found: code='$$const' cover='$$cover' footer='$$footer'"; \
 		exit 1; \

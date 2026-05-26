@@ -32,20 +32,6 @@ the design space is unsettled, or it conflicts with current direction.
 Each Deferred entry names the reason so it's easy to re-promote when
 the situation changes.
 
-## Easy
-
-### Repo / tooling
-
-- **`release-please` / Conventional-Commits-driven changelog.** The
-  `make release-prep` target wired in v0.4.5 covers the version-marker
-  bump and prints the next-step checklist, but the CHANGELOG move from
-  `## [Unreleased]` to the new section is still manual. A
-  `release-please` workflow would automate that move based on commit
-  subjects (`feat:` → minor bump, `fix:` → patch, `!` / `BREAKING
-  CHANGE:` → major). Defer until the manual flow becomes a real
-  bottleneck. **Library:** `googleapis/release-please-action` (GitHub
-  Action, not a Go dep).
-
 ## Moderate
 
 ### `.d.ts` generator

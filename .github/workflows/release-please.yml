@@ -1,0 +1,33 @@
+name: release-please
+
+# release-please maintains a "chore: release X.Y.Z" PR based on
+# Conventional Commits on master. Merging that PR:
+#
+#   1. Bumps version markers (pkg/scriptengine/version.go + the two
+#      MANUAL.md version strings) via x-release-please-version comments.
+#   2. Updates CHANGELOG-AUTO.md with auto-generated entries.
+#      (CHANGELOG.md stays hand-curated and untouched.)
+#   3. Pushes a `vX.Y.Z` tag.
+#
+# We intentionally skip release-please's own GitHub Release creation
+# (`skip-github-release: true`) so the existing tag-triggered
+# release.yml owns the goreleaser run that uploads binaries. That keeps
+# manual `git tag` + push working identically to release-please pushes.
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
