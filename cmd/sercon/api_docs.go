@@ -144,7 +144,7 @@ func apiDocs() map[string]string {
 
 		// Age encryption (X25519 identity flavour)
 		"encrypt.keygen":  "Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.",
-		"encrypt.encrypt": "Seal data to one or more recipients (age1... public keys). Multi-recipient encryption lets any listed identity decrypt. Returns Uint8Array binary ciphertext.",
-		"encrypt.decrypt": "Open an age payload with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error.",
+		"encrypt.encrypt": "Seal data to one or more recipients (age1... public keys). Default output is binary; opts.armored=true wraps in age's ASCII armor for JSON/YAML/email embedding. Multi-recipient encryption lets any listed identity decrypt.",
+		"encrypt.decrypt": "Open an age payload (binary or armored, auto-detected) with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error.",
 	}
 }

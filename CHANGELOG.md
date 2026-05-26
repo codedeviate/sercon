@@ -10,6 +10,54 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.6] — 2026-05-26
+
+Seventh Moderate cut. Extends `api.encrypt.*` with **ASCII-armoured
+output**. No new top-level binding: `opts.armored: true` on the
+existing `encrypt` is the smaller surface (vs a separate
+`encryptArmored` function) and `decrypt` auto-detects the format
+from the leading bytes. One new import — `filippo.io/age/armor` —
+no new go.mod entry; same `filippo.io/age` module.
+
+### Added
+
+- `api.encrypt.encrypt(data, recipients, opts?)` grows an
+  `opts.armored: boolean` field. When true, the output is age's
+  ASCII armor: the `-----BEGIN AGE ENCRYPTED FILE-----` banner
+  followed by a base64-encoded body and a matching END line.
+  Default stays `false` (binary) so existing v0.5.5 callers are
+  unaffected.
+- `api.encrypt.decrypt` auto-detects armored vs binary input.
+  Leading whitespace and BOM bytes (common artefacts of pasting
+  from JSON / YAML / email containers) are tolerated before the
+  banner check, so a stray `\n` ahead of the payload doesn't
+  defeat detection. The matched banner is the literal
+  `armor.Header` constant exported by `filippo.io/age/armor`,
+  not just the `-----BEGIN` prefix that PEM keys share — so
+  there's no false-positive risk.
+- Armored ciphertext as a JS string (the natural shape after
+  pasting from JSON) also round-trips, since `jsArgToBytes`
+  produces UTF-8 bytes that the armor reader can parse.
+- `TestEncrypt_ArmoredOutputAndRoundTrip`,
+  `TestEncrypt_ArmoredStringRoundTrip`,
+  `TestEncrypt_DefaultStaysBinary`,
+  `TestEncrypt_ArmoredWrongIdentityErrors`, and
+  `TestLooksArmored` (7 sub-tests: exact banner, leading
+  whitespace, BOM prefix, PEM private key, binary age header,
+  empty, plain text). 12 new sub-tests total; the encrypt suite
+  is now 25.
+- `examples/scripts/encrypt.ts` grows a section demonstrating
+  armor output, the banner peek, and string-form round-trip.
+- `--examples` step 32 extended with the `opts.armored` case;
+  MANUAL §5 prose updated with the armor wrapping rules and the
+  auto-detect description on decrypt.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `encryptArmored` entry resolved (shipped via
+  the `opts.armored` option per the design note in v0.5.5's
+  changelog). `rekey` and `detectBackend` (+ PGP) remain.
+
 ## [0.5.5] — 2026-05-26
 
 Sixth Moderate cut. **`api.encrypt.*`** — age X25519 encryption.

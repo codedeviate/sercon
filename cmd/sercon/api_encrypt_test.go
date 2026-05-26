@@ -214,3 +214,104 @@ func TestEncrypt_NonAgeCiphertextThrows(t *testing.T) {
 	}
 }
 
+
+// opts.armored true produces age's ASCII-armoured format — payload
+// starts with the literal `-----BEGIN AGE ENCRYPTED FILE-----`
+// banner. Round-trips through the same decrypt call.
+func TestEncrypt_ArmoredOutputAndRoundTrip(t *testing.T) {
+	got := runEncryptScript(t, `
+		const k = encrypt.keygen();
+		const ct = encrypt.encrypt("armoured hi", k.publicKey, { armored: true });
+		// Read first chars of the banner without TextDecoder.
+		const head = Array.from(ct).slice(0, 34)
+			.map(b => String.fromCharCode(b)).join("");
+		const pt = encrypt.decrypt(ct, k.privateKey);
+		const ptStr = Array.from(pt).map(b => String.fromCharCode(b)).join("");
+		const __result = [head, ptStr].join(" | ");
+	`)
+	want := "-----BEGIN AGE ENCRYPTED FILE----- | armoured hi"
+	if got != want {
+		t.Errorf("got %v\nwant %s", got, want)
+	}
+}
+
+// Armored ciphertext as a JS string (the natural shape after pasting
+// into a script or reading from JSON) also round-trips. The string
+// passes through jsArgToBytes → []byte(s) → armor banner detection.
+func TestEncrypt_ArmoredStringRoundTrip(t *testing.T) {
+	got := runEncryptScript(t, `
+		const k = encrypt.keygen();
+		const ctBytes = encrypt.encrypt("through-string", k.publicKey, { armored: true });
+		// Convert to a JS string the cheap way — works for ASCII armor.
+		const ctStr = Array.from(ctBytes)
+			.map(b => String.fromCharCode(b)).join("");
+		const pt = encrypt.decrypt(ctStr, k.privateKey);
+		const __result = Array.from(pt).map(b => String.fromCharCode(b)).join("");
+	`)
+	if got != "through-string" {
+		t.Errorf("string-form round-trip: %v", got)
+	}
+}
+
+// opts.armored false / unset / missing all produce binary output —
+// the existing v0.5.5 contract is unchanged.
+func TestEncrypt_DefaultStaysBinary(t *testing.T) {
+	got := runEncryptScript(t, `
+		const k = encrypt.keygen();
+		const a = encrypt.encrypt("x", k.publicKey);                        // unset
+		const b = encrypt.encrypt("x", k.publicKey, {});                    // missing
+		const c = encrypt.encrypt("x", k.publicKey, { armored: false });    // explicit false
+		const head = (ct) => Array.from(ct).slice(0, 21)
+			.map(b => String.fromCharCode(b)).join("");
+		const __result = [head(a), head(b), head(c)].every(
+			h => h === "age-encryption.org/v1") + "";
+	`)
+	if got != "true" {
+		t.Errorf("expected all three to start with 'age-encryption.org/v1' (binary header); got %v", got)
+	}
+}
+
+// looksArmored unit-test. The detector ignores leading whitespace
+// (a common artefact of pasting from JSON/email containers) and
+// matches the full banner — not just the `-----BEGIN` prefix that
+// PEM keys share.
+func TestLooksArmored(t *testing.T) {
+	cases := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{"exact banner", []byte("-----BEGIN AGE ENCRYPTED FILE-----\n..."), true},
+		{"leading whitespace", []byte("\n  -----BEGIN AGE ENCRYPTED FILE-----\n..."), true},
+		{"BOM prefix", []byte{0xff, 0xfe, '-', '-', '-', '-', '-', 'B', 'E', 'G', 'I', 'N', ' ', 'A', 'G', 'E', ' ', 'E', 'N', 'C', 'R', 'Y', 'P', 'T', 'E', 'D', ' ', 'F', 'I', 'L', 'E', '-', '-', '-', '-', '-'}, true},
+		{"PEM private key", []byte("-----BEGIN PRIVATE KEY-----\n..."), false},
+		{"binary age header", []byte("age-encryption.org/v1\n..."), false},
+		{"empty", []byte{}, false},
+		{"plain text", []byte("hello world"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := looksArmored(tc.data); got != tc.want {
+				t.Errorf("looksArmored(%q): %v (want %v)", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// Armored ciphertext signed with a private key not in the recipient
+// list still surfaces the "no identity matched" error wording — the
+// armor layer is transparent to identity checking.
+func TestEncrypt_ArmoredWrongIdentityErrors(t *testing.T) {
+	got := runEncryptScript(t, `
+		const owner = encrypt.keygen();
+		const eve = encrypt.keygen();
+		const ct = encrypt.encrypt("private", owner.publicKey, { armored: true });
+		let caught = "";
+		try { encrypt.decrypt(ct, eve.privateKey); }
+		catch (e) { caught = String(e); }
+		const __result = caught.includes("did not match") || caught.includes("no identity matched");
+	`)
+	if got != true {
+		t.Errorf("armored wrong-identity error wording: %v", got)
+	}
+}

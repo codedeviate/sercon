@@ -44,3 +44,24 @@ const binary = new Uint8Array([0, 1, 2, 3, 255, 128, 64]);
 const sealed = api.encrypt.encrypt(binary, alice.publicKey);
 const opened = api.encrypt.decrypt(sealed, alice.privateKey);
 api.log("opened bytes:", Array.from(opened).join(","));
+
+api.log("");
+api.log("=== armored output for embedding in JSON / YAML / email ===");
+// opts.armored wraps the binary age stream in age's ASCII armor banner.
+// Same `decrypt` call reads both forms — auto-detected from the leading
+// bytes (`-----BEGIN AGE ENCRYPTED FILE-----`).
+const armored = api.encrypt.encrypt(
+  "embed me in a JSON field",
+  alice.publicKey,
+  { armored: true },
+);
+const head = Array.from(armored).slice(0, 35).map((b) => String.fromCharCode(b)).join("");
+api.log("banner:    ", head);
+api.log("length:    ", armored.length, "bytes (vs binary's smaller form)");
+api.log("decoded:   ", await api.text.decode(api.encrypt.decrypt(armored, alice.privateKey), "utf-8"));
+
+// Armored ciphertext as a JS string (the natural shape after pasting from
+// JSON / email) round-trips too — jsArgToBytes converts the string to
+// bytes, then armor detection kicks in.
+const asString = await api.text.decode(armored, "utf-8");
+api.log("re-decoded:", await api.text.decode(api.encrypt.decrypt(asString, alice.privateKey), "utf-8"));

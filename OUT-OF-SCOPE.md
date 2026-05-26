@@ -129,13 +129,6 @@ the situation changes.
   match in pure Go; alternatively hand-roll a small `crypto/rsa`
   / `crypto/ecdsa` / `crypto/ed25519` decoder since the JWK shape
   is well-specified.
-- **`api.encrypt.encryptArmored(data, recipients)`** — Same as
-  `encrypt` but produces the age ASCII-armoured format (BEGIN
-  AGE ENCRYPTED FILE banner + base64 body). Useful for embedding
-  in JSON / YAML / email. **Library:** `filippo.io/age/armor`
-  layered on top of the existing `filippo.io/age` dep. Could ship
-  as a third arg on `encrypt` (`opts.armored?: boolean`) instead of
-  a separate function — pick the API shape before adding.
 - **`api.encrypt.rekey(ciphertext, oldIdentities, newRecipients)`**
   — Re-seal a payload for a new recipient set without exposing the
   plaintext to the caller. Two-step decrypt-then-encrypt

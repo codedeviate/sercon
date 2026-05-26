@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.5</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.6</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -666,11 +666,12 @@ declare const api: {
     encrypt(
       data: string | Uint8Array | ArrayBuffer,
       recipients: string | string[],          // age1... public keys
-    ): Uint8Array;                             // binary age format
+      opts?: { armored?: boolean },           // default false → binary age format
+    ): Uint8Array;
     decrypt(
       ciphertext: string | Uint8Array | ArrayBuffer,
       identities: string | string[],          // AGE-SECRET-KEY-1... private keys
-    ): Uint8Array;
+    ): Uint8Array;                             // auto-detects binary vs armored
   };
 
   gh: {
@@ -1201,12 +1202,12 @@ failures.
 
 Age encryption (`api.encrypt.*`) wraps
 [`filippo.io/age`](https://github.com/FiloSottile/age), the pure-Go
-reference implementation. v0.5.5 ships the core round-trip
-(keygen / encrypt / decrypt) over the X25519 identity flavour —
-`age1...` recipients (safe to share) and
-`AGE-SECRET-KEY-1...` identities (must be kept secret). Armoured
-ASCII output, rekeying, and the recipient-format dispatcher are on
-the backlog.
+reference implementation. The round-trip core (keygen / encrypt /
+decrypt) lands in v0.5.5; v0.5.6 adds ASCII-armoured output via
+`opts.armored`. Rekeying and the recipient-format dispatcher
+(which would also bring PGP support) remain on the backlog.
+Identities use the X25519 flavour: `age1...` recipients (safe to
+share) and `AGE-SECRET-KEY-1...` identities (must be kept secret).
 
 All three members are synchronous: encryption is pure CPU work
 with a small API surface, matching the call shape of the other
@@ -1217,17 +1218,26 @@ crypto bindings (`api.jwt`, `api.hash`).
   disk. Two consecutive calls produce different keys; entropy
   comes from `crypto/rand` via age. Destructure to use one or the
   other separately.
-- **`encrypt(data, recipients)`** — Seal `data` to one or more
-  recipients. Input accepts `string` / `Uint8Array` /
+- **`encrypt(data, recipients, opts?)`** — Seal `data` to one or
+  more recipients. Input accepts `string` / `Uint8Array` /
   `ArrayBuffer`; `recipients` accepts a single string or an array.
-  Output is the binary age format as `Uint8Array`. Multi-recipient
-  encryption uses age's native multi-recipient header — any one
-  of the listed identities can decrypt the resulting ciphertext,
-  no re-encryption per reader needed.
+  Default output is the binary age format as `Uint8Array`. Passing
+  `opts.armored: true` wraps it in age's ASCII armor — the
+  `-----BEGIN AGE ENCRYPTED FILE-----` banner + base64 body
+  that's safe to embed in JSON / YAML / email. Either form
+  decrypts via the same `decrypt` call (auto-detected by the
+  leading bytes). Multi-recipient encryption uses age's native
+  multi-recipient header — any one of the listed identities can
+  decrypt the resulting ciphertext, no re-encryption per reader
+  needed.
 - **`decrypt(ciphertext, identities)`** — Open an age-encrypted
-  payload with one of the supplied identities. age walks the
-  identities and uses the first that matches a stanza in the
-  header. Returns `Uint8Array`; let scripts decode to a string via
+  payload with one of the supplied identities. **Auto-detects
+  binary vs armored input** by sniffing the leading bytes for
+  age's armor banner (whitespace and BOM bytes ahead of the banner
+  are tolerated, so ciphertext pasted from JSON / email containers
+  still detects correctly). age then walks the identities and uses
+  the first that matches a stanza in the header. Returns
+  `Uint8Array`; let scripts decode to a string via
   `api.text.decode(bytes, "utf-8")` if appropriate (goja doesn't
   ship `TextDecoder`).
 
@@ -1714,7 +1724,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.5. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.6. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

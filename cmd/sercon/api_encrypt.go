@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"filippo.io/age"
+	"filippo.io/age/armor"
 	"github.com/dop251/goja"
 )
 
@@ -24,9 +25,13 @@ import (
 // matching that pattern keeps the call shape uniform.
 func encryptNamespace(vm *goja.Runtime) map[string]any {
 	return map[string]any{
-		"keygen":  func() goja.Value { return encryptKeygen(vm) },
-		"encrypt": func(data goja.Value, recipients goja.Value) goja.Value { return encryptEncrypt(vm, data, recipients) },
-		"decrypt": func(ciphertext goja.Value, identities goja.Value) goja.Value { return encryptDecrypt(vm, ciphertext, identities) },
+		"keygen": func() goja.Value { return encryptKeygen(vm) },
+		"encrypt": func(data, recipients, opts goja.Value) goja.Value {
+			return encryptEncrypt(vm, data, recipients, opts)
+		},
+		"decrypt": func(ciphertext, identities goja.Value) goja.Value {
+			return encryptDecrypt(vm, ciphertext, identities)
+		},
 	}
 }
 
@@ -53,16 +58,18 @@ func encryptKeygen(vm *goja.Runtime) goja.Value {
 // accepts string / Uint8Array / ArrayBuffer. `recipients` accepts a
 // single string or an array; each string is a bech32-encoded
 // `age1...` public key (passing a private key by mistake throws a
-// clear error rather than encrypting to an unintended key). Output
-// is the binary age format as Uint8Array; the armoured ASCII format
-// lands in a later cut.
+// clear error rather than encrypting to an unintended key).
+//
+// Default output is the binary age format. Passing
+// `opts.armored: true` wraps it in age's ASCII armor — the
+// `-----BEGIN AGE ENCRYPTED FILE-----` banner + base64 body that's
+// safe to embed in JSON / YAML / email. Either form decrypts via
+// the same `decrypt` call (auto-detected by the leading bytes).
 //
 // Multi-recipient encryption uses age's native multi-recipient
 // header: any one of the listed identities can decrypt the
-// resulting ciphertext. This is the documented way to allow several
-// people to read the same encrypted message without re-encrypting
-// for each.
-func encryptEncrypt(vm *goja.Runtime, dataArg, recipientsArg goja.Value) goja.Value {
+// resulting ciphertext.
+func encryptEncrypt(vm *goja.Runtime, dataArg, recipientsArg, optsArg goja.Value) goja.Value {
 	data, err := jsArgToBytes(dataArg)
 	if err != nil {
 		panic(vm.NewGoError(fmt.Errorf("encrypt.encrypt: data %w", err)))
@@ -84,8 +91,22 @@ func encryptEncrypt(vm *goja.Runtime, dataArg, recipientsArg goja.Value) goja.Va
 		recipients = append(recipients, r)
 	}
 
+	armored := optBool(asMap(optsArg), "armored", false)
+
 	var out bytes.Buffer
-	w, err := age.Encrypt(&out, recipients...)
+	// When armored, we stack: age.Encrypt → armor.NewWriter → out.
+	// Both writers need Close() — age finalises its trailer first,
+	// then armor flushes its base64-encoded END banner. Closing in
+	// the wrong order produces truncated output that decrypts as
+	// "unexpected EOF" rather than the "no recipients" misnomer
+	// `defer` would create here.
+	var dst io.Writer = &out
+	var armorW io.WriteCloser
+	if armored {
+		armorW = armor.NewWriter(&out)
+		dst = armorW
+	}
+	w, err := age.Encrypt(dst, recipients...)
 	if err != nil {
 		panic(vm.NewGoError(fmt.Errorf("encrypt.encrypt: %w", err)))
 	}
@@ -94,6 +115,11 @@ func encryptEncrypt(vm *goja.Runtime, dataArg, recipientsArg goja.Value) goja.Va
 	}
 	if err := w.Close(); err != nil {
 		panic(vm.NewGoError(fmt.Errorf("encrypt.encrypt: close: %w", err)))
+	}
+	if armorW != nil {
+		if err := armorW.Close(); err != nil {
+			panic(vm.NewGoError(fmt.Errorf("encrypt.encrypt: armor close: %w", err)))
+		}
 	}
 	return vm.ToValue(out.Bytes())
 }
@@ -135,7 +161,17 @@ func encryptDecrypt(vm *goja.Runtime, ciphertextArg, identitiesArg goja.Value) g
 		identities = append(identities, id)
 	}
 
-	r, err := age.Decrypt(bytes.NewReader(ciphertext), identities...)
+	// Auto-detect armored ciphertext by sniffing the leading bytes
+	// for age's literal banner. Stripping leading whitespace first
+	// covers ciphertext pasted from email or JSON where a stray
+	// newline or BOM might prefix the payload — both cases are
+	// safe to discard before banner detection.
+	var src io.Reader = bytes.NewReader(ciphertext)
+	if looksArmored(ciphertext) {
+		src = armor.NewReader(src)
+	}
+
+	r, err := age.Decrypt(src, identities...)
 	if err != nil {
 		panic(vm.NewGoError(fmt.Errorf("encrypt.decrypt: %w", err)))
 	}
@@ -144,6 +180,19 @@ func encryptDecrypt(vm *goja.Runtime, ciphertextArg, identitiesArg goja.Value) g
 		panic(vm.NewGoError(fmt.Errorf("encrypt.decrypt: read: %w", err)))
 	}
 	return vm.ToValue(plain)
+}
+
+// looksArmored reports whether ciphertext is in age's ASCII armor.
+// The check ignores leading whitespace so payloads pasted from
+// email / JSON / YAML containers (where a newline or BOM might
+// prefix the body) still detect correctly. The banner itself is
+// the literal `-----BEGIN AGE ENCRYPTED FILE-----` constant
+// exported by filippo.io/age/armor; matching that exactly avoids
+// false positives from PEM keys or other base64-armoured payloads
+// that share the `-----BEGIN` prefix.
+func looksArmored(b []byte) bool {
+	trimmed := bytes.TrimLeft(b, " \t\r\n\xff\xfe")
+	return bytes.HasPrefix(trimmed, []byte(armor.Header))
 }
 
 // parseRecipientStrict wraps age.ParseX25519Recipient with the
