@@ -34,32 +34,6 @@ the situation changes.
 
 ## Trivial
 
-### String utilities & formatting
-
-- **`trim`**, **`ltrim`**, **`rtrim`**, **`strrev`**, **`strip_html`**,
-  **`nl2br`** / **`br2nl`** — String shaping (script: `strutil.rhai`).
-  **Library:** `strings` (stdlib) for trim/reverse/replace; for
-  `strip_html` either a tiny regex or `golang.org/x/net/html` tokenizer
-  if precision matters.
-- **`base64_encode`** / **`base64_decode`** /
-  **`urlencode`** / **`urldecode`** / **`html_entity_decode`** —
-  Encoding round-trips (script: `strutil.rhai`).
-  **Library:** `encoding/base64`, `net/url`, `html` (stdlib — `html.UnescapeString`).
-- **`str_pad`** / **`lpad`** / **`rpad`** — Padding (script: `strutil.rhai`).
-  **Library:** `strings.Repeat` (stdlib); a few lines of helper code.
-- **`sprintf`** / **`printf`** — printf-style formatting (script:
-  `strutil.rhai`). **Library:** `fmt` (stdlib); only quirk is mapping
-  PHP-style `%s/%d` semantics onto Go's verbs.
-- **`dirname`** / **`basename`** — POSIX path operations (script:
-  `strutil.rhai`). **Library:** `path` / `path/filepath` (stdlib).
-- **`date_format(unix_ts, fmt, tz?)`** — strftime-based timestamp
-  formatting (script: `strutil.rhai`). **Library:** `time` (stdlib) for
-  the core; `github.com/lestrrat-go/strftime` if real strftime tokens
-  are required (otherwise translate to Go's reference layout).
-- **`text::normalize_newlines(s, style)`** — `lf` / `crlf` / `cr`
-  conversion (script: `text.rhai`). **Library:** `strings.ReplaceAll`
-  (stdlib).
-
 ### Repo / tooling
 
 - **`golangci-lint` config.** The spec said "minimal if added" and we

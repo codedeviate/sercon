@@ -119,7 +119,7 @@ func runOne(eng *scriptengine.Engine, path string, verbose bool) error {
 
 // registerExampleAPI wires the small example binding surface advertised by
 // the README: api.log, api.assert.*, api.http.*, api.time.*, api.env.get,
-// api.hash.*.
+// api.hash.*, api.str.*, api.path.*.
 func registerExampleAPI(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("api", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
@@ -178,6 +178,19 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 						return nil, nil
 					}
 				}),
+				"format": func(call goja.FunctionCall) goja.Value {
+					ms := call.Argument(0).ToInteger()
+					layout := call.Argument(1).String()
+					loc := time.Local
+					if v := call.Argument(2); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+						l, err := time.LoadLocation(v.String())
+						if err != nil {
+							panic(vm.NewGoError(fmt.Errorf("time.format: %w", err)))
+						}
+						loc = l
+					}
+					return vm.ToValue(strftime(time.UnixMilli(ms).In(loc), layout))
+				},
 			},
 			"env": map[string]any{
 				"get": func(call goja.FunctionCall) goja.Value {
@@ -189,6 +202,8 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 				},
 			},
 			"hash": hashNamespace(vm),
+			"str":  strNamespace(vm),
+			"path": pathNamespace(vm),
 		}
 	}); err != nil {
 		return err
@@ -220,6 +235,70 @@ func httpDo(ctx context.Context, method, url, body string) (map[string]any, erro
 		"status": resp.StatusCode,
 		"body":   string(bs),
 	}, nil
+}
+
+// strftime renders a Go time.Time using a tiny strftime token subset: the
+// common date/time pieces (%Y/%y/%m/%d/%H/%M/%S, %F, %T, %j) plus weekday
+// (%A/%a) and month (%B/%b) names in English, plus zone (%z/%Z) and the
+// literal "%%". Unknown `%X` tokens are emitted verbatim so users get a
+// visible signal rather than a silent rewrite.
+func strftime(t time.Time, format string) string {
+	var out strings.Builder
+	for i := 0; i < len(format); i++ {
+		if format[i] != '%' || i+1 >= len(format) {
+			out.WriteByte(format[i])
+			continue
+		}
+		i++
+		switch format[i] {
+		case 'Y':
+			out.WriteString(t.Format("2006"))
+		case 'y':
+			out.WriteString(t.Format("06"))
+		case 'm':
+			out.WriteString(t.Format("01"))
+		case 'd':
+			out.WriteString(t.Format("02"))
+		case 'H':
+			out.WriteString(t.Format("15"))
+		case 'M':
+			out.WriteString(t.Format("04"))
+		case 'S':
+			out.WriteString(t.Format("05"))
+		case 'T':
+			out.WriteString(t.Format("15:04:05"))
+		case 'F':
+			out.WriteString(t.Format("2006-01-02"))
+		case 'j':
+			fmt.Fprintf(&out, "%03d", t.YearDay())
+		case 'A':
+			out.WriteString(t.Weekday().String())
+		case 'a':
+			s := t.Weekday().String()
+			if len(s) > 3 {
+				s = s[:3]
+			}
+			out.WriteString(s)
+		case 'B':
+			out.WriteString(t.Month().String())
+		case 'b':
+			s := t.Month().String()
+			if len(s) > 3 {
+				s = s[:3]
+			}
+			out.WriteString(s)
+		case 'z':
+			out.WriteString(t.Format("-0700"))
+		case 'Z':
+			out.WriteString(t.Format("MST"))
+		case '%':
+			out.WriteByte('%')
+		default:
+			out.WriteByte('%')
+			out.WriteByte(format[i])
+		}
+	}
+	return out.String()
 }
 
 // valuesEqual compares two goja values using strict-equality semantics

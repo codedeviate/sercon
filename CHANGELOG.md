@@ -10,6 +10,39 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.3.2] — 2026-05-26
+
+Third slice of the **Trivial** backlog bucket — the
+**String utilities & formatting** sub-section. All stdlib, no new
+dependencies.
+
+### Added
+
+- `api.str.*` (eighteen members): `trim` / `ltrim` / `rtrim` (PHP-style
+  custom-mask trimming), `reverse` (rune-aware), `stripHtml`, `nl2br`
+  (with optional XHTML mode), `br2nl`, `base64Encode` / `base64Decode`,
+  `urlEncode` / `urlDecode` (form-style), `htmlEntityDecode`, `pad` /
+  `lpad` / `rpad` (recon-shaped, defaults to a single-space pad on the
+  right), `sprintf` / `printf` (Go fmt verbs; printf writes to stdout),
+  `normalizeNewlines` ("lf" / "crlf" / "cr").
+- `api.path.*`: `dirname`, `basename(p, suffix?)` — POSIX semantics
+  (forward slashes).
+- `api.time.format(unixMs, fmt, tz?)`: small strftime renderer over a
+  curated token set (`%Y %y %m %d %H %M %S %F %T %j %A %a %B %b %z %Z
+  %%`). Day/month names are English; unknown `%X` tokens are emitted
+  verbatim. Takes Unix milliseconds for symmetry with `api.time.nowMs`.
+- Three new test files driving each surface through real Engine + Run:
+  `api_str_test.go`, plus a Go-level table test for `strftime`.
+- `--examples` walkthrough adds steps 14 ("String utilities") and 15
+  ("Paths and time formatting"). `exampleCount` is now 15.
+
+### Changed
+
+- `MANUAL.md` declares the new `str` / `path` shapes and extends the
+  `time` shape with `format`. A new prose block calls out the
+  recon-style vs JS-native semantic differences (trim mask, urlEncode
+  form-style, sprintf verbs, pad sides, strftime token table).
+
 ## [0.3.1] — 2026-05-26
 
 Second slice of the **Trivial** backlog bucket — the

@@ -319,10 +319,27 @@ api.log(api.hash.blake3("abc"));   // BLAKE3
 api.log(api.hash.crc32("abc"));    // 352441c2`)
 	note("All algos take a UTF-8 string and return lowercase hex (crc32 is zero-padded to 8 chars).")
 
+	header(14, "String utilities (api.str.*)")
+	code(`api.log(api.str.trim("  hi  "));               // "hi"
+api.log(api.str.trim("///x///", "/"));          // "x"
+api.log(api.str.reverse("café"));               // "éfac" (rune-aware)
+api.log(api.str.stripHtml("<b>bold</b>"));      // "bold"
+api.log(api.str.base64Encode("hello"));         // "aGVsbG8="
+api.log(api.str.urlEncode("a b/c"));            // "a+b%2Fc"
+api.log(api.str.sprintf("%-6s %d", "name", 42)); // "name   42"
+api.log(api.str.lpad("7", 4, "0"));             // "0007"`)
+	note("All members accept JS strings. sprintf uses Go fmt verbs (%s/%d/%x/%.2f/...).")
+
+	header(15, "Paths and time formatting (api.path.* / api.time.format)")
+	code(`api.log(api.path.dirname("/a/b/c.txt"));        // "/a/b"
+api.log(api.path.basename("/a/b/c.txt", ".txt")); // "c"
+api.log(api.time.format(api.time.nowMs(), "%F %T", "UTC"));
+// strftime tokens supported: %Y %y %m %d %H %M %S %F %T %j %A %a %B %b %z %Z %%`)
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 13
+const exampleCount = 15

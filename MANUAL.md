@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.3.1</div>
+<div class="version">Version 0.3.2</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -285,10 +285,37 @@ declare const api: {
   time: {
     nowMs(): number;
     sleep(ms: number): Promise<void>;
+    format(unixMs: number, fmt: string, tz?: string): string;
   };
 
   env: {
     get(name: string): string | undefined;
+  };
+
+  str: {
+    trim(s: string, mask?: string): string;
+    ltrim(s: string, mask?: string): string;
+    rtrim(s: string, mask?: string): string;
+    reverse(s: string): string;
+    stripHtml(s: string): string;
+    nl2br(s: string, xhtml?: boolean): string;
+    br2nl(s: string): string;
+    base64Encode(s: string): string;
+    base64Decode(s: string): string;
+    urlEncode(s: string): string;
+    urlDecode(s: string): string;
+    htmlEntityDecode(s: string): string;
+    pad(s: string, len: number, padChar?: string, side?: "left" | "right" | "both"): string;
+    lpad(s: string, len: number, padChar?: string): string;
+    rpad(s: string, len: number, padChar?: string): string;
+    sprintf(fmt: string, ...args: unknown[]): string;
+    printf(fmt: string, ...args: unknown[]): void;
+    normalizeNewlines(s: string, style: "lf" | "crlf" | "cr"): string;
+  };
+
+  path: {
+    dirname(p: string): string;
+    basename(p: string, suffix?: string): string;
   };
 
   hash: {
@@ -331,6 +358,38 @@ spec uses the underscore so the JS name matches recon's). BLAKE3 uses
 the upstream `lukechampine.com/blake3` reference implementation with a
 32-byte output. `crc32` is the IEEE polynomial, zero-padded to 8 hex
 chars.
+
+String utilities (`api.str.*`) follow PHP-/recon-style semantics where
+they differ from JS:
+
+- `trim` / `ltrim` / `rtrim` accept an optional mask string; **any
+  character in the mask** is stripped. Default mask is whitespace
+  (`" \t\n\r\v\f"`).
+- `reverse` is rune-aware, so `reverse("café")` is `"éfac"`. Grapheme
+  clusters are not handled — that's a separate problem.
+- `nl2br` emits `<br>` by default; pass `true` as the second arg for
+  XHTML-style `<br/>`.
+- `urlEncode` / `urlDecode` use the form encoding (`+` for space). For
+  path-segment encoding, use `encodeURIComponent` instead — that one
+  is provided by goja natively.
+- `pad` / `lpad` / `rpad` follow recon's `str_pad`: `pad` defaults to
+  side `"right"`; `"left"` and `"both"` are also accepted.
+- `sprintf` / `printf` are thin wrappers over Go's `fmt`, so the verb
+  set is Go's (`%s`, `%d`, `%x`, `%.2f`, `%v`, `%t`, `%q`, etc.) — not
+  PHP's. `printf` writes to stdout.
+- `normalizeNewlines` canonicalises any mix of `\r\n`, `\r`, and `\n`
+  to the requested style.
+
+Path utilities (`api.path.*`) are POSIX (forward-slash). On Windows
+either pass forward-slash paths or convert separators yourself.
+
+Time formatting (`api.time.format(unixMs, fmt, tz?)`) takes Unix
+milliseconds (symmetric with `api.time.nowMs()`) and a small strftime
+token set: `%Y %y %m %d %H %M %S %F %T %j %A %a %B %b %z %Z %%`. Day
+and month names are in English. Pass a third-argument IANA zone name
+(e.g. `"UTC"`, `"America/New_York"`) to render in that zone; if
+omitted, the host's `time.Local` is used. Unknown `%X` tokens are
+emitted verbatim so a typo is visible rather than silently dropped.
 
 ## 6. JavaScript runtime built-ins (goja)
 
@@ -618,7 +677,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.3.1. Whenever you add, remove, or change a
+*This manual covers sercon v0.3.2. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
