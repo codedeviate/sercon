@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.17</div>
+<div class="version">Version 0.4.18</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -508,6 +508,24 @@ declare const api: {
       success: boolean;
       durationMs: number;
     }>;
+    http(
+      method: string,
+      url: string,
+      opts?: {
+        headers?: Record<string, string>;
+        body?: string;
+        timeout?: number;       // ms; default 30000
+        follow?: boolean;       // -L
+        insecure?: boolean;     // -k
+        backend?: "auto" | "recon" | "curl"; // default "auto"
+      },
+    ): Promise<{
+      status: number;
+      headers: Record<string, string>;
+      body: string;
+      durationMs: number;
+      backend: "recon" | "curl";
+    }>;
   };
 
   email: {
@@ -774,6 +792,30 @@ the only entry today; `http` (recon-with-curl-fallback) and `git` /
   throw: `success: false` + the real `exitCode` is what callers want
   for the usual "ran the linter, expected to be told it failed"
   flow.
+
+- **`http(method, url, opts?)`** — curl-compatible HTTP client routed
+  through `recon` (preferred) with `curl` as a fallback. Returns
+  `{ status, headers, body, durationMs, backend }`. The choice between
+  the two binaries is normally invisible to scripts — both implement
+  the same curl-style flag set we use here (`-X`, `-H`, `-D`,
+  `--data-binary`, `-L`, `-k`, `-s`). Pick a specific backend with
+  `opts.backend: "recon" | "curl"` when you need to.
+
+  Implementation notes: response headers are dumped to a temp file via
+  `-D <path>` and parsed back, rather than relying on `-i`'s body-stream
+  format (recon's `-i` is verbose-debug style with `< ` prefixes,
+  incompatible with curl's wire-format `-i`). Request bodies are
+  materialised to a temp file and passed via `--data-binary
+  @<path>` so CR / LF are preserved regardless of backend. Header
+  names in the returned map are lower-cased. On redirect chains
+  (`opts.follow: true`), the *last* response wins — the intermediate
+  3xx blocks are skipped.
+
+  HTTP 4xx / 5xx do **not** throw — they're a normal HTTP outcome and
+  callers branch on `status`. Process-start failures, transport
+  errors (DNS, connection refused, TLS handshake), and context
+  deadline / cancellation throw. The error message includes the
+  backend's stderr when present.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1206,7 +1248,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.17. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.18. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

@@ -48,15 +48,6 @@ the situation changes.
 
 ### External tool integrations
 
-- **HTTP via `recon` with `curl` fallback.** `api.http.*` currently
-  goes straight through `net/http`. Add an opt-in path that shells out
-  to `recon` (curl-compatible HTTP surface, ships in the same
-  ecosystem) with a fallback to `curl` only when `recon` is not on
-  `PATH`. Surface the choice as a single binding such as
-  `api.exec.http(method, url, opts)` so scripts don't need to care
-  which backend ran. Do **not** add a generic `curl` binding —
-  prefer `recon`. **Library:** `os/exec` (stdlib) + argv builder; output
-  parsed as JSON via `encoding/json`.
 - **`git(repo_path)`** — Wrap the `git` CLI: `branch()`, `is_clean()`,
   `rev_parse()`, `status()`, `add()`, `commit()`, `log()`,
   `diff_stat()`, `run_text()` (script: `git.rhai`). Requires `git` on

@@ -60,6 +60,8 @@ func optMillis(opts map[string]any, key string, fallback time.Duration) time.Dur
 	switch t := v.(type) {
 	case int64:
 		return time.Duration(t) * time.Millisecond
+	case int:
+		return time.Duration(t) * time.Millisecond
 	case float64:
 		return time.Duration(t) * time.Millisecond
 	}

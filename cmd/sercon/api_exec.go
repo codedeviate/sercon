@@ -17,14 +17,16 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// execNamespace wires `api.exec.*`. v0.4.17 ships `shell` only; `http` (the
-// recon-with-curl-fallback path) lands in v0.4.18. Lives under its own
-// namespace because subprocess work has different operational concerns
-// than the pure-Go bindings — host binary on PATH, environment, working
-// directory.
+// execNamespace wires `api.exec.*`. `shell` is the generic subprocess
+// entry; `http` is a curl-compatible HTTP client routed through the
+// `recon` binary (preferred) with `curl` as a fallback. The git / gh
+// wrappers land in v0.4.19. Lives under its own namespace because
+// subprocess work has different operational concerns than the pure-Go
+// bindings — host binary on PATH, environment, working directory.
 func execNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"shell": scriptengine.PromisifyAsync(vm, loop, execShell),
+		"http":  scriptengine.PromisifyAsync(vm, loop, execHTTP),
 	}
 }
 

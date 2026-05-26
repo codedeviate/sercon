@@ -35,6 +35,7 @@ Or pick individual scripts:
 | `diff.ts` | `api.diff.compare` — unified diff of two text inputs. |
 | `jq.ts` | `api.jq.query/queryAll` — jq filters over JS data structures. |
 | `exec-shell.ts` | `api.exec.shell` — subprocess runner; POSIX-only (uses `/bin/echo` / `/usr/bin/tr` / `sleep`). |
+| `exec-http.ts` | `api.exec.http` — recon-with-curl-fallback HTTP client; hits httpbin.org (not in CI). |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't

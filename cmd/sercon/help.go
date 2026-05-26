@@ -477,10 +477,27 @@ const fed = await api.exec.shell(["/usr/bin/tr", "a-z", "A-Z"], {
 });`)
 	note("Non-zero exits resolve with success:false; timeouts and spawn failures throw.")
 
+	header(26, "HTTP via recon (with curl fallback) (api.exec.http)")
+	code(`// Auto backend prefers recon; falls back to curl when recon is missing.
+const r = await api.exec.http("GET", "https://httpbin.org/get");
+api.log(r.status, r.backend, r.durationMs + "ms");
+
+// Force a specific backend if you need one.
+const c = await api.exec.http("GET", "https://httpbin.org/get",
+  { backend: "curl" });
+
+// POST with custom headers + body.
+const p = await api.exec.http("POST", "https://httpbin.org/post", {
+  headers: { "X-Sercon": "demo", "Content-Type": "application/json" },
+  body: JSON.stringify({ hello: "world" }),
+});
+api.log("echo:", JSON.parse(p.body).data);`)
+	note("4xx/5xx resolve as status; transport errors and timeouts throw. opts: timeout, follow, insecure, backend.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 25
+const exampleCount = 26

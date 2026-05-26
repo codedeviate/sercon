@@ -39,6 +39,7 @@ declare const api: {
     get(...args: unknown[]): unknown;
   };
   exec: {
+    http(...args: unknown[]): Promise<Record<string, unknown>>;
     shell(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   hash: {

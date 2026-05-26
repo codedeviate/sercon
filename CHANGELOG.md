@@ -10,6 +10,59 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.18] — 2026-05-26
+
+Second slice of **Easy / External tool integrations**: HTTP via
+`recon` (preferred) with `curl` as a fallback. Still no new
+dependencies — `os/exec` and the system binaries do the work.
+
+### Added
+
+- `api.exec.http(method, url, opts?)` → `Promise<{ status, headers,
+  body, durationMs, backend }>` — curl-compatible HTTP client.
+- `opts.headers` is a `Record<string, string>` of request headers;
+  `opts.body` is piped to the backend as `--data-binary @<tempfile>`
+  so CR / LF survive verbatim; `opts.timeout` defaults to 30 000 ms;
+  `opts.follow` toggles `-L`; `opts.insecure` toggles `-k`.
+- `opts.backend` picks the binary explicitly: `"auto"` (default —
+  recon first, curl as a fallback), `"recon"`, or `"curl"`. The
+  result tells you which backend ran via `backend`.
+- Response headers are dumped to a temp file via `-D <path>` and
+  parsed back, rather than relying on `-i`'s body stream. Recon's
+  `-i` is verbose-debug style (`< Header: value`), so a unified
+  parser across the two backends needed an out-of-band channel.
+- Redirect chains (with `follow: true`) skip past intermediate 3xx
+  blocks and report the final response.
+- HTTP 4xx / 5xx do not throw — they're a normal HTTP outcome and
+  callers branch on `status`. Process-start failures, transport
+  errors, and context deadline / cancel throw.
+- `TestExecHTTP_*` (8 sub-tests): baseline GET, POST with body +
+  headers, 4xx-doesn't-throw, transport error, timeout throws,
+  forced curl backend, forced recon backend, input validation.
+- `TestParseHeaderFile_RedirectChain` /
+  `TestParseStatusCode_ReconQuirkyStatusLine` /
+  `TestParseStatusCode_NoCode` pin the parser against the quirks
+  observed in the real backends (recon prints
+  `HTTP/HTTP/2.0 200 OK`, curl prints `HTTP/2 200`).
+- `examples/scripts/exec-http.ts` walking through every form above;
+  hits httpbin.org so it's in `make demo` but not in CI (same
+  policy as `net-probe.ts` and `email-auth.ts`).
+- `--examples` step 26 covers the binding; MANUAL section 5 gains
+  the `api.exec.http` block plus a paragraph on the throw-vs-resolve
+  contract and the backend-selection rules.
+- `examples/scripts/api.d.ts` regenerated.
+
+### Changed
+
+- `optMillis` now accepts a plain Go `int` in addition to `int64`
+  and `float64`. JS-side integers go through goja as `int64`, but
+  Go-level test harnesses that build option maps directly sometimes
+  hand in `int`. Tolerating both removes a silent fall-back-to-
+  default footgun.
+- `OUT-OF-SCOPE.md`'s Easy / External tool integrations list drops
+  the recon-with-curl-fallback HTTP entry (now shipped); `git` and
+  `gh` wrappers remain as the v0.4.19 cut.
+
 ## [0.4.17] — 2026-05-26
 
 First slice of **Easy / External tool integrations**: a generic
