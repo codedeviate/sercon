@@ -118,15 +118,6 @@ the situation changes.
 
 ### TLS / encryption / signing
 
-- **JWK key shape for `api.jwt.*`.** v0.5.3 supports the full
-  signature-algorithm matrix (HS / RS / PS / ES / EdDSA) but
-  asymmetric keys must be supplied as PEM strings. Adding a
-  `format: "jwk"` opt that accepts a JWK object would round out
-  parity with the JS ecosystem (`jose`, `jsonwebtoken`, etc).
-  **Library:** `github.com/lestrrat-go/jwx/v2/jwk` is the closest
-  match in pure Go; alternatively hand-roll a small `crypto/rsa`
-  / `crypto/ecdsa` / `crypto/ed25519` decoder since the JWK shape
-  is well-specified.
 - **PGP backend for `api.encrypt.*`.** v0.5.8 shipped
   `api.encrypt.detectBackend` as a classifier (returns
   `{ backend: "age" | "pgp" | "unknown", kind: "public" | "private" }`)

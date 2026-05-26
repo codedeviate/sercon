@@ -81,3 +81,15 @@ try {
 } catch (e) {
   api.log("caught:", String(e).slice(0, 90) + "…");
 }
+
+api.log("");
+api.log("=== JWK key shape (JSON Web Key) ===");
+// secret can also be a JWK JSON object — handy when keys come from a
+// JWKS endpoint or a config file in JWK form. The `kty` field picks the
+// key type; the algorithm just has to match. This Ed25519 keypair is a
+// test fixture (NEVER reuse for anything real).
+const jwkPriv = '{"crv":"Ed25519","d":"gd2QdqfiWS0cn6D12OyCLzpLPgs25hlpYvuf_OCqLY0","kty":"OKP","x":"40sJMJtKz5ozPQNymkG1MF2B3SQ7pp65WNLrcmYVowg"}';
+const jwkPub  = '{"crv":"Ed25519","kty":"OKP","x":"40sJMJtKz5ozPQNymkG1MF2B3SQ7pp65WNLrcmYVowg"}';
+const jwkTok = api.jwt.sign({ sub: "carol" }, jwkPriv, { algorithm: "EdDSA" });
+const jwkVerdict = api.jwt.validate(jwkTok, jwkPub, { algorithm: "EdDSA" });
+api.log("signed + validated via JWK:", jwkVerdict.valid, "sub:", jwkVerdict.claims?.sub);

@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v2/jwk"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
@@ -169,10 +171,10 @@ func TestJwt_MalformedInputThrows(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := []string{
-		`jwt.view("not.a.jwt.token");`,    // 4 segments
-		`jwt.view("only.two");`,           // 2 segments
-		`jwt.view("not-base64.x.y");`,     // 3 segments but base64-invalid
-		`jwt.validate("only.two", "k");`,  // validate also catches this
+		`jwt.view("not.a.jwt.token");`,   // 4 segments
+		`jwt.view("only.two");`,          // 2 segments
+		`jwt.view("not-base64.x.y");`,    // 3 segments but base64-invalid
+		`jwt.validate("only.two", "k");`, // validate also catches this
 	}
 	for _, src := range cases {
 		t.Run(src, func(t *testing.T) {
@@ -467,5 +469,101 @@ func TestJwt_AlgorithmConfusionGuard(t *testing.T) {
 	}
 	if !strings.Contains(got, "signing method") {
 		t.Errorf("reason should mention signing method mismatch, got: %q", got)
+	}
+}
+
+// jwkPair generates an in-memory key pair and returns both halves as
+// JWK JSON strings. Used by the JWK round-trip tests so no key
+// material is committed. alg picks the family (EdDSA / ES256 / RS256).
+func jwkPair(t *testing.T, alg string) (privJWK, pubJWK string) {
+	t.Helper()
+	var pub, priv any
+	switch {
+	case alg == "EdDSA":
+		pk, sk, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pub, priv = pk, sk
+	case strings.HasPrefix(alg, "ES"):
+		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pub, priv = &k.PublicKey, k
+	case strings.HasPrefix(alg, "RS"), strings.HasPrefix(alg, "PS"):
+		k, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pub, priv = &k.PublicKey, k
+	default:
+		t.Fatalf("unknown alg %q", alg)
+	}
+	privKey, err := jwk.FromRaw(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubKey, err := jwk.FromRaw(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pj, _ := json.Marshal(privKey)
+	pubj, _ := json.Marshal(pubKey)
+	return string(pj), string(pubj)
+}
+
+// Per-family JWK round-trip: sign with the private JWK, validate
+// with the public JWK.
+func TestJwt_JWKRoundTrip(t *testing.T) {
+	for _, alg := range []string{"EdDSA", "ES256", "RS256"} {
+		t.Run(alg, func(t *testing.T) {
+			priv, pub := jwkPair(t, alg)
+			got := runJwtScriptWithKeys(t, priv, pub, fmt.Sprintf(`
+				const t = jwt.sign({ sub: "alice", n: 7 }, __priv, { algorithm: %q });
+				const v = jwt.validate(t, __pub, { algorithm: %q });
+				const __result = [v.valid, v.claims?.sub, v.claims?.n].join(",");
+			`, alg, alg))
+			if got != "true,alice,7" {
+				t.Errorf("JWK %s round-trip: %v", alg, got)
+			}
+		})
+	}
+}
+
+// An `oct` JWK carries an HMAC secret. Sign + validate HS256.
+func TestJwt_JWKOctHMAC(t *testing.T) {
+	octKey, err := jwk.FromRaw([]byte("super-secret-hmac-key-material"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	octJSON, _ := json.Marshal(octKey)
+	got := runJwtScriptWithKeys(t, string(octJSON), string(octJSON), `
+		const t = jwt.sign({ sub: "bob" }, __priv, { algorithm: "HS256" });
+		const v = jwt.validate(t, __pub, { algorithm: "HS256" });
+		const __result = [v.valid, v.claims?.sub].join(",");
+	`)
+	if got != "true,bob" {
+		t.Errorf("oct JWK HMAC: %v", got)
+	}
+}
+
+// Malformed JWK (valid-looking JSON with kty but broken key material)
+// throws with the JWK-parse error surfaced.
+func TestJwt_JWKMalformedThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir()})
+	if err := eng.RegisterNamespaceFactory("jwt", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return jwtNamespace(vm)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// kty present (so it's treated as JWK) but no key fields.
+	_, err := eng.Run(context.Background(), "x.ts",
+		`jwt.sign({sub:"x"}, '{"kty":"OKP","crv":"Ed25519"}', { algorithm: "EdDSA" });`)
+	if err == nil {
+		t.Fatal("expected throw for malformed JWK")
+	}
+	if !strings.Contains(err.Error(), "JWK") {
+		t.Errorf("expected JWK in error; got %v", err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lestrrat-go/jwx/v2/jwk"
 )
 
 // jwtNamespace wires `api.jwt.*`. Supports the full RFC 7518
@@ -90,6 +91,45 @@ func looksLikePEM(s string) bool {
 	return strings.HasPrefix(strings.TrimSpace(s), "-----BEGIN")
 }
 
+// looksLikeJWK reports whether `secret` is a JSON Web Key — a JSON
+// object carrying a `"kty"` member. The cheap structural test is
+// "starts with `{` and contains `kty`"; jwk.ParseKey does the real
+// validation. HMAC secrets and PEM blocks never start with `{`, so
+// this disambiguates cleanly from the other two input forms.
+func looksLikeJWK(s string) bool {
+	t := strings.TrimSpace(s)
+	return strings.HasPrefix(t, "{") && strings.Contains(t, "\"kty\"")
+}
+
+// resolveJWKKey parses `secret` as a JWK when it's JWK-shaped and
+// extracts the underlying crypto key (the *rsa.PrivateKey /
+// *ecdsa.PrivateKey / ed25519 key / []byte that jwt-go's signing
+// methods accept directly). The three returns are:
+//
+//	(key, true,  nil) — was a valid JWK; `key` is the raw crypto key
+//	(nil, true,  err) — looked like JWK but failed to parse
+//	(nil, false, nil) — not JWK-shaped; caller falls back to PEM / bytes
+//
+// The `kty` inside the JWK determines the key type, so the
+// algorithm-based dispatch in the caller is bypassed for JWK input —
+// a mismatch between the JWK's key type and opts.algorithm surfaces
+// later as jwt-go's own "key is of invalid type" at sign/verify
+// time, which is the right place for it.
+func resolveJWKKey(secret string) (any, bool, error) {
+	if !looksLikeJWK(secret) {
+		return nil, false, nil
+	}
+	key, err := jwk.ParseKey([]byte(secret))
+	if err != nil {
+		return nil, true, fmt.Errorf("parse JWK: %w", err)
+	}
+	var raw any
+	if err := key.Raw(&raw); err != nil {
+		return nil, true, fmt.Errorf("extract key from JWK: %w", err)
+	}
+	return raw, true, nil
+}
+
 // isHMACAlgorithm reports whether the named algorithm is HMAC-based.
 // Used to gate the PEM/bytes cross-checks: HMAC + PEM = mistake,
 // asymmetric + plain bytes = mistake.
@@ -105,6 +145,9 @@ func isHMACAlgorithm(name string) bool {
 // for RS256 but supplies a plain string secret would get a cryptic
 // "x509: malformed certificate" deep inside jwt-go.
 func parsePrivateKeyForAlg(secret, algName string) (any, error) {
+	if key, ok, err := resolveJWKKey(secret); ok {
+		return key, err
+	}
 	switch {
 	case isHMACAlgorithm(algName):
 		if looksLikePEM(secret) {
@@ -142,6 +185,9 @@ func parsePrivateKeyForAlg(secret, algName string) (any, error) {
 // key out of the cert). Same cross-check policy as
 // parsePrivateKeyForAlg.
 func parsePublicKeyForAlg(secret, algName string) (any, error) {
+	if key, ok, err := resolveJWKKey(secret); ok {
+		return key, err
+	}
 	switch {
 	case isHMACAlgorithm(algName):
 		if looksLikePEM(secret) {

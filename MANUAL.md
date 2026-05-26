@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.14</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.15</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -1264,12 +1264,20 @@ names that aren't JWT signing algos — throw at `sign` / `validate`
 time with a named-algorithm error rather than silently falling
 through.
 
-**Key shape.** The `secret` parameter is overloaded by the
-algorithm: HMAC algorithms use the byte string directly; asymmetric
+**Key shape.** The `secret` parameter takes three forms, picked by
+shape: HMAC algorithms use the byte string directly; asymmetric
 algorithms expect a PEM-encoded key (private for `sign`, public —
 or a certificate the public key can be pulled from — for
-`validate`). PEM detection is the literal `-----BEGIN` prefix.
-Both directions of the cross-check are enforced:
+`validate`); and **any algorithm** accepts a JWK (JSON Web Key)
+object — a JSON string carrying a `"kty"` member. JWK is detected
+by the leading `{` + `"kty"` and parsed via
+[`lestrrat-go/jwx/v2/jwk`](https://github.com/lestrrat-go/jwx);
+the `kty` (`oct` → HMAC bytes, `RSA`, `EC`, `OKP`) determines the
+key type, so a JWK works with whatever matching `opts.algorithm`
+you pass. Useful when keys come from a JWKS endpoint or a config
+file in JWK form. PEM detection is the literal `-----BEGIN`
+prefix. Both directions of the PEM/bytes cross-check are enforced
+(JWK input bypasses them — the `kty` is authoritative):
 
 - **PEM secret + HMAC algorithm** throws with a named-algorithm
   hint ("looks like a PEM-encoded key — set opts.algorithm to
@@ -1951,7 +1959,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.14. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.15. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

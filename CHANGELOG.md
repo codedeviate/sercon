@@ -10,6 +10,33 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.15] — 2026-05-26
+
+Adds **JWK (JSON Web Key) support** to `api.jwt`. The `secret`
+parameter now accepts a third form alongside raw bytes and PEM: a
+JWK JSON object. Useful when keys arrive from a JWKS endpoint or a
+config file in JWK form. New dependency:
+`github.com/lestrrat-go/jwx/v2/jwk` (pure Go).
+
+### Added
+
+- `jwt.sign` / `jwt.validate` detect a JWK by the leading `{` plus
+  a `"kty"` member, parse it via `jwk.ParseKey`, and extract the
+  underlying crypto key (`*rsa.PrivateKey` / `*ecdsa.PrivateKey` /
+  ed25519 key / `[]byte` for `oct`). The `kty` picks the key type,
+  so a JWK works with whatever matching `opts.algorithm` is passed.
+- JWK input bypasses the PEM/bytes cross-checks — the `kty` is
+  authoritative. A malformed JWK throws with the parse error.
+- `TestJwt_JWKRoundTrip` (EdDSA / ES256 / RS256), `TestJwt_JWKOctHMAC`
+  (oct → HMAC), `TestJwt_JWKMalformedThrows`. `jwkPair` test helper
+  generates in-memory JWK pairs.
+- `examples/scripts/jwt.ts` grows a JWK section; MANUAL §5 key-shape
+  prose updated to describe all three input forms.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s JWK entry resolved.
+
 ## [0.5.14] — 2026-05-26
 
 Adds **`opts.quietZone`** to `api.barcode.encode`. Pads the

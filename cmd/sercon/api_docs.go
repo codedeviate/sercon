@@ -143,9 +143,9 @@ func apiDocs() map[string]string {
 		"preg2.replace":  "Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 / ${1} syntax. Backtracking engine — keep a timeout around untrusted input.",
 
 		// JWT — full RFC 7518 matrix (HS*/RS*/PS*/ES*/EdDSA)
-		"jwt.sign":     "Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA. opts.algorithm defaults to HS256. Cross-check (PEM + HMAC, or bytes + asymmetric) throws.",
+		"jwt.sign":     "Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA; or a JWK JSON object (kty picks the key type) for any algorithm. opts.algorithm defaults to HS256.",
 		"jwt.view":     "Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws.",
-		"jwt.validate": "Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }; only structural input errors throw.",
+		"jwt.validate": "Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.",
 
 		// Age encryption (X25519 identity flavour)
 		"encrypt.keygen":  "Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.",
