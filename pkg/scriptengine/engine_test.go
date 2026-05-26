@@ -321,6 +321,84 @@ func TestEngine_ResetClearsRegistrations(t *testing.T) {
 	}
 }
 
+// counterStub is a tiny exported struct used by TestWriteTypes_StructMethodReceiver
+// to verify the d.ts emitter strips the receiver from reflect.Method.Type.
+type counterStub struct{ n int }
+
+func (c *counterStub) Inc(by int64) int64 { c.n += int(by); return int64(c.n) }
+func (c *counterStub) Value() int64       { return int64(c.n) }
+
+// d.ts emitter must strip the receiver when reflecting on struct methods,
+// so `inc(arg0: number): number`, not `inc(arg0: Counter, arg1: number)`.
+func TestWriteTypes_StructMethodReceiver(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.Register("counter", &counterStub{}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	// inc takes a single number; value takes nothing. If the receiver leaked
+	// we'd see two args on inc and one on value.
+	for _, want := range []string{
+		"inc(arg0: number): number",
+		"value(): number",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{
+		// Receiver names ("counterStub" or unknown) must not show up as args.
+		"counterStub",
+		"inc(arg0: ",
+		// Specifically: inc should have one arg, not two.
+	} {
+		_ = unwanted // first two checked above; presence of "counterStub" alone is enough
+	}
+	if strings.Contains(got, "counterStub") {
+		t.Errorf("receiver type leaked into output:\n%s", got)
+	}
+}
+
+// PromisifyAsync's AsyncBinding carries the resolved-value TS type; the d.ts
+// emitter must surface that as `Promise<number>` (or whatever T maps to)
+// rather than the previous `unknown`.
+func TestWriteTypes_AsyncBindingPromise(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.RegisterFactory("doubled", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
+		return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (int64, error) {
+			return call.Argument(0).ToInteger() * 2, nil
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.RegisterNamespaceFactory("net", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"fetch": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (string, error) {
+				return "ok", nil
+			}),
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	for _, want := range []string{
+		"declare function doubled(...args: unknown[]): Promise<number>;",
+		"fetch(...args: unknown[]): Promise<string>;",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, got)
+		}
+	}
+}
+
 // ESM default-export interop: a TS module that uses `export default <value>`
 // must be importable via `import x from "./mod"` in the entry script, with
 // the rewriter unwrapping `__esModule ? .default : module`.

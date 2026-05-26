@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.2</div>
+<div class="version">Version 0.4.3</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -215,14 +215,17 @@ Emits a `.d.ts` describing the registered surface. See section
 [13. Type generation](#13-type-generation-dts) for what the mapping
 looks like.
 
-### `PromisifyAsync[T]` and `Promised[T]`
+### `PromisifyAsync[T]` and `AsyncBinding`
 
 ```go
+type AsyncBinding struct {
+    Func         func(goja.FunctionCall) goja.Value
+    TSReturnType string
+}
+
 func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop,
     work func(ctx context.Context, call goja.FunctionCall) (T, error),
-) func(goja.FunctionCall) goja.Value
-
-type Promised[T any] func(call goja.FunctionCall) goja.Value
+) AsyncBinding
 ```
 
 `PromisifyAsync` turns blocking Go work into a JS Promise. It launches the
@@ -231,9 +234,15 @@ return early, and schedules the resolve/reject back onto the event loop.
 **Required** for any Promise-returning binding — `RunOnLoop` alone is not
 counted as a live job by the event loop.
 
-`Promised[T]` is a marker type the `.d.ts` emitter recognises so it can
-emit `Promise<T>` rather than `unknown`. Today it's a typed wrapper that
-behaves like a plain function at runtime; using it is optional.
+`PromisifyAsync` returns an `AsyncBinding` carrier rather than the bare
+callback. The engine unwraps it to `.Func` at `vm.Set` time so goja's
+special-case detection of `func(goja.FunctionCall) goja.Value`
+host-callbacks still fires; the `.d.ts` emitter reads `.TSReturnType`
+to emit `Promise<T>` (mapped from the generic `T` via reflect at
+construction time) instead of the previous `unknown`. Hosts assigning
+the result into a `map[string]any` for `RegisterNamespace` /
+`RegisterNamespaceFactory` get the unwrap recursively too — no manual
+work required.
 
 ### Version
 
@@ -678,7 +687,7 @@ TypeScript declaration file. The mapping table (abbreviated):
 | `interface{}` / `any` | `unknown` |
 | `goja.FunctionCall` parameter | folded into `(...args: unknown[])` |
 | `goja.Value` return | `unknown` |
-| `scriptengine.Promised[T]` return | `Promise<T>` |
+| `scriptengine.AsyncBinding` value (from `PromisifyAsync[T]`) | `Promise<T>` |
 | self-referential types | `unknown` (cycle detection bails after depth 4) |
 
 ```bash
@@ -715,7 +724,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.2. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.3. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

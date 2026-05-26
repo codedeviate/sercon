@@ -312,7 +312,7 @@ func (e *Engine) applyRegistrations(vm *goja.Runtime, loop *eventloop.EventLoop)
 			if m, ok := value.(factoryMarker); ok {
 				value = m.fn(vm, loop)
 			}
-			if err := vm.Set(reg.name, value); err != nil {
+			if err := vm.Set(reg.name, unwrapAsyncBindings(value)); err != nil {
 				return fmt.Errorf("register %s: %w", reg.name, err)
 			}
 		case regNamespace:
@@ -322,7 +322,7 @@ func (e *Engine) applyRegistrations(vm *goja.Runtime, loop *eventloop.EventLoop)
 			}
 			obj := vm.NewObject()
 			for k, v := range members {
-				if err := obj.Set(k, v); err != nil {
+				if err := obj.Set(k, unwrapAsyncBindings(v)); err != nil {
 					return fmt.Errorf("register %s.%s: %w", reg.name, k, err)
 				}
 			}
@@ -330,7 +330,7 @@ func (e *Engine) applyRegistrations(vm *goja.Runtime, loop *eventloop.EventLoop)
 				return fmt.Errorf("register %s: %w", reg.name, err)
 			}
 		case regConstructor:
-			if err := vm.Set(reg.name, reg.value); err != nil {
+			if err := vm.Set(reg.name, unwrapAsyncBindings(reg.value)); err != nil {
 				return fmt.Errorf("register constructor %s: %w", reg.name, err)
 			}
 		}

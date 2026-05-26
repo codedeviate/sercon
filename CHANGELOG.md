@@ -10,6 +10,68 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.3] — 2026-05-26
+
+Third slice of the **Easy** bucket — the **`.d.ts` generator**
+sub-section. Two real behavioural fixes plus a new tracked artifact
+(`examples/scripts/api.d.ts`).
+
+### Added
+
+- **`AsyncBinding` carrier type** in `pkg/scriptengine`. The struct
+  pairs the raw goja-callback `func(goja.FunctionCall) goja.Value`
+  with a `TSReturnType` string computed from the generic parameter
+  of `PromisifyAsync[T]`. The d.ts emitter reads this to emit
+  `Promise<T>` for async bindings; the engine unwraps the struct to
+  its `.Func` at registration time so goja's host-callback
+  special-case still fires.
+- **`make types`** target — regenerates `examples/scripts/api.d.ts`
+  from the current CLI binding surface. The output is now tracked in
+  git so editor autocomplete and reviewers see the public api shape
+  without running the binary.
+- **`examples/scripts/api.d.ts`** — checked-in artifact, regenerable
+  via `make types`. Lockstep rule in `CLAUDE.md` extends to seven
+  artifacts and now points at this file.
+- `TestWriteTypes_StructMethodReceiver` and
+  `TestWriteTypes_AsyncBindingPromise` in `engine_test.go` covering
+  both fixes end-to-end.
+
+### Changed
+
+- **`PromisifyAsync[T]` return type** is now `AsyncBinding` rather
+  than the bare `func(goja.FunctionCall) goja.Value`. Existing CLI
+  bindings (`api.http.*`, `api.time.sleep`) work unchanged — the
+  engine recursively unwraps any `AsyncBinding` it finds in
+  `map[string]any` namespace bodies before handing values to
+  `vm.Set`.
+- **`structShape` reflects methods from the original (possibly
+  pointer) type** instead of unwrapping to `Elem` first. Go exposes
+  pointer-receiver methods on `*T`'s method set, not on `T`'s, so
+  the old code dropped them silently for `Register("counter", &c)`
+  style registrations. Field iteration still uses the underlying
+  struct.
+- **`funcSig` now takes an `isMethod` flag**, used by callers that
+  pass `reflect.Method.Type` (whose `In(0)` is the receiver). The
+  flag is `true` only at the two callers reflecting methods —
+  `structShape` and `writeConstructorDecl`. Everywhere else it
+  stays `false`. Receivers no longer leak into the printed
+  parameter list.
+- **`writeValueDecl` resolves `RegisterFactory` factories at d.ts
+  time** by invoking them with `(nil, nil)`, matching what
+  `writeNamespaceDecl` already did. A panic falls back to a TODO
+  comment + `unknown`. Lets factory-built `AsyncBinding`
+  registrations surface as `Promise<T>` instead of the previous
+  TODO.
+
+### Removed
+
+- The unused `Promised[T any] func(...)` marker type. Its job is
+  done by `AsyncBinding` via a struct field, which dodges goja's
+  exact-type check for `func(goja.FunctionCall) goja.Value`
+  callbacks (named func types fall through that check and end up
+  on the reflect path, which can't pack JS args into a
+  `FunctionCall`).
+
 ## [0.4.2] — 2026-05-26
 
 Second slice of the **Easy** bucket — the **Require / module loading**

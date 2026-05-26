@@ -12,6 +12,7 @@ make test                                  # go test ./...
 make vet                                   # go vet ./...
 make lint                                  # golangci-lint v2 against .golangci.yml (one-shot via go run if not installed)
 make demo                                  # run every success-path script under examples/scripts/ (excludes hang.ts)
+make types                                 # regenerate examples/scripts/api.d.ts from the current CLI bindings
 make clean                                 # rm -f sercon MANUAL.pdf
 
 CGO_ENABLED=0 go build ./...               # whole repo (must stay cgo-free)
@@ -86,16 +87,17 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 
 ## Keeping docs in lockstep
 
-Six artifacts must stay aligned whenever the script/binding/feature surface changes:
+Seven artifacts must stay aligned whenever the script/binding/feature surface changes:
 
 - `MANUAL.md` — long-form reference; covers the library API, CLI, script `api`, goja built-ins, eventloop additions.
 - `MANUAL.pdf` — regenerated from `MANUAL.md` via `make manual` (which calls `recon --md-to-pdf`). Run this whenever `MANUAL.md` changes and include the resulting `MANUAL.pdf` in the same commit.
 - `cmd/sercon/help.go::showHelp` — the `--help` / `-h` screen. Flags table must mirror the actual flags defined in `main.go`.
 - `cmd/sercon/help.go::showExamples` — the `--examples` walkthrough. The `exampleCount` constant must equal the number of `header(N, …)` calls.
 - `examples/scripts/` — runnable `.ts` (or `.tsx`) demo files. **Any change to a user-visible binding, flag, or script-facing behaviour requires updating or adding the relevant example here.** Verify with `make demo`, which runs every success-path script (and skips `hang.ts`, the intentional timeout demo). New example files must also be added to `DEMO_SCRIPTS` in the `Makefile` and the table in `examples/README.md`.
+- `examples/scripts/api.d.ts` — auto-generated TypeScript declaration file mirroring the CLI's `api.*` surface. Regenerate via `make types` whenever the CLI binding set or the d.ts emitter changes. Tracked in git so editor autocomplete and PR reviewers see the surface without running the binary.
 - `CHANGELOG.md` — every user-visible change lands here under `## [Unreleased]` (or the active version section) per Keep a Changelog.
 
-Whenever you add a flag: update the flag block in `main.go`, the `FLAGS` section in `showHelp`, mention it in `MANUAL.md § CLI`, add a CHANGELOG entry. Whenever you add a script-side binding: update `showExamples` (and bump `exampleCount`), add the signature to `MANUAL.md § Built-in script api`, refresh `.d.ts` documentation (and the golden if it touches `TestWriteTypes_Golden`), add or update an example file under `examples/scripts/`, run `make demo` to confirm it passes, add a CHANGELOG entry.
+Whenever you add a flag: update the flag block in `main.go`, the `FLAGS` section in `showHelp`, mention it in `MANUAL.md § CLI`, add a CHANGELOG entry. Whenever you add a script-side binding: update `showExamples` (and bump `exampleCount`), add the signature to `MANUAL.md § Built-in script api`, run `make types` to refresh `examples/scripts/api.d.ts` (and the golden if it touches `TestWriteTypes_Golden`), add or update an example file under `examples/scripts/`, run `make demo` to confirm it passes, add a CHANGELOG entry.
 
 Pure library-side changes (e.g. `WithScriptRoot`, `Engine.Reset()`) only need `MANUAL.md` + `CHANGELOG.md`; they aren't reachable from a `.ts` script, so the example scripts don't need to grow for them.
 

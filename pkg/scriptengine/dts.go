@@ -80,8 +80,27 @@ func (c *typeCtx) leave(t reflect.Type) {
 }
 
 func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any) {
-	if _, ok := value.(factoryMarker); ok {
-		w.WriteString(fmt.Sprintf("// TODO: factory-registered binding\ndeclare const %s: unknown;\n", name))
+	// Resolve RegisterFactory-style bindings by calling the factory with
+	// nil vm/loop. The factory bodies build their value without
+	// dereferencing those arguments (closures capture them for runtime),
+	// so this is safe; a panic falls back to `unknown` with a TODO.
+	if m, ok := value.(factoryMarker); ok {
+		var recovered bool
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					recovered = true
+					w.WriteString(fmt.Sprintf("// TODO: factory %s panicked during introspection: %v\ndeclare const %s: unknown;\n", name, r, name))
+				}
+			}()
+			value = m.fn(nil, nil)
+		}()
+		if recovered {
+			return
+		}
+	}
+	if a, ok := value.(AsyncBinding); ok {
+		w.WriteString(fmt.Sprintf("declare function %s(...args: unknown[]): Promise<%s>;\n", name, a.TSReturnType))
 		return
 	}
 	t := reflect.TypeOf(value)
@@ -91,7 +110,7 @@ func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any) {
 	}
 	switch t.Kind() {
 	case reflect.Func:
-		w.WriteString("declare function " + name + funcSig(ctx, t) + ";\n")
+		w.WriteString("declare function " + name + funcSig(ctx, t, false) + ";\n")
 	case reflect.Struct, reflect.Pointer:
 		w.WriteString(fmt.Sprintf("declare const %s: %s;\n", name, structShape(ctx, t)))
 	default:
@@ -122,6 +141,10 @@ func writeMemberObject(w *errWriter, ctx *typeCtx, members map[string]any, inden
 	sort.Strings(keys)
 	for _, k := range keys {
 		v := members[k]
+		if a, ok := v.(AsyncBinding); ok {
+			w.WriteString(pad + k + "(...args: unknown[]): Promise<" + a.TSReturnType + ">;\n")
+			continue
+		}
 		if nested, ok := v.(map[string]any); ok {
 			w.WriteString(pad + k + ": {\n")
 			writeMemberObject(w, ctx, nested, indent+1)
@@ -133,7 +156,7 @@ func writeMemberObject(w *errWriter, ctx *typeCtx, members map[string]any, inden
 		case t == nil:
 			w.WriteString(pad + k + ": unknown;\n")
 		case t.Kind() == reflect.Func:
-			w.WriteString(pad + k + funcSig(ctx, t) + ";\n")
+			w.WriteString(pad + k + funcSig(ctx, t, false) + ";\n")
 		default:
 			w.WriteString(pad + k + ": " + tsType(ctx, t) + ";\n")
 		}
@@ -161,7 +184,7 @@ func writeConstructorDecl(w *errWriter, ctx *typeCtx, name string, ctor any) {
 		if methodsOf.Kind() == reflect.Struct {
 			for i := 0; i < ret.NumMethod(); i++ {
 				m := ret.Method(i)
-				w.WriteString("  " + lowerFirst(m.Name) + funcSig(ctx, m.Type) + ";\n")
+				w.WriteString("  " + lowerFirst(m.Name) + funcSig(ctx, m.Type, true) + ";\n")
 			}
 		}
 	}
@@ -169,24 +192,29 @@ func writeConstructorDecl(w *errWriter, ctx *typeCtx, name string, ctor any) {
 }
 
 func structShape(ctx *typeCtx, t reflect.Type) string {
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
+	// Methods are reflected from the original type so pointer-receiver
+	// methods on *T are picked up (Go exposes them on *T's method set, not
+	// on T's). Fields, by contrast, live on the underlying struct.
+	methodsT := t
+	fieldsT := t
+	if fieldsT.Kind() == reflect.Pointer {
+		fieldsT = fieldsT.Elem()
 	}
-	if t.Kind() != reflect.Struct {
+	if fieldsT.Kind() != reflect.Struct {
 		return tsType(ctx, t)
 	}
-	if !ctx.enter(t) {
+	if !ctx.enter(fieldsT) {
 		return "unknown"
 	}
-	defer ctx.leave(t)
+	defer ctx.leave(fieldsT)
 
 	var parts []string
-	for i := 0; i < t.NumMethod(); i++ {
-		m := t.Method(i)
-		parts = append(parts, lowerFirst(m.Name)+funcSig(ctx, m.Type))
+	for i := 0; i < methodsT.NumMethod(); i++ {
+		m := methodsT.Method(i)
+		parts = append(parts, lowerFirst(m.Name)+funcSig(ctx, m.Type, true))
 	}
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for i := 0; i < fieldsT.NumField(); i++ {
+		f := fieldsT.Field(i)
 		if !f.IsExported() {
 			continue
 		}
@@ -204,16 +232,23 @@ func structShape(ctx *typeCtx, t reflect.Type) string {
 	return "{ " + strings.Join(parts, "; ") + " }"
 }
 
-func funcSig(ctx *typeCtx, t reflect.Type) string {
+// funcSig formats a function signature. When isMethod is true, In(0) is the
+// receiver (reflect.Method.Type includes it) and is skipped from the
+// parameter list.
+func funcSig(ctx *typeCtx, t reflect.Type, isMethod bool) string {
+	start := 0
+	if isMethod && t.NumIn() > 0 {
+		start = 1
+	}
 	// goja host bindings often have the signature
 	// `func(goja.FunctionCall) goja.Value`, which carries no useful type
 	// information for callers in JS. Collapse those to `(...args: unknown[])`.
-	if t.NumIn() == 1 && typeString(t.In(0)) == "goja.FunctionCall" {
+	if t.NumIn()-start == 1 && typeString(t.In(start)) == "goja.FunctionCall" {
 		return "(...args: unknown[]): " + returnType(ctx, t)
 	}
-	args := make([]string, 0, t.NumIn())
-	for i := 0; i < t.NumIn(); i++ {
-		args = append(args, fmt.Sprintf("arg%d: %s", i, tsType(ctx, t.In(i))))
+	args := make([]string, 0, t.NumIn()-start)
+	for i := start; i < t.NumIn(); i++ {
+		args = append(args, fmt.Sprintf("arg%d: %s", i-start, tsType(ctx, t.In(i))))
 	}
 	return "(" + strings.Join(args, ", ") + "): " + returnType(ctx, t)
 }
@@ -233,10 +268,6 @@ func returnType(ctx *typeCtx, t reflect.Type) string {
 		out := t.Out(0)
 		if out == errorType {
 			return "void"
-		}
-		if name := out.Name(); strings.HasPrefix(name, "Promised[") {
-			inner := strings.TrimSuffix(strings.TrimPrefix(name, "Promised["), "]")
-			return "Promise<" + inner + ">"
 		}
 		return tsType(ctx, out)
 	case 2:
@@ -301,7 +332,7 @@ func tsType(ctx *typeCtx, t reflect.Type) string {
 		// structShape handles its own enter/leave bookkeeping.
 		return structShape(ctx, t)
 	case reflect.Func:
-		return funcSig(ctx, t)
+		return funcSig(ctx, t, false)
 	default:
 		return "/* TODO: " + t.String() + " */ unknown"
 	}
@@ -313,3 +344,4 @@ func lowerFirst(s string) string {
 	}
 	return strings.ToLower(s[:1]) + s[1:]
 }
+

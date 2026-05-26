@@ -14,6 +14,9 @@
 #   demo     Run every success-path example under examples/scripts/ so the
 #            user-facing surface is exercised end-to-end. Excludes hang.ts
 #            (intentional timeout that exits non-zero — verify separately).
+#   types    Regenerate examples/scripts/api.d.ts from the current CLI
+#            binding surface (the on-disk file is the source of truth for
+#            editor autocomplete and the public api shape).
 #   clean    Remove built artifacts
 #
 # release and manual are intentionally separate from `build` so an
@@ -25,7 +28,7 @@ GOLANGCI_VERSION  ?= v2.12.2
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 
-.PHONY: build release manual test vet lint demo clean
+.PHONY: build release manual test vet lint demo types clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -74,6 +77,9 @@ lint:
 demo: build
 	@./$(BIN) $(DEMO_SCRIPTS)
 	@echo "All example scripts passed. (hang.ts is the timeout demo — run separately.)"
+
+types: build
+	./$(BIN) --emit-dts examples/scripts/api.d.ts
 
 clean:
 	rm -f $(BIN) MANUAL.pdf

@@ -34,22 +34,6 @@ the situation changes.
 
 ## Easy
 
-### `.d.ts` generator
-
-- **Promised[T] introspection in real bindings.** The marker type and
-  detection logic exist (`returnType` looks for `"Promised["`), but the
-  example CLI uses `PromisifyAsync` which returns a plain
-  `func(goja.FunctionCall) goja.Value`. Result: every async binding's
-  return type renders as `unknown` instead of `Promise<T>`. Either
-  switch `PromisifyAsync` to return `Promised[T]`, or have the
-  generator infer the wrapper from the factory's call signature.
-  **Approach:** pure `reflect` work, no library; signature tweak inside
-  the engine.
-- **Struct method receiver handling.** `funcSig` doesn't currently
-  strip the receiver when reflecting on `reflect.Method.Type`, so
-  methods of registered structs may emit an extra leading parameter.
-  **Approach:** `reflect` adjustment, no library.
-
 ### CLI
 
 - **`-v` does very little.** Parsed but only used to print a duration
