@@ -360,10 +360,20 @@ const w = await api.net.whois("example.com");
 api.log("registrar:", w.registrar?.name, "expires:", w.domain?.expirationDate);`)
 	note("Optional { timeout: ms } on every probe. Default ports: tcp 80, tls 443, ntp 123.")
 
+	header(17, "Email authentication (api.email.*)")
+	code(`// Both return { present: boolean, ... } and resolve `+"`present: false`"+`
+// for NXDOMAIN / missing record rather than throwing.
+const spf = await api.email.spf("google.com");
+api.log("spf:", spf.allPolicy, "from", spf.record);
+
+const dmarc = await api.email.dmarc("google.com");
+api.log("dmarc policy:", dmarc.policy, "rua:", dmarc.rua);`)
+	note("MTA-STS / TLS-RPT / BIMI + an aggregate api.email.all() come in a later cut.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 16
+const exampleCount = 17

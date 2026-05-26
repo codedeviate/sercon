@@ -5,6 +5,10 @@ declare const api: {
     equal(arg0: unknown, arg1: unknown, arg2: unknown[]): void;
     ok(arg0: unknown, arg1: unknown[]): void;
   };
+  email: {
+    dmarc(...args: unknown[]): Promise<Record<string, unknown>>;
+    spf(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   env: {
     get(...args: unknown[]): unknown;
   };

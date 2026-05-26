@@ -10,6 +10,51 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.8] — 2026-05-26
+
+First of two cuts on **Easy / Email authentication**. This one covers
+SPF + DMARC — the two records with mature semantics and small, easy
+parsing. MTA-STS / TLS-RPT / BIMI + the aggregate `email.all` land
+in v0.4.9. All stdlib; no new `go.mod` deps.
+
+### Added
+
+- `api.email.spf(domain)`: looks up `TXT(domain)`, returns the first
+  record starting with `v=spf1`. Mechanisms are tokenised, and the
+  trailing `all` qualifier is summarised under `allPolicy` as one of
+  `"pass" | "fail" | "softfail" | "neutral" | ""`. Missing records
+  surface as `{ present: false }` rather than throwing; DNS
+  operational errors throw as usual.
+- `api.email.dmarc(domain)`: looks up `TXT(_dmarc.<domain>)`, parses
+  the `v=DMARC1; key=val; …` form into a flat tag map (keys
+  case-folded; values keep internal whitespace + commas so `rua`
+  lists survive). Common tags are surfaced separately on the result:
+  `policy`, `subdomain`, `percent`, `rua`, `ruf`. Same
+  presence-false convention as SPF.
+- `examples/scripts/email-auth.ts` against `google.com`. Network-
+  dependent, so it joins `net-probe.ts` outside the CI offline
+  subset.
+- `--examples` step 17 ("Email authentication"); `exampleCount` is
+  now 17.
+- Tests:
+  - `TestParseDMARCTags` (5 table cases) pins the tag-format
+    behaviour offline: case-folded keys, whitespace tolerance,
+    `rua` comma preservation, empty / malformed parts dropped.
+  - `TestEmailNamespace_HandlesMissing` end-to-end: a bogus
+    `.invalid` domain resolves to `{ present: false }` on both
+    bindings, exercising the NXDOMAIN → presence-false path.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the `email` shape; a new
+  prose block calls out the presence-check convention, the SPF
+  `allPolicy` summary, and the DMARC parser's case-folding and
+  whitespace rules. A trailing sentence promises the remaining three
+  protocols + aggregator for v0.4.9.
+- `OUT-OF-SCOPE` Easy / Email authentication trimmed: SPF + DMARC
+  drop out, leaving the (renamed) "MTA-STS / TLS-RPT / BIMI +
+  aggregator" entry for the next cut.
+
 ## [0.4.7] — 2026-05-26
 
 Second cut on **Easy / Protocol probes & connectivity** — the two

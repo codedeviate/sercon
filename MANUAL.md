@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.7</div>
+<div class="version">Version 0.4.8</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -403,6 +403,31 @@ declare const api: {
       registrar?: { name?: string };
     }>;
   };
+
+  email: {
+    spf(domain: string): Promise<
+      | { present: false }
+      | {
+          present: true;
+          record: string;
+          mechanisms: string[];
+          allPolicy: "pass" | "fail" | "softfail" | "neutral" | "";
+        }
+    >;
+    dmarc(domain: string): Promise<
+      | { present: false }
+      | {
+          present: true;
+          record: string;
+          tags: Record<string, string>;
+          policy?: string;
+          subdomain?: string;
+          percent?: string;
+          rua?: string;
+          ruf?: string;
+        }
+    >;
+  };
 };
 ```
 
@@ -499,6 +524,28 @@ an optional `{ timeout: <ms> }` second arg; the default is 5 seconds.
   only `raw`). The whois library doesn't accept a `context.Context`
   — `opts.timeout` is plumbed through its own per-client setting and
   the engine's `Options.Timeout` watchdog catches the outer call.
+
+Email-authentication probes (`api.email.*`) read DNS records and
+surface the published policy. They all return `{ present: false }`
+when the relevant record is absent (NXDOMAIN or no TXT record
+matching the marker prefix), so scripts can write a single
+presence-check pattern across the family.
+
+- **`spf(domain)`** — queries `TXT(<domain>)` and returns the first
+  record starting with `v=spf1`. `mechanisms` is the tokenised
+  sequence after the version prefix; `allPolicy` summarises the
+  trailing `all` qualifier (`"pass"` for `all` / `+all`, `"fail"` for
+  `-all`, `"softfail"` for `~all`, `"neutral"` for `?all`,
+  empty string when no `all` is present).
+- **`dmarc(domain)`** — queries `TXT(_dmarc.<domain>)` and parses
+  the `v=DMARC1; key=val; …` form into a flat tag map (keys are
+  case-folded; values retain internal whitespace and commas).
+  `policy` / `subdomain` / `percent` / `rua` / `ruf` are surfaced
+  separately because those are the fields most scripts care about.
+
+MTA-STS, TLS-RPT, BIMI, and a combined `api.email.all()` aggregate
+land in a follow-up cut once the parsers for the three remaining
+record types are wired in.
 
 ## 6. JavaScript runtime built-ins (goja)
 
@@ -818,7 +865,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.7. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.8. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

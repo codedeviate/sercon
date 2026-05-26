@@ -46,11 +46,12 @@ the situation changes.
   bottleneck. **Library:** `googleapis/release-please-action` (GitHub
   Action, not a Go dep).
 
-### Email authentication (SPF / DKIM / DMARC / MTA-STS / BIMI / TLS-RPT)
+### Email authentication (MTA-STS / TLS-RPT / BIMI + aggregator)
 
 - **`email::all(domain)`** — Aggregate SPF, DMARC, MTA-STS, TLS-RPT,
-  BIMI verdicts (script: `email.rhai`). **Library:** `blitiri.com.ar/go/spf`
-  for SPF; `github.com/emersion/go-msgauth` for DKIM/DMARC; MTA-STS /
+  BIMI verdicts in one call (script: `email.rhai`). SPF + DMARC
+  already shipped as `api.email.spf` / `api.email.dmarc` in v0.4.8;
+  the rest plus the aggregate land here. MTA-STS /
   TLS-RPT / BIMI are mostly DNS+HTTPS fetches against well-known paths
   (stdlib `net` + `net/http`). No single umbrella lib exists.
 
