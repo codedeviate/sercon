@@ -53,6 +53,10 @@ declare const api: {
     get(...args: unknown[]): Promise<Record<string, unknown>>;
     post(...args: unknown[]): Promise<Record<string, unknown>>;
   };
+  jq: {
+    query(...args: unknown[]): Promise<unknown>;
+    queryAll(...args: unknown[]): Promise<unknown[]>;
+  };
   log(...args: unknown[]): unknown;
   net: {
     dns(...args: unknown[]): Promise<Record<string, unknown>>;

@@ -46,13 +46,6 @@ the situation changes.
   bottleneck. **Library:** `googleapis/release-please-action` (GitHub
   Action, not a Go dep).
 
-### JSON / querying
-
-- **`jq(data, filter)`** / **`jq_all(data, filter)`** — jq-style
-  first/all-results extraction (script: `jq.rhai`). **Library:**
-  `github.com/itchyny/gojq` (pure Go, de facto choice — the gojq
-  author also ships the popular `jq` Go port).
-
 ### External tool integrations
 
 - **HTTP via `recon` with `curl` fallback.** `api.http.*` currently

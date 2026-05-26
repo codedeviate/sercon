@@ -27,6 +27,8 @@ require (
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 // indirect
+	github.com/itchyny/gojq v0.12.19 // indirect
+	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/likexian/gokit v0.25.16 // indirect
 	golang.org/x/net v0.54.0 // indirect

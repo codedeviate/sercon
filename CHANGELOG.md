@@ -10,6 +10,65 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.16] — 2026-05-26
+
+Sole cut on **Easy / JSON / querying**. One new pure-Go dep
+(`itchyny/gojq`) plus a small normalisation pass to bridge goja's
+integer types onto gojq's runtime expectations.
+
+### Added
+
+- `api.jq.query(data, filter)` → `Promise<unknown>` — runs the
+  filter and returns the first emitted value (or `null` when the
+  filter emits nothing).
+- `api.jq.queryAll(data, filter)` → `Promise<unknown[]>` — drains
+  the iterator and returns every emitted value.
+- Filter syntax is full jq via
+  [`github.com/itchyny/gojq`](https://github.com/itchyny/gojq) —
+  field access, `.[]` explode, `select`, `map`, `add`, `group_by`,
+  optional access via `?`, anything jq itself supports.
+- Data round-trips through goja's `.Export()` as `map[string]any` /
+  `[]any` trees, which gojq accepts directly.
+- `TestJq_RunJqQuery` (5 sub-tests): scalar field, first element,
+  exploded names, `select`-filtered admins, computed sum via
+  `[.users[].age] | add`. Pins both the first-result and
+  full-iterator counts.
+- `TestJq_ParseError`: syntax errors surface a clear Go error
+  mentioning "parse".
+- `TestJq_RuntimeError`: in-iterator type errors (gojq emits them
+  as in-band values) get type-asserted out and surfaced as Go
+  errors / JS throws.
+- `TestJq_OptionalMissing`: `.does.not.exist?` returns one
+  result equal to `nil`, which goja converts to JS `null`.
+- `examples/scripts/jq.ts` walks scalar / explode / select / sum /
+  group_by / optional access patterns, plus a try/catch around a
+  parse-error filter.
+- `--examples` step 23 added; existing email step shifts to 24.
+  `exampleCount` is now 24.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the `jq` shape; new prose
+  block covers the data-shape expectation, the int64 normalisation
+  detail, and the error-handling contract.
+
+### Fixed
+
+- Without explicit normalisation gojq panics with
+  `invalid type: int64` on any arithmetic against
+  goja-exported integers (every JS-side integer becomes an
+  `int64` after `Export`). `normaliseForJq` walks the input tree
+  and coerces all sized integers to plain `int` and `float32` to
+  `float64` before handing it to gojq. The reproducer would be as
+  simple as `.users[].age` on a JSON-ish input — fixed inline.
+
+### Dependencies
+
+- New direct (pure Go):
+  `github.com/itchyny/gojq v0.12.19`,
+  transitive `github.com/itchyny/timefmt-go v0.1.8` (used by
+  gojq's `strftime` / `strptime` filters).
+
 ## [0.4.15] — 2026-05-26
 
 Sole cut on **Easy / Data comparison** — unified-diff helper plus a

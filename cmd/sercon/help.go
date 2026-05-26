@@ -433,7 +433,17 @@ api.log(r.diff);
 api.log("same:", (await api.diff.compare("abc", "abc")).identical);`)
 	note("Inputs are strings (UTF-8) or ArrayBuffer / Uint8Array. Binary inputs return binary:true with empty diff.")
 
-	header(23, "Email authentication (api.email.*)")
+	header(23, "JSON querying (api.jq.*)")
+	code(`const data = {
+  users: [{ name: "alice", admin: true }, { name: "bob", admin: false }],
+};
+api.log(await api.jq.query(data, ".users[0].name"));          // "alice"
+api.log(await api.jq.queryAll(data, ".users[].name"));        // ["alice","bob"]
+api.log(await api.jq.queryAll(data,
+  ".users[] | select(.admin) | .name"));                       // ["alice"]`)
+	note("Filters are full jq syntax via itchyny/gojq. Missing paths via `?` return null instead of throwing.")
+
+	header(24, "Email authentication (api.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
 // { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
 // or missing record rather than throwing.
@@ -455,4 +465,4 @@ api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 23
+const exampleCount = 24

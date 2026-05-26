@@ -33,6 +33,7 @@ Or pick individual scripts:
 | `checkdigit.ts` | `api.checkdigit.validate/compute/inspect` over Luhn, ISBN-10/13, EAN-13/8, UPC-A. |
 | `archive.ts` | `api.archive.create/extract` round-trip over zip / tar / tar.gz. |
 | `diff.ts` | `api.diff.compare` — unified diff of two text inputs. |
+| `jq.ts` | `api.jq.query/queryAll` — jq filters over JS data structures. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't

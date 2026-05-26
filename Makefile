@@ -56,7 +56,8 @@ DEMO_SCRIPTS = \
 	examples/scripts/charset.ts \
 	examples/scripts/checkdigit.ts \
 	examples/scripts/archive.ts \
-	examples/scripts/diff.ts
+	examples/scripts/diff.ts \
+	examples/scripts/jq.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

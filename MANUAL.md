@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.15</div>
+<div class="version">Version 0.4.16</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -448,6 +448,11 @@ declare const api: {
     }>;
   };
 
+  jq: {
+    query(data: unknown, filter: string): Promise<unknown>;
+    queryAll(data: unknown, filter: string): Promise<unknown[]>;
+  };
+
   net: {
     tcp(target: string, opts?: { timeout?: number; port?: string }): Promise<{
       host: string; port: number; ip: string; latencyMs: number;
@@ -703,6 +708,30 @@ Inputs are strings (UTF-8) or any byte sequence (`ArrayBuffer` /
 `opts.context` (default 3) is the context-line count;
 `opts.fromFile` / `opts.toFile` (default `"a"` / `"b"`) set the
 labels in the diff headers.
+
+JSON-query bindings (`api.jq.*`) run jq filters over JS data via
+[`github.com/itchyny/gojq`](https://github.com/itchyny/gojq), a
+pure-Go re-implementation. The filter syntax is the same as
+command-line jq.
+
+- **`query(data, filter)`** — runs the filter and returns the first
+  emitted value (or `null` when the filter emits nothing).
+- **`queryAll(data, filter)`** — drains the result iterator and
+  returns every emitted value as an array.
+
+Data passes through goja's `Export` as `map[string]any` / `[]any`
+trees, which gojq's runtime accepts directly. There's a small
+normalisation pass on the way in that converts all sized integer
+types (`int64`, `int32`, etc.) to plain `int` and `float32` to
+`float64` — gojq's arithmetic dispatch only knows the two
+canonical numeric kinds, and goja exports every JS-side integer
+as `int64`. Without normalisation a query as simple as
+`.users[].age` would panic in gojq.
+
+Parse errors and runtime errors (type mismatches, division by
+zero, …) both surface as JS exceptions. Use jq's optional access
+operator `?` (e.g. `.does.not.exist?`) to suppress missing-path
+errors and get `null` back instead.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1135,7 +1164,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.15. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.16. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
