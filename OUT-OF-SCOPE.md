@@ -169,16 +169,6 @@ the situation changes.
   exposing a stateful session handle to JS with mutable headers and a
   cookie jar, which is more than a single function call.
 
-### String utilities & formatting
-
-- **PCRE-compatible regex engine.** `api.preg.*` (shipped in v0.5.1)
-  is delimiter-parsing on top of RE2, so lookahead / lookbehind /
-  possessive quantifiers / pattern backreferences aren't available.
-  Add a sibling `api.preg2.*` (or a `regex: 'pcre' | 're2'` opt) backed
-  by `github.com/dlclark/regexp2` for scripts that genuinely need the
-  PCRE feature set. **Library:** `github.com/dlclark/regexp2` (pure
-  Go, .NET / PCRE semantics).
-
 ### AI agent integrations
 
 - **`ai::request()`** — Builder chain: `.system()`, `.context()`,

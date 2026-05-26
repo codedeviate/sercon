@@ -197,7 +197,7 @@ func classifyErr(err error) int {
 // api.hash.*, api.str.*, api.path.*, api.net.*, api.email.*,
 // api.compression.*, api.barcode.*, api.text.*, api.checkdigit.*,
 // api.archive.*, api.diff.*, api.jq.*, api.exec.*, api.git.*, api.gh.*,
-// api.preg.*, api.jwt.*, api.encrypt.*, api.sqlite.*.
+// api.preg.*, api.preg2.*, api.jwt.*, api.encrypt.*, api.sqlite.*.
 func registerExampleAPI(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("api", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
@@ -295,6 +295,7 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 			"git":         gitNamespace(vm, loop),
 			"gh":          ghNamespace(vm, loop),
 			"preg":        pregNamespace(vm),
+			"preg2":       preg2Namespace(vm),
 			"jwt":         jwtNamespace(vm),
 			"encrypt":     encryptNamespace(vm),
 			"sqlite":      sqliteNamespace(vm, loop),

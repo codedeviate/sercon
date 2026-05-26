@@ -137,6 +137,11 @@ func apiDocs() map[string]string {
 		"preg.matchAll": "Every hit of /pattern/flags against subject, as an array of { match, groups, index } objects.",
 		"preg.replace":  "Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / ${1} backref syntax — PHP's \\1 form is NOT translated.",
 
+		// PCRE regex (dlclark/regexp2 — lookaround, backreferences)
+		"preg2.match":    "First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/backreferences. Same { match, groups, index } shape as preg. No linear-time guarantee.",
+		"preg2.matchAll": "Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, index }.",
+		"preg2.replace":  "Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 / ${1} syntax. Backtracking engine — keep a timeout around untrusted input.",
+
 		// JWT — full RFC 7518 matrix (HS*/RS*/PS*/ES*/EdDSA)
 		"jwt.sign":     "Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA. opts.algorithm defaults to HS256. Cross-check (PEM + HMAC, or bytes + asymmetric) throws.",
 		"jwt.view":     "Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws.",

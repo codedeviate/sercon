@@ -178,6 +178,14 @@ declare const api: {
     /** Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / ${1} backref syntax — PHP's \1 form is NOT translated. */
     replace(arg0: string, arg1: string, arg2: string): unknown;
   };
+  preg2: {
+    /** First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/backreferences. Same { match, groups, index } shape as preg. No linear-time guarantee. */
+    match(arg0: string, arg1: string): unknown;
+    /** Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, index }. */
+    matchAll(arg0: string, arg1: string): unknown;
+    /** Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 / ${1} syntax. Backtracking engine — keep a timeout around untrusted input. */
+    replace(arg0: string, arg1: string, arg2: string): unknown;
+  };
   sqlite: {
     /** Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, close }. Connection is Ping-ed before resolving. */
     open(...args: unknown[]): Promise<Record<string, unknown>>;

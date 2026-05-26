@@ -545,6 +545,16 @@ api.preg.match("/HELLO/i", "Hello world");
 api.preg.matchAll("/^x/m", "x\\nx\\nx");`)
 	note("RE2 is UTF-8 by default — the `u` flag is unnecessary and explicitly errors. Optional groups that didn't match surface as empty strings.")
 
+	header(34, "PCRE regex (api.preg2.*)")
+	code(`// Same shape as api.preg, but on dlclark/regexp2 — lookaround,
+// backreferences, and the x flag all work (RE2 can't do these).
+api.preg2.match("/foo(?=bar)/", "foobar");          // lookahead
+api.preg2.match("/(?<=\\$)\\d+/", "$42");           // lookbehind
+api.preg2.match("/(\\w+) \\1/", "the the");         // backreference
+api.preg2.matchAll("/\\d+/", "a1 b22");             // [1, 22]
+api.preg2.replace("/(\\w+)@(\\w+)/", "$2/$1", "alice@corp");`)
+	note("No linear-time guarantee — regexp2 backtracks. Prefer api.preg (RE2) unless you need a PCRE feature; keep a timeout around untrusted input.")
+
 	header(30, "JWT — sign / view / validate (api.jwt.*)")
 	code(`// HMAC — opts.algorithm defaults to HS256.
 const t = api.jwt.sign(
@@ -639,4 +649,4 @@ await db.close();   // no finalizer — always close.`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 33
+const exampleCount = 34

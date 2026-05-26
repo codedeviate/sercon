@@ -10,6 +10,38 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.13] — 2026-05-26
+
+Adds **`api.preg2`** — the PCRE-flavoured regex sibling of
+`api.preg`. Runs on `github.com/dlclark/regexp2` (a .NET regex
+port), which supports lookahead, lookbehind, backreferences, and
+possessive quantifiers — the features RE2 (and therefore
+`api.preg`) can't do. New dependency:
+`github.com/dlclark/regexp2 v1.12.0` (pure Go).
+
+### Added
+
+- `api.preg2.match` / `matchAll` / `replace` — identical API to
+  `api.preg` (same `/pattern/flags` syntax, same
+  `{ match, groups, index }` shape), so switching engines is a
+  one-word change.
+- Flag set is `i` / `m` / `s` / `x` — the `x`
+  (ignore-pattern-whitespace) flag is the one RE2 couldn't honour.
+  `u` / `U` still error (regexp2 is Unicode-aware by default; no
+  global-ungreedy switch).
+- `replace` uses .NET / regexp2 `$1` / `${1}` substitution syntax.
+- 14 sub-tests: lookahead, lookbehind, backreference, matchAll,
+  replace, all four flags, null-on-no-match, error cases,
+  optional-group-empty (same stable-shape policy as preg).
+- `examples/scripts/preg2.ts` demonstrates the RE2-can't features;
+  `--examples` step 34; MANUAL §5 ts block + a prose paragraph
+  spelling out the backtracking trade-off.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s "PCRE-compatible regex engine" entry
+  resolved.
+
 ## [0.5.12] — 2026-05-26
 
 Completes the `api.sqlite` namespace with **prepared statements**.

@@ -65,6 +65,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/git.ts \
 	examples/scripts/gh.ts \
 	examples/scripts/preg.ts \
+	examples/scripts/preg2.ts \
 	examples/scripts/jwt.ts \
 	examples/scripts/encrypt.ts \
 	examples/scripts/sqlite.ts

@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.12</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.13</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -678,6 +678,20 @@ declare const api: {
     replace(pattern: string, replacement: string, subject: string): string;
   };
 
+  preg2: {                                       // PCRE engine (lookaround, backrefs)
+    match(pattern: string, subject: string): {
+      match: string;
+      groups: string[];
+      index: number;
+    } | null;
+    matchAll(pattern: string, subject: string): Array<{
+      match: string;
+      groups: string[];
+      index: number;
+    }>;
+    replace(pattern: string, replacement: string, subject: string): string;
+  };
+
   jwt: {
     sign(
       claims: Record<string, unknown>,
@@ -1213,6 +1227,26 @@ says so.
   translated — that would conflict with `\\` escapes that are
   already legitimate in the replacement. Use `$1` / `${1}` as in
   Go.
+
+PCRE regex bindings (`api.preg2.*`) are the heavier-engine sibling
+of `api.preg`. They run on
+[`github.com/dlclark/regexp2`](https://github.com/dlclark/regexp2),
+a port of .NET's regex engine, which **does** support lookahead,
+lookbehind, backreferences inside patterns, and possessive
+quantifiers — everything RE2 (and therefore `api.preg`) can't do.
+The API is identical (`match` / `matchAll` / `replace`, the same
+`/pattern/flags` delimited syntax, the same `{ match, groups,
+index }` shape) so switching engines is a one-word change. The
+flag set adds `x` (ignore-pattern-whitespace), which RE2 couldn't
+honour; `u` / `U` still error (regexp2 is Unicode-aware by default
+and has no global-ungreedy switch). `replace` uses .NET / regexp2
+`$1` / `${1}` substitution syntax.
+
+The trade-off is the reason `api.preg` exists at all: regexp2
+**backtracks**, so it has no linear-time guarantee. A pathological
+pattern against adversarial input can blow up exponentially. Use
+`api.preg` (RE2) by default; reach for `api.preg2` only when you
+need a PCRE feature, and keep a timeout around untrusted input.
 
 JWT bindings (`api.jwt.*`) wrap
 [`golang-jwt/jwt/v5`](https://github.com/golang-jwt/jwt). The full
@@ -1912,7 +1946,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.12. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.13. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
