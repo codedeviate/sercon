@@ -26,8 +26,10 @@ declare const api: {
   log(...args: unknown[]): unknown;
   net: {
     dns(...args: unknown[]): Promise<Record<string, unknown>>;
+    ntp(...args: unknown[]): Promise<Record<string, unknown>>;
     tcp(...args: unknown[]): Promise<Record<string, unknown>>;
     tls(...args: unknown[]): Promise<Record<string, unknown>>;
+    whois(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   path: {
     basename(...args: unknown[]): unknown;

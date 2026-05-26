@@ -22,3 +22,22 @@ api.log("not after:    ", c.notAfter);
 api.log("days left:    ", c.daysRemaining);
 api.log("dns names:    ", c.dnsNames.join(", "));
 api.log("sha256:       ", c.fingerprintSha256);
+
+api.log("=== api.net.ntp ===");
+const n = await api.net.ntp("pool.ntp.org", { timeout: 3000 });
+api.log("server time:  ", n.serverTime);
+api.log("offset:       ", n.offsetMs.toFixed(3), "ms");
+api.log("rtt:          ", n.rttMs.toFixed(3), "ms");
+api.log("stratum:      ", n.stratum);
+
+api.log("=== api.net.whois ===");
+const w = await api.net.whois("example.com");
+if (w.domain) {
+  api.log("name:         ", w.domain.name);
+  api.log("whois server: ", w.domain.whoisServer);
+  api.log("name servers: ", (w.domain.nameServers ?? []).join(", "));
+  api.log("expires:      ", w.domain.expirationDate);
+}
+if (w.registrar) {
+  api.log("registrar:    ", w.registrar.name);
+}

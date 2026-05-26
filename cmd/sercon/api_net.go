@@ -11,21 +11,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/beevik/ntp"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
+	"github.com/likexian/whois"
+	whoisparser "github.com/likexian/whois-parser"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// netNamespace builds the `api.net.*` member map: `tcp`, `dns`, `tls`. Every
-// member returns a Promise (uses `scriptengine.PromisifyAsync` under the
-// hood) so scripts can `await api.net.tcp("host:port")`. All bindings honour
-// a `timeout` opt in milliseconds; the default is 5s.
+// netNamespace builds the `api.net.*` member map: `tcp`, `dns`, `tls`,
+// `ntp`, `whois`. Every member returns a Promise (uses
+// `scriptengine.PromisifyAsync` under the hood) so scripts can
+// `await api.net.tcp("host:port")`. All bindings honour a `timeout` opt in
+// milliseconds; defaults vary per binding.
 func netNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"tcp": scriptengine.PromisifyAsync(vm, loop, tcpProbe),
-		"dns": scriptengine.PromisifyAsync(vm, loop, dnsLookup),
-		"tls": scriptengine.PromisifyAsync(vm, loop, tlsProbe),
+		"tcp":   scriptengine.PromisifyAsync(vm, loop, tcpProbe),
+		"dns":   scriptengine.PromisifyAsync(vm, loop, dnsLookup),
+		"tls":   scriptengine.PromisifyAsync(vm, loop, tlsProbe),
+		"ntp":   scriptengine.PromisifyAsync(vm, loop, ntpQuery),
+		"whois": scriptengine.PromisifyAsync(vm, loop, whoisLookup),
 	}
 }
 
@@ -248,4 +254,92 @@ func tlsProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, erro
 		"serialNumber":      leaf.SerialNumber.String(),
 		"fingerprintSha256": hex.EncodeToString(fp[:]),
 	}, nil
+}
+
+// ntpQuery hits an NTP server (UDP 123 by default) and returns clock-skew
+// data. Uses beevik/ntp which speaks NTPv4 and packages the response into
+// a struct we flatten for JS. Durations are reported in milliseconds with
+// sub-millisecond precision so the values are easy to compare.
+func ntpQuery(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+	host := call.Argument(0).String()
+	opts := optsAsMap(call)
+	timeout := optMillis(opts, "timeout", 5*time.Second)
+	port := 123
+	if v, ok := opts["port"]; ok {
+		switch t := v.(type) {
+		case int64:
+			port = int(t)
+		case float64:
+			port = int(t)
+		case string:
+			if p, err := strconv.Atoi(t); err == nil {
+				port = p
+			}
+		}
+	}
+
+	resp, err := ntp.QueryWithOptions(host, ntp.QueryOptions{
+		Timeout: timeout,
+		Port:    port,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"serverTime":       resp.Time.UTC().Format(time.RFC3339Nano),
+		"offsetMs":         float64(resp.ClockOffset.Microseconds()) / 1000.0,
+		"rttMs":            float64(resp.RTT.Microseconds()) / 1000.0,
+		"stratum":          int(resp.Stratum),
+		"referenceTime":    resp.ReferenceTime.UTC().Format(time.RFC3339Nano),
+		"rootDelayMs":      float64(resp.RootDelay.Microseconds()) / 1000.0,
+		"rootDispersionMs": float64(resp.RootDispersion.Microseconds()) / 1000.0,
+	}, nil
+}
+
+// whoisLookup performs a two-hop WHOIS query (IANA -> registrar's whois
+// server) via likexian/whois, then runs likexian/whois-parser over the raw
+// text to extract the common fields. The raw response is always returned;
+// parsed fields are best-effort and may be missing for TLDs the parser
+// doesn't recognise.
+//
+// likexian/whois doesn't accept a context — its timeout is a per-Client
+// setting (time.Duration). The host engine's outer timeout still kicks in
+// via vm.Interrupt; this just shapes the wire-level wait.
+func whoisLookup(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+	domain := call.Argument(0).String()
+	opts := optsAsMap(call)
+	timeout := optMillis(opts, "timeout", 10*time.Second)
+
+	client := whois.NewClient().SetTimeout(timeout)
+	raw, err := client.Whois(domain)
+	if err != nil {
+		return nil, err
+	}
+
+	out := map[string]any{"raw": raw}
+	parsed, parseErr := whoisparser.Parse(raw)
+	if parseErr == nil {
+		if parsed.Domain != nil {
+			// whois-parser puts the whois server on Domain, not on Registrar
+			// — it's the server that served the lookup, not a registrar field.
+			out["domain"] = map[string]any{
+				"name":           parsed.Domain.Name,
+				"punycode":       parsed.Domain.Punycode,
+				"whoisServer":    parsed.Domain.WhoisServer,
+				"nameServers":    parsed.Domain.NameServers,
+				"status":         parsed.Domain.Status,
+				"dnssec":         parsed.Domain.DNSSec,
+				"createdDate":    parsed.Domain.CreatedDate,
+				"updatedDate":    parsed.Domain.UpdatedDate,
+				"expirationDate": parsed.Domain.ExpirationDate,
+			}
+		}
+		if parsed.Registrar != nil {
+			out["registrar"] = map[string]any{
+				"name": parsed.Registrar.Name,
+			}
+		}
+	}
+	return out, nil
 }

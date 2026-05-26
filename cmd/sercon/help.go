@@ -343,7 +343,7 @@ api.log(api.time.format(api.time.nowMs(), "%F %T", "UTC"));
 // strftime tokens supported: %Y %y %m %d %H %M %S %F %T %j %A %a %B %b %z %Z %%`)
 
 	header(16, "Protocol probes (api.net.*)")
-	code(`// All three return Promises; they hit the real network.
+	code(`// All five return Promises and hit the real network.
 const t = await api.net.tcp("example.com:443");
 api.log("ip:", t.ip, "latencyMs:", t.latencyMs);
 
@@ -351,8 +351,14 @@ const d = await api.net.dns("example.com", { types: ["a", "mx"] });
 api.log("ips:", d.a, "mx:", d.mx);
 
 const c = await api.net.tls("example.com");
-api.log("cn:", c.cn, "issuer:", c.issuer, "daysRemaining:", c.daysRemaining);`)
-	note("Optional opts: { timeout: ms }. tcp port defaults to 80, tls port to 443.")
+api.log("cn:", c.cn, "daysRemaining:", c.daysRemaining);
+
+const n = await api.net.ntp("pool.ntp.org");
+api.log("offsetMs:", n.offsetMs, "rttMs:", n.rttMs, "stratum:", n.stratum);
+
+const w = await api.net.whois("example.com");
+api.log("registrar:", w.registrar?.name, "expires:", w.domain?.expirationDate);`)
+	note("Optional { timeout: ms } on every probe. Default ports: tcp 80, tls 443, ntp 123.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

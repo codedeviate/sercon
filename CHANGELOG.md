@@ -10,6 +10,51 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.7] — 2026-05-26
+
+Second cut on **Easy / Protocol probes & connectivity** — the two
+third-party-lib items that didn't fit v0.4.6's stdlib-only slice.
+After this release, Easy / Protocol probes is empty.
+
+### Added
+
+- `api.net.ntp(host, opts?)`: NTPv4 clock query via
+  [`github.com/beevik/ntp`](https://github.com/beevik/ntp). Returns
+  `{ serverTime, offsetMs, rttMs, stratum, referenceTime,
+  rootDelayMs, rootDispersionMs }`. Optional `{ timeout?, port? }`
+  with defaults of 5 s and UDP 123.
+- `api.net.whois(domain, opts?)`: two-hop WHOIS lookup (IANA →
+  registrar's whois server) via
+  [`github.com/likexian/whois`](https://github.com/likexian/whois)
+  with parsing through
+  [`github.com/likexian/whois-parser`](https://github.com/likexian/whois-parser).
+  Returns `{ raw, domain?, registrar? }`; `raw` is always populated,
+  parsed views are best-effort. `opts.timeout` defaults to 10 s.
+- `TestNetNTP_UnreachableHostSurfacesError` — confirms the binding
+  surfaces a host-side error (rather than crashing) when pointed at
+  a closed UDP port. Offline; runs under `-short`.
+- `TestNetWHOIS_InvalidDomainDoesNotPanic` — smoke test for the
+  whois wrapper. Skipped under `testing.Short()` because there's no
+  reasonable way to stand up a fake whois server locally; the test
+  is mostly useful for confirming the dependency wires through.
+- `examples/scripts/net-probe.ts` extended with `ntp` against
+  `pool.ntp.org` and `whois` against `example.com`.
+- `--examples` step 16 absorbs the two new probes; the note line
+  now also documents the NTP default port.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the two new probe return
+  shapes, with prose calling out beevik/ntp's per-probe options and
+  the likexian/whois library's context-less timeout plumbing.
+
+### Dependencies
+
+- New direct: `github.com/beevik/ntp v1.5.0`,
+  `github.com/likexian/whois v1.15.7`,
+  `github.com/likexian/whois-parser v1.24.21`. All pure Go.
+- Transitive: `github.com/likexian/gokit v0.25.16`.
+
 ## [0.4.6] — 2026-05-26
 
 First of two cuts on **Easy / Protocol probes & connectivity**. This

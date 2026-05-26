@@ -9,11 +9,16 @@ require (
 )
 
 require (
+	github.com/beevik/ntp v1.5.0 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
+	github.com/likexian/gokit v0.25.16 // indirect
+	github.com/likexian/whois v1.15.7 // indirect
+	github.com/likexian/whois-parser v1.24.21 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect

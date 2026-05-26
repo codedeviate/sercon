@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.6</div>
+<div class="version">Version 0.4.7</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -382,6 +382,26 @@ declare const api: {
       serialNumber: string;
       fingerprintSha256: string;
     }>;
+    ntp(host: string, opts?: { timeout?: number; port?: number }): Promise<{
+      serverTime: string;
+      offsetMs: number;
+      rttMs: number;
+      stratum: number;
+      referenceTime: string;
+      rootDelayMs: number;
+      rootDispersionMs: number;
+    }>;
+    whois(domain: string, opts?: { timeout?: number }): Promise<{
+      raw: string;
+      domain?: {
+        name: string; punycode?: string;
+        whoisServer?: string;
+        nameServers?: string[]; status?: string[];
+        dnssec?: boolean;
+        createdDate?: string; updatedDate?: string; expirationDate?: string;
+      };
+      registrar?: { name?: string };
+    }>;
   };
 };
 ```
@@ -463,6 +483,22 @@ an optional `{ timeout: <ms> }` second arg; the default is 5 seconds.
   `daysRemaining`, `dnsNames`, serial number, and a SHA-256
   fingerprint (lowercase hex). Default port is `443`. Hosts that
   care about validity should re-validate the cert themselves.
+- **`ntp(host, opts?)`** — queries an NTPv4 server (UDP 123 by
+  default) via [`github.com/beevik/ntp`](https://github.com/beevik/ntp).
+  Returns the server time (ISO 8601), local-clock offset, round-trip
+  time, stratum, reference time, and the root delay / dispersion
+  values from the server's response. All durations are in
+  milliseconds with sub-millisecond precision.
+- **`whois(domain, opts?)`** — two-hop WHOIS lookup (IANA →
+  registrar's whois server) via
+  [`github.com/likexian/whois`](https://github.com/likexian/whois)
+  with parsing through
+  [`github.com/likexian/whois-parser`](https://github.com/likexian/whois-parser).
+  `raw` is always populated; `domain` and `registrar` are best-effort
+  parsed views (some TLDs the parser doesn't understand will return
+  only `raw`). The whois library doesn't accept a `context.Context`
+  — `opts.timeout` is plumbed through its own per-client setting and
+  the engine's `Options.Timeout` watchdog catches the outer call.
 
 ## 6. JavaScript runtime built-ins (goja)
 
@@ -782,7 +818,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.6. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.7. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

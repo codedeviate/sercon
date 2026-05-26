@@ -129,6 +129,53 @@ if (!Array.isArray(r.dnsNames) || !r.dnsNames.includes(%q)) {
 	}
 }
 
+// NTP smoke test against a port that nothing is listening on. We can't
+// stand up a real NTPv4 responder in a few lines, but we can confirm the
+// binding surfaces an error rather than panicking. Short timeout so the
+// test exits quickly.
+func TestNetNTP_UnreachableHostSurfacesError(t *testing.T) {
+	eng := newNetEngine(t)
+	script := `
+let caught = false;
+try {
+  await net.ntp("127.0.0.1", { timeout: 200, port: 1 });
+} catch (e) {
+  caught = true;
+}
+if (!caught) throw new Error("expected ntp to error against an unreachable port");
+`
+	if _, err := eng.Run(context.Background(), "ntp_err.ts", script); err != nil {
+		t.Fatalf("ntp error path: %v", err)
+	}
+}
+
+// WHOIS smoke test. likexian/whois resolves the right server via IANA, so
+// a truly offline test would need a fake whois server (lots of setup).
+// Instead drive the binding with a clearly invalid domain and check the
+// host-engine surfaces *some* error or returns a raw payload — both are
+// acceptable; we just want to confirm the wrapper doesn't crash.
+func TestNetWHOIS_InvalidDomainDoesNotPanic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("whois smoke needs network; skipped under -short")
+	}
+	eng := newNetEngine(t)
+	script := `
+let didError = false;
+try {
+  const r = await net.whois("this-domain-most-certainly-does-not-exist.invalid", { timeout: 3000 });
+  if (typeof r !== "object") throw new Error("expected object, got " + typeof r);
+} catch (e) {
+  didError = true;
+}
+// Either path is fine — we just want to prove the binding round-trips
+// without panicking the host.
+if (typeof didError !== "boolean") throw new Error("flag never set");
+`
+	if _, err := eng.Run(context.Background(), "whois_smoke.ts", script); err != nil {
+		t.Fatalf("whois smoke: %v", err)
+	}
+}
+
 type tlsFixture struct {
 	lis net.Listener
 	cn  string

@@ -46,15 +46,6 @@ the situation changes.
   bottleneck. **Library:** `googleapis/release-please-action` (GitHub
   Action, not a Go dep).
 
-### Protocol probes & connectivity
-
-- **`ntp(host)`** — NTP clock offset and round-trip delay measurement
-  (script: `ntp.rhai`). **Library:** `github.com/beevik/ntp` (pure Go,
-  well-maintained, de facto standard).
-- **`whois(domain)`** — Two-hop WHOIS with registrar referral (script:
-  `whois.rhai`). **Library:** `github.com/likexian/whois` for the
-  transport + `github.com/likexian/whois-parser` for parsing.
-
 ### Email authentication (SPF / DKIM / DMARC / MTA-STS / BIMI / TLS-RPT)
 
 - **`email::all(domain)`** — Aggregate SPF, DMARC, MTA-STS, TLS-RPT,
