@@ -320,3 +320,69 @@ func TestEngine_ResetClearsRegistrations(t *testing.T) {
 		t.Fatalf("third run: %v", err)
 	}
 }
+
+// ESM default-export interop: a TS module that uses `export default <value>`
+// must be importable via `import x from "./mod"` in the entry script, with
+// the rewriter unwrapping `__esModule ? .default : module`.
+func TestRun_ESMDefaultExport(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "answer.ts"), []byte(`
+export default 42;
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	if _, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+import answer from "./answer";
+if (answer !== 42) throw new Error("expected 42, got " + answer);
+`); err != nil {
+		t.Fatalf("default import: %v", err)
+	}
+}
+
+// ESM default + named imports in the same statement must both resolve.
+func TestRun_ESMDefaultAndNamed(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mix.ts"), []byte(`
+export const named = "n";
+export default "d";
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	if _, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+import def, { named } from "./mix";
+if (def   !== "d") throw new Error("default: got " + def);
+if (named !== "n") throw new Error("named: got "   + named);
+`); err != nil {
+		t.Fatalf("mixed default+named import: %v", err)
+	}
+}
+
+// TSX end-to-end: a .tsx helper resolved by extension fallback, with JSX
+// rewritten by esbuild via an @jsx pragma so we don't need React in scope.
+// Proves the source-loader's .tsx routing and esbuild's LoaderTSX work
+// for required modules.
+func TestRun_TSXModuleEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "el.tsx"), []byte("/** @jsx h */\n"+`
+function h(tag: string, props: any, ...children: any[]) {
+  return { tag, props: props ?? {}, children };
+}
+export function makeBox(label: string) {
+  return <div className="box">{label}</div>;
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	if _, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+import { makeBox } from "./el";
+const box = makeBox("hello");
+if (box.tag !== "div") throw new Error("expected div, got " + box.tag);
+if (box.props.className !== "box") throw new Error("expected className=box, got " + box.props.className);
+if (box.children[0] !== "hello") throw new Error("expected first child = hello, got " + box.children[0]);
+`); err != nil {
+		t.Fatalf("tsx module: %v", err)
+	}
+}

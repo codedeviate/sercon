@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.3.3</div>
+<div class="version">Version 0.4.0</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -523,8 +523,24 @@ JS is what executes. Practical implications:
   enforcement.
 - `tsconfig.json` is **not** consulted.
 
-`.tsx` and `.jsx` loaders are wired but not yet exercised end-to-end;
-see OUT-OF-SCOPE.md.
+`.tsx` and `.jsx` are supported via esbuild's `LoaderTSX` / `LoaderJSX`,
+including for required modules resolved by the engine's extension
+fallback. JSX has no React runtime in scope by default — either set
+the factory at the file level with an `@jsx` pragma:
+
+```tsx
+/** @jsx h */
+function h(tag: string, props: any, ...children: any[]) {
+  return { tag, props: props ?? {}, children };
+}
+export const Box = (label: string) => <div className="box">{label}</div>;
+```
+
+…or provide a `React.createElement`-compatible binding from Go and
+rely on esbuild's default pragma. ESM `export default <value>` also
+works through the entry-script rewriter's `__esModule ? .default : m`
+unwrap, so `import answer from "./mod"` resolves to the default
+export.
 
 ## 9. Top-level `await`
 
@@ -677,7 +693,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.3.3. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.0. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

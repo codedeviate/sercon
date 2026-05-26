@@ -34,17 +34,6 @@ the situation changes.
 
 ## Easy
 
-### Transpile / entry rewriter
-
-- **ESM default-export interop.** The `__esModule ? .default : m`
-  pattern is in place but lacks a dedicated test fixture for a TS file
-  that uses `export default`. **Approach:** add a fixture and a test;
-  no new library.
-- **JSX / TSX end-to-end.** The source loader recognises `.tsx` and
-  esbuild is configured for it, but there's no example script or test
-  proving the path works. **Library:** existing `github.com/evanw/esbuild`
-  already handles `.tsx`; this is just a fixture + integration test.
-
 ### Require / module loading
 
 - **`package.json` `main` honoured for `.ts` projects.** The registry

@@ -10,7 +10,33 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
-## [0.3.3] — 2026-05-26
+## [0.4.0] — 2026-05-26
+
+Opening cut of the **Easy** backlog bucket — the **Transpile / entry
+rewriter** sub-section. No code changes to the engine; this is
+test-and-doc coverage for paths that already worked but were never
+proven end-to-end. The MINOR bump reflects the bucket transition, not
+new behaviour.
+
+### Added
+
+- `TestRun_ESMDefaultExport` — proves `import answer from "./mod"`
+  resolves to the value of `export default …` via the entry-script
+  rewriter's `__esModule ? .default : module` unwrap.
+- `TestRun_ESMDefaultAndNamed` — proves a mixed
+  `import def, { named } from "./mod"` statement assigns both names
+  correctly (uses `reImportDefAndN`).
+- `TestRun_TSXModuleEndToEnd` — proves a `.tsx` helper module is
+  resolved by extension fallback, transpiled by esbuild's `LoaderTSX`,
+  and executes through goja. Uses an `@jsx h` pragma so JSX rewrites
+  to a local factory rather than `React.createElement`.
+
+### Changed
+
+- `MANUAL.md` § 8 (TypeScript support) replaces the "wired but not yet
+  exercised" caveat about `.tsx` / `.jsx` with a concrete usage block
+  showing the `@jsx h` pragma pattern and the `export default`
+  interop.
 
 Final slice of the **Trivial** backlog bucket — the **Repo / tooling**
 sub-section. Adds the linter config and shakes out the findings the
