@@ -23,6 +23,8 @@ Or pick individual scripts:
 | `path-and-time.ts` | `api.path.*` and `api.time.format` (strftime tokens, IANA zones) |
 | `default-export.ts` | ESM `export default` interop via the entry rewriter |
 | `tsx-demo.ts` | `.tsx` module loading with a local `@jsx h` factory |
+| `json-import.ts` | `import data from "./data.json"` and `require("./data.json")` |
+| `pkg-resolution.ts` | `package.json` `source` field preferred over `main` |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't

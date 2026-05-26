@@ -359,6 +359,88 @@ if (named !== "n") throw new Error("named: got "   + named);
 	}
 }
 
+// package.json with main pointing at a .js path that doesn't exist on disk
+// should resolve to the sibling .ts file via the resolver's .js -> .ts swap.
+func TestRun_PackageJsonMainTSFallback(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	libDir := filepath.Join(pkgDir, "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"),
+		[]byte(`{"name": "pkg", "main": "lib/index.js"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(libDir, "index.ts"),
+		[]byte(`export const v = "from-ts";`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	if _, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+import { v } from "./pkg";
+if (v !== "from-ts") throw new Error("expected from-ts, got " + v);
+`); err != nil {
+		t.Fatalf("package.json main TS fallback: %v", err)
+	}
+}
+
+// package.json `source` field, when it points at an existing .ts file, must
+// take precedence over `main` (which typically points at compiled output).
+func TestRun_PackageJsonSourcePreferred(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	distDir := filepath.Join(pkgDir, "dist")
+	srcDir := filepath.Join(pkgDir, "src")
+	for _, d := range []string{distDir, srcDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, "package.json"),
+		[]byte(`{"name": "pkg", "main": "dist/index.js", "source": "src/lib.ts"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Make `main`'s target exist with the wrong value so we can prove
+	// source: was chosen over it.
+	if err := os.WriteFile(filepath.Join(distDir, "index.js"),
+		[]byte(`module.exports = { v: "from-main" };`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "lib.ts"),
+		[]byte(`export const v = "from-source";`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	if _, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+import { v } from "./pkg";
+if (v !== "from-source") throw new Error("expected from-source, got " + v);
+`); err != nil {
+		t.Fatalf("package.json source preferred: %v", err)
+	}
+}
+
+// `import data from "./data.json"` must yield the parsed JSON object as
+// the default value (goja_nodejs's require has a JSON code path, and
+// esbuild rewrites the default import).
+func TestRun_JSONImport(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "data.json"),
+		[]byte(`{"name": "abc", "n": 7}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	if _, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+import data from "./data.json";
+if (data.name !== "abc") throw new Error("name: got "  + data.name);
+if (data.n    !== 7)     throw new Error("n: got "     + data.n);
+const r = require("./data.json");
+if (r.name    !== "abc") throw new Error("require name: got " + r.name);
+`); err != nil {
+		t.Fatalf("json import: %v", err)
+	}
+}
+
 // TSX end-to-end: a .tsx helper resolved by extension fallback, with JSX
 // rewritten by esbuild via an @jsx pragma so we don't need React in scope.
 // Proves the source-loader's .tsx routing and esbuild's LoaderTSX work

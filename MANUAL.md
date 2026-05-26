@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.1</div>
+<div class="version">Version 0.4.2</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -581,9 +581,17 @@ adds:
    `.tsx` files are transpiled on the fly.
 2. **Extension fallback** when the request has no extension: try `.ts`,
    `.tsx`, `.js`, `.cjs`, `.mjs`, `.json` in that order.
-3. **`.js` → `.ts` swap**: if `foo.js` is requested but doesn't exist,
-   `foo.ts` (and `foo.tsx`) is tried.
-4. **Directory index**: if the resolved path is a directory, try
+3. **`.js` → `.ts` swap**: if a path ending in `.js` / `.cjs` / `.mjs`
+   is requested but the literal file doesn't exist, the same path
+   ending in `.ts` (or `.tsx`) is tried. Handles `package.json` `main`
+   fields that point at compiled output where only the TypeScript
+   source is on disk.
+4. **`package.json` `source` preference**: when reading a
+   `package.json`, if a `source` field is present and points at an
+   existing `.ts`/`.tsx` file, `main` is rewritten to that path before
+   the registry consumes it. Matches the convention used by parcel,
+   microbundle, and similar bundlers to mark the TS source of truth.
+5. **Directory index**: if the resolved path is a directory, try
    `index.ts`, `index.tsx`, `index.js`.
 
 The base directory follows Node's CommonJS rules — relative imports
@@ -596,6 +604,14 @@ import { check } from "./helpers/assert";
 import { check } from "./helpers/assert.ts";
 const { check } = require("./helpers/assert");
 const { check } = require("./helpers/assert.js");
+```
+
+JSON imports work out of the box via either the ESM-style default
+import (esbuild rewrites it to a require) or a direct `require`:
+
+```ts
+import data from "./data.json";
+const r = require("./data.json");
 ```
 
 `node_modules` lookup *works* via the upstream registry, but the source
@@ -699,7 +715,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.1. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.2. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

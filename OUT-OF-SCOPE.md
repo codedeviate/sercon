@@ -34,17 +34,6 @@ the situation changes.
 
 ## Easy
 
-### Require / module loading
-
-- **`package.json` `main` honoured for `.ts` projects.** The registry
-  reads `package.json` but assumes JS entry points. A TS-aware variant
-  could prefer a `types` or `source` field. **Library:** `encoding/json`
-  (stdlib); logic change on top of `dop251/goja_nodejs/require`.
-- **JSON / data imports through the TS loader.** Today `.json` is
-  passed through; `import data from './data.json'` works because esbuild
-  rewrites it to a require, but there's no test pinning that down.
-  **Approach:** add a regression test against the existing pipeline.
-
 ### `.d.ts` generator
 
 - **Promised[T] introspection in real bindings.** The marker type and

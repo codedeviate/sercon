@@ -10,6 +10,57 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.2] — 2026-05-26
+
+Second slice of the **Easy** bucket — the **Require / module loading**
+sub-section. Two real behavioural additions to the resolver plus a
+JSON-import regression test. No new external dependencies (the rewrite
+uses `encoding/json` from stdlib).
+
+### Added
+
+- **`.js` → `.ts` swap** in `Engine.resolveRequirePath`. When a request
+  ends in `.js` / `.cjs` / `.mjs` and the literal file is absent, the
+  resolver now tries the same path with `.ts` / `.tsx`. Handles
+  `package.json` `main` fields that point at compiled output where
+  only the TypeScript source is on disk.
+- **`package.json` `source` preference** via a new
+  `Engine.maybeRewritePackageJSON`. When the source loader is asked
+  for a `package.json` and that file has a `source` field pointing at
+  an existing `.ts`/`.tsx` file, the JSON is rewritten on the fly so
+  `main` points at the TS source. Matches the convention used by
+  parcel/microbundle/etc.
+- Three new tests:
+  - `TestRun_PackageJsonMainTSFallback` — `main: "lib/index.js"`
+    plus an on-disk `lib/index.ts` resolves correctly.
+  - `TestRun_PackageJsonSourcePreferred` — `source` wins over `main`
+    even when `main`'s target exists, proving the rewrite isn't
+    just a fallback.
+  - `TestRun_JSONImport` — `import data from "./data.json"` and
+    `require("./data.json")` both yield the parsed JSON object.
+- Two new runnable examples + supporting fixtures:
+  - `examples/scripts/json-import.ts` (+ `helpers/data.json`).
+  - `examples/scripts/pkg-resolution.ts` (+ `helpers/pkg/` tree
+    containing `package.json`, `src/lib.ts`, and a decoy
+    `dist/index.js`).
+
+### Fixed
+
+- `Engine.resolveRequirePath` now returns
+  `require.ModuleFileDoesNotExistError` instead of a private
+  "module not found" wrapper. Without this, goja_nodejs's `loadAsFile`
+  short-circuited the fallback chain on the very first miss — meaning
+  `loadAsDirectory` (and therefore `package.json` resolution) never
+  ran. This was a latent bug; the new package-json tests surfaced it.
+
+### Changed
+
+- `Makefile`'s `DEMO_SCRIPTS` list gains the two new examples.
+- `examples/README.md` script table extended accordingly.
+- `MANUAL.md` § 10 (Module resolution) documents the new
+  `.js` → `.ts` swap and `package.json` `source` preference, plus an
+  explicit JSON-import snippet.
+
 ## [0.4.1] — 2026-05-26
 
 Example coverage for everything that landed in 0.3.x – 0.4.0. Pure

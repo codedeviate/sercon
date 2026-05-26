@@ -1,0 +1,5 @@
+{
+  "name": "demo-pkg",
+  "main": "dist/index.js",
+  "source": "src/lib.ts"
+}
