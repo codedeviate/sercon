@@ -11,12 +11,20 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// jwtNamespace wires `api.jwt.*`. v0.5.2 ships HMAC-only support
-// (HS256 / HS384 / HS512); asymmetric algorithms (RSA / ECDSA / EdDSA)
-// land in a follow-up cut once the key-shape mapping from JS is
-// designed (PEM string? base64 raw bytes? jwk object?). All three
-// members are synchronous — JWT work is pure CPU and doesn't need
-// the event loop.
+// jwtNamespace wires `api.jwt.*`. Supports the full RFC 7518
+// algorithm matrix: HMAC (HS256 / HS384 / HS512), RSA-PKCS1 (RS256
+// / RS384 / RS512), RSA-PSS (PS256 / PS384 / PS512), ECDSA (ES256
+// / ES384 / ES512), and EdDSA (Ed25519). All three members are
+// synchronous — JWT work is pure CPU and doesn't need the event
+// loop.
+//
+// Key shape: the `secret` parameter accepts either a raw HMAC byte
+// string OR a PEM-encoded asymmetric key (private for sign, public
+// for validate). PEM detection looks for the literal `-----BEGIN`
+// header — every standard PEM block starts with it. Cross-checks
+// (PEM with HMAC algo, HMAC bytes with asymmetric algo) throw with
+// a named-algorithm error so silent fallback to a weaker algo is
+// impossible.
 func jwtNamespace(vm *goja.Runtime) map[string]any {
 	return map[string]any{
 		"sign":     func(claims map[string]any, secret string, opts goja.Value) goja.Value { return jwtSign(vm, claims, secret, opts) },
@@ -25,24 +33,151 @@ func jwtNamespace(vm *goja.Runtime) map[string]any {
 	}
 }
 
-// jwtSupportedAlgos lists the HMAC algorithms scripts can ask for via
-// `opts.algorithm`. Anything else is rejected at sign / validate time
-// with a named-algorithm error so scripts notice early — silently
-// falling back would let production tokens drift onto a weaker algo
-// than the caller asked for.
-var jwtSupportedAlgos = map[string]*jwt.SigningMethodHMAC{
-	"HS256": jwt.SigningMethodHS256,
-	"HS384": jwt.SigningMethodHS384,
-	"HS512": jwt.SigningMethodHS512,
+// jwtSigningMethod resolves a name like "HS256" / "RS256" / "ES384"
+// / "EdDSA" to a jwt-go SigningMethod. Returns nil for unknown
+// names so the caller can produce a uniform "unsupported algorithm"
+// error rather than this helper deciding the wording.
+func jwtSigningMethod(name string) jwt.SigningMethod {
+	switch name {
+	case "HS256":
+		return jwt.SigningMethodHS256
+	case "HS384":
+		return jwt.SigningMethodHS384
+	case "HS512":
+		return jwt.SigningMethodHS512
+	case "RS256":
+		return jwt.SigningMethodRS256
+	case "RS384":
+		return jwt.SigningMethodRS384
+	case "RS512":
+		return jwt.SigningMethodRS512
+	case "PS256":
+		return jwt.SigningMethodPS256
+	case "PS384":
+		return jwt.SigningMethodPS384
+	case "PS512":
+		return jwt.SigningMethodPS512
+	case "ES256":
+		return jwt.SigningMethodES256
+	case "ES384":
+		return jwt.SigningMethodES384
+	case "ES512":
+		return jwt.SigningMethodES512
+	case "EdDSA":
+		return jwt.SigningMethodEdDSA
+	default:
+		return nil
+	}
+}
+
+// jwtSupportedAlgoList is the order-stable list of algorithm names
+// reported in error messages and passed to jwt.WithValidMethods. The
+// HMAC family comes first because that's the most common case for
+// `sercon` scripts that don't already have key material to hand.
+var jwtSupportedAlgoList = []string{
+	"HS256", "HS384", "HS512",
+	"RS256", "RS384", "RS512",
+	"PS256", "PS384", "PS512",
+	"ES256", "ES384", "ES512",
+	"EdDSA",
+}
+
+// looksLikePEM is the cheap test we use to decide "treat secret as
+// PEM key" vs "treat secret as HMAC bytes". `-----BEGIN` is the
+// universal PEM block prefix; nothing legitimate that's meant as
+// HMAC bytes would start with it.
+func looksLikePEM(s string) bool {
+	return strings.HasPrefix(strings.TrimSpace(s), "-----BEGIN")
+}
+
+// isHMACAlgorithm reports whether the named algorithm is HMAC-based.
+// Used to gate the PEM/bytes cross-checks: HMAC + PEM = mistake,
+// asymmetric + plain bytes = mistake.
+func isHMACAlgorithm(name string) bool {
+	return strings.HasPrefix(name, "HS")
+}
+
+// parsePrivateKeyForAlg parses `secret` as the key shape the named
+// algorithm needs. The two cross-check error paths catch the most
+// common JS-side mistakes — a script that supplies a PEM private
+// key but forgets to set `opts.algorithm` would otherwise sign an
+// HS256 token over the PEM bytes; conversely, a script that asks
+// for RS256 but supplies a plain string secret would get a cryptic
+// "x509: malformed certificate" deep inside jwt-go.
+func parsePrivateKeyForAlg(secret, algName string) (any, error) {
+	switch {
+	case isHMACAlgorithm(algName):
+		if looksLikePEM(secret) {
+			return nil, fmt.Errorf("algorithm %s is HMAC but secret looks like a PEM-encoded key — set opts.algorithm to RS256 / ES256 / EdDSA / etc., or pass raw bytes for HMAC", algName)
+		}
+		return []byte(secret), nil
+	case !looksLikePEM(secret):
+		return nil, fmt.Errorf("algorithm %s needs a PEM-encoded private key but secret is plain bytes (no -----BEGIN header)", algName)
+	case strings.HasPrefix(algName, "RS"), strings.HasPrefix(algName, "PS"):
+		k, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(secret))
+		if err != nil {
+			return nil, fmt.Errorf("parse RSA private key: %w", err)
+		}
+		return k, nil
+	case strings.HasPrefix(algName, "ES"):
+		k, err := jwt.ParseECPrivateKeyFromPEM([]byte(secret))
+		if err != nil {
+			return nil, fmt.Errorf("parse EC private key: %w", err)
+		}
+		return k, nil
+	case algName == "EdDSA":
+		k, err := jwt.ParseEdPrivateKeyFromPEM([]byte(secret))
+		if err != nil {
+			return nil, fmt.Errorf("parse Ed25519 private key: %w", err)
+		}
+		return k, nil
+	default:
+		return nil, fmt.Errorf("unsupported algorithm %q", algName)
+	}
+}
+
+// parsePublicKeyForAlg is the validate-side counterpart. Accepts
+// `-----BEGIN PUBLIC KEY-----` and `-----BEGIN CERTIFICATE-----`
+// blocks (the latter via jwt-go's helpers, which pull the public
+// key out of the cert). Same cross-check policy as
+// parsePrivateKeyForAlg.
+func parsePublicKeyForAlg(secret, algName string) (any, error) {
+	switch {
+	case isHMACAlgorithm(algName):
+		if looksLikePEM(secret) {
+			return nil, fmt.Errorf("algorithm %s is HMAC but secret looks like a PEM-encoded key — set opts.algorithm to the asymmetric algo used to sign, or pass raw bytes for HMAC", algName)
+		}
+		return []byte(secret), nil
+	case !looksLikePEM(secret):
+		return nil, fmt.Errorf("algorithm %s needs a PEM-encoded public key but secret is plain bytes (no -----BEGIN header)", algName)
+	case strings.HasPrefix(algName, "RS"), strings.HasPrefix(algName, "PS"):
+		k, err := jwt.ParseRSAPublicKeyFromPEM([]byte(secret))
+		if err != nil {
+			return nil, fmt.Errorf("parse RSA public key: %w", err)
+		}
+		return k, nil
+	case strings.HasPrefix(algName, "ES"):
+		k, err := jwt.ParseECPublicKeyFromPEM([]byte(secret))
+		if err != nil {
+			return nil, fmt.Errorf("parse EC public key: %w", err)
+		}
+		return k, nil
+	case algName == "EdDSA":
+		k, err := jwt.ParseEdPublicKeyFromPEM([]byte(secret))
+		if err != nil {
+			return nil, fmt.Errorf("parse Ed25519 public key: %w", err)
+		}
+		return k, nil
+	default:
+		return nil, fmt.Errorf("unsupported algorithm %q", algName)
+	}
 }
 
 // jwtSign produces a signed compact-serialisation JWT. `claims` is
-// passed straight through to jwt-go's MapClaims, which knows how to
-// emit RFC 7519 reserved claims (`exp`, `nbf`, `iat`, `aud`, `iss`,
-// `sub`, `jti`) when present and handles arbitrary user-defined
+// passed straight through to jwt-go's MapClaims, which recognises
+// the RFC 7519 reserved claims and handles arbitrary user-defined
 // claims alongside them. Missing claims aren't synthesised — scripts
-// that want `iat` set should add it explicitly via
-// `api.time.nowMs() / 1000`.
+// that want `iat` set should compute it explicitly.
 func jwtSign(vm *goja.Runtime, claims map[string]any, secret string, opts goja.Value) goja.Value {
 	if claims == nil {
 		panic(vm.NewGoError(errors.New("jwt.sign: claims object required")))
@@ -51,12 +186,16 @@ func jwtSign(vm *goja.Runtime, claims map[string]any, secret string, opts goja.V
 		panic(vm.NewGoError(errors.New("jwt.sign: secret is empty")))
 	}
 	algName := optAlgorithm(opts, "HS256")
-	method, ok := jwtSupportedAlgos[algName]
-	if !ok {
-		panic(vm.NewGoError(fmt.Errorf("jwt.sign: unsupported algorithm %q (HS256 / HS384 / HS512 are HMAC only; asymmetric algos land in a later cut)", algName)))
+	method := jwtSigningMethod(algName)
+	if method == nil {
+		panic(vm.NewGoError(fmt.Errorf("jwt.sign: unsupported algorithm %q (supported: %s)", algName, strings.Join(jwtSupportedAlgoList, ", "))))
+	}
+	key, err := parsePrivateKeyForAlg(secret, algName)
+	if err != nil {
+		panic(vm.NewGoError(fmt.Errorf("jwt.sign: %w", err)))
 	}
 	tok := jwt.NewWithClaims(method, jwt.MapClaims(claims))
-	signed, err := tok.SignedString([]byte(secret))
+	signed, err := tok.SignedString(key)
 	if err != nil {
 		panic(vm.NewGoError(fmt.Errorf("jwt.sign: %w", err)))
 	}
@@ -64,14 +203,7 @@ func jwtSign(vm *goja.Runtime, claims map[string]any, secret string, opts goja.V
 }
 
 // jwtView decodes a token's header + payload + signature WITHOUT
-// verifying the signature. Useful for inspecting tokens — debugging
-// auth flows, surfacing the `aud` / `iss` claim to the user — without
-// trusting the contents. Malformed input throws.
-//
-// `header` and `payload` round-trip back as JS objects; `signature`
-// is the raw base64url string (no padding), matching how jwt-go and
-// most other inspection tools surface it. Scripts that want the
-// signature as bytes should base64url-decode it themselves.
+// verifying the signature. Malformed input throws.
 func jwtView(vm *goja.Runtime, token string) goja.Value {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
@@ -93,13 +225,11 @@ func jwtView(vm *goja.Runtime, token string) goja.Value {
 }
 
 // decodeJWTSegment base64url-decodes a JWT segment and JSON-parses
-// the result into a generic map. Both `RawURLEncoding` (no padding)
-// and the rarer padded form are accepted — strictly speaking the
-// spec forbids padding but real-world tokens sometimes carry it.
+// the result. Accepts both `RawURLEncoding` (no padding, per spec)
+// and the rarer padded form.
 func decodeJWTSegment(seg string) (map[string]any, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(seg)
 	if err != nil {
-		// Fall back to URLEncoding (with `=` padding) before giving up.
 		var err2 error
 		raw, err2 = base64.URLEncoding.DecodeString(seg)
 		if err2 != nil {
@@ -113,22 +243,17 @@ func decodeJWTSegment(seg string) (map[string]any, error) {
 	return out, nil
 }
 
-// jwtValidate verifies a token's signature using the supplied secret
-// and the algorithm declared in the token's header. Standard-claim
-// validation (`exp`, `nbf`, `iat`) is delegated to jwt-go. If
-// `opts.audience` or `opts.issuer` is set, those are checked too;
-// otherwise jwt-go skips them.
+// jwtValidate verifies a token using `secret` and the algorithm
+// declared in the token's header. When `opts.algorithm` is set, the
+// header's alg must match it exactly — this prevents algorithm
+// confusion attacks (a server expecting RS256 won't accept an HS256
+// token signed with what was supposed to be a public verification
+// key). When unset, any algorithm in jwtSupportedAlgoList is
+// accepted.
 //
-// **Resolves**, doesn't throw, on every validation failure:
-//
-//	{ valid: false, reason: "signature is invalid" }
-//	{ valid: false, reason: "token is expired" }
-//
-// Scripts branch on `valid`. Malformed input (not three segments,
-// invalid base64, invalid JSON) still throws — those aren't validation
-// failures, they're structural input errors and a script that
-// pattern-matches on `valid: false` shouldn't accidentally accept a
-// garbage string.
+// Resolves (doesn't throw) on every validation failure with
+// `{ valid: false, reason }`. Only structural input errors (wrong
+// segment count, empty secret) throw.
 func jwtValidate(vm *goja.Runtime, token, secret string, opts goja.Value) goja.Value {
 	if token == "" {
 		panic(vm.NewGoError(errors.New("jwt.validate: token is empty")))
@@ -141,18 +266,57 @@ func jwtValidate(vm *goja.Runtime, token, secret string, opts goja.Value) goja.V
 		panic(vm.NewGoError(fmt.Errorf("jwt.validate: malformed token (expected 3 dot-separated segments, got %d)", len(parts))))
 	}
 
-	parserOpts := []jwt.ParserOption{
-		jwt.WithValidMethods([]string{"HS256", "HS384", "HS512"}),
+	optsMap := asMap(opts)
+	expectedAlg := strings.ToUpper(optString(optsMap, "algorithm", ""))
+	// EdDSA is the one algorithm name where ToUpper isn't right —
+	// jwt-go's identifier is `EdDSA`, not `EDDSA`. Normalise back.
+	if expectedAlg == "EDDSA" {
+		expectedAlg = "EdDSA"
 	}
-	if aud := optString(asMap(opts), "audience", ""); aud != "" {
+
+	validMethods := jwtSupportedAlgoList
+	if expectedAlg != "" {
+		validMethods = []string{expectedAlg}
+	}
+
+	// Pre-validate the secret-vs-algorithm cross-check. When opts.algorithm
+	// is set we know the algo upfront; otherwise we cheaply decode the
+	// token's header (we already split parts) so we can throw at this
+	// boundary rather than letting the keyfunc surface it as a soft
+	// `valid: false` validation failure. Cross-check errors are
+	// structural ("you wired this wrong"); they shouldn't be confused
+	// with cryptographic verification failures.
+	preCheckAlg := expectedAlg
+	if preCheckAlg == "" {
+		if hdr, err := decodeJWTSegment(parts[0]); err == nil {
+			if a, ok := hdr["alg"].(string); ok {
+				preCheckAlg = a
+			}
+		}
+	}
+	if preCheckAlg != "" && jwtSigningMethod(preCheckAlg) != nil {
+		if _, err := parsePublicKeyForAlg(secret, preCheckAlg); err != nil {
+			panic(vm.NewGoError(fmt.Errorf("jwt.validate: %w", err)))
+		}
+	}
+
+	parserOpts := []jwt.ParserOption{
+		jwt.WithValidMethods(validMethods),
+	}
+	if aud := optString(optsMap, "audience", ""); aud != "" {
 		parserOpts = append(parserOpts, jwt.WithAudience(aud))
 	}
-	if iss := optString(asMap(opts), "issuer", ""); iss != "" {
+	if iss := optString(optsMap, "issuer", ""); iss != "" {
 		parserOpts = append(parserOpts, jwt.WithIssuer(iss))
 	}
 
 	parsed, err := jwt.Parse(token, func(t *jwt.Token) (any, error) {
-		return []byte(secret), nil
+		// The keyfunc is called after the header is parsed but
+		// before the signature is checked. t.Method.Alg() is the
+		// canonical algorithm string from the token's header; use
+		// it to pick the right key shape.
+		actualAlg := t.Method.Alg()
+		return parsePublicKeyForAlg(secret, actualAlg)
 	}, parserOpts...)
 	if err != nil {
 		return vm.ToValue(map[string]any{
@@ -173,10 +337,11 @@ func jwtValidate(vm *goja.Runtime, token, secret string, opts goja.Value) goja.V
 	})
 }
 
-// optAlgorithm reads an optional `algorithm` field out of the opts
-// arg, falling back to `fallback` when missing. Lives here (not in
-// api_net.go's optString) because the algorithm string is normalised
-// to upper-case so callers can write either `"hs256"` or `"HS256"`.
+// optAlgorithm reads an optional `algorithm` field from opts,
+// falling back to `fallback` when missing. The algorithm name is
+// upper-cased so callers can write either `"hs256"` or `"HS256"` —
+// with one exception: EdDSA's canonical jwt-go identifier is mixed
+// case, so we restore that after upper-casing.
 func optAlgorithm(opts goja.Value, fallback string) string {
 	m := asMap(opts)
 	if m == nil {
@@ -186,12 +351,15 @@ func optAlgorithm(opts goja.Value, fallback string) string {
 	if !ok || v == "" {
 		return fallback
 	}
-	return strings.ToUpper(v)
+	upper := strings.ToUpper(v)
+	if upper == "EDDSA" {
+		return "EdDSA"
+	}
+	return upper
 }
 
-// asMap unwraps a goja.Value into a Go map. Used by jwt.sign /
-// jwt.validate to read their opts arg uniformly; nil / undefined /
-// null / non-object all collapse to nil.
+// asMap unwraps a goja.Value into a Go map. nil / undefined / null
+// / non-object all collapse to nil.
 func asMap(v goja.Value) map[string]any {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return nil

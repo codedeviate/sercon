@@ -127,9 +127,9 @@ declare const api: {
     queryAll(...args: unknown[]): Promise<unknown[]>;
   };
   jwt: {
-    /** Sign a claims object with secret. opts.algorithm defaults to HS256. Asymmetric algos (RS*/ES*/EdDSA) throw a named error — that surface lands in a later cut. */
+    /** Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA. opts.algorithm defaults to HS256. Cross-check (PEM + HMAC, or bytes + asymmetric) throws. */
     sign(arg0: Record<string, unknown>, arg1: string, arg2: unknown): unknown;
-    /** Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. Resolves { valid:true, claims } or { valid:false, reason }; only structural input errors throw. */
+    /** Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }; only structural input errors throw. */
     validate(arg0: string, arg1: string, arg2: unknown): unknown;
     /** Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws. */
     view(arg0: string): unknown;

@@ -544,21 +544,24 @@ api.preg.match("/HELLO/i", "Hello world");
 api.preg.matchAll("/^x/m", "x\\nx\\nx");`)
 	note("RE2 is UTF-8 by default — the `u` flag is unnecessary and explicitly errors. Optional groups that didn't match surface as empty strings.")
 
-	header(30, "JWT — HMAC sign / view / validate (api.jwt.*)")
-	code(`// Sign — opts.algorithm defaults to HS256; HS384 and HS512 also supported.
-const token = api.jwt.sign(
-  { sub: "alice", iat: Math.floor(Date.now() / 1000), exp: ... + 3600 },
+	header(30, "JWT — sign / view / validate (api.jwt.*)")
+	code(`// HMAC — opts.algorithm defaults to HS256.
+const t = api.jwt.sign(
+  { sub: "alice", exp: Math.floor(Date.now() / 1000) + 3600 },
   "shared-secret",
 );
+const { header, payload, signature } = api.jwt.view(t);   // decode w/o verify
+const ok = api.jwt.validate(t, "shared-secret");
+if (ok.valid) api.log(ok.claims.sub); else api.log("reject:", ok.reason);
 
-// view decodes header + payload WITHOUT verifying — debug auth flows safely.
-const { header, payload, signature } = api.jwt.view(token);
-
-// validate resolves, doesn't throw, on bad sig / expired / audience mismatch.
-const ok = api.jwt.validate(token, "shared-secret");
-if (ok.valid) api.log(ok.claims.sub);
-else api.log("rejected:", ok.reason);`)
-	note("HMAC only for now (HS256 / HS384 / HS512). Asymmetric algos (RSA / ECDSA / EdDSA) need key-shape design and land in a future cut.")
+// Asymmetric — secret is PEM-encoded (private for sign, public for validate).
+const tok = api.jwt.sign(
+  { sub: "bob" },
+  privatePEM,
+  { algorithm: "EdDSA" },     // RS256/RS384/RS512, PS256/PS384/PS512,
+);                            // ES256/ES384/ES512, EdDSA — all supported
+const v = api.jwt.validate(tok, publicPEM, { algorithm: "EdDSA" });`)
+	note("Set opts.algorithm on validate for asymmetric tokens — that's the algo-confusion guard. PEM/HMAC cross-checks throw at the binding boundary.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

@@ -135,9 +135,9 @@ func apiDocs() map[string]string {
 		"preg.matchAll": "Every hit of /pattern/flags against subject, as an array of { match, groups, index } objects.",
 		"preg.replace":  "Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / ${1} backref syntax — PHP's \\1 form is NOT translated.",
 
-		// JWT — HMAC only for now (HS256 / HS384 / HS512)
-		"jwt.sign":     "Sign a claims object with secret. opts.algorithm defaults to HS256. Asymmetric algos (RS*/ES*/EdDSA) throw a named error — that surface lands in a later cut.",
+		// JWT — full RFC 7518 matrix (HS*/RS*/PS*/ES*/EdDSA)
+		"jwt.sign":     "Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA. opts.algorithm defaults to HS256. Cross-check (PEM + HMAC, or bytes + asymmetric) throws.",
 		"jwt.view":     "Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws.",
-		"jwt.validate": "Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. Resolves { valid:true, claims } or { valid:false, reason }; only structural input errors throw.",
+		"jwt.validate": "Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }; only structural input errors throw.",
 	}
 }

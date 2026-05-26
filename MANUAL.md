@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.2</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.3</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -622,19 +622,31 @@ declare const api: {
   jwt: {
     sign(
       claims: Record<string, unknown>,
-      secret: string,
-      opts?: { algorithm?: "HS256" | "HS384" | "HS512" },   // default "HS256"
+      secret: string,                            // raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA
+      opts?: {
+        algorithm?:
+          | "HS256" | "HS384" | "HS512"          // HMAC
+          | "RS256" | "RS384" | "RS512"          // RSA-PKCS1v1.5
+          | "PS256" | "PS384" | "PS512"          // RSA-PSS
+          | "ES256" | "ES384" | "ES512"          // ECDSA
+          | "EdDSA";                             // Ed25519
+      },                                         // default "HS256"
     ): string;
     view(token: string): {
       header: Record<string, unknown>;
       payload: Record<string, unknown>;
-      signature: string;          // raw base64url, no padding
+      signature: string;                         // raw base64url, no padding
     };
     validate(
       token: string,
-      secret: string,
+      secret: string,                            // raw bytes for HS*; PEM-encoded public key (or certificate) for asymmetric
       opts?: {
-        algorithm?: "HS256" | "HS384" | "HS512";
+        algorithm?:
+          | "HS256" | "HS384" | "HS512"
+          | "RS256" | "RS384" | "RS512"
+          | "PS256" | "PS384" | "PS512"
+          | "ES256" | "ES384" | "ES512"
+          | "EdDSA";
         audience?: string;
         issuer?: string;
       },
@@ -1062,14 +1074,39 @@ says so.
   Go.
 
 JWT bindings (`api.jwt.*`) wrap
-[`golang-jwt/jwt/v5`](https://github.com/golang-jwt/jwt). v0.5.2
-ships **HMAC support only** (`HS256` / `HS384` / `HS512`); the
-asymmetric algorithms (RSA / ECDSA / EdDSA) need a key-shape mapping
-design (PEM string vs JWK object vs raw bytes) and land in a
-follow-up cut. Unsupported algorithm names — including `RS256`,
-`ES256`, `EdDSA`, and the special `"none"` value — throw with a
-named-algorithm message at `sign` / `validate` time rather than
-silently falling through.
+[`golang-jwt/jwt/v5`](https://github.com/golang-jwt/jwt). The full
+RFC 7518 algorithm matrix is supported: HMAC (`HS256` / `HS384` /
+`HS512`), RSA-PKCS1v1.5 (`RS256` / `RS384` / `RS512`), RSA-PSS
+(`PS256` / `PS384` / `PS512`), ECDSA (`ES256` / `ES384` / `ES512`),
+and Ed25519 (`EdDSA`). Unsupported algorithm names — including
+the special `"none"` value, garbage like `"HS999"`, and protocol
+names that aren't JWT signing algos — throw at `sign` / `validate`
+time with a named-algorithm error rather than silently falling
+through.
+
+**Key shape.** The `secret` parameter is overloaded by the
+algorithm: HMAC algorithms use the byte string directly; asymmetric
+algorithms expect a PEM-encoded key (private for `sign`, public —
+or a certificate the public key can be pulled from — for
+`validate`). PEM detection is the literal `-----BEGIN` prefix.
+Both directions of the cross-check are enforced:
+
+- **PEM secret + HMAC algorithm** throws with a named-algorithm
+  hint ("looks like a PEM-encoded key — set opts.algorithm to
+  RS256 / ES256 / EdDSA / etc."). Without this guard, a script
+  that forgets to set `opts.algorithm` after switching to a PEM
+  key would silently sign an HS256 token using the PEM bytes
+  themselves — that's exactly the algorithm-confusion attack
+  pattern in reverse.
+- **Plain bytes + asymmetric algorithm** throws with the inverse
+  hint ("needs a PEM-encoded private/public key but secret is
+  plain bytes"). Without this guard the user would get a
+  cryptic "x509: malformed certificate" deep inside jwt-go.
+
+The cross-check fires at the binding boundary before jwt-go is
+called, so it's a thrown error rather than a `valid: false`
+resolution — these are structural input problems, not validation
+failures.
 
 - **`sign(claims, secret, opts?)`** — Produces a compact-serialised
   signed JWT. `claims` is passed straight through to jwt-go's
@@ -1093,10 +1130,21 @@ silently falling through.
   cross-checked against `aud` / `iss` when set. The contract is
   **resolve, don't throw, on validation failure**:
   `{ valid: false, reason: "…" }` for bad signature, expired,
-  audience mismatch, issuer mismatch. Only structural input
-  errors (not a JWT at all) and empty secret / empty token throw,
-  because those aren't validation failures — pattern-matching on
-  `valid: false` shouldn't accidentally accept a garbage string.
+  audience mismatch, issuer mismatch, *and* algorithm mismatch
+  when `opts.algorithm` is set. Only structural input errors
+  (not a JWT at all, empty secret, empty token, PEM/algorithm
+  cross-check failure) throw — pattern-matching on `valid: false`
+  shouldn't accidentally accept a garbage string.
+
+  Setting `opts.algorithm` is the **algorithm-confusion guard**: an
+  attacker who has the public key bytes can forge an HS256 token
+  by using those bytes as the HMAC secret (the classic JWT
+  exploit). When `opts.algorithm` is set, the parser's
+  `WithValidMethods` whitelist refuses any token whose header
+  declares a different algorithm. Always set `opts.algorithm`
+  when validating asymmetric tokens; the binding doesn't infer it
+  from the key shape because that would make the wrong default
+  silent.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1562,7 +1610,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.2. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.3. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

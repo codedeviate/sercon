@@ -10,6 +10,81 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.3] — 2026-05-26
+
+Fourth Moderate cut. Extends `api.jwt.*` with the **full asymmetric
+algorithm matrix**: RSA (RS256/RS384/RS512), RSA-PSS (PS256/PS384/
+PS512), ECDSA (ES256/ES384/ES512), and Ed25519 (EdDSA). v0.5.2's
+HMAC support is unchanged. No new dependencies — the existing
+`github.com/golang-jwt/jwt/v5` already covers them; the work was
+the JS-side key-shape design and cross-check guards.
+
+### Added
+
+- All asymmetric algorithm names accepted in `opts.algorithm`:
+  RS256 / RS384 / RS512 / PS256 / PS384 / PS512 / ES256 / ES384 /
+  ES512 / EdDSA. `jwtSupportedAlgoList` reports them in error
+  messages alongside the HMAC trio.
+- **PEM key shape.** The `secret` parameter is overloaded by the
+  algorithm: HMAC algorithms use the byte string directly;
+  asymmetric algorithms expect a PEM-encoded key (private for
+  `sign`, public or certificate for `validate`). PEM detection is
+  the literal `-----BEGIN` prefix. Supports PKCS#1 + PKCS#8 + SEC1
+  formats via jwt-go's `Parse*FromPEM` helpers.
+- **Bidirectional cross-check** at the binding boundary, throwing
+  with named hints rather than letting silent footguns through:
+  - PEM secret + HMAC algorithm → "looks like a PEM-encoded key —
+    set opts.algorithm to RS256 / ES256 / EdDSA / etc."
+  - Plain-bytes secret + asymmetric algorithm → "needs a
+    PEM-encoded private/public key but secret is plain bytes"
+  - These fire before jwt-go is called so they're throws rather
+    than `valid: false` resolutions. The validate side
+    pre-decodes the token header (we already have the segments
+    split) to derive the algorithm when `opts.algorithm` isn't
+    set, so the check fires uniformly.
+- **Algorithm-confusion guard.** When `opts.algorithm` is set on
+  validate, jwt-go's `WithValidMethods` whitelist restricts the
+  parser to that single algorithm. Without this guard, an attacker
+  with access to the public key bytes could forge an HS256 token
+  using those bytes as the HMAC secret (the classic JWT exploit).
+  Sign-side cross-check blocks the construction; validate-side
+  whitelist blocks acceptance of externally-forged tokens.
+- `TestJwt_AsymmetricRoundTrip` (8 sub-tests covering RS256 /
+  RS384 / RS512 / PS256 / PS384 / PS512 / ES256 / ES384 / EdDSA);
+  `TestJwt_AsymmetricRoundTripES512` is isolated since slow CI
+  runners occasionally trip on P-521 deterministic-curve overhead.
+  `TestJwt_AsymmetricWrongPublicKeyResolvesFalse`,
+  `TestJwt_AsymmetricCrossCheckErrors`, and
+  `TestJwt_AlgorithmConfusionGuard` (jwt-go-forged HS256 token
+  presented to a validator expecting EdDSA — rejected).
+- `pemKeyPair(t, alg)` test helper generates fresh in-memory key
+  pairs per test so no key material is committed to the repo.
+- `examples/scripts/jwt.ts` grows an Ed25519 round-trip plus the
+  PEM-cross-check demonstration. The demo keys are clearly
+  labelled test fixtures.
+
+### Changed
+
+- `TestJwt_AsymmetricAlgoRejected` is renamed
+  `TestJwt_UnsupportedAlgoRejected` and trimmed: the old test
+  asserted that RS256 / ES256 / EdDSA were rejected, which is no
+  longer true. The remaining cases (`none`, `HS999`, `RSA-OAEP`)
+  still throw with "unsupported algorithm" wording. The
+  empty-algorithm-string case is deliberately dropped because the
+  default (HS256) is the right behaviour for scripts passing opts
+  for audience / issuer without an algorithm preference.
+- `optAlgorithm` and the validate-side algorithm normaliser
+  preserve EdDSA's mixed-case identifier — jwt-go's canonical
+  name is `EdDSA` (not `EDDSA`), so `ToUpper` is wrong for that
+  one specifically.
+- MANUAL §5 prose extended with the PEM key shape, the
+  bidirectional cross-check rules, and the algorithm-confusion
+  guard. `--examples` step 30 rewritten to show an asymmetric
+  flow alongside the HMAC flow.
+- `OUT-OF-SCOPE.md`'s "Asymmetric JWT algorithms" entry resolved
+  (shipped); replaced with a forward-looking JWK-key-shape entry
+  (jwx/v2/jwk or hand-rolled).
+
 ## [0.5.2] — 2026-05-26
 
 Third Moderate cut. **`api.jwt.*`** — sign / view / validate over

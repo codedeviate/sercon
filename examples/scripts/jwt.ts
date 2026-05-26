@@ -43,9 +43,41 @@ const mismatched = api.jwt.validate(tok, secret, { audience: "OTHER" });
 api.log("wrong aud:  ", mismatched.valid, "->", mismatched.reason);
 
 api.log("");
+api.log("=== asymmetric (Ed25519) — PEM keys, validate with public ===");
+// Test fixture only — NEVER reuse these keys for anything real.
+// Generated fresh per demo with `openssl genpkey -algorithm ed25519`.
+const privPEM = `-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIAA9V2mRKgGRIXo7xJqiEQyqUOIXecmRbDY+xUpeOY6R
+-----END PRIVATE KEY-----`;
+const pubPEM = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAmIx3ECV1fjAJEHcN8SFXe3zwqb3Qk5W3X2wBrfT+eck=
+-----END PUBLIC KEY-----`;
+
+const edTok = api.jwt.sign({ sub: "bob", iss: "ed-issuer" }, privPEM, {
+  algorithm: "EdDSA",
+});
+api.log("EdDSA alg in header:", api.jwt.view(edTok).header.alg);
+
+const edVerdict = api.jwt.validate(edTok, pubPEM, { algorithm: "EdDSA" });
+api.log("EdDSA valid:", edVerdict.valid, "sub:", edVerdict.claims?.sub);
+
+// RS*/PS*/ES* work the same way — supply a matching PEM private key on
+// sign and the corresponding public key on validate. PEM detection looks
+// for the literal `-----BEGIN` prefix; plain HMAC bytes are passed through
+// untouched.
+
+api.log("");
+api.log("=== PEM with HMAC algo = clean cross-check throw ===");
+try {
+  api.jwt.sign({ sub: "x" }, privPEM); // default HS256 + PEM → bug
+} catch (e) {
+  api.log("caught:", String(e).slice(0, 90) + "…");
+}
+
+api.log("");
 api.log("=== unsupported algorithm = clean throw ===");
 try {
-  api.jwt.sign({ sub: "x" }, secret, { algorithm: "RS256" });
+  api.jwt.sign({ sub: "x" }, secret, { algorithm: "none" });
 } catch (e) {
   api.log("caught:", String(e).slice(0, 90) + "…");
 }
