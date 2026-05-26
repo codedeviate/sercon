@@ -421,7 +421,19 @@ const got = await api.archive.extract("/tmp/demo.zip", "/tmp/demo-out",
 api.log("extracted:", got.entries.length, "entries to", got.dest);`)
 	note("Both bindings reject archive entries that try to escape the destination (zip-slip / tar-slip).")
 
-	header(22, "Email authentication (api.email.*)")
+	header(22, "Diff (api.diff.compare)")
+	code(`const r = await api.diff.compare("one\ntwo\n", "one\ntwo-edited\nthree\n", {
+  fromFile: "old.txt",
+  toFile:   "new.txt",
+});
+api.log("added:", r.added, "removed:", r.removed);
+api.log(r.diff);
+
+// Identical inputs short-circuit; binary inputs (NUL byte) skip diffing.
+api.log("same:", (await api.diff.compare("abc", "abc")).identical);`)
+	note("Inputs are strings (UTF-8) or ArrayBuffer / Uint8Array. Binary inputs return binary:true with empty diff.")
+
+	header(23, "Email authentication (api.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
 // { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
 // or missing record rather than throwing.
@@ -443,4 +455,4 @@ api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 22
+const exampleCount = 23

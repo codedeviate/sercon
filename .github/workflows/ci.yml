@@ -15,9 +15,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        # 1.22 is the minimum we claim; `stable` keeps us honest against
-        # whatever the latest GA Go release is when CI runs.
-        go: ['1.22', 'stable']
+        # 1.25 is the minimum we claim (driven by golang.org/x/text v0.37
+        # and a few other deps); `stable` keeps us honest against whatever
+        # the latest GA Go release is when CI runs.
+        go: ['1.25', 'stable']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +50,8 @@ jobs:
             examples/scripts/barcode.ts \
             examples/scripts/charset.ts \
             examples/scripts/checkdigit.ts \
-            examples/scripts/archive.ts
+            examples/scripts/archive.ts \
+            examples/scripts/diff.ts
 
   lint:
     name: golangci-lint

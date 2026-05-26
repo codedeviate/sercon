@@ -46,13 +46,6 @@ the situation changes.
   bottleneck. **Library:** `googleapis/release-please-action` (GitHub
   Action, not a Go dep).
 
-### Data comparison
-
-- **`compare(a, b)`** — Unified diff of two strings or blobs; returns
-  diff, added, removed, binary flag (script: `compare.rhai`).
-  **Library:** `github.com/sergi/go-diff/diffmatchpatch` or
-  `github.com/pmezard/go-difflib/difflib` (both pure Go, widely used).
-
 ### JSON / querying
 
 - **`jq(data, filter)`** / **`jq_all(data, filter)`** — jq-style

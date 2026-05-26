@@ -24,6 +24,9 @@ declare const api: {
     compress(...args: unknown[]): Promise<Uint8Array>;
     decompress(...args: unknown[]): Promise<Uint8Array>;
   };
+  diff: {
+    compare(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   email: {
     all(...args: unknown[]): Promise<Record<string, unknown>>;
     bimi(...args: unknown[]): Promise<Record<string, unknown>>;

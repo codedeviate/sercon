@@ -10,6 +10,67 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.15] — 2026-05-26
+
+Sole cut on **Easy / Data comparison** — unified-diff helper plus a
+forced bump of the minimum Go version. One new pure-Go dep.
+
+### Added
+
+- `api.diff.compare(a, b, opts?)`:
+  - Inputs are strings (UTF-8) or any byte sequence (`ArrayBuffer`,
+    `Uint8Array`).
+  - Returns `{ identical, binary, added, removed, diff, format }`.
+  - `identical` short-circuits with an empty `diff`. `binary`
+    (NUL byte in the first 8 KB) likewise — a unified diff of
+    binary content isn't useful. Otherwise `diff` is the unified
+    diff text and `added` / `removed` are body-only `+` / `-` line
+    counts (file headers excluded, mirroring `git diff --shortstat`).
+  - `opts`: `context` (default 3), `fromFile` (default "a"),
+    `toFile` (default "b").
+- Backed by `github.com/pmezard/go-difflib/difflib` for the unified
+  diff (preferred over `sergi/go-diff` because that's char-level;
+  pmezard produces unified diffs directly).
+- `TestDiff_CountAddedRemoved` — pins the `+++ b` / `--- a` header-
+  exclusion behaviour that lets `git diff --shortstat`-style counts
+  come out right.
+- `TestDiff_LooksBinary` — 5 fixtures including a NUL inside the
+  8 KB sample window, a NUL past the sample window (should still
+  be treated as text), UTF-8 prose, and empty input.
+- `examples/scripts/diff.ts` walks through a non-trivial line-edit
+  diff (with custom `fromFile` / `toFile`) plus the identical /
+  binary short-circuits.
+- `--examples` step 22 added; existing email step shifts to 23.
+  `exampleCount` is now 23.
+
+### Changed
+
+- **`go.mod` `go` directive bumped from 1.22 to 1.25**, and the
+  README badge / CI matrix updated to match. Several deps
+  (`golang.org/x/text` v0.37, `golang.org/x/crypto` v0.52,
+  `klauspost/compress` v1.18.6, `beevik/ntp` v1.5.0,
+  `likexian/whois` v1.15.7) now require Go ≥ 1.24, and x/text
+  specifically requires 1.25. The alternative was pinning all of
+  those down — sacrificing security and bug fixes — so the floor
+  moves instead.
+- `MANUAL.md` § Built-in `api` declares the `diff` shape and
+  documents the identical / binary short-circuits, the
+  `+`/`-`-counting rule, and the `opts.{context,fromFile,toFile}`
+  defaults.
+
+### Fixed
+
+- The shared `optsAsMap` helper reads the JS arg at position 1
+  (typical `func(target, opts)` shape). `diff.compare(a, b, opts)`
+  has its opts at position 2, so the helper would have returned
+  nil. `diffCompare` reads the position-2 opts inline — the
+  helper stays in place for the rest of the namespaces that use
+  the position-1 convention.
+
+### Dependencies
+
+- New direct (pure Go): `github.com/pmezard/go-difflib v1.0.0`.
+
 ## [0.4.14] — 2026-05-26
 
 Sole cut on **Easy / Archives & document handling**. Stdlib-only:

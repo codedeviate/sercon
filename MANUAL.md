@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.14</div>
+<div class="version">Version 0.4.15</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -433,6 +433,21 @@ declare const api: {
     ): Promise<{ path: string; format: string; dest: string; entries: string[] }>;
   };
 
+  diff: {
+    compare(
+      a: string | ArrayBuffer | Uint8Array,
+      b: string | ArrayBuffer | Uint8Array,
+      opts?: { context?: number; fromFile?: string; toFile?: string },
+    ): Promise<{
+      identical: boolean;
+      binary: boolean;
+      added: number;
+      removed: number;
+      diff: string;
+      format: "unified";
+    }>;
+  };
+
   net: {
     tcp(target: string, opts?: { timeout?: number; port?: string }): Promise<{
       host: string; port: number; ip: string; latencyMs: number;
@@ -667,6 +682,27 @@ on `create` and from the source path on `extract`.
   is run through a zip-slip / tar-slip guard that rejects
   absolute paths, `..` segments, and anything that would resolve
   outside destDir.
+
+Diff bindings (`api.diff.compare(a, b, opts?)`) produce a unified
+diff between two text inputs via
+[`github.com/pmezard/go-difflib`](https://github.com/pmezard/go-difflib).
+Inputs are strings (UTF-8) or any byte sequence (`ArrayBuffer` /
+`Uint8Array`). The result reports:
+
+- `identical` — byte-equal inputs short-circuit; `diff` is empty.
+- `binary` — either input has a NUL byte in its first 8 KB. A
+  unified diff of binary content isn't useful so `diff` is empty.
+- `added` / `removed` — body-only `+` / `-` line counts (file
+  headers are excluded so the numbers match
+  `git diff --shortstat`).
+- `diff` — the unified diff text, or empty when `identical` or
+  `binary` is `true`.
+- `format` — always `"unified"` today; reserved for future
+  alternatives (`"side-by-side"`, `"summary"`, …).
+
+`opts.context` (default 3) is the context-line count;
+`opts.fromFile` / `opts.toFile` (default `"a"` / `"b"`) set the
+labels in the diff headers.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1099,7 +1135,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.14. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.15. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

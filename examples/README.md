@@ -32,6 +32,7 @@ Or pick individual scripts:
 | `charset.ts` | `api.text.detect/encode/decode` — 5-charset round-trip + Latin-1 detection. |
 | `checkdigit.ts` | `api.checkdigit.validate/compute/inspect` over Luhn, ISBN-10/13, EAN-13/8, UPC-A. |
 | `archive.ts` | `api.archive.create/extract` round-trip over zip / tar / tar.gz. |
+| `diff.ts` | `api.diff.compare` — unified diff of two text inputs. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
