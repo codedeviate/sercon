@@ -69,12 +69,6 @@ the situation changes.
 
 ### Protocol probes & connectivity
 
-- **`wss(url)`** — WebSocket handshake with ping/pong round-trip
-  (script: `ws.rhai`). **Library:** `nhooyr.io/websocket` (now
-  `github.com/coder/websocket`, pure Go, modern) or
-  `github.com/gorilla/websocket` (classic). Moderate because exposing
-  ping/pong timing through a one-shot JS call needs a small handle
-  object lifecycle.
 - **`netstatus::check()`** — Aggregate connectivity probe set (script:
   `netstatus.rhai`). **Approach:** orchestration on top of the other
   probes (`tcp`, `dns`, `tls`, `http`); no new library, but coordinates

@@ -171,6 +171,8 @@ declare const api: {
     tls(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text. */
     whois(...args: unknown[]): Promise<Record<string, unknown>>;
+    /** WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws. */
+    wss(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   path: {
     /** Final segment of a path; optional suffix is stripped if it matches. */

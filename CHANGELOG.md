@@ -10,6 +10,32 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.20] — 2026-05-26
+
+Adds **`api.net.wss(url, opts?)`** — a WebSocket handshake probe.
+New dependency: `github.com/coder/websocket` (the maintained
+successor to nhooyr.io/websocket; pure Go).
+
+### Added
+
+- Opens a `ws://` / `wss://` connection, optionally measures a
+  ping/pong RTT (`opts.ping`, default true), closes. Returns
+  `{ url, connected, subprotocol, status, handshakeMs, pingMs }`.
+  `pingMs` is -1 when the ping is skipped or the server doesn't
+  pong. Failed handshake (non-101, refused, bad URL) throws.
+- The ping path uses `CloseRead` to pump control frames in the
+  background so the pong is processed (coder/websocket's `Ping`
+  requires the read loop to be running).
+- 4 tests against an in-process httptest echo server: handshake +
+  ping, no-ping (pingMs -1), bad-URL throws, empty-URL throws.
+- MANUAL §5 `api.net` ts + prose bullet. (No live demo — public WS
+  echo servers are too flaky for `make demo`; the local-server
+  tests cover it.)
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `wss` entry resolved.
+
 ## [0.5.19] — 2026-05-26
 
 Adds **`api.net.smtp(host, opts?)`** — an SMTP capability probe

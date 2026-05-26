@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.19</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.20</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -628,6 +628,13 @@ declare const api: {
       host: string; port: string; banner: string; ehloDomain: string;
       extensions: string[]; starttls: boolean;
       authMechanisms: string[]; sizeLimit: number;
+    }>;
+    wss(url: string, opts?: {
+      timeout?: number;        // ms; default 10000
+      ping?: boolean;          // measure ping/pong RTT; default true
+    }): Promise<{
+      url: string; connected: boolean; subprotocol: string;
+      status: number; handshakeMs: number; pingMs: number;  // pingMs -1 if skipped/failed
     }>;
   };
 
@@ -1654,6 +1661,16 @@ an optional `{ timeout: <ms> }` second arg; the default is 5 seconds.
   protocol failures throw; a server that doesn't advertise
   STARTTLS / AUTH reports them as `false` / `[]` (a finding, not
   an error).
+- **`wss(url, opts?)`** — WebSocket handshake probe via
+  [`coder/websocket`](https://github.com/coder/websocket). Opens
+  the `ws://` / `wss://` connection, optionally measures a
+  ping/pong RTT (`opts.ping`, default true), and closes. Returns
+  `{ url, connected, subprotocol, status, handshakeMs, pingMs }` —
+  `status` is the 101 upgrade response code, `pingMs` is `-1` when
+  the ping was skipped or the server didn't pong. A failed
+  handshake (non-101, refused, bad URL) throws; there's no useful
+  partial result for a failed upgrade. Not a streaming client —
+  the connection doesn't outlive the call.
 
 Email-authentication probes (`api.email.*`) read DNS records and
 surface the published policy. They all return `{ present: false }`
@@ -2045,7 +2062,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.19. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.20. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

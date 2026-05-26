@@ -73,6 +73,7 @@ func apiDocs() map[string]string {
 		"net.whois": "Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text.",
 		"net.ping":  "Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.",
 		"net.smtp":  "SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw.",
+		"net.wss":   "WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws.",
 
 		// Email auth probes
 		"email.spf":    "Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.",
