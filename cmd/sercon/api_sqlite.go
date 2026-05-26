@@ -96,6 +96,9 @@ func sqliteHandle(vm *goja.Runtime, loop *eventloop.EventLoop, db *sql.DB) map[s
 		"begin": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sqliteBegin(vm, loop, ctx, db)
 		}).Func,
+		"prepare": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+			return sqlitePrepare(vm, loop, ctx, db, call)
+		}).Func,
 		"close": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			if err := db.Close(); err != nil {
 				return nil, fmt.Errorf("sqlite.close: %w", err)
@@ -103,6 +106,71 @@ func sqliteHandle(vm *goja.Runtime, loop *eventloop.EventLoop, db *sql.DB) map[s
 			return nil, nil
 		}).Func,
 	}
+}
+
+// sqlitePrepare compiles a SQL statement once and returns a handle
+// whose exec / query / queryValue execute it repeatedly with fresh
+// bind parameters — no SQL string on those calls, just the `?`
+// params. Worthwhile for batch-insert / repeated-lookup loops where
+// the per-call parse + plan cost would otherwise dominate.
+//
+// Lifetime: a prepared statement holds driver resources until
+// close(). Scripts MUST close it — a leaked statement keeps a
+// connection pinned. The statement is bound to the database handle,
+// not a transaction; using it inside a transaction is out of scope
+// for this cut (it complicates ownership — see OUT-OF-SCOPE).
+func sqlitePrepare(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, db *sql.DB, call goja.FunctionCall) (map[string]any, error) {
+	if len(call.Arguments) < 1 {
+		return nil, errors.New("sqlite.prepare: sql argument required")
+	}
+	query := call.Argument(0).String()
+	stmt, err := db.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite.prepare: %w", err)
+	}
+	return map[string]any{
+		"exec": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+			res, err := stmt.ExecContext(ctx, sqliteArgsFrom(call, 0)...)
+			if err != nil {
+				return nil, fmt.Errorf("sqlite.stmt.exec: %w", err)
+			}
+			rowsAffected, _ := res.RowsAffected()
+			lastInsertID, _ := res.LastInsertId()
+			return map[string]any{"rowsAffected": rowsAffected, "lastInsertId": lastInsertID}, nil
+		}).Func,
+		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+			rows, err := stmt.QueryContext(ctx, sqliteArgsFrom(call, 0)...)
+			if err != nil {
+				return nil, fmt.Errorf("sqlite.stmt.query: %w", err)
+			}
+			defer func() { _ = rows.Close() }()
+			return scanRows(rows, "sqlite.stmt.query")
+		}).Func,
+		"queryValue": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			rows, err := stmt.QueryContext(ctx, sqliteArgsFrom(call, 0)...)
+			if err != nil {
+				return nil, fmt.Errorf("sqlite.stmt.queryValue: %w", err)
+			}
+			defer func() { _ = rows.Close() }()
+			if !rows.Next() {
+				if err := rows.Err(); err != nil {
+					return nil, fmt.Errorf("sqlite.stmt.queryValue: %w", err)
+				}
+				return nil, nil
+			}
+			var raw any
+			if err := rows.Scan(&raw); err != nil {
+				return nil, fmt.Errorf("sqlite.stmt.queryValue: scan: %w", err)
+			}
+			return sqliteScanValue(raw), nil
+		}).Func,
+		"close": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			if err := stmt.Close(); err != nil {
+				return nil, fmt.Errorf("sqlite.stmt.close: %w", err)
+			}
+			return nil, nil
+		}).Func,
+	}, nil
 }
 
 // sqliteBegin opens a transaction and returns its handle object —
@@ -272,11 +340,19 @@ func sqliteQueryValue(ctx context.Context, ex sqlExecutor, call goja.FunctionCal
 // as bool, null as nil, and Uint8Array as []byte — all of which
 // modernc.org/sqlite accepts directly. Pass-through is enough.
 func sqlitePositionalArgs(call goja.FunctionCall) []any {
-	if len(call.Arguments) <= 1 {
+	return sqliteArgsFrom(call, 1)
+}
+
+// sqliteArgsFrom reads bind parameters starting at `start`. The
+// top-level exec/query/queryValue read from index 1 (after the SQL
+// string); prepared-statement methods read from index 0 (the SQL
+// was supplied at prepare() time, so the call carries only params).
+func sqliteArgsFrom(call goja.FunctionCall, start int) []any {
+	if len(call.Arguments) <= start {
 		return nil
 	}
-	out := make([]any, 0, len(call.Arguments)-1)
-	for _, arg := range call.Arguments[1:] {
+	out := make([]any, 0, len(call.Arguments)-start)
+	for _, arg := range call.Arguments[start:] {
 		if arg == nil || goja.IsUndefined(arg) || goja.IsNull(arg) {
 			out = append(out, nil)
 			continue

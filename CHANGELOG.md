@@ -10,6 +10,41 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.12] — 2026-05-26
+
+Completes the `api.sqlite` namespace with **prepared statements**.
+`handle.prepare(sql)` compiles a statement once and resolves to a
+handle whose `exec` / `query` / `queryValue` run it repeatedly with
+fresh bind params (no SQL string on those calls — just the `?`
+params). Cuts the per-call parse + plan cost for batch loops. No
+new dependencies.
+
+### Added
+
+- `handle.prepare(sql)` → `Promise<stmt>` where `stmt` is
+  `{ exec, query, queryValue, close }`. The exec / query /
+  queryValue methods take only bind params; the SQL was fixed at
+  prepare() time.
+- Invalid SQL throws at `prepare()`, not the first `exec()`.
+- Statements must be `close()`d; a leaked statement pins driver
+  resources. Bound to the database handle, not a transaction
+  (in-transaction prepared statements are out of scope).
+- `sqliteArgsFrom(call, start)` generalises the old
+  `sqlitePositionalArgs` so the handle / transaction methods read
+  params from index 1 (after the SQL string) while prepared-
+  statement methods read from index 0.
+- 4 new tests: prepared exec loop, prepared query/queryValue,
+  use-after-close throws, invalid-SQL-at-prepare throws. The
+  sqlite suite is now 20.
+- `examples/scripts/sqlite.ts` grows a prepared-statements section;
+  `--examples` step 33 and MANUAL §5 updated.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s SQLite entry removed — the namespace is now
+  feature-complete (open / exec / query / queryValue / begin /
+  prepare / close).
+
 ## [0.5.11] — 2026-05-26
 
 Twelfth Moderate cut. Adds **transactions** to `api.sqlite` —

@@ -625,8 +625,13 @@ const tx = await db.begin();
 await tx.exec("INSERT INTO users (name) VALUES (?)", "bob");
 await tx.commit();   // or tx.rollback() to discard
 
+// Prepared statements: compile once, run many. Methods take only params.
+const ins = await db.prepare("INSERT INTO users (name) VALUES (?)");
+for (const n of ["carol", "dave"]) await ins.exec(n);
+await ins.close();
+
 await db.close();   // no finalizer — always close.`)
-	note("Pure-Go driver (modernc.org/sqlite, no cgo). Every begin() must commit or rollback. Params bind as ? placeholders; BLOBs round-trip as Uint8Array, TEXT as string.")
+	note("Pure-Go driver (modernc.org/sqlite, no cgo). begin() must commit/rollback; prepare() must close. Params bind as ? placeholders; BLOBs round-trip as Uint8Array, TEXT as string.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

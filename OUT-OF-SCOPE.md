@@ -115,18 +115,6 @@ the situation changes.
 - **`dict(url, word?)`** — RFC 2229 DICT protocol word lookup (script:
   `dict.rhai`). **Library:** no popular pure-Go DICT client; hand-roll
   the protocol over `net.Dial` (it is a simple line-based protocol).
-- **SQLite prepared statements.** v0.5.10 shipped
-  `api.sqlite.open` (exec / query / queryValue / close) and
-  v0.5.11 added `handle.begin()` transactions. A
-  `handle.prepare(sql)` → reusable statement handle (with its own
-  `exec` / `query` / `queryValue` taking only bind params, plus
-  `close`) would cut the per-statement parse cost for
-  batch-insert workloads. **Library:** the existing
-  `modernc.org/sqlite` + `database/sql` `Stmt` type; the design
-  work is the statement-handle lifetime (prepared once, executed
-  N times, must be closed) and whether a prepared statement
-  bound to a transaction should be supported (it complicates the
-  ownership story — defer that sub-case).
 
 ### TLS / encryption / signing
 

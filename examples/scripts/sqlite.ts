@@ -85,9 +85,26 @@ try {
 }
 await tx3.rollback();
 
+// === prepared statements: compile once, run many ===
+api.log("");
+api.log("=== prepared statements ===");
+const insert = await db.prepare("INSERT INTO users (name, age) VALUES (?, ?)");
+for (const [name, age] of [["Frank", 40], ["Grace", 33], ["Heidi", 28]] as const) {
+  await insert.exec(name, age);
+}
+await insert.close();
+api.log("after batch insert, count:", await db.queryValue("SELECT count(*) FROM users"));
+
+// Prepared query / queryValue take only bind params — no SQL string.
+const byName = await db.prepare("SELECT age FROM users WHERE name = ?");
+api.log("Grace's age:", await byName.queryValue("Grace"));
+api.log("Frank's age:", await byName.queryValue("Frank"));
+await byName.close();
+
 // Always close — there's no finalizer; an un-closed handle leaks the
-// connection until the process exits. Same for transactions: every
-// begin() must reach a commit() or rollback().
+// connection until the process exits. Same for transactions (every
+// begin() must reach commit/rollback) and prepared statements (every
+// prepare() must be closed).
 await db.close();
 api.log("");
 api.log("handle closed");

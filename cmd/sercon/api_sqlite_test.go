@@ -388,3 +388,84 @@ func TestSQLite_TxDoubleCommitThrows(t *testing.T) {
 		t.Errorf("expected sqlite.tx.commit: prefix; got %v", err)
 	}
 }
+
+// Prepared statement: compile once, exec repeatedly with fresh
+// params. The whole point is reuse without re-parsing the SQL.
+func TestSQLite_PrepareExecLoop(t *testing.T) {
+	got := runSQLiteScript(t, `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (name TEXT)");
+		const ins = await db.prepare("INSERT INTO t (name) VALUES (?)");
+		for (const n of ["alice", "bob", "carol"]) await ins.exec(n);
+		await ins.close();
+		const count = await db.queryValue("SELECT count(*) FROM t");
+		await db.close();
+		__capture(count);
+	`)
+	if got != int64(3) {
+		t.Errorf("prepared exec loop count: %v (want 3)", got)
+	}
+}
+
+// Prepared query / queryValue take only bind params (no SQL).
+func TestSQLite_PrepareQuery(t *testing.T) {
+	got := runSQLiteScript(t, `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)");
+		await db.exec("INSERT INTO t (name) VALUES ('alice'), ('bob'), ('carol')");
+		const byId = await db.prepare("SELECT name FROM t WHERE id = ?");
+		const a = await byId.queryValue(1);
+		const rows = await byId.query(3);
+		await byId.close();
+		await db.close();
+		__capture([a, rows[0].name].join(","));
+	`)
+	if got != "alice,carol" {
+		t.Errorf("prepared query: %v", got)
+	}
+}
+
+// Using a prepared statement after close() throws (driver reports
+// the closed statement) with the sqlite.stmt.* prefix.
+func TestSQLite_PrepareUseAfterCloseThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
+	if err := eng.RegisterNamespaceFactory("sqlite", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return sqliteNamespace(vm, loop)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "x.ts", `
+		const db = await sqlite.open(":memory:");
+		await db.exec("CREATE TABLE t (v TEXT)");
+		const stmt = await db.prepare("INSERT INTO t (v) VALUES (?)");
+		await stmt.exec("a");
+		await stmt.close();
+		await stmt.exec("b");  // stmt is closed
+	`)
+	if err == nil {
+		t.Fatal("expected throw for use-after-close")
+	}
+	if !strings.Contains(err.Error(), "sqlite.stmt.exec") {
+		t.Errorf("expected sqlite.stmt.exec: prefix; got %v", err)
+	}
+}
+
+// prepare() of invalid SQL throws at prepare time, not first exec.
+func TestSQLite_PrepareInvalidSQLThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
+	if err := eng.RegisterNamespaceFactory("sqlite", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return sqliteNamespace(vm, loop)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "x.ts", `
+		const db = await sqlite.open(":memory:");
+		await db.prepare("INSERT INTO nonexistent_table (v) VALUES (?)");
+	`)
+	if err == nil {
+		t.Fatal("expected throw for invalid prepared SQL")
+	}
+	if !strings.Contains(err.Error(), "sqlite.prepare") {
+		t.Errorf("expected sqlite.prepare: prefix; got %v", err)
+	}
+}

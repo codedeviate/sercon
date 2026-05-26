@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.11</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.12</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -751,6 +751,12 @@ declare const api: {
         commit(): Promise<void>;
         rollback(): Promise<void>;
       }>;
+      prepare(sql: string): Promise<{            // compiled-once statement handle
+        exec(...params: unknown[]): Promise<{ rowsAffected: number; lastInsertId: number }>;
+        query(...params: unknown[]): Promise<Array<Record<string, unknown>>>;
+        queryValue(...params: unknown[]): Promise<unknown>;
+        close(): Promise<void>;
+      }>;
       close(): Promise<void>;
     }>;
   };
@@ -1420,6 +1426,17 @@ rule is preserved.
   constraint violation inside the transaction throws (with the
   `sqlite.tx.exec:` prefix) but doesn't auto-roll-back — the
   script decides whether to retry or roll back.
+- **`prepare(sql)`** — Compile a statement once and resolve to a
+  handle whose `exec` / `query` / `queryValue` run it repeatedly
+  with fresh bind params. Unlike the handle / transaction methods,
+  these take **only the params** — no SQL string — since the SQL
+  was fixed at `prepare()` time. Worthwhile for batch-insert or
+  repeated-lookup loops where the per-call parse + plan cost would
+  otherwise dominate. Invalid SQL throws at `prepare()`, not the
+  first `exec()`. Like every handle here it must be `close()`d; a
+  leaked statement pins driver resources. Statements are bound to
+  the database handle, not a transaction — using a prepared
+  statement inside a transaction is out of scope for now.
 - **`close()`** — Release the connection. There's no finalizer —
   scripts that forget to close leak a connection until the
   process exits. The documented pattern is open / use / close.
@@ -1895,7 +1912,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.11. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.12. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
