@@ -61,7 +61,8 @@ jobs:
             examples/scripts/encrypt.ts \
             examples/scripts/sqlite.ts \
             examples/scripts/redis.ts \
-            examples/scripts/memcached.ts
+            examples/scripts/memcached.ts \
+            examples/scripts/ai.ts
 
   lint:
     name: golangci-lint

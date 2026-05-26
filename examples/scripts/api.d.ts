@@ -2,6 +2,12 @@
 
 /** sercon's built-in script surface. The full reference lives in MANUAL.md; the JSDoc blocks here are the at-a-glance summary. */
 declare const api: {
+  ai: {
+    /** Which of claude / codex / copilot / gemini are on PATH, in preference order. */
+    providers(): string[];
+    /** Run a one-shot prompt through a provider. opts { prompt (required), provider?, system?, context?, timeout? }. Returns { provider, output, exitCode }. Non-zero exit is data; no provider throws. */
+    send(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   archive: {
     /** Create a zip / tar / tar.gz at destPath from a list of paths. Format inferred from extension. */
     create(...args: unknown[]): Promise<Record<string, unknown>>;

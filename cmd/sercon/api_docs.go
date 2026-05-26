@@ -174,5 +174,9 @@ func apiDocs() map[string]string {
 		"ldap.open": "Dial LDAP (ldap://host:port), anonymous bind (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata.",
 		"dict.define":  "RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error).",
 		"dict.match":   "RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database, opts.port (default 2628).",
+
+		// AI agent CLIs
+		"ai.providers": "Which of claude / codex / copilot / gemini are on PATH, in preference order.",
+		"ai.send": "Run a one-shot prompt through a provider. opts { prompt (required), provider?, system?, context?, timeout? }. Returns { provider, output, exitCode }. Non-zero exit is data; no provider throws.",
 	}
 }

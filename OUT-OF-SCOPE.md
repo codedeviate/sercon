@@ -87,13 +87,6 @@ the situation changes.
 
 ### AI agent integrations
 
-- **`ai::request()`** — Builder chain: `.system()`, `.context()`,
-  `.prompt()`, `.timeout()`, `.send()` (script: `ai.rhai`). Requires
-  one of `claude` / `codex` / `copilot` / `gemini` on `PATH`.
-  **Library:** `os/exec` + `encoding/json` (stdlib). Moderate (rather
-  than easy) because of (a) the builder API, (b) provider detection /
-  selection logic, and (c) line-buffered streaming output if `.send()`
-  ever grows a streaming variant.
 
 ## Hard
 

@@ -10,6 +10,37 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.27] — 2026-05-26
+
+Adds **`api.ai`** — run one-shot prompts through a coding-assistant
+CLI (claude / codex / copilot / gemini). `os/exec` (stdlib), no new
+dependency.
+
+### Added
+
+- `api.ai.providers()` lists detected CLIs on PATH (preference
+  order); `api.ai.send(opts)` runs a prompt through one. `opts`:
+  `{ prompt (required), provider?, system?, context?, timeout? }`.
+  `system` / `context` are prepended (portable across CLIs with
+  different flags). Returns `{ provider, output, exitCode }`;
+  non-zero exit is data, missing provider + deadline throw.
+- Chose the options-object shape over the rhai-style builder chain
+  — the idiomatic JS equivalent, and it avoids threading a mutable
+  builder handle through goja.
+- `buildAIArgv` is a pure function (unit-testable without the CLIs).
+  6 tests: argv builder per provider, prompt composition,
+  send via a fake on-PATH provider script, no-provider throws,
+  missing-prompt throws, provider detection.
+- `examples/scripts/ai.ts` gracefully degrades without a provider
+  (in the CI offline subset); MANUAL §5 ts block + prose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `ai::request` entry resolved. **The Moderate
+  bucket is now empty** — every binding-side and protocol item has
+  shipped; only the library-internal items (PathResolver, robust
+  import parsing, watch module-graph) remain.
+
 ## [0.5.26] — 2026-05-26
 
 Adds **`api.dict`** — RFC 2229 DICT protocol client. No maintained

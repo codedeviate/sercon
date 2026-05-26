@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.26</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.27</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -682,6 +682,17 @@ declare const api: {
     }>;
   };
 
+  ai: {
+    providers(): string[];                       // detected CLIs on PATH, preference order
+    send(opts: {
+      prompt: string;
+      provider?: string;                          // default: first detected
+      system?: string;
+      context?: string;
+      timeout?: number;                           // ms; default 120000
+    }): Promise<{ provider: string; output: string; exitCode: number }>;
+  };
+
   browser: {
     open(): Promise<{                            // stateful HTTP session
       setUserAgent(ua: string): void;
@@ -1260,6 +1271,22 @@ with no entry resolves `found: false` (not an error).
 `opts.strategy` (default `prefix`). Both are one-shot
 (connect → query → QUIT); `opts.database` (default `*` = all),
 `opts.port` (default 2628).
+
+AI agents (`api.ai.*`) shell out to a coding-assistant CLI.
+`providers()` lists which of `claude` / `codex` / `copilot` /
+`gemini` are on PATH (preference order); `send(opts)` runs a
+one-shot prompt through one of them — `opts.provider` picks
+explicitly, else the first detected. `opts.system` / `opts.context`
+are prepended to the prompt (the portable common denominator
+across CLIs with different system-prompt flags). The argv builder
+is a pure function (`buildAIArgv`) so the provider invocations are
+unit-testable without the CLIs installed. Returns `{ provider,
+output, exitCode }`; a non-zero exit is surfaced as data (the model
+CLI may exit non-zero with a useful message), while a missing
+provider and context deadline throw. This is the
+options-object shape rather than a builder chain — the idiomatic
+JS equivalent, and it sidesteps threading a mutable builder handle
+through goja. **Library:** `os/exec` (stdlib).
 
 Browser sessions (`api.browser.open()`) give a stateful HTTP
 client — an automatic cookie jar (`net/http/cookiejar` with the
@@ -2188,7 +2215,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.26. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.27. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
