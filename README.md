@@ -6,16 +6,25 @@
 <br/>
 [![Latest release](https://img.shields.io/github/v/release/codedeviate/sercon?logo=semanticrelease&label=release&color=blue)](https://github.com/codedeviate/sercon/releases)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-scriptengine-007d9c?logo=go)](https://pkg.go.dev/github.com/codedeviate/sercon/pkg/scriptengine)
-<!-- Homebrew tap formula not published yet — re-enable when sercon lands in codedeviate/homebrew-cli.
 [![Homebrew](https://img.shields.io/badge/homebrew-codedeviate%2Fcli%2Fsercon-fbb040?logo=homebrew)](https://github.com/codedeviate/homebrew-cli)
--->
 
 
-Embeddable TypeScript script engine in Go. Pure Go (no cgo), no Node.
+`sercon` is a CLI tool for running TypeScript scripts for reconnaissance,
+troubleshooting, and testing. Write a short `.ts` file, hand it to `sercon`,
+and probe a service, inspect an endpoint, reproduce a bug, or script a quick
+check — without spinning up a Node project or pulling in a dependency tree.
+A small built-in `api` surface gives scripts HTTP, shell exec, logging, and
+more, and the whole thing ships as a single static binary. Pure Go (no cgo),
+no Node.
 
-- Library: `pkg/scriptengine` — embed in your own Go program and register Go-callable bindings.
-- CLI: `cmd/sercon` — runs `.ts` files with a small example `api` surface.
-  Planned for distribution via the `codedeviate/cli` Homebrew tap.
+Under the hood it's an embeddable TypeScript script engine, usable two ways:
+
+- CLI: `cmd/sercon` — runs `.ts` files against the built-in `api` surface.
+  Reach for it when you need a repeatable, scriptable alternative to a pile
+  of ad-hoc `curl`/`jq`/shell one-liners for recon, debugging, and test checks.
+  Available via the `codedeviate/cli` Homebrew tap: `brew install codedeviate/cli/sercon`.
+- Library: `pkg/scriptengine` — embed in your own Go program and register
+  Go-callable bindings to expose a safe, sandboxed scripting surface.
 
 Runtime: [goja](https://github.com/dop251/goja). TypeScript is transpiled
 in-process with [esbuild](https://github.com/evanw/esbuild/tree/main/pkg/api).
