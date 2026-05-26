@@ -563,10 +563,25 @@ const tok = api.jwt.sign(
 const v = api.jwt.validate(tok, publicPEM, { algorithm: "EdDSA" });`)
 	note("Set opts.algorithm on validate for asymmetric tokens — that's the algo-confusion guard. PEM/HMAC cross-checks throw at the binding boundary.")
 
+	header(31, "Barcode decode (api.barcode.decode)")
+	code(`// Round-trip a QR. PNG / JPEG / WebP input all work.
+const png = await api.barcode.encode("qr", "round-trip via gozxing");
+const r = await api.barcode.decode(png);                  // auto-detect
+api.log(r.format, "->", r.text);
+
+// With a format hint, only that reader runs. Mismatched hint throws.
+const c = await api.barcode.decode(png, "qr");
+
+// Decoder set: qr / datamatrix / aztec / code128 / code39 / code93 /
+// codabar / ean13 / ean8 / upca / upce / itf.  PDF417 is encode-only
+// for now (no pure-Go decoder in gozxing v0.1.1).
+api.log(api.barcode.decodableFormats());`)
+	note("Code 39 returns the Mod-43 checksum char; codabar strips A…A wrappers; EAN/UPC need a quiet zone in the input (boombuler's encoder doesn't add one).")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 30
+const exampleCount = 31

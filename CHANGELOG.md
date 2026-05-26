@@ -10,6 +10,59 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.4] — 2026-05-26
+
+Fifth Moderate cut. **`api.barcode.decode`** — symmetric counterpart
+to the existing `api.barcode.encode`. Reads PNG / JPEG / WebP image
+bytes, finds the barcode, and returns `{ format, text }`. Two new
+deps, both pure-Go: `github.com/makiuchi-d/gozxing` (decoder library;
+covers 12 symbologies) and `golang.org/x/image` (WebP decoder
+registered with stdlib's `image.Decode`).
+
+### Added
+
+- `api.barcode.decode(data, format?)` → `Promise<{ format, text }>`.
+  Auto-detect by default (walks readers in 2D-first / constrained-1D
+  / permissive-1D priority order); pass a `format` hint to lock the
+  reader and surface mismatched-format errors clearly.
+- `api.barcode.decodableFormats()` returns the supported decode set
+  separately from `barcode.formats()` (encode) — the two are close
+  but not identical because gozxing covers `upce` / `itf` / `code93`
+  that the encoder doesn't, and lacks `pdf417` that the encoder
+  does.
+- PNG / JPEG support via stdlib `image/png` + `image/jpeg`; WebP
+  via a blank-import of `golang.org/x/image/webp` that registers
+  the decoder with `image.Decode` (so format detection is
+  magic-byte sniffing rather than caller-declared).
+- `sniffImageFormat` helper exposes PNG / JPEG / WebP magic-byte
+  recognition for tests; the binding itself goes through
+  `image.Decode` directly so format support stays consistent with
+  whatever decoders are registered.
+- `TestBarcodeDecode_*` (20 sub-tests): 2D round-trip × 3,
+  1D round-trip × 3 (formats that don't need a quiet zone),
+  EAN-13 round-trip with manually-padded quiet zone, auto-detect,
+  non-image bytes throws, blank image throws, unknown format hint
+  throws, sniffImageFormat × 5, JPEG-input round-trip.
+
+### Changed
+
+- `api.barcode.encode`'s `opts.width` / `opts.height` are no longer
+  silently dropped. The binding was reading opts via the 2-arg
+  `optsAsMap` helper but the call signature is
+  `encode(format, data, opts)` so opts is at position 2, not 1.
+  Same shape as the `diff.compare` / `archive.extract` fixes from
+  earlier cuts. Width/height now propagate from JS through to
+  boombuler's scaler.
+- `OUT-OF-SCOPE.md`'s "Encoding / decoding / barcodes" entry
+  resolved; replaced with two forward-looking items: a pure-Go
+  PDF417 decoder (no obvious library — defer until needed) and an
+  `opts.quietZone` flag on `encode` so EAN/UPC PNGs round-trip
+  without caller-side padding.
+- MANUAL §5 prose extends the barcode paragraph with the decode
+  surface, the priority-order auto-detect, and four documented
+  quirks (PDF417 encode-only, EAN/UPC quiet-zone requirement,
+  Code 39 checksum char, codabar wrapper stripping).
+
 ## [0.5.3] — 2026-05-26
 
 Fourth Moderate cut. Extends `api.jwt.*` with the **full asymmetric

@@ -150,12 +150,20 @@ the situation changes.
 
 ### Encoding / decoding / barcodes
 
-- **`encode::decode(image)`** — Scan PNG/JPEG/WebP for barcodes or 2D
-  codes (script: `decode.rhai`). **Library:** `github.com/makiuchi-d/gozxing`
-  (pure-Go port of ZXing, covers QR / DataMatrix / 1D formats).
-  Moderate because image decoding (`image/png`, `image/jpeg`, plus
-  `golang.org/x/image/webp` for WebP) needs to be wired in and the
-  result shape designed.
+- **PDF417 decoder.** v0.5.4 shipped `api.barcode.decode` over
+  gozxing, which doesn't cover PDF417 (the encoder still works via
+  boombuler). A pure-Go PDF417 reader would close the symmetry. No
+  obvious maintained library exists — porting ZXing's Java PDF417
+  reader would be the realistic path. Defer until someone actually
+  needs PDF417 round-tripping.
+- **Quiet-zone padding on encoded EAN / UPC PNGs.** boombuler's
+  encoder emits bars edge-to-edge; the EAN/UPC spec requires a
+  white quiet zone on each side and real-world scanners (gozxing
+  included) need it. Adding an `opts.quietZone?: number | true`
+  flag to `api.barcode.encode` that pastes the rendered bars onto
+  a wider white canvas would make EAN/UPC round-trips work without
+  caller-side post-processing. **Library:** no new dep — pure
+  `image/draw` work over the existing boombuler output.
 
 ### Browser-like HTTP session
 

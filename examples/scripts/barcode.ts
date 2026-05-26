@@ -34,3 +34,28 @@ for (const fmt of api.barcode.formats()) {
 const big = new Uint8Array(await api.barcode.encode("qr", "sercon", { width: 512, height: 512 }));
 api.log("");
 api.log("explicit 512x512 QR:", big.length, "bytes");
+
+// === decode (the inverse) ===
+api.log("");
+api.log("decode formats:", api.barcode.decodableFormats().join(", "));
+api.log("");
+
+// Round-trip a QR. Decoded text matches the encoded text byte-for-byte.
+const qrPNG = await api.barcode.encode("qr", "round-trip via gozxing");
+const rt = await api.barcode.decode(qrPNG);              // auto-detect path
+api.log(`auto-detect:  ${rt.format} -> ${rt.text}`);
+
+// Explicit format hint is faster (skips the per-reader fallback walk) and
+// surfaces a clear "wrong format" error if the input doesn't match.
+const c128 = await api.barcode.encode("code128", "Sercon-128");
+const hinted = await api.barcode.decode(c128, "code128");
+api.log(`format hint:  ${hinted.format} -> ${hinted.text}`);
+
+// 1D quirks worth knowing:
+//   - Code 39 decoded text appends the Mod-43 checksum char (G for HELLO-39).
+//   - Codabar strips the A...A start/stop wrappers on decode.
+//   - EAN/UPC need a quiet zone (white margin) which boombuler's encoder
+//     doesn't add — sercon-encoded EAN PNGs won't round-trip without
+//     post-processing. Real-world EAN scanners want that margin too.
+const c39 = await api.barcode.decode(await api.barcode.encode("code39", "HELLO-39"), "code39");
+api.log(`code39 quirk: ${c39.text}   (input was "HELLO-39"; G is the Mod-43 checksum)`);

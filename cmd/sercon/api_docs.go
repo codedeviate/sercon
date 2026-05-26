@@ -85,8 +85,10 @@ func apiDocs() map[string]string {
 		"compression.decompress": "Decompress data previously produced by compress (same algorithm name required).",
 
 		// Barcode
-		"barcode.formats": "Available barcode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca).",
-		"barcode.encode":  "Render data into a PNG of the chosen format. opts.width / opts.height default to 200x200.",
+		"barcode.formats":          "Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca).",
+		"barcode.decodableFormats": "Available decode formats (qr / datamatrix / aztec / code128 / code39 / code93 / codabar / ean13 / ean8 / upca / upce / itf). PDF417 is encode-only.",
+		"barcode.encode":           "Render data into a PNG of the chosen format. opts.width / opts.height default to 256x256 (2D) or 400x120 (1D).",
+		"barcode.decode":           "Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hint skips the auto-detect walk. EAN/UPC need a quiet zone in the input.",
 
 		// Text / charset
 		"text.detect": "Detect the most-likely charset of a byte sequence (saintfish/chardet). Returns top guess + candidates.",

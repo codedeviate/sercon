@@ -39,9 +39,13 @@ var barcodeFormats = []string{
 func barcodeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	formats := make([]string, len(barcodeFormats))
 	copy(formats, barcodeFormats)
+	decFormats := make([]string, len(barcodeDecodableFormats))
+	copy(decFormats, barcodeDecodableFormats)
 	return map[string]any{
-		"encode":  scriptengine.PromisifyAsync(vm, loop, barcodeEncodeCall),
-		"formats": func() []string { return formats },
+		"encode":           scriptengine.PromisifyAsync(vm, loop, barcodeEncodeCall),
+		"decode":           scriptengine.PromisifyAsync(vm, loop, barcodeDecodeCall),
+		"formats":          func() []string { return formats },
+		"decodableFormats": func() []string { return decFormats },
 	}
 }
 
@@ -51,7 +55,18 @@ func barcodeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]an
 func barcodeEncodeCall(_ context.Context, call goja.FunctionCall) ([]byte, error) {
 	format := strings.ToLower(call.Argument(0).String())
 	data := call.Argument(1).String()
-	opts := optsAsMap(call)
+	// barcodeEncodeCall takes 3 positional args (format, data, opts), so the
+	// 2-arg optsAsMap helper would mistake `data` for opts. Pull the third
+	// arg out by hand. Same shape as the diff.compare / archive.extract fixes.
+	var opts map[string]any
+	if len(call.Arguments) >= 3 {
+		arg := call.Argument(2)
+		if arg != nil && !goja.IsUndefined(arg) && !goja.IsNull(arg) {
+			if m, ok := arg.Export().(map[string]any); ok {
+				opts = m
+			}
+		}
+	}
 	width := optInt(opts, "width", 0)
 	height := optInt(opts, "height", 0)
 

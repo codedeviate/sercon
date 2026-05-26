@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.3</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.4</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -421,6 +421,7 @@ declare const api: {
 
   barcode: {
     formats(): string[];
+    decodableFormats(): string[];
     encode(
       format: "qr" | "datamatrix" | "aztec" | "pdf417"
             | "code128" | "code39" | "codabar"
@@ -428,6 +429,12 @@ declare const api: {
       data: string,
       opts?: { width?: number; height?: number },
     ): Promise<Uint8Array>;
+    decode(
+      data: Uint8Array | ArrayBuffer | string,        // PNG / JPEG / WebP image bytes
+      format?: "qr" | "datamatrix" | "aztec"
+             | "code128" | "code39" | "code93" | "codabar"
+             | "ean13" | "ean8" | "upca" | "upce" | "itf",
+    ): Promise<{ format: string; text: string }>;
   };
 
   text: {
@@ -816,9 +823,43 @@ linear ones, overridable via `opts.width` / `opts.height`.
   right length; `boombuler/ean.Encode` dispatches by length so all
   three variants share the same encoder.
 
-`api.barcode.formats()` returns the supported names. A separate cut
-will add a scanner (QR / DataMatrix / 1D decode from PNG/JPEG via
-`makiuchi-d/gozxing`).
+`api.barcode.formats()` returns the supported encode names;
+`api.barcode.decodableFormats()` returns the (slightly different)
+decode set.
+
+**Decoding** (`api.barcode.decode(data, format?)`) accepts PNG /
+JPEG / WebP image bytes and reaches into
+[`github.com/makiuchi-d/gozxing`](https://github.com/makiuchi-d/gozxing).
+Returns `{ format, text }` — `format` is the snake-case label the
+encoder accepts, so round-trips line up. WebP support comes via a
+blank-import of `golang.org/x/image/webp` that registers the
+decoder with stdlib's `image.Decode`.
+
+- **With a `format` hint**: only that reader runs. Fast, and a
+  mismatch surfaces a clear error rather than a silent miss.
+- **Without a hint**: every reader in a priority list runs (2D
+  formats first; the more-constrained 1D readers — UPC/EAN —
+  before the permissive ones — Code 128 / Codabar). First
+  success wins; if no reader matches, the call throws with
+  "no barcode recognised".
+
+Decode quirks worth knowing — these are properties of the
+underlying libraries, not sercon bugs:
+
+- **`pdf417` isn't decodable.** gozxing v0.1.1 has no PDF417
+  reader; pass it as a hint and the call throws "unsupported
+  format". The encoder still emits PDF417 just fine.
+- **EAN / UPC need a quiet zone.** Per ISO/IEC 15420 + 15418,
+  retail symbologies require white margin on both sides of the
+  bars. boombuler's encoder doesn't add one, so a
+  `barcode.encode("ean13", x) → barcode.decode(...)` round-trip
+  fails on the decode step. Real-world EAN scanners need that
+  margin too. Wrap the encoded PNG in a wider white canvas (or
+  use a different encoder) when round-trips matter.
+- **Code 39 decoded text ends with the Mod-43 checksum char.**
+  boombuler's encoder appends it; gozxing returns it.
+- **Codabar wraps payload in start/stop chars** like `A...A` on
+  encode; gozxing strips them on decode.
 
 Charset bindings (`api.text.*`) cover detection plus byte-side
 round-tripping:
@@ -1610,7 +1651,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.3. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.4. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
