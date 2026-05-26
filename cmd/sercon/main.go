@@ -44,6 +44,7 @@ func run(args []string) int {
 	helpLong := fs.Bool("help", false, "Show in-depth, colorized help and exit")
 	examples := fs.Bool("examples", false, "Show in-depth, colorized script examples of all features and exit")
 	version := fs.Bool("version", false, "Print the engine version and exit")
+	watch := fs.Bool("watch", false, "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Ctrl-C exits.")
 	fs.Usage = func() { showHelp(os.Stderr) }
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -114,6 +115,15 @@ func run(args []string) int {
 		if len(scripts) == 0 {
 			return exitOK
 		}
+	}
+
+	if *watch {
+		// --watch is a long-running mode: do the initial run, then
+		// block on fsnotify. It owns its own exit code semantics
+		// (always 0 on clean shutdown via Ctrl-C; usage errors on
+		// setup failure). Per-script throws inside a watch session
+		// are logged but don't propagate as the process exit.
+		return runWatchLoop(eng, scripts, scriptRoot, *verbose, os.Stdout)
 	}
 
 	worst := exitOK

@@ -10,6 +10,63 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.9] — 2026-05-26
+
+Tenth Moderate cut. Adds **`sercon --watch`** — re-run on file
+change for iterative development. Single-process loop (no
+subprocess respawn) that reuses the existing `Engine` across runs,
+since each `Run` already gets a fresh `*goja.Runtime`. New
+dependency: `github.com/fsnotify/fsnotify v1.10.1` (pure Go, de
+facto standard).
+
+### Added
+
+- `--watch` CLI flag. After the initial run, blocks and re-runs
+  the entry scripts each time a watched file changes under the
+  script root. SIGINT / SIGTERM exit cleanly. Per-script failures
+  inside the loop log as `FAIL` but don't terminate the session —
+  a syntax error you're trying to fix shouldn't kick you out.
+- Watcher walks the script root recursively at startup; new
+  directories appearing during the session are picked up
+  automatically. Symlinks aren't followed (avoids classic
+  watch-loop pitfalls).
+- File filter: `.ts` / `.tsx` / `.js` / `.jsx` / `.json` trigger
+  re-runs; `.d.ts` is matched via suffix so regenerated
+  declaration files also trigger. Editor swap files (`.swp`,
+  `~`-suffixed backups) are ignored.
+- Directory filter: anything starting with `.` (`.git`,
+  `.vscode`, …) plus `node_modules` are excluded from both the
+  initial recursive walk and dynamic add. Both directory groups
+  generate floods of irrelevant events on save.
+- Debounce: events are collected for **150 ms** after the first
+  one before re-running. Each new event during the window resets
+  the timer, so a rapid save burst (editors typically fire write
+  → rename → chmod) becomes one re-run after it settles.
+- Run separator: each run is delimited by
+  `--- sercon initial run @ HH:MM:SS ---` or
+  `--- sercon re-run @ HH:MM:SS ---` so the output is visually
+  distinct from the previous run.
+- 28 unit tests pin the filter logic without spawning a real
+  watcher: `TestIsWatchableFile` (15 file-name cases — every
+  extension we support plus the rejection-list cases),
+  `TestShouldWatchDir` (8 directory cases),
+  `TestAddRecursive_FiltersHiddenAndNodeModules` (real
+  filesystem walk verifying the dir count matches expectations
+  with `.git` / `node_modules` correctly skipped),
+  `TestAddRecursive_MissingRootErrors`.
+- MANUAL §4 gains a `--watch` subsection covering what's watched,
+  what's filtered, the debounce window, the run separator
+  format, and the engine-reuse design note.
+- `--help` lists the flag with its purpose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s "Watch mode" entry resolved; replaced with
+  a forward-looking "module-graph invalidation" entry — v0.5.9
+  re-runs every entry script on every change, a smarter loop
+  would re-run only the entries whose import graph includes the
+  touched file.
+
 ## [0.5.8] — 2026-05-26
 
 Ninth Moderate cut. Adds **`api.encrypt.detectBackend`** — a pure

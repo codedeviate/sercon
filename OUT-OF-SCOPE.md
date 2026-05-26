@@ -36,10 +36,14 @@ the situation changes.
 
 ### CLI
 
-- **Watch mode.** Re-run on file change for iterative work.
-  **Library:** `github.com/fsnotify/fsnotify` (pure Go, de facto
-  standard); the design work is around debouncing and module-graph
-  invalidation, which is why this is moderate rather than easy.
+- **Module-graph invalidation in `--watch`.** v0.5.9 shipped
+  watch mode with a coarse-grained policy — every watched-file
+  change re-runs every entry script. A smarter loop would build
+  the module graph during the first Run, then on a file change
+  re-run only the entries whose graph includes the touched file.
+  **Approach:** capture each `require` call into a per-script
+  graph; intersect against the changed-file set on each tick.
+  Engine-level work, no new library.
 
 ### Transpile / entry rewriter
 

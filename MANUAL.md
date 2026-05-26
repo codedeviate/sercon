@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.8</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.9</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -313,6 +313,7 @@ sercon --examples | --help | --version
 | `-h`, `--help` | In-depth colorized help. |
 | `--examples` | In-depth colorized walkthrough of every feature. |
 | `--version` | Print the engine version (plus goja/esbuild build-info versions). |
+| `--watch` | Re-run on file change under the script root. Debounced 150 ms. Ctrl-C exits. |
 
 Each positional argument is either a path to a `.ts` / `.tsx` file or
 `-` to read an entry script from standard input:
@@ -340,6 +341,57 @@ module-resolution event, so debugging an unexpected resolve target or a
 mis-rewritten import is straightforward.
 
 The CLI registers a single `api` namespace; see the next section.
+
+### `--watch`: re-run on file change
+
+`sercon --watch <script.ts>` runs the script once and then blocks,
+re-running it every time a watched file changes under the script
+root. Useful for iterating on a script body or on the binding
+surface during development.
+
+```bash
+sercon --watch examples/scripts/smoke.ts
+```
+
+What's watched:
+
+- The script root (resolved the same way as the one-shot mode —
+  `-root DIR` if set, else `dirname` of the first script
+  argument).
+- Recursively. Symlinks aren't followed.
+- New directories that appear during the session are picked up
+  automatically.
+
+What's filtered:
+
+- **File extensions**: `.ts` / `.tsx` / `.js` / `.jsx` / `.json`
+  trigger a re-run; `.d.ts` files match via suffix too. Anything
+  else (Markdown, images, editor swap files, build artefacts) is
+  ignored.
+- **Directories**: hidden directories (`.git`, `.vscode`,
+  anything starting with `.`) and `node_modules` are excluded —
+  both because they generate floods of irrelevant events and
+  because recursing into them inflates the watcher's directory
+  count for no gain.
+
+Re-runs are **debounced 150 ms**. Editors typically fire several
+events per save (write → rename → chmod); collapsing them into a
+single re-run keeps the loop responsive without thrashing. The
+debounce window resets on every event, so a rapid burst of saves
+becomes one re-run after the burst settles.
+
+Each run is delimited by a line like `--- sercon re-run @ HH:MM:SS ---`
+so the output is visually distinct from the previous run.
+
+`Ctrl-C` (SIGINT) or `SIGTERM` exit cleanly. Per-script failures
+inside a watch session log as `FAIL` but don't terminate the loop
+— a syntax error you're trying to fix shouldn't kick you out of
+watch mode.
+
+The watcher reuses the same `Engine` across runs. Each `Run` already
+gets a fresh `*goja.Runtime`, so re-running is just re-invoking
+`runOne` on the existing engine — there's no per-iteration setup
+cost beyond the transpile + module-resolution work.
 
 ## 5. Built-in script `api`
 
@@ -1768,7 +1820,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.8. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.9. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

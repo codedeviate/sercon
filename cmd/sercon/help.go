@@ -190,6 +190,7 @@ func showHelp(w io.Writer) {
 	flagLine("--help, -h", "", "Show this help and exit.")
 	flagLine("--examples", "", "Show colourised script examples covering every feature; then exit.")
 	flagLine("--version", "", "Print the engine version (plus goja / esbuild versions) and exit.")
+	flagLine("--watch", "", "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Debounced (150 ms). Ctrl-C exits cleanly. .git / .vscode / node_modules / dotfiles ignored.")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("ARGUMENTS"))
