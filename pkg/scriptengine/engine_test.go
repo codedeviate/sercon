@@ -363,6 +363,51 @@ func TestWriteTypes_StructMethodReceiver(t *testing.T) {
 	}
 }
 
+// A script that fails to transpile must surface scriptengine.ErrTranspile
+// so hosts can distinguish "the script never ran" from a runtime throw.
+func TestRun_TranspileErrorSentinel(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	_, err := eng.Run(context.Background(), "bad.ts", `const x: foo bar baz`)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !errors.Is(err, scriptengine.ErrTranspile) {
+		t.Fatalf("expected errors.Is(err, ErrTranspile), got %v", err)
+	}
+}
+
+// Options.Verbose receives engine traces — rewritten entry JS and module
+// resolutions. We only check a few stable markers; the exact body is the
+// transpiled output and would be too brittle to assert verbatim.
+func TestRun_VerboseWriterEmitsTraces(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "helper.ts"),
+		[]byte(`export const v = 1;`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	eng := scriptengine.New(scriptengine.Options{
+		ScriptRoot:     dir,
+		DisableConsole: true,
+		Verbose:        &buf,
+	})
+	if _, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+import { v } from "./helper";
+if (v !== 1) throw new Error("nope");
+`); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"[sercon] transpile entry ",
+		"[sercon] require resolved ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in trace output, got:\n%s", want, out)
+		}
+	}
+}
+
 // PromisifyAsync's AsyncBinding carries the resolved-value TS type; the d.ts
 // emitter must surface that as `Promise<number>` (or whatever T maps to)
 // rather than the previous `unknown`.

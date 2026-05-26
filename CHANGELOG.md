@@ -10,6 +10,52 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.4] — 2026-05-26
+
+Fourth slice of the **Easy** bucket — the **CLI** sub-section. Stdin
+script support, a distinct exit code per failure type, and a `-v` flag
+that actually reveals something useful. No new external dependencies.
+
+### Added
+
+- **Stdin script support.** A `-` positional argument reads an entry
+  script from `os.Stdin`. PASS / FAIL lines and trace output use
+  `<stdin>` as the label. Arguments are still processed in order, so
+  `sercon prelude.ts -` runs the prelude and then stdin.
+- **`Options.Verbose io.Writer`** on `pkg/scriptengine`. When non-nil,
+  receives engine traces prefixed `[sercon] `: the rewritten
+  entry-script JS (the form goja actually runs, post-ESM-to-CJS
+  rewrite + async IIFE) and each module-resolution event. The CLI's
+  `-v` flag plugs in `os.Stderr`.
+- **`scriptengine.ErrTranspile`** sentinel. Both entry-script and
+  required-module transpile failures now wrap it via `fmt.Errorf("%w:
+  ...", ErrTranspile, ...)`, so hosts can use `errors.Is` to
+  distinguish "the script never ran" from a runtime throw.
+- **Distinct CLI exit codes**, the documented matrix is:
+  - `0` — all scripts passed.
+  - `1` — CLI usage error.
+  - `2` — at least one transpile error (`errors.Is(err, ErrTranspile)`).
+  - `3` — at least one timeout / context cancel
+    (`errors.Is(err, ErrScriptTimeout | context.Canceled | …)`).
+  - `4` — at least one JS throw (anything else).
+  - Highest applicable code wins across a multi-script invocation.
+- `TestRun_TranspileErrorSentinel` — pins the `errors.Is` contract.
+- `TestRun_VerboseWriterEmitsTraces` — sanity-checks that the engine
+  emits both transpile-entry and require-resolved lines.
+
+### Changed
+
+- `cmd/sercon/main.go` is now structured around an exit-code return
+  rather than the old `error`-and-`os.Exit(1)` shape; `main()` is a
+  one-liner `os.Exit(run(os.Args[1:]))`.
+- `--help` gains an `ARGUMENTS` block (positional / stdin semantics)
+  and an expanded `EXIT STATUS` block listing all five codes plus the
+  "highest wins" rule. Synopsis grows a `sercon [flags] -` line; an
+  extra example shows the shell-pipeline form.
+- `MANUAL.md` § 4 (CLI) absorbs the new flag semantics, the stdin
+  usage block, the exit-code table, and a paragraph explaining what
+  `-v` reveals.
+
 ## [0.4.3] — 2026-05-26
 
 Third slice of the **Easy** bucket — the **`.d.ts` generator**

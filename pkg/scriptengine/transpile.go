@@ -40,7 +40,7 @@ func transpileTS(source, sourceFile string) (transpileResult, error) {
 	})
 
 	if len(result.Errors) > 0 {
-		return transpileResult{}, fmt.Errorf("transpile %s: %s", sourceFile, formatMessages(result.Errors))
+		return transpileResult{}, fmt.Errorf("%w: %s: %s", ErrTranspile, sourceFile, formatMessages(result.Errors))
 	}
 	return transpileResult{JS: string(result.Code), SourceFile: sourceFile}, nil
 }
@@ -60,7 +60,7 @@ func transpileEntry(source, sourceFile string) (transpileResult, error) {
 		KeepNames:  true,
 	})
 	if len(result.Errors) > 0 {
-		return transpileResult{}, fmt.Errorf("transpile %s: %s", sourceFile, formatMessages(result.Errors))
+		return transpileResult{}, fmt.Errorf("%w: %s: %s", ErrTranspile, sourceFile, formatMessages(result.Errors))
 	}
 	js := rewriteEntryESMToCJS(string(result.Code))
 	return transpileResult{JS: js, SourceFile: sourceFile}, nil

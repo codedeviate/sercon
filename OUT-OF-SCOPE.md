@@ -34,19 +34,6 @@ the situation changes.
 
 ## Easy
 
-### CLI
-
-- **`-v` does very little.** Parsed but only used to print a duration
-  on failure. Could surface the transpiled JS, the rewritten entry
-  script, or per-require resolution traces. **Approach:** plumbing in
-  the engine + CLI flag handling; stdlib `flag` only.
-- **Stdin script support.** `sercon -` to read a script from stdin would
-  be useful for one-liners and shell pipelines. **Library:** `os`,
-  `io` (stdlib).
-- **Exit-code matrix.** Today the CLI returns 1 for any failure. Distinct
-  codes for transpile error / timeout / script throw would help scripting.
-  **Approach:** error typing inside `pkg/scriptengine`; no library.
-
 ### Repo / tooling
 
 - **CI workflow.** No GitHub Actions / equivalent yet. A simple

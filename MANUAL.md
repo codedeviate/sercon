@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.3</div>
+<div class="version">Version 0.4.4</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -258,6 +258,7 @@ Bumped in lockstep with the git tag.
 
 ```
 sercon [flags] <script.ts> [script.ts ...]
+sercon [flags] -                # read entry script from stdin
 sercon --examples | --help | --version
 ```
 
@@ -266,16 +267,35 @@ sercon --examples | --help | --version
 | `-timeout DURATION` | Wall-clock limit per script (default `10s`; `0` disables). |
 | `-root DIR` | Override the script root for `require`/`import` resolution. |
 | `-emit-dts PATH` | Write the example bindings' `.d.ts` to `PATH` and exit. |
-| `-v` | Verbose: log timing on failures. |
+| `-v` | Verbose: trace the rewritten entry-script JS and each module resolution to stderr; also print duration on failure. |
 | `-h`, `--help` | In-depth colorized help. |
 | `--examples` | In-depth colorized walkthrough of every feature. |
 | `--version` | Print the engine version (plus goja/esbuild build-info versions). |
 
-Exit codes:
+Each positional argument is either a path to a `.ts` / `.tsx` file or
+`-` to read an entry script from standard input:
 
-- `0` — every script passed.
-- `1` — at least one script threw, timed out, failed to parse, or the
-  CLI's own argument parsing failed.
+```bash
+echo 'api.log(1 + 2);' | sercon -
+sercon prelude.ts -                 # prelude then stdin
+```
+
+Exit codes are distinct per failure type so shells can react sensibly.
+When several scripts run, the highest applicable code wins:
+
+| Code | Meaning |
+|---:|---|
+| `0` | every script passed. |
+| `1` | CLI usage error (unknown flag, missing script argument, …). |
+| `2` | at least one script failed to transpile — never ran. |
+| `3` | at least one script timed out (`-timeout`) or was context-cancelled. |
+| `4` | at least one script ran and threw a JS exception. |
+
+`-v` writes lines prefixed with `[sercon] ` to stderr. The traces
+include the full rewritten entry-script JS (the form goja actually
+runs, after the ESM→CJS rewrite + async IIFE wrapper) and every
+module-resolution event, so debugging an unexpected resolve target or a
+mis-rewritten import is straightforward.
 
 The CLI registers a single `api` namespace; see the next section.
 
@@ -724,7 +744,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.3. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.4. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

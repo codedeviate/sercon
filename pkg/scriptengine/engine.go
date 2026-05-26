@@ -28,6 +28,11 @@ type Options struct {
 	// enabled by default; the negative-sense field keeps the Go zero value
 	// aligned with the "default true" behaviour described in the spec.
 	DisableConsole bool
+	// Verbose, if non-nil, receives engine diagnostic traces — the rewritten
+	// entry-script JS (full body) and each module-resolution event. Lines
+	// are prefixed with `[sercon] ` so they're easy to grep. Most callers
+	// leave this nil; the sercon CLI plugs in os.Stderr behind `-v`.
+	Verbose io.Writer
 }
 
 // Engine is the embeddable TypeScript script engine.
@@ -182,6 +187,9 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 	}
 
 	transpiled, err := transpileEntry(source, name)
+	if err == nil {
+		e.trace("transpile entry %s ->\n%s", name, transpiled.JS)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -356,4 +364,13 @@ func (e *Engine) WriteTypes(w io.Writer) error {
 	e.regMu.RLock()
 	defer e.regMu.RUnlock()
 	return writeDTS(w, e.registrations)
+}
+
+// trace writes one diagnostic line to Options.Verbose when set. Each line is
+// prefixed with `[sercon] ` so the source is obvious in mixed output.
+func (e *Engine) trace(format string, args ...any) {
+	if e.opts.Verbose == nil {
+		return
+	}
+	fmt.Fprintf(e.opts.Verbose, "[sercon] "+format+"\n", args...)
 }

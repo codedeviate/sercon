@@ -18,94 +18,139 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
+// Exit codes mapped from script outcomes. Higher numbers win when multiple
+// scripts run with different failure types — that way a single integer
+// communicates the worst thing that happened.
+const (
+	exitOK       = 0 // every script passed
+	exitUsage    = 1 // CLI argument / setup error (flag parsing, missing scripts, …)
+	exitTranspile = 2 // at least one script failed to transpile (never ran)
+	exitTimeout  = 3 // at least one script timed out or was context-cancelled
+	exitThrow    = 4 // at least one script ran and threw an exception
+)
+
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "sercon:", err)
-		os.Exit(1)
-	}
+	os.Exit(run(os.Args[1:]))
 }
 
-func run(args []string) error {
+func run(args []string) int {
 	fs := flag.NewFlagSet("sercon", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	timeout := fs.Duration("timeout", 10*time.Second, "Per-script timeout")
 	root := fs.String("root", "", "Script root for require resolution (default: dirname of first script)")
 	emitDTS := fs.String("emit-dts", "", "Write the .d.ts for the example bindings to this path and exit")
-	verbose := fs.Bool("v", false, "Verbose: log timing and full transpile output on error")
+	verbose := fs.Bool("v", false, "Verbose: trace transpile output and module resolutions to stderr; also print duration on script failure")
 	helpShort := fs.Bool("h", false, "Show in-depth, colorized help and exit")
 	helpLong := fs.Bool("help", false, "Show in-depth, colorized help and exit")
 	examples := fs.Bool("examples", false, "Show in-depth, colorized script examples of all features and exit")
 	version := fs.Bool("version", false, "Print the engine version and exit")
 	fs.Usage = func() { showHelp(os.Stderr) }
 	if err := fs.Parse(args); err != nil {
-		return err
+		return exitUsage
 	}
 
 	switch {
 	case *helpShort || *helpLong:
 		showHelp(os.Stdout)
-		return nil
+		return exitOK
 	case *version:
 		showVersion(os.Stdout)
-		return nil
+		return exitOK
 	case *examples:
 		showExamples(os.Stdout)
-		return nil
+		return exitOK
 	}
 
 	scripts := fs.Args()
 	if *emitDTS == "" && len(scripts) == 0 {
+		fmt.Fprintln(os.Stderr, "sercon: no scripts given")
 		fs.Usage()
-		return errors.New("no scripts given")
+		return exitUsage
 	}
 
 	scriptRoot := *root
 	if scriptRoot == "" && len(scripts) > 0 {
-		abs, err := filepath.Abs(scripts[0])
+		// Pick a script root from the first non-stdin script. Stdin scripts
+		// share the cwd that sercon was launched in.
+		seed := scripts[0]
+		for _, s := range scripts {
+			if s != "-" {
+				seed = s
+				break
+			}
+		}
+		abs, err := filepath.Abs(seed)
 		if err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, "sercon:", err)
+			return exitUsage
 		}
 		scriptRoot = filepath.Dir(abs)
 	}
 
-	eng := scriptengine.New(scriptengine.Options{
+	engOpts := scriptengine.Options{
 		Timeout:    *timeout,
 		ScriptRoot: scriptRoot,
-	})
+	}
+	if *verbose {
+		engOpts.Verbose = os.Stderr
+	}
+	eng := scriptengine.New(engOpts)
 	if err := registerExampleAPI(eng); err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "sercon:", err)
+		return exitUsage
 	}
 
 	if *emitDTS != "" {
 		f, err := os.Create(*emitDTS)
 		if err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, "sercon:", err)
+			return exitUsage
 		}
 		defer f.Close()
 		if err := eng.WriteTypes(f); err != nil {
-			return err
+			fmt.Fprintln(os.Stderr, "sercon:", err)
+			return exitUsage
 		}
 		if len(scripts) == 0 {
-			return nil
+			return exitOK
 		}
 	}
 
-	anyFail := false
+	worst := exitOK
 	for _, s := range scripts {
-		if err := runOne(eng, s, *verbose); err != nil {
-			anyFail = true
-			fmt.Printf("FAIL %s: %s\n", s, err)
+		err := runOne(eng, s, *verbose)
+		if err == nil {
+			continue
 		}
+		code := classifyErr(err)
+		if code > worst {
+			worst = code
+		}
+		label := s
+		if s == "-" {
+			label = "<stdin>"
+		}
+		fmt.Printf("FAIL %s: %s\n", label, err)
 	}
-	if anyFail {
-		return errors.New("one or more scripts failed")
-	}
-	return nil
+	return worst
 }
 
+// runOne executes a single script source, either a file path or "-" for
+// stdin. On success it prints a PASS line and returns nil.
 func runOne(eng *scriptengine.Engine, path string, verbose bool) error {
 	start := time.Now()
-	_, err := eng.RunFile(context.Background(), path)
+	var err error
+	label := path
+	if path == "-" {
+		label = "<stdin>"
+		var data []byte
+		data, err = io.ReadAll(os.Stdin)
+		if err == nil {
+			_, err = eng.Run(context.Background(), "<stdin>", string(data))
+		}
+	} else {
+		_, err = eng.RunFile(context.Background(), path)
+	}
 	dur := time.Since(start)
 	if err != nil {
 		if verbose {
@@ -113,8 +158,28 @@ func runOne(eng *scriptengine.Engine, path string, verbose bool) error {
 		}
 		return err
 	}
-	fmt.Printf("PASS %s (%s)\n", path, dur.Round(time.Millisecond))
+	fmt.Printf("PASS %s (%s)\n", label, dur.Round(time.Millisecond))
 	return nil
+}
+
+// classifyErr maps an Engine error to one of the documented exit codes.
+// Transpile errors win their own bucket because they mean the script never
+// even started; timeouts and cancellations share a bucket because both
+// flavour "the script ran too long for us to wait"; everything else is a
+// generic JS throw.
+func classifyErr(err error) int {
+	switch {
+	case err == nil:
+		return exitOK
+	case errors.Is(err, scriptengine.ErrTranspile):
+		return exitTranspile
+	case errors.Is(err, scriptengine.ErrScriptTimeout),
+		errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded):
+		return exitTimeout
+	default:
+		return exitThrow
+	}
 }
 
 // registerExampleAPI wires the small example binding surface advertised by

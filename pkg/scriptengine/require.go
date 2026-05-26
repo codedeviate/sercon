@@ -48,6 +48,11 @@ func (e *Engine) newSourceLoader() require.SourceLoader {
 		if err != nil {
 			return nil, err
 		}
+		if resolved != reqPath {
+			e.trace("require resolved %s -> %s", reqPath, resolved)
+		} else {
+			e.trace("require resolved %s", reqPath)
+		}
 
 		raw, err := os.ReadFile(resolved)
 		if err != nil {

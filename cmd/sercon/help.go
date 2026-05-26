@@ -168,6 +168,7 @@ func showHelp(w io.Writer) {
 
 	fmt.Fprintln(w, s.bold("SYNOPSIS"))
 	fmt.Fprintf(w, "    %s [flags] <script.ts> [script.ts ...]\n", s.cyan("sercon"))
+	fmt.Fprintf(w, "    %s [flags] -                # read entry script from stdin\n", s.cyan("sercon"))
 	fmt.Fprintf(w, "    %s --examples | --help | --version\n\n", s.cyan("sercon"))
 
 	fmt.Fprintln(w, s.bold("DESCRIPTION"))
@@ -185,15 +186,25 @@ func showHelp(w io.Writer) {
 	flagLine("-timeout", "duration", "Per-script wall-clock limit (default 10s; 0 disables).")
 	flagLine("-root", "dir", "Script root for require/import resolution (default: dir of the first script).")
 	flagLine("-emit-dts", "path", "Write a .d.ts for the example bindings to `path` and exit.")
-	flagLine("-v", "", "Verbose: log timing on failures.")
+	flagLine("-v", "", "Verbose: trace the rewritten entry-script JS and each module resolution to stderr; also print duration on script failure.")
 	flagLine("--help, -h", "", "Show this help and exit.")
 	flagLine("--examples", "", "Show colourised script examples covering every feature; then exit.")
 	flagLine("--version", "", "Print the engine version (plus goja / esbuild versions) and exit.")
 	fmt.Fprintln(w, "")
 
+	fmt.Fprintln(w, s.bold("ARGUMENTS"))
+	fmt.Fprintln(w, "    Each positional argument is either a path to a `.ts`/`.tsx` file or")
+	fmt.Fprintln(w, "    `-` to read an entry script from standard input. Arguments are run in")
+	fmt.Fprintln(w, "    order; their results compose into the final exit code (highest wins).")
+	fmt.Fprintln(w, "")
+
 	fmt.Fprintln(w, s.bold("EXIT STATUS"))
 	fmt.Fprintf(w, "    %s   all scripts passed.\n", s.green("0"))
-	fmt.Fprintf(w, "    %s   one or more scripts threw, timed out, or failed to parse.\n", s.yellow("1"))
+	fmt.Fprintf(w, "    %s   CLI usage error (unknown flag, missing scripts, …).\n", s.yellow("1"))
+	fmt.Fprintf(w, "    %s   at least one script failed to transpile (never ran).\n", s.yellow("2"))
+	fmt.Fprintf(w, "    %s   at least one script timed out or was context-cancelled.\n", s.yellow("3"))
+	fmt.Fprintf(w, "    %s   at least one script ran and threw a JS exception.\n", s.yellow("4"))
+	fmt.Fprintln(w, "    When several scripts run, the highest applicable code wins.")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("EXAMPLES"))
@@ -203,6 +214,8 @@ func showHelp(w io.Writer) {
 		s.cyan("sercon --examples"))
 	fmt.Fprintf(w, "    %s\n        Emit a declaration file for editor autocomplete.\n",
 		s.cyan("sercon --emit-dts api.d.ts"))
+	fmt.Fprintf(w, "    %s\n        One-liner from a shell pipeline (reads from stdin).\n",
+		s.cyan(`echo 'api.log(1+2);' | sercon -`))
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("SEE ALSO"))
