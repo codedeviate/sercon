@@ -32,6 +32,9 @@ func encryptNamespace(vm *goja.Runtime) map[string]any {
 		"decrypt": func(ciphertext, identities goja.Value) goja.Value {
 			return encryptDecrypt(vm, ciphertext, identities)
 		},
+		"rekey": func(ciphertext, oldIdentities, newRecipients, opts goja.Value) goja.Value {
+			return encryptRekey(vm, ciphertext, oldIdentities, newRecipients, opts)
+		},
 	}
 }
 
@@ -180,6 +183,118 @@ func encryptDecrypt(vm *goja.Runtime, ciphertextArg, identitiesArg goja.Value) g
 		panic(vm.NewGoError(fmt.Errorf("encrypt.decrypt: read: %w", err)))
 	}
 	return vm.ToValue(plain)
+}
+
+// encryptRekey re-encrypts a ciphertext for a fresh recipient set
+// without exposing the plaintext to the caller. Internally it does
+// `decrypt → in-memory plaintext → encrypt`, so the plaintext lives
+// only in this function's stack until the encrypt step finishes. The
+// payload size determines the buffer size; this isn't suitable for
+// multi-GB streams but is fine for the typical "rotate keys on a
+// secrets blob" use case.
+//
+// Output format defaults to **match the input** — armored in / armored
+// out, binary in / binary out — which is what you almost always want
+// when key-rotating a payload that lives in a fixed location (file,
+// vault row, JSON field). Pass `opts.armored: true|false` to force the
+// output regardless of input.
+//
+// Cross-checks: oldIdentities must look like private keys
+// (AGE-SECRET-KEY-...); newRecipients must look like public keys
+// (age1...). Empty either-side throws. A decrypt failure (no
+// identity matched, malformed input) propagates with sercon's
+// `encrypt.rekey:` prefix so it's clear which step failed.
+func encryptRekey(vm *goja.Runtime, ciphertextArg, oldIdentitiesArg, newRecipientsArg, optsArg goja.Value) goja.Value {
+	ciphertext, err := jsArgToBytes(ciphertextArg)
+	if err != nil {
+		panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: ciphertext %w", err)))
+	}
+	if len(ciphertext) == 0 {
+		panic(vm.NewGoError(errors.New("encrypt.rekey: ciphertext is empty")))
+	}
+
+	oldStrs, err := stringOrStringSlice(oldIdentitiesArg, "oldIdentities")
+	if err != nil {
+		panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: %w", err)))
+	}
+	if len(oldStrs) == 0 {
+		panic(vm.NewGoError(errors.New("encrypt.rekey: at least one oldIdentity required")))
+	}
+	oldIdentities := make([]age.Identity, 0, len(oldStrs))
+	for _, s := range oldStrs {
+		id, err := parseIdentityStrict(s)
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: oldIdentity %q: %w", truncForError(s), err)))
+		}
+		oldIdentities = append(oldIdentities, id)
+	}
+
+	newStrs, err := stringOrStringSlice(newRecipientsArg, "newRecipients")
+	if err != nil {
+		panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: %w", err)))
+	}
+	if len(newStrs) == 0 {
+		panic(vm.NewGoError(errors.New("encrypt.rekey: at least one newRecipient required")))
+	}
+	newRecipients := make([]age.Recipient, 0, len(newStrs))
+	for _, s := range newStrs {
+		r, err := parseRecipientStrict(s)
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: newRecipient %q: %w", truncForError(s), err)))
+		}
+		newRecipients = append(newRecipients, r)
+	}
+
+	// Resolve the output format. Default = preserve the input's
+	// armor state; opts.armored overrides explicitly.
+	inputArmored := looksArmored(ciphertext)
+	outputArmored := inputArmored
+	if optsMap := asMap(optsArg); optsMap != nil {
+		if v, ok := optsMap["armored"].(bool); ok {
+			outputArmored = v
+		}
+	}
+
+	// Stage 1: decrypt with the old identities. Auto-detect armor on
+	// the read side, same as encryptDecrypt does.
+	var src io.Reader = bytes.NewReader(ciphertext)
+	if inputArmored {
+		src = armor.NewReader(src)
+	}
+	dr, err := age.Decrypt(src, oldIdentities...)
+	if err != nil {
+		panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: decrypt: %w", err)))
+	}
+	plain, err := io.ReadAll(dr)
+	if err != nil {
+		panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: decrypt read: %w", err)))
+	}
+
+	// Stage 2: encrypt for the new recipients. Same writer stacking as
+	// encryptEncrypt; close in order (age first, then armor).
+	var out bytes.Buffer
+	var dst io.Writer = &out
+	var armorW io.WriteCloser
+	if outputArmored {
+		armorW = armor.NewWriter(&out)
+		dst = armorW
+	}
+	ew, err := age.Encrypt(dst, newRecipients...)
+	if err != nil {
+		panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: encrypt: %w", err)))
+	}
+	if _, err := ew.Write(plain); err != nil {
+		panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: encrypt write: %w", err)))
+	}
+	if err := ew.Close(); err != nil {
+		panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: encrypt close: %w", err)))
+	}
+	if armorW != nil {
+		if err := armorW.Close(); err != nil {
+			panic(vm.NewGoError(fmt.Errorf("encrypt.rekey: armor close: %w", err)))
+		}
+	}
+	return vm.ToValue(out.Bytes())
 }
 
 // looksArmored reports whether ciphertext is in age's ASCII armor.

@@ -129,12 +129,6 @@ the situation changes.
   match in pure Go; alternatively hand-roll a small `crypto/rsa`
   / `crypto/ecdsa` / `crypto/ed25519` decoder since the JWK shape
   is well-specified.
-- **`api.encrypt.rekey(ciphertext, oldIdentities, newRecipients)`**
-  — Re-seal a payload for a new recipient set without exposing the
-  plaintext to the caller. Two-step decrypt-then-encrypt
-  internally; the work is the API shape (single call vs explicit
-  intermediate buffer). **Library:** `filippo.io/age` (already
-  on).
 - **`api.encrypt.detectBackend(recipientStr)`** — Dispatch age vs
   PGP by recipient format (script: `encrypt.rhai`). **Library:**
   `filippo.io/age` for age recipient parsing;

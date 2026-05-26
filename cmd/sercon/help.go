@@ -594,8 +594,11 @@ const armored = api.encrypt.encrypt("embed me", publicKey, { armored: true });
 // Decrypt — pass any identity that matches the header. Returns
 // Uint8Array; use api.text.decode(bytes, "utf-8") for a string.
 const plain = api.encrypt.decrypt(ct, privateKey);
-api.log(await api.text.decode(plain, "utf-8"));`)
-	note("Cross-checks catch private-as-recipient and public-as-identity mix-ups with named-key hints. Rekey + recipient-format dispatcher land in later cuts.")
+
+// Rekey — rotate recipients without exposing plaintext. Output
+// format defaults to match the input (binary / armored).
+const rotated = api.encrypt.rekey(ct, privateKey, newPublicKey);`)
+	note("Cross-checks catch private-as-recipient and public-as-identity mix-ups with named-key hints. Recipient-format dispatcher (age + PGP) lands in a later cut.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

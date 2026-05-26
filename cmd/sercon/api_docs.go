@@ -146,5 +146,6 @@ func apiDocs() map[string]string {
 		"encrypt.keygen":  "Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.",
 		"encrypt.encrypt": "Seal data to one or more recipients (age1... public keys). Default output is binary; opts.armored=true wraps in age's ASCII armor for JSON/YAML/email embedding. Multi-recipient encryption lets any listed identity decrypt.",
 		"encrypt.decrypt": "Open an age payload (binary or armored, auto-detected) with one of the supplied identities (AGE-SECRET-KEY-1... private keys). Cross-check catches public-as-identity mistakes; wrong identity throws age's 'did not match' error.",
+		"encrypt.rekey":   "Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop.",
 	}
 }

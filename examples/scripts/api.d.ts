@@ -67,6 +67,8 @@ declare const api: {
     encrypt(arg0: unknown, arg1: unknown, arg2: unknown): unknown;
     /** Generate a fresh X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }. */
     keygen(): unknown;
+    /** Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop. */
+    rekey(arg0: unknown, arg1: unknown, arg2: unknown, arg3: unknown): unknown;
   };
   env: {
     /** Read an environment variable. Returns undefined when unset (not empty string). */

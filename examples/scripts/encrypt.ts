@@ -65,3 +65,26 @@ api.log("decoded:   ", await api.text.decode(api.encrypt.decrypt(armored, alice.
 // bytes, then armor detection kicks in.
 const asString = await api.text.decode(armored, "utf-8");
 api.log("re-decoded:", await api.text.decode(api.encrypt.decrypt(asString, alice.privateKey), "utf-8"));
+
+api.log("");
+api.log("=== rekey: rotate recipients without exposing plaintext ===");
+// "alice's secret" was encrypted for alice. Rotate it to bob without ever
+// seeing the plaintext in JS-land. The format defaults to whatever the
+// input was (binary→binary here); opts.armored overrides.
+const charlie = api.encrypt.keygen();
+const originalForAlice = api.encrypt.encrypt("rotate me to charlie", alice.publicKey);
+const nowForCharlie = api.encrypt.rekey(
+  originalForAlice,
+  alice.privateKey,
+  charlie.publicKey,
+);
+api.log("charlie reads:", await api.text.decode(api.encrypt.decrypt(nowForCharlie, charlie.privateKey), "utf-8"));
+
+// alice is locked out of the rekeyed payload — the recipient set actually
+// changed, not just expanded.
+try {
+  api.encrypt.decrypt(nowForCharlie, alice.privateKey);
+  api.log("✗ alice should be locked out");
+} catch (e) {
+  api.log("alice locked out:", String(e).slice(0, 70) + "…");
+}

@@ -10,6 +10,51 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.7] — 2026-05-26
+
+Eighth Moderate cut. Adds **`api.encrypt.rekey`** — re-encrypt
+a ciphertext for a fresh recipient set without ever exposing the
+plaintext to the caller. The internal decrypt+encrypt loop keeps
+the plaintext on the Go stack between the two stages; nothing
+reaches JS-land. No new dependencies — the existing
+`filippo.io/age` covers it.
+
+### Added
+
+- `api.encrypt.rekey(ciphertext, oldIdentities, newRecipients, opts?)`
+  → `Uint8Array`. Decrypts with `oldIdentities` and re-encrypts
+  for `newRecipients`. Identity / recipient inputs use the same
+  string-or-string[] shape as `encrypt` / `decrypt`; same
+  cross-checks (private-as-recipient, public-as-identity) apply.
+- **Format preservation by default.** When `opts.armored` is unset,
+  the output matches the input — armored in / armored out, binary
+  in / binary out. That's what you want when key-rotating a
+  payload that lives in a fixed location (file, vault row, JSON
+  field). Explicit `opts.armored: true | false` overrides.
+- Input auto-detect on the read side reuses the existing
+  `looksArmored` sniffer — same logic as `decrypt`.
+- 10 new sub-tests in `api_encrypt_test.go` cover: binary
+  round-trip, old-identity-locked-out (proves the recipient set
+  actually changed), armored format preservation, binary format
+  preservation, both opts.armored overrides, wrong-old-identity
+  error path with `encrypt.rekey:` prefix, multi-new-recipient,
+  public-as-old-identity cross-check, and three input-validation
+  cases (empty ciphertext / empty oldIdentities / empty
+  newRecipients). The encrypt suite is now 35 sub-tests.
+- `examples/scripts/encrypt.ts` grows a rekey section
+  demonstrating the rotation plus the "alice is locked out
+  afterwards" proof.
+- `--examples` step 32 extended to include the rekey form;
+  MANUAL §5 prose gains a paragraph describing the
+  internal-only-plaintext guarantee and the format-preservation
+  default.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `rekey` entry resolved. The
+  `detectBackend` + PGP entry remains as the final piece of the
+  original five-function `encrypt::*` design.
+
 ## [0.5.6] — 2026-05-26
 
 Seventh Moderate cut. Extends `api.encrypt.*` with **ASCII-armoured

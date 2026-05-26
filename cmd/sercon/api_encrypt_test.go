@@ -315,3 +315,200 @@ func TestEncrypt_ArmoredWrongIdentityErrors(t *testing.T) {
 		t.Errorf("armored wrong-identity error wording: %v", got)
 	}
 }
+
+// Rekey round-trip: encrypt for alice, rekey to bob, bob decrypts.
+// Plaintext byte-for-byte recovered.
+func TestEncryptRekey_BinaryRoundTrip(t *testing.T) {
+	got := runEncryptScript(t, `
+		const alice = encrypt.keygen();
+		const bob = encrypt.keygen();
+		const orig = encrypt.encrypt("rotate me please", alice.publicKey);
+		const rk = encrypt.rekey(orig, alice.privateKey, bob.publicKey);
+		const pt = encrypt.decrypt(rk, bob.privateKey);
+		const __result = Array.from(pt).map(b => String.fromCharCode(b)).join("");
+	`)
+	if got != "rotate me please" {
+		t.Errorf("rekey round-trip: %v", got)
+	}
+}
+
+// After rekey, the original identity can no longer decrypt — the
+// recipient set has actually changed, not just been padded.
+func TestEncryptRekey_OldIdentityLockedOut(t *testing.T) {
+	got := runEncryptScript(t, `
+		const alice = encrypt.keygen();
+		const bob = encrypt.keygen();
+		const orig = encrypt.encrypt("secret", alice.publicKey);
+		const rk = encrypt.rekey(orig, alice.privateKey, bob.publicKey);
+		let caught = "";
+		try { encrypt.decrypt(rk, alice.privateKey); }
+		catch (e) { caught = String(e); }
+		const __result = caught.includes("did not match") || caught.includes("no identity matched");
+	`)
+	if got != true {
+		t.Errorf("expected alice to be locked out after rekey; got %#v", got)
+	}
+}
+
+// Format preservation: armored in → armored out (default behaviour).
+func TestEncryptRekey_ArmoredPreserved(t *testing.T) {
+	got := runEncryptScript(t, `
+		const alice = encrypt.keygen();
+		const bob = encrypt.keygen();
+		const orig = encrypt.encrypt("a", alice.publicKey, { armored: true });
+		const rk = encrypt.rekey(orig, alice.privateKey, bob.publicKey);
+		const head = Array.from(rk).slice(0, 34).map(b => String.fromCharCode(b)).join("");
+		const __result = head;
+	`)
+	if got != "-----BEGIN AGE ENCRYPTED FILE-----" {
+		t.Errorf("armored preservation: %v", got)
+	}
+}
+
+// Format preservation: binary in → binary out (default behaviour).
+// We check by sniffing the first bytes — age binary starts with
+// "age-encryption.org/v1".
+func TestEncryptRekey_BinaryPreserved(t *testing.T) {
+	got := runEncryptScript(t, `
+		const alice = encrypt.keygen();
+		const bob = encrypt.keygen();
+		const orig = encrypt.encrypt("a", alice.publicKey);            // binary
+		const rk = encrypt.rekey(orig, alice.privateKey, bob.publicKey);
+		const head = Array.from(rk).slice(0, 21).map(b => String.fromCharCode(b)).join("");
+		const __result = head;
+	`)
+	if got != "age-encryption.org/v1" {
+		t.Errorf("binary preservation: %v", got)
+	}
+}
+
+// Format override: binary in + opts.armored=true → armored out.
+func TestEncryptRekey_OverrideToArmored(t *testing.T) {
+	got := runEncryptScript(t, `
+		const alice = encrypt.keygen();
+		const bob = encrypt.keygen();
+		const orig = encrypt.encrypt("a", alice.publicKey);              // binary
+		const rk = encrypt.rekey(orig, alice.privateKey, bob.publicKey, { armored: true });
+		const head = Array.from(rk).slice(0, 34).map(b => String.fromCharCode(b)).join("");
+		const __result = head;
+	`)
+	if got != "-----BEGIN AGE ENCRYPTED FILE-----" {
+		t.Errorf("override to armored: %v", got)
+	}
+}
+
+// Format override: armored in + opts.armored=false → binary out.
+func TestEncryptRekey_OverrideToBinary(t *testing.T) {
+	got := runEncryptScript(t, `
+		const alice = encrypt.keygen();
+		const bob = encrypt.keygen();
+		const orig = encrypt.encrypt("a", alice.publicKey, { armored: true });
+		const rk = encrypt.rekey(orig, alice.privateKey, bob.publicKey, { armored: false });
+		const head = Array.from(rk).slice(0, 21).map(b => String.fromCharCode(b)).join("");
+		const __result = head;
+	`)
+	if got != "age-encryption.org/v1" {
+		t.Errorf("override to binary: %v", got)
+	}
+}
+
+// Wrong oldIdentity (not one of the original recipients) throws
+// with sercon's `encrypt.rekey:` prefix, NOT the plain
+// `encrypt.decrypt:` from the inner call.
+func TestEncryptRekey_WrongOldIdentityThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
+	if err := eng.RegisterNamespaceFactory("encrypt", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return encryptNamespace(vm)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "v.ts", `
+		const owner = encrypt.keygen();
+		const eve = encrypt.keygen();
+		const new_ = encrypt.keygen();
+		const ct = encrypt.encrypt("x", owner.publicKey);
+		encrypt.rekey(ct, eve.privateKey, new_.publicKey);   // eve can't decrypt
+	`)
+	if err == nil {
+		t.Fatal("expected throw for wrong oldIdentity")
+	}
+	if !strings.Contains(err.Error(), "encrypt.rekey") {
+		t.Errorf("expected encrypt.rekey: prefix; got %v", err)
+	}
+}
+
+// Multi-recipient on the new side: both new readers can decrypt.
+// Demonstrates that rekey accepts the same string-or-array shape
+// as encrypt.
+func TestEncryptRekey_MultiNewRecipient(t *testing.T) {
+	got := runEncryptScript(t, `
+		const orig_owner = encrypt.keygen();
+		const r1 = encrypt.keygen();
+		const r2 = encrypt.keygen();
+		const ct = encrypt.encrypt("shared rekey", orig_owner.publicKey);
+		const rk = encrypt.rekey(ct, orig_owner.privateKey, [r1.publicKey, r2.publicKey]);
+		const p1 = Array.from(encrypt.decrypt(rk, r1.privateKey)).map(b => String.fromCharCode(b)).join("");
+		const p2 = Array.from(encrypt.decrypt(rk, r2.privateKey)).map(b => String.fromCharCode(b)).join("");
+		const __result = [p1 === "shared rekey", p2 === "shared rekey"].join(",");
+	`)
+	if got != "true,true" {
+		t.Errorf("multi-new-recipient: %v", got)
+	}
+}
+
+// Cross-check: passing a public key as an oldIdentity throws with
+// the inverse hint (an oldIdentity is a private key).
+func TestEncryptRekey_PublicKeyAsOldIdentityThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 2 * time.Second})
+	if err := eng.RegisterNamespaceFactory("encrypt", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return encryptNamespace(vm)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "v.ts", `
+		const owner = encrypt.keygen();
+		const new_ = encrypt.keygen();
+		const ct = encrypt.encrypt("x", owner.publicKey);
+		encrypt.rekey(ct, owner.publicKey, new_.publicKey);   // public used as identity
+	`)
+	if err == nil {
+		t.Fatal("expected throw for public-as-old-identity")
+	}
+	if !strings.Contains(err.Error(), "public key") {
+		t.Errorf("expected named-key cross-check; got %v", err)
+	}
+}
+
+// Input validation: empty ciphertext, empty old/new lists.
+func TestEncryptRekey_InputValidation(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 2 * time.Second})
+	if err := eng.RegisterNamespaceFactory("encrypt", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return encryptNamespace(vm)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ name, src, want string }{
+		{"empty ciphertext", `encrypt.rekey("", "AGE-SECRET-KEY-1X", "age1x");`, "empty"},
+		{"empty oldIdentities", `
+			const k = encrypt.keygen();
+			const ct = encrypt.encrypt("x", k.publicKey);
+			encrypt.rekey(ct, [], k.publicKey);
+		`, "oldIdentity"},
+		{"empty newRecipients", `
+			const k = encrypt.keygen();
+			const ct = encrypt.encrypt("x", k.publicKey);
+			encrypt.rekey(ct, k.privateKey, []);
+		`, "newRecipient"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := eng.Run(context.Background(), "v.ts", tc.src)
+			if err == nil {
+				t.Fatalf("expected throw for %s", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error wording for %s: %v", tc.name, err)
+			}
+		})
+	}
+}

@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.6</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.7</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -672,6 +672,12 @@ declare const api: {
       ciphertext: string | Uint8Array | ArrayBuffer,
       identities: string | string[],          // AGE-SECRET-KEY-1... private keys
     ): Uint8Array;                             // auto-detects binary vs armored
+    rekey(
+      ciphertext: string | Uint8Array | ArrayBuffer,
+      oldIdentities: string | string[],
+      newRecipients: string | string[],
+      opts?: { armored?: boolean },           // default: preserve input format
+    ): Uint8Array;
   };
 
   gh: {
@@ -1204,8 +1210,9 @@ Age encryption (`api.encrypt.*`) wraps
 [`filippo.io/age`](https://github.com/FiloSottile/age), the pure-Go
 reference implementation. The round-trip core (keygen / encrypt /
 decrypt) lands in v0.5.5; v0.5.6 adds ASCII-armoured output via
-`opts.armored`. Rekeying and the recipient-format dispatcher
-(which would also bring PGP support) remain on the backlog.
+`opts.armored`; v0.5.7 adds `rekey` for rotating recipients
+without exposing plaintext. The recipient-format dispatcher
+(which would also bring PGP support) remains on the backlog.
 Identities use the X25519 flavour: `age1...` recipients (safe to
 share) and `AGE-SECRET-KEY-1...` identities (must be kept secret).
 
@@ -1240,6 +1247,19 @@ crypto bindings (`api.jwt`, `api.hash`).
   `Uint8Array`; let scripts decode to a string via
   `api.text.decode(bytes, "utf-8")` if appropriate (goja doesn't
   ship `TextDecoder`).
+- **`rekey(ciphertext, oldIdentities, newRecipients, opts?)`** —
+  Re-encrypt a payload for a fresh recipient set without ever
+  exposing the plaintext to the caller. The decrypt+encrypt loop
+  is internal; the plaintext lives only in this function's stack
+  until the encrypt step finishes. Output format defaults to
+  **match the input** — armored in / armored out, binary in /
+  binary out — which is what you almost always want when
+  key-rotating a payload that lives in a fixed location (file,
+  vault row, JSON field). `opts.armored: true | false` forces
+  the output regardless of input. Internally consistent with
+  `encrypt` and `decrypt`: same cross-checks (private as
+  recipient, public as identity), same auto-detect on the input
+  side, same multi-recipient handling on the output side.
 
 Cross-checks fire at the binding boundary so the common JS-side
 mistakes throw with named-key hints rather than cryptic bech32
@@ -1724,7 +1744,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.6. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.7. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
