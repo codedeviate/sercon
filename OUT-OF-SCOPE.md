@@ -34,17 +34,6 @@ the situation changes.
 
 ## Trivial
 
-### Engine
-
-- **Per-Run `ScriptRoot` override.** Currently a single `Engine`-level
-  setting. A `RunOptions` overload (or variadic) would let callers point
-  different runs at different directories without rebuilding the engine.
-  **Approach:** pure API-surface change, no library needed.
-- **Reset / clear registrations.** No way to remove a binding once
-  added. Probably fine for the intended ad-hoc-testing use case, but
-  worth flagging. **Approach:** pure API-surface change, no library
-  needed.
-
 ### Hashing & compression
 
 - **`hash(algo, payload)`** — md5, sha1, sha256, sha384, sha512,

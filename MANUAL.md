@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.2.4</div>
+<div class="version">Version 0.3.0</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -160,8 +160,8 @@ eng.RegisterFactory("httpGet", func(vm *goja.Runtime, loop *eventloop.EventLoop)
 ### `Run`, `RunFile`
 
 ```go
-func (e *Engine) Run(ctx context.Context, name, source string) (goja.Value, error)
-func (e *Engine) RunFile(ctx context.Context, path string) (goja.Value, error)
+func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption) (goja.Value, error)
+func (e *Engine) RunFile(ctx context.Context, path string, opts ...RunOption) (goja.Value, error)
 ```
 
 `Run` executes `source` as an entry-script TS. `name` is used in stack
@@ -171,6 +171,33 @@ expression capture is on the backlog.
 Both methods respect `Options.Timeout` *and* `ctx` cancellation, whichever
 fires first; the resulting error is either `ErrScriptTimeout`, `ctx.Err()`,
 or the underlying JS exception.
+
+#### Per-Run options
+
+```go
+type RunOption func(*runConfig)
+
+func WithScriptRoot(dir string) RunOption
+```
+
+Reuse a single Engine across many scripts that each live in their own
+directory by passing `WithScriptRoot(dir)` to `Run` / `RunFile`. The
+override applies only to this call; `Options.ScriptRoot` is used for
+every other Run.
+
+```go
+_, _ = eng.Run(ctx, "main.ts", source, scriptengine.WithScriptRoot("/path/to/run42"))
+```
+
+### `Reset`
+
+```go
+func (e *Engine) Reset()
+```
+
+Clears every registered binding. Useful when a long-lived Engine is
+reused across unrelated batches of scripts that each want a clean
+global namespace. **Not safe to call concurrently with Run / RunFile.**
 
 ### `WriteTypes`
 
@@ -569,7 +596,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.2.4. Whenever you add, remove, or change a
+*This manual covers sercon v0.3.0. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

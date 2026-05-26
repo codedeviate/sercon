@@ -10,6 +10,28 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.3.0] — 2026-05-26
+
+First minor focusing on the **Trivial** backlog bucket, starting with
+the **Engine** sub-section. This release is two pure-API-surface
+additions; no library dependencies were added.
+
+### Added
+
+- `RunOption` + `WithScriptRoot(dir)`: pass per-Run overrides to
+  `Engine.Run` / `Engine.RunFile` without rebuilding the engine. The
+  override applies only to the current call and rewrites the entry
+  script's effective base directory for `require` / `import`
+  resolution.
+- `Engine.Reset()`: clear every registered binding. Lets a long-lived
+  Engine be reused across unrelated script batches that each want a
+  clean global namespace. Not safe to call concurrently with Run.
+
+### Changed
+
+- `Engine.Run` / `Engine.RunFile` are now variadic in their option
+  list; existing two-/three-arg callers compile unchanged.
+
 ## [0.2.4] — 2026-05-26
 
 ### Fixed

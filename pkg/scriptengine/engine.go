@@ -142,13 +142,43 @@ func (e *Engine) registry() *require.Registry {
 	return e.reg
 }
 
+// RunOption customises a single Run / RunFile invocation without rebuilding
+// the Engine. Options compose; if the same setting is set twice the later
+// option wins.
+type RunOption func(*runConfig)
+
+type runConfig struct {
+	scriptRoot string
+}
+
+// WithScriptRoot points this Run at a different base directory for
+// require/import resolution, overriding Options.ScriptRoot for the lifetime
+// of the call. Useful when one Engine is reused across many scripts that
+// each live under their own directory.
+func WithScriptRoot(dir string) RunOption {
+	return func(c *runConfig) { c.scriptRoot = dir }
+}
+
 // Run executes source as the entry script for this engine. name is used in
 // stack traces and diagnostics. The returned value is the resolved value of
 // the script's top-level expression (currently always undefined; the spec
 // reserves this slot for future top-level export support).
-func (e *Engine) Run(ctx context.Context, name, source string) (goja.Value, error) {
+func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption) (goja.Value, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+
+	cfg := runConfig{scriptRoot: e.opts.ScriptRoot}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	// Make name absolute against the effective ScriptRoot so that
+	// require/import resolution from the entry script anchors at the right
+	// directory. Subsequent module lookups walk the dirname chain via
+	// goja_nodejs's getCurrentModulePath and need no further help.
+	if !filepath.IsAbs(name) && cfg.scriptRoot != "" {
+		name = filepath.Join(cfg.scriptRoot, name)
 	}
 
 	transpiled, err := transpileEntry(source, name)
@@ -249,7 +279,7 @@ func (e *Engine) Run(ctx context.Context, name, source string) (goja.Value, erro
 }
 
 // RunFile reads path from disk and executes it as the entry script.
-func (e *Engine) RunFile(ctx context.Context, path string) (goja.Value, error) {
+func (e *Engine) RunFile(ctx context.Context, path string, opts ...RunOption) (goja.Value, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -258,7 +288,18 @@ func (e *Engine) RunFile(ctx context.Context, path string) (goja.Value, error) {
 	if err != nil {
 		return nil, err
 	}
-	return e.Run(ctx, abs, string(data))
+	return e.Run(ctx, abs, string(data), opts...)
+}
+
+// Reset clears every registered binding from the Engine. Useful when reusing
+// a long-lived Engine across unrelated batches of scripts that want a clean
+// global namespace. Not safe to call concurrently with Run / RunFile —
+// registrations are part of the Run setup, and removing them mid-Run would
+// race with applyRegistrations.
+func (e *Engine) Reset() {
+	e.regMu.Lock()
+	defer e.regMu.Unlock()
+	e.registrations = nil
 }
 
 func (e *Engine) applyRegistrations(vm *goja.Runtime, loop *eventloop.EventLoop) error {

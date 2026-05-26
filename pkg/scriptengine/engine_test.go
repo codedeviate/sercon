@@ -262,3 +262,61 @@ if (ok !== "yes") throw new Error("got: " + ok);
 		t.Skip("directory-index resolution not wired for this build")
 	}
 }
+
+// WithScriptRoot redirects require/import resolution for a single Run
+// without rebuilding the Engine.
+func TestRun_WithScriptRootPerRun(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dirA, "h.ts"), []byte(`export const v = "A";`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dirB, "h.ts"), []byte(`export const v = "B";`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dirA, DisableConsole: true})
+
+	if _, err := eng.Run(context.Background(), "main.ts",
+		`import { v } from "./h"; if (v !== "A") throw new Error("got " + v);`,
+	); err != nil {
+		t.Fatalf("default ScriptRoot run: %v", err)
+	}
+	if _, err := eng.Run(context.Background(), "main.ts",
+		`import { v } from "./h"; if (v !== "B") throw new Error("got " + v);`,
+		scriptengine.WithScriptRoot(dirB),
+	); err != nil {
+		t.Fatalf("WithScriptRoot run: %v", err)
+	}
+}
+
+// Reset clears registered bindings so a subsequent Run sees a clean surface.
+func TestEngine_ResetClearsRegistrations(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.Register("greet", func() string { return "first" }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Run(context.Background(), "a.ts",
+		`if (greet() !== "first") throw new Error("expected first");`,
+	); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+
+	eng.Reset()
+	if err := eng.Register("greet", func() string { return "second" }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Run(context.Background(), "b.ts",
+		`if (greet() !== "second") throw new Error("expected second");`,
+	); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+
+	// After Reset + a single re-registration, the *old* binding must be gone.
+	eng.Reset()
+	if _, err := eng.Run(context.Background(), "c.ts",
+		`if (typeof greet !== "undefined") throw new Error("expected greet to be undefined after Reset");`,
+	); err != nil {
+		t.Fatalf("third run: %v", err)
+	}
+}
