@@ -150,14 +150,6 @@ the situation changes.
   obvious maintained library exists — porting ZXing's Java PDF417
   reader would be the realistic path. Defer until someone actually
   needs PDF417 round-tripping.
-- **Quiet-zone padding on encoded EAN / UPC PNGs.** boombuler's
-  encoder emits bars edge-to-edge; the EAN/UPC spec requires a
-  white quiet zone on each side and real-world scanners (gozxing
-  included) need it. Adding an `opts.quietZone?: number | true`
-  flag to `api.barcode.encode` that pastes the rendered bars onto
-  a wider white canvas would make EAN/UPC round-trips work without
-  caller-side post-processing. **Library:** no new dep — pure
-  `image/draw` work over the existing boombuler output.
 
 ### Browser-like HTTP session
 

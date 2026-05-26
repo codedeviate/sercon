@@ -19,7 +19,7 @@ declare const api: {
     decodableFormats(): string[];
     /** Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hint skips the auto-detect walk. EAN/UPC need a quiet zone in the input. */
     decode(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Render data into a PNG of the chosen format. opts.width / opts.height default to 256x256 (2D) or 400x120 (1D). */
+    /** Render data into a PNG of the chosen format. opts.width / opts.height default to 256x256 (2D) or 400x120 (1D). opts.quietZone (true or px count) pads a white margin — required for EAN/UPC to decode. */
     encode(...args: unknown[]): Promise<Uint8Array>;
     /** Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca). */
     formats(): string[];

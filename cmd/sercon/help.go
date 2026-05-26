@@ -587,7 +587,7 @@ const c = await api.barcode.decode(png, "qr");
 // codabar / ean13 / ean8 / upca / upce / itf.  PDF417 is encode-only
 // for now (no pure-Go decoder in gozxing v0.1.1).
 api.log(api.barcode.decodableFormats());`)
-	note("Code 39 returns the Mod-43 checksum char; codabar strips A…A wrappers; EAN/UPC need a quiet zone in the input (boombuler's encoder doesn't add one).")
+	note("Code 39 returns the Mod-43 checksum char; codabar strips A…A wrappers. EAN/UPC need a quiet zone — pass encode opts.quietZone:true to round-trip.")
 
 	header(32, "Age encryption (api.encrypt.*)")
 	code(`// Keygen — bech32 age1... public + AGE-SECRET-KEY-1... private.

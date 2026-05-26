@@ -59,3 +59,18 @@ api.log(`format hint:  ${hinted.format} -> ${hinted.text}`);
 //     post-processing. Real-world EAN scanners want that margin too.
 const c39 = await api.barcode.decode(await api.barcode.encode("code39", "HELLO-39"), "code39");
 api.log(`code39 quirk: ${c39.text}   (input was "HELLO-39"; G is the Mod-43 checksum)`);
+
+// opts.quietZone fixes the EAN/UPC round-trip: it pads the bars with a
+// white margin (the spec-required clear zone) so the decoder can lock on.
+api.log("");
+api.log("=== opts.quietZone makes EAN/UPC round-trip ===");
+const eanRaw = await api.barcode.encode("ean13", "5901234123457");
+const eanPad = await api.barcode.encode("ean13", "5901234123457", { quietZone: true });
+try {
+  await api.barcode.decode(eanRaw, "ean13");
+  api.log("raw EAN decoded (unexpected on this platform)");
+} catch {
+  api.log("raw EAN (no quiet zone):  decode fails — no clear margin");
+}
+const eanDecoded = await api.barcode.decode(eanPad, "ean13");
+api.log("padded EAN (quietZone):   decode ->", eanDecoded.text);

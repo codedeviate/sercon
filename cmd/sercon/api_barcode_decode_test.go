@@ -365,3 +365,61 @@ func TestBarcodeDecode_JPEGInput(t *testing.T) {
 		t.Errorf("JPEG round-trip text: %q (want %q)", got, "jpeg-rt")
 	}
 }
+
+// opts.quietZone:true makes an EAN-13 round-trip through encode →
+// decode without manual padding — the headline reason the option
+// exists. Without it the decoder can't find the start guard.
+func TestBarcodeEncode_QuietZoneEAN13RoundTrip(t *testing.T) {
+	var captured map[string]any
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 10 * time.Second})
+	if err := eng.RegisterNamespaceFactory("barcode", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return barcodeNamespace(vm, loop)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.Register("__capture", func(v goja.Value) {
+		if m, ok := v.Export().(map[string]any); ok {
+			captured = m
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Run(context.Background(), "x.ts", `
+		const png = await barcode.encode("ean13", "5901234123457", { quietZone: true });
+		__capture(await barcode.decode(png, "ean13"));
+	`); err != nil {
+		t.Fatalf("script: %v", err)
+	}
+	if captured == nil || captured["text"].(string) != "5901234123457" {
+		t.Errorf("EAN-13 with quiet zone should round-trip; got %v", captured)
+	}
+}
+
+// quietZonePixels resolves the opt into a margin. Unit-tested
+// directly so the bool/number/absent branches are pinned without
+// rendering a barcode each time.
+func TestQuietZonePixels(t *testing.T) {
+	cases := []struct {
+		name  string
+		opts  map[string]any
+		width int
+		want  int
+	}{
+		{"absent", map[string]any{}, 400, 0},
+		{"nil opts", nil, 400, 0},
+		{"false", map[string]any{"quietZone": false}, 400, 0},
+		{"true → 10%", map[string]any{"quietZone": true}, 400, 40},
+		{"true floor", map[string]any{"quietZone": true}, 50, 10},
+		{"explicit int64", map[string]any{"quietZone": int64(25)}, 400, 25},
+		{"explicit float64", map[string]any{"quietZone": float64(30)}, 400, 30},
+		{"negative clamps", map[string]any{"quietZone": int64(-5)}, 400, 0},
+		{"wrong type ignored", map[string]any{"quietZone": "yes"}, 400, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := quietZonePixels(tc.opts, tc.width); got != tc.want {
+				t.Errorf("quietZonePixels(%v, %d) = %d, want %d", tc.opts, tc.width, got, tc.want)
+			}
+		})
+	}
+}

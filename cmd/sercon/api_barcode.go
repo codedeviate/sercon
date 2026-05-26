@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
 	"image/png"
 	"strings"
 
@@ -101,11 +104,76 @@ func barcodeEncodeCall(_ context.Context, call goja.FunctionCall) ([]byte, error
 	if err != nil {
 		return nil, fmt.Errorf("scale barcode: %w", err)
 	}
+
+	// opts.quietZone pads the rendered bars with a white margin. EAN /
+	// UPC (and many real-world scanners, gozxing included) REQUIRE this
+	// margin per ISO/IEC 15420 — boombuler emits bars edge-to-edge, so
+	// without padding a sercon-encoded EAN won't decode. Accept either
+	// `true` (a sensible default margin) or an explicit pixel count.
+	final := withQuietZone(scaled, quietZonePixels(opts, width))
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, scaled); err != nil {
+	if err := png.Encode(&buf, final); err != nil {
 		return nil, fmt.Errorf("png encode: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// quietZonePixels resolves opts.quietZone into a pixel margin.
+// Absent / false / 0 → no padding. `true` → 10% of the barcode
+// width (a generous default that satisfies the EAN/UPC spec's
+// minimum). A number → that many pixels on each side. Negative
+// values are clamped to zero.
+func quietZonePixels(opts map[string]any, width int) int {
+	if opts == nil {
+		return 0
+	}
+	v, ok := opts["quietZone"]
+	if !ok {
+		return 0
+	}
+	switch t := v.(type) {
+	case bool:
+		if !t {
+			return 0
+		}
+		px := width / 10
+		if px < 10 {
+			px = 10 // floor so tiny barcodes still get a usable margin
+		}
+		return px
+	case int64:
+		return clampZero(int(t))
+	case int:
+		return clampZero(t)
+	case float64:
+		return clampZero(int(t))
+	default:
+		return 0
+	}
+}
+
+func clampZero(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+// withQuietZone pastes `src` onto a white canvas with `pad` pixels of
+// margin on every side. A zero margin returns src unchanged (no
+// allocation). The margin is symmetric — top/bottom get the same pad
+// as left/right, which is more than the spec strictly requires
+// vertically but keeps the output visually centred.
+func withQuietZone(src image.Image, pad int) image.Image {
+	if pad <= 0 {
+		return src
+	}
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	canvas := image.NewNRGBA(image.Rect(0, 0, w+2*pad, h+2*pad))
+	draw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+	draw.Draw(canvas, image.Rect(pad, pad, pad+w, pad+h), src, b.Min, draw.Src)
+	return canvas
 }
 
 // buildBarcode dispatches by format name to the matching boombuler encoder.

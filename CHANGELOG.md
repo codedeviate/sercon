@@ -10,6 +10,35 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.14] — 2026-05-26
+
+Adds **`opts.quietZone`** to `api.barcode.encode`. Pads the
+rendered bars with a white margin — the spec-required clear zone
+that EAN / UPC (and real-world scanners, gozxing included) need.
+With it, an `encode("ean13", …) → decode(…)` round-trip works
+without caller-side padding. No new dependencies — pure
+`image/draw` over the existing boombuler output.
+
+### Added
+
+- `opts.quietZone` on `api.barcode.encode`: `true` adds a default
+  margin (10% of the width, floored at 10px); a number sets an
+  explicit pixel margin on each side; absent / `false` / `0` /
+  negative → no padding (unchanged from before).
+- `quietZonePixels` + `withQuietZone` helpers (the latter is a
+  `draw.Draw` paste onto a white canvas).
+- `TestBarcodeEncode_QuietZoneEAN13RoundTrip` (the headline:
+  EAN-13 round-trips through encode→decode) and
+  `TestQuietZonePixels` (9 cases pinning the bool / number /
+  absent / negative / wrong-type branches).
+- `examples/scripts/barcode.ts` grows a quiet-zone section showing
+  the raw-EAN-fails / padded-EAN-decodes contrast; MANUAL §5 and
+  `--examples` step 31 updated.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s quiet-zone entry resolved.
+
 ## [0.5.13] — 2026-05-26
 
 Adds **`api.preg2`** — the PCRE-flavoured regex sibling of

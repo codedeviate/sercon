@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.13</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.14</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -479,7 +479,7 @@ declare const api: {
             | "code128" | "code39" | "codabar"
             | "ean13" | "ean8" | "upca",
       data: string,
-      opts?: { width?: number; height?: number },
+      opts?: { width?: number; height?: number; quietZone?: boolean | number },
     ): Promise<Uint8Array>;
     decode(
       data: Uint8Array | ArrayBuffer | string,        // PNG / JPEG / WebP image bytes
@@ -928,6 +928,9 @@ Barcode encoders (`api.barcode.*`) cover ten symbologies through one
 toolkit. Output is a PNG payload as `Uint8Array`; size defaults to
 `256x256` for 2D codes (QR / DataMatrix / Aztec) and `400x120` for
 linear ones, overridable via `opts.width` / `opts.height`.
+`opts.quietZone` (`true` for a default margin, or a pixel count)
+pads the rendered bars with a white border — required for EAN /
+UPC to decode (see the decode quirks below).
 
 - 2D: `qr` (medium error correction, auto mode), `datamatrix`,
   `aztec` (33% ECC, auto layers), `pdf417` (security level 5).
@@ -965,11 +968,13 @@ underlying libraries, not sercon bugs:
   format". The encoder still emits PDF417 just fine.
 - **EAN / UPC need a quiet zone.** Per ISO/IEC 15420 + 15418,
   retail symbologies require white margin on both sides of the
-  bars. boombuler's encoder doesn't add one, so a
+  bars. boombuler's encoder emits them edge-to-edge, so a bare
   `barcode.encode("ean13", x) → barcode.decode(...)` round-trip
-  fails on the decode step. Real-world EAN scanners need that
-  margin too. Wrap the encoded PNG in a wider white canvas (or
-  use a different encoder) when round-trips matter.
+  fails on the decode step. Pass **`opts.quietZone`** to
+  `encode` to fix it: `true` adds a default margin (10% of the
+  width, floored at 10px), or pass a pixel count for an explicit
+  margin. Real-world EAN scanners need that margin too, so it's
+  good practice for any EAN/UPC you'll actually print.
 - **Code 39 decoded text ends with the Mod-43 checksum char.**
   boombuler's encoder appends it; gozxing returns it.
 - **Codabar wraps payload in start/stop chars** like `A...A` on
@@ -1946,7 +1951,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.13. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.14. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
