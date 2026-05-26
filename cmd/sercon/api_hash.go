@@ -56,9 +56,8 @@ func hashNamespace(vm *goja.Runtime) map[string]any {
 			return vm.ToValue(hex.EncodeToString(sum[:]))
 		},
 		"blake3": func(call goja.FunctionCall) goja.Value {
-			h := blake3.New(32, nil)
-			h.Write(stringInput(call))
-			return vm.ToValue(hex.EncodeToString(h.Sum(nil)))
+			sum := blake3.Sum256(stringInput(call))
+			return vm.ToValue(hex.EncodeToString(sum[:]))
 		},
 		"crc32": func(call goja.FunctionCall) goja.Value {
 			sum := crc32.ChecksumIEEE(stringInput(call))

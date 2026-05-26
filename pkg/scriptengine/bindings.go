@@ -47,10 +47,12 @@ func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work fun
 		go func() {
 			val, err := work(ctx, call)
 			loop.RunOnLoop(func(vm *goja.Runtime) {
+				// reject/resolve only error if the promise has already
+				// settled — impossible here since we own both ends.
 				if err != nil {
-					reject(vm.NewGoError(err))
+					_ = reject(vm.NewGoError(err))
 				} else {
-					resolve(vm.ToValue(val))
+					_ = resolve(vm.ToValue(val))
 				}
 				loop.ClearTimeout(keepAlive)
 			})

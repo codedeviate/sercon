@@ -10,6 +10,7 @@ make release                               # slim release CLI (-trimpath -s -w; 
 make manual                                # MANUAL.md -> MANUAL.pdf via `recon --md-to-pdf`
 make test                                  # go test ./...
 make vet                                   # go vet ./...
+make lint                                  # golangci-lint v2 against .golangci.yml (one-shot via go run if not installed)
 make clean                                 # rm -f sercon MANUAL.pdf
 
 CGO_ENABLED=0 go build ./...               # whole repo (must stay cgo-free)
@@ -43,7 +44,7 @@ esbuild rejects top-level `await` under `Format: FormatCommonJS`. The required-m
 
 ### Interrupt + cancel watcher
 
-`Engine.Run` spawns one watcher goroutine that selects on `ctx.Done()`, an optional timeout, and a `done` channel closed after `loop.Run` returns. On firing it calls `vm.Interrupt` (aborts sync JS) and `loop.Terminate` (drains the loop). The watcher must always exit via `done` so it doesn't accumulate. `timeout.go::withInterrupt` exists as a standalone helper but the live cancellation path is the inline watcher in `engine.go`. The two `atomic.Bool` flags (`timedOut`, `canceled`) distinguish `ErrScriptTimeout` from `ctx.Err()` after the fact.
+`Engine.Run` spawns one watcher goroutine that selects on `ctx.Done()`, an optional timeout, and a `done` channel closed after `loop.Run` returns. On firing it calls `vm.Interrupt` (aborts sync JS) and `loop.Terminate` (drains the loop). The watcher must always exit via `done` so it doesn't accumulate. `timeout.go` only holds the `ErrScriptTimeout` sentinel now — the watcher itself is inline in `engine.go` because it needs the per-Run atomic flags (`timedOut`, `canceled`) to distinguish `ErrScriptTimeout` from `ctx.Err()` after the fact.
 
 ### `.d.ts` generation — cycle protection is mandatory
 
@@ -68,7 +69,7 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - `pkg/scriptengine/transpile.go` — esbuild wrapper, entry-script ESM→CJS rewriter, import statement parser.
 - `pkg/scriptengine/bindings.go` — `registration` struct, `PromisifyAsync`, `Promised[T]` marker.
 - `pkg/scriptengine/require.go` — TS-aware source loader and path resolver.
-- `pkg/scriptengine/timeout.go` — `ErrScriptTimeout`, `withInterrupt` helper.
+- `pkg/scriptengine/timeout.go` — `ErrScriptTimeout` sentinel only; the live cancellation watcher is inline in `engine.go`.
 - `pkg/scriptengine/dts.go` — declaration generator with cycle detection.
 - `pkg/scriptengine/engine_test.go` — 11 cases covering the 10 spec-required scenarios; uses `-update` flag for the golden `.d.ts`.
 - `cmd/sercon/main.go` — CLI plus the example `api` namespace (registered as a factory).

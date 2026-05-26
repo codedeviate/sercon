@@ -92,7 +92,7 @@ func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any) {
 	switch t.Kind() {
 	case reflect.Func:
 		w.WriteString("declare function " + name + funcSig(ctx, t) + ";\n")
-	case reflect.Struct, reflect.Ptr:
+	case reflect.Struct, reflect.Pointer:
 		w.WriteString(fmt.Sprintf("declare const %s: %s;\n", name, structShape(ctx, t)))
 	default:
 		w.WriteString(fmt.Sprintf("declare const %s: %s;\n", name, tsType(ctx, t)))
@@ -155,7 +155,7 @@ func writeConstructorDecl(w *errWriter, ctx *typeCtx, name string, ctor any) {
 	if t.NumOut() >= 1 {
 		ret := t.Out(0)
 		methodsOf := ret
-		if methodsOf.Kind() == reflect.Ptr {
+		if methodsOf.Kind() == reflect.Pointer {
 			methodsOf = methodsOf.Elem()
 		}
 		if methodsOf.Kind() == reflect.Struct {
@@ -169,7 +169,7 @@ func writeConstructorDecl(w *errWriter, ctx *typeCtx, name string, ctor any) {
 }
 
 func structShape(ctx *typeCtx, t reflect.Type) string {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -293,7 +293,7 @@ func tsType(ctx *typeCtx, t reflect.Type) string {
 			return "Record<string, " + tsType(ctx, t.Elem()) + ">"
 		}
 		return "Record<" + tsType(ctx, t.Key()) + ", " + tsType(ctx, t.Elem()) + ">"
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return tsType(ctx, t.Elem())
 	case reflect.Interface:
 		return "unknown"

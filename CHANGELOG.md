@@ -10,7 +10,54 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
-## [0.3.2] — 2026-05-26
+## [0.3.3] — 2026-05-26
+
+Final slice of the **Trivial** backlog bucket — the **Repo / tooling**
+sub-section. Adds the linter config and shakes out the findings the
+codebase had collected while we focused on features. After this cut
+the Trivial bucket is empty; the next minor (v0.4.0) starts on the
+**Easy** bucket.
+
+### Added
+
+- `.golangci.yml` — golangci-lint v2 config. Uses the `standard`
+  default linter set (errcheck, govet, ineffassign, staticcheck,
+  unused) with two small adjustments: `errcheck.check-type-assertions`
+  is on, and the `govet.inline` analyzer is disabled because its
+  suggestions to inline calls into x/crypto wrappers aren't actionable
+  without bumping our Go minimum.
+- `make lint` target. Uses the system `golangci-lint` if installed,
+  otherwise falls back to a one-shot `go run` of the pinned version
+  (`GOLANGCI_VERSION=v2.12.2`) so contributors don't need to install
+  anything globally.
+
+### Fixed
+
+A clean lint pass surfaced 19 issues across the codebase. Highlights:
+
+- `cmd/sercon/api_hash.go`: BLAKE3 now uses `blake3.Sum256` (one-shot)
+  rather than instantiating a `Hasher` and discarding `Write`'s
+  return value.
+- `pkg/scriptengine/bindings.go`: explicit `_ =` discard on
+  `resolve` / `reject` returns from `vm.NewPromise()`. The errors are
+  only ever non-nil if the promise has already settled, which is
+  impossible in our usage — making the discard explicit documents
+  that.
+- `pkg/scriptengine/dts.go`: `reflect.Ptr` → `reflect.Pointer` (the
+  canonical name; `Ptr` is the deprecated alias).
+- `cmd/sercon/help.go`: removed an unused `(*styler).section` helper
+  and a dead-store assignment in the TS highlighter.
+- `pkg/scriptengine/timeout.go`: deleted the unused `withInterrupt`
+  helper. The file now holds only the `ErrScriptTimeout` sentinel,
+  matching the actual architecture (the live cancellation watcher is
+  inline in `engine.go`). `CLAUDE.md`'s description of the file is
+  updated to match.
+
+### Changed
+
+- `CLAUDE.md` lists `make lint` in the common-commands block and the
+  description of `pkg/scriptengine/timeout.go` no longer mentions the
+  deleted helper.
 
 Third slice of the **Trivial** backlog bucket — the
 **String utilities & formatting** sub-section. All stdlib, no new

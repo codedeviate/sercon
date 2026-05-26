@@ -53,12 +53,6 @@ func (s *styler) yellow(t string) string  { return s.wrap("33", t) }
 func (s *styler) green(t string) string   { return s.wrap("32", t) }
 func (s *styler) magenta(t string) string { return s.wrap("35", t) }
 
-// section prints a bold cyan heading underlined with dim dashes.
-func (s *styler) section(title string) {
-	fmt.Fprintln(s.w, s.bold(s.cyan(title)))
-	fmt.Fprintln(s.w, s.dim(strings.Repeat("─", visibleLen(title))))
-}
-
 // highlightTS does a minimal TypeScript-ish colourisation: keywords in
 // magenta, strings in yellow, line comments dimmed. It's deliberately small
 // and conservative — anything it can't recognise stays in the default colour.
@@ -83,7 +77,6 @@ func (s *styler) highlightTS(src string) string {
 			// line comment
 			if c == '/' && i+1 < len(line) && line[i+1] == '/' {
 				out.WriteString(s.dim(line[i:]))
-				i = len(line)
 				break
 			}
 			// string literal: ", ', `

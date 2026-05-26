@@ -1,0 +1,43 @@
+# golangci-lint v2 configuration.
+#
+# Run locally with `make lint`. We stay close to the "standard" default set
+# (errcheck, govet, ineffassign, staticcheck, unused) because OUT-OF-SCOPE.md
+# only asked for "minimal if added" and those five catch the regressions we
+# actually care about. New linters land here as needs emerge — keep the
+# baseline tight so the CI signal stays useful.
+
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # Treat ignored type assertions (`x, _ := y.(T)`) as real findings —
+      # they hide programming errors more often than they document intent.
+      check-type-assertions: true
+      # Allow-list of functions whose returned error we intentionally
+      # ignore. fmt.F* writes to stdout/stderr; on a TTY there's nothing
+      # useful to do with the error. Close() failures in `defer` after a
+      # read/write that already succeeded are equally uninteresting.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintln
+        - fmt.Fprintf
+        - (*os.File).Close
+        - (io.Closer).Close
+    govet:
+      # The "inline" analyzer suggests calls into helpers that the callee
+      # has marked //go:inline. For stdlib/x-crypto wrappers we can't act
+      # on those without bumping our Go minimum, so the noise outweighs
+      # the value.
+      disable: [inline]
+  exclusions:
+    # Tests routinely ignore errors from helper calls (RegisterNamespace,
+    # WriteFile, MkdirAll on a fresh t.TempDir(), etc.) and reading those
+    # back in is noise without much safety win.
+    rules:
+      - path: '_test\.go$'
+        linters: [errcheck]

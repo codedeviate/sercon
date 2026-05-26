@@ -32,15 +32,6 @@ the design space is unsettled, or it conflicts with current direction.
 Each Deferred entry names the reason so it's easy to re-promote when
 the situation changes.
 
-## Trivial
-
-### Repo / tooling
-
-- **`golangci-lint` config.** The spec said "minimal if added" and we
-  didn't add one. A small `.golangci.yml` with at least `govet`,
-  `staticcheck`, and `errcheck` would catch regressions early.
-  **Approach:** standard `.golangci.yml`, no library involved.
-
 ## Easy
 
 ### Transpile / entry rewriter

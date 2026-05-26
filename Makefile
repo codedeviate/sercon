@@ -7,17 +7,22 @@
 #            agent-browser is required at runtime)
 #   test     go test ./...
 #   vet      go vet ./...
+#   lint     golangci-lint run against the whole repo (uses .golangci.yml).
+#            If golangci-lint isn't on PATH, falls back to a one-shot
+#            `go run` of the pinned version so contributors don't need to
+#            install anything globally.
 #   clean    Remove built artifacts
 #
 # release and manual are intentionally separate from `build` so an
 # interactive dev cycle doesn't pay their costs.
 
-GO            ?= go
-RECON         ?= recon
-BIN            = sercon
-RELEASE_FLAGS  = -trimpath -ldflags=-s\ -w
+GO                ?= go
+RECON             ?= recon
+GOLANGCI_VERSION  ?= v2.12.2
+BIN                = sercon
+RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 
-.PHONY: build release manual test vet clean
+.PHONY: build release manual test vet lint clean
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon
@@ -43,6 +48,14 @@ test:
 
 vet:
 	$(GO) vet ./...
+
+lint:
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run ./... ; \
+	else \
+		echo "golangci-lint not installed; falling back to one-shot go run @$(GOLANGCI_VERSION)"; \
+		$(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run ./... ; \
+	fi
 
 clean:
 	rm -f $(BIN) MANUAL.pdf
