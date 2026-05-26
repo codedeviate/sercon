@@ -529,10 +529,25 @@ const prs = await api.gh.prList({ state: "open", limit: 5 });
 prs.forEach(p => api.log("#" + p.number, p.title, "(" + p.author + ")"));`)
 	note("authStatus never throws on missing-gh; prList/repoView throw with gh's stderr on real failures.")
 
+	header(29, "PHP-style regex (api.preg.*)")
+	code(`// /pattern/flags syntax over Go's RE2 — no lookaround / backrefs in
+// patterns; use goja's native RegExp if you need those.
+const m = api.preg.match("/(\\w+)\\s+(\\d+)/", "alice 30 bob 27");
+if (m) api.log(m.match, m.groups, m.index);
+
+// matchAll drains every hit, replace uses $1 / ${1} backrefs.
+const xs = api.preg.matchAll("/(\\w+)=(\\w+)/", "k1=v1 k2=v2 k3=v3");
+const out = api.preg.replace("/(\\w+)@(\\w+)/", "$2/$1", "alice@corp");
+
+// Flags: i / m / s supported; u / U / x and unknown flags throw.
+api.preg.match("/HELLO/i", "Hello world");
+api.preg.matchAll("/^x/m", "x\\nx\\nx");`)
+	note("RE2 is UTF-8 by default — the `u` flag is unnecessary and explicitly errors. Optional groups that didn't match surface as empty strings.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 28
+const exampleCount = 29

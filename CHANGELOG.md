@@ -10,6 +10,54 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.1] — 2026-05-26
+
+Second Moderate cut. **`api.preg.*`** — PHP-style `/pattern/flags`
+regex syntax on top of Go's stdlib `regexp` (RE2). The "preg"
+naming is a deliberate homage; the semantics are RE2's. No new
+dependencies.
+
+### Added
+
+- `api.preg.match(pattern, subject)` — first hit as
+  `{ match, groups, index }`, or `null` when nothing matches.
+  Optional groups that didn't match surface as empty strings (not
+  `undefined`) so the result shape stays stable across calls.
+- `api.preg.matchAll(pattern, subject)` — same shape, drained
+  into an array.
+- `api.preg.replace(pattern, replacement, subject)` — substitutes
+  via Go's `$1` / `${1}` backref syntax. PHP's `\1` form is **not**
+  translated — `\\` escapes are already legitimate in the
+  replacement and aliasing them would surprise users coming from
+  Go's `regexp.ReplaceAllString`.
+- Supported flags: `i` / `m` / `s`, merged into Go's `(?ims)`
+  inline-flag prefix. Unsupported PHP flags (`u`, `U`, `x`) and
+  unknown flags throw with a clear, named-flag error rather than
+  silently dropping. The `u` error explicitly notes that RE2 is
+  UTF-8 by default so the flag is unnecessary.
+- `TestPreg*` (15 sub-tests covering null-on-no-match, first-match
+  groups + index, matchAll length, replace backrefs, all three
+  supported flags, four unsupported / unknown flag forms, three
+  malformed-pattern forms, optional-group empty-string).
+- `examples/scripts/preg.ts` walks through every form above plus
+  the unsupported-flag error path. Included in `make demo` and the
+  CI offline subset (the binding is pure stdlib so it always
+  works).
+- `--examples` step 29 covers the binding; MANUAL section 5 gains
+  the `api.preg` block plus a paragraph on the RE2-vs-PCRE
+  semantics difference and the flag rules.
+- `cmd/sercon/api_docs.go` grows three entries so the emitted
+  `api.d.ts` carries hover docs for `match` / `matchAll` /
+  `replace`.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s entry for `preg_match` / `preg_replace` is
+  rewritten as a forward-looking note about a possible
+  `regexp2`-backed PCRE binding — RE2 covers most uses but
+  scripts that genuinely need lookahead / lookbehind / pattern
+  backrefs would justify a sibling `api.preg2.*` namespace.
+
 ## [0.5.0] — 2026-05-26
 
 First Moderate cut: **JSDoc support in the `.d.ts` emitter.** Editor

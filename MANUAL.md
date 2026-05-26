@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.1</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -605,6 +605,20 @@ declare const api: {
     }>;
   };
 
+  preg: {
+    match(pattern: string, subject: string): {
+      match: string;
+      groups: string[];     // empty string for an optional group that didn't match
+      index: number;
+    } | null;
+    matchAll(pattern: string, subject: string): Array<{
+      match: string;
+      groups: string[];
+      index: number;
+    }>;
+    replace(pattern: string, replacement: string, subject: string): string;
+  };
+
   gh: {
     authStatus(): Promise<{
       authenticated: boolean;
@@ -994,6 +1008,35 @@ text.
   is a login string (not `{login, …}`), and `defaultBranch` is the
   branch name (not `defaultBranchRef.name`). Empty repos resolve
   with `defaultBranch: ""` rather than `undefined`.
+
+Regex bindings (`api.preg.*`) accept PHP-style `/pattern/flags`
+delimited input but run on Go's stdlib `regexp` (RE2). The "preg"
+naming is a deliberate homage; the semantics are RE2's. That means
+**no backreferences inside patterns**, **no lookahead / lookbehind**,
+and **no possessive quantifiers** — scripts that need those should
+reach for goja's native `RegExp` (ECMAScript-flavoured) or wait for
+a dedicated PCRE-compatible binding (`regexp2` is on the backlog).
+
+Supported flags: `i` (case-insensitive), `m` (multiline — `^` and
+`$` match line boundaries), `s` (dotall — `.` matches newline).
+The PHP flags `u` (Unicode), `U` (default-ungreedy), and `x`
+(extended whitespace-ignoring) all surface a clear error rather
+than silently dropping; unknown flags do too. RE2 is UTF-8 by
+default, so `u` is unnecessary in any case — the error message
+says so.
+
+- **`match(pattern, subject)`** — Returns `{ match, groups, index }`
+  for the first hit, or `null` when nothing matches. `groups` is
+  every numbered submatch after group 0, in order; an optional
+  group that didn't match surfaces as an empty string (not
+  `undefined`) so the result type stays stable.
+- **`matchAll(pattern, subject)`** — Same shape, drained: returns
+  an array of match objects, one per hit.
+- **`replace(pattern, replacement, subject)`** — Substitutes via
+  Go's `$1` / `${1}` backreference syntax. PHP's `\1` form is **not**
+  translated — that would conflict with `\\` escapes that are
+  already legitimate in the replacement. Use `$1` / `${1}` as in
+  Go.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1459,7 +1502,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.1. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

@@ -129,5 +129,10 @@ func apiDocs() map[string]string {
 		"gh.authStatus": "Probe gh's auth state. Missing gh / unauthenticated resolve with { authenticated: false, … } — only context cancellation throws.",
 		"gh.prList":     "List pull requests on the cwd's repo (or opts.cwd). Defaults: open state, limit 30. Filters: state / limit / author.",
 		"gh.repoView":   "Repo metadata. With no arg uses cwd's repo; pass 'owner/name' for any repo gh can see. owner + defaultBranch are pre-flattened.",
+
+		// PHP-style regex (RE2 engine, /pattern/flags syntax)
+		"preg.match":    "First hit of /pattern/flags against subject, or null. Returns { match, groups, index }; optional groups that didn't match surface as empty strings.",
+		"preg.matchAll": "Every hit of /pattern/flags against subject, as an array of { match, groups, index } objects.",
+		"preg.replace":  "Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / ${1} backref syntax — PHP's \\1 form is NOT translated.",
 	}
 }

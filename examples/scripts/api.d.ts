@@ -146,6 +146,14 @@ declare const api: {
     /** Directory portion of a path. POSIX-style; trailing slashes are stripped. */
     dirname(...args: unknown[]): unknown;
   };
+  preg: {
+    /** First hit of /pattern/flags against subject, or null. Returns { match, groups, index }; optional groups that didn't match surface as empty strings. */
+    match(arg0: string, arg1: string): unknown;
+    /** Every hit of /pattern/flags against subject, as an array of { match, groups, index } objects. */
+    matchAll(arg0: string, arg1: string): unknown;
+    /** Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / ${1} backref syntax — PHP's \1 form is NOT translated. */
+    replace(arg0: string, arg1: string, arg2: string): unknown;
+  };
   str: {
     /** Standard base64; URL-safe input is accepted via auto-detect. */
     base64Decode(...args: unknown[]): unknown;

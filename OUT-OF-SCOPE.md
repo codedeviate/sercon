@@ -165,14 +165,13 @@ the situation changes.
 
 ### String utilities & formatting
 
-- **`preg_match`** / **`preg_replace`** — PHP-delimited regex capture
-  and substitution (script: `strutil.rhai`). **Library:** `regexp`
-  (stdlib, RE2 syntax). Moderate because PHP's PCRE syntax (delimiters,
-  modifiers like `/i`, `/s`, `/u`, `/x`, lookbehind) doesn't map 1:1 to
-  RE2 — design work is around the subset we support and how we
-  translate flags. If lookbehind is truly required,
-  `github.com/dlclark/regexp2` is pure Go and closer to .NET/PCRE
-  semantics.
+- **PCRE-compatible regex engine.** `api.preg.*` (shipped in v0.5.1)
+  is delimiter-parsing on top of RE2, so lookahead / lookbehind /
+  possessive quantifiers / pattern backreferences aren't available.
+  Add a sibling `api.preg2.*` (or a `regex: 'pcre' | 're2'` opt) backed
+  by `github.com/dlclark/regexp2` for scripts that genuinely need the
+  PCRE feature set. **Library:** `github.com/dlclark/regexp2` (pure
+  Go, .NET / PCRE semantics).
 
 ### AI agent integrations
 

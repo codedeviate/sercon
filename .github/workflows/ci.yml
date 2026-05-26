@@ -54,7 +54,8 @@ jobs:
             examples/scripts/diff.ts \
             examples/scripts/jq.ts \
             examples/scripts/exec-shell.ts \
-            examples/scripts/git.ts
+            examples/scripts/git.ts \
+            examples/scripts/preg.ts
 
   lint:
     name: golangci-lint
