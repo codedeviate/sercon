@@ -174,6 +174,10 @@ declare const api: {
     /** WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws. */
     wss(...args: unknown[]): Promise<Record<string, unknown>>;
   };
+  netstatus: {
+    /** Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws. */
+    check(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   path: {
     /** Final segment of a path; optional suffix is stripped if it matches. */
     basename(...args: unknown[]): unknown;

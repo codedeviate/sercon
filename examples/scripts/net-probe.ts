@@ -59,3 +59,9 @@ try {
   api.log("  smtp probe skipped:", String(e).slice(0, 60));
 }
 
+
+api.log("");
+api.log("=== api.netstatus.check (aggregate probe) ===");
+const status = await api.netstatus.check("github.com");
+api.log(`  reachable: ${status.reachable}  (${status.elapsedMs.toFixed(0)}ms)`);
+api.log(`  dns: ${status.dns.ok}  tcp: ${status.tcp.ok}  tls: ${status.tls.ok} (${status.tls.daysRemaining}d)  http: ${status.http.status}`);

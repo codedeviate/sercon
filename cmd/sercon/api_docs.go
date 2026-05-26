@@ -75,6 +75,9 @@ func apiDocs() map[string]string {
 		"net.smtp":  "SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw.",
 		"net.wss":   "WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws.",
 
+		// Aggregate connectivity probe
+		"netstatus.check": "Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws.",
+
 		// Email auth probes
 		"email.spf":    "Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.",
 		"email.dmarc":  "Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.",

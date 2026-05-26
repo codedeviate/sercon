@@ -69,10 +69,6 @@ the situation changes.
 
 ### Protocol probes & connectivity
 
-- **`netstatus::check()`** — Aggregate connectivity probe set (script:
-  `netstatus.rhai`). **Approach:** orchestration on top of the other
-  probes (`tcp`, `dns`, `tls`, `http`); no new library, but coordinates
-  several bindings and concurrency.
 
 ### Remote services & caching
 

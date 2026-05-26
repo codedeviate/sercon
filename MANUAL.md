@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.20</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.21</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -638,6 +638,16 @@ declare const api: {
     }>;
   };
 
+  netstatus: {
+    check(host: string, opts?: { port?: string; timeout?: number }): Promise<{
+      host: string; port: string; elapsedMs: number; reachable: boolean;
+      dns:  { ok: boolean; ips: string[]; error?: string };
+      tcp:  { ok: boolean; latencyMs: number; error?: string };
+      tls:  { ok: boolean; daysRemaining: number; error?: string };
+      http: { ok: boolean; status: number; error?: string };
+    }>;
+  };
+
   exec: {
     shell(
       cmd: string | string[],
@@ -1147,6 +1157,19 @@ Parse errors and runtime errors (type mismatches, division by
 zero, …) both surface as JS exceptions. Use jq's optional access
 operator `?` (e.g. `.does.not.exist?`) to suppress missing-path
 errors and get `null` back instead.
+
+Aggregate connectivity (`api.netstatus.check(host, opts?)`) is an
+orchestration layer over the lower-level probes — it runs DNS,
+TCP, TLS, and HTTP against one host **concurrently** (fan-out via
+a WaitGroup) and folds them into a single status object. Each
+sub-probe carries its own `ok` flag and, on failure, an `error`
+string — individual failures are data, not a thrown error, so the
+result is always a complete snapshot. `reachable` is the AND of
+`dns.ok` and `tcp.ok` (name resolves + connection opens); TLS /
+HTTP are reported but don't gate it (a plain-HTTP host or one
+with an expired cert is still "reachable"). Only a missing host
+argument throws. No new library — it composes `net` /
+`crypto/tls` / `net/http` directly.
 
 Subprocess bindings (`api.exec.*`) wrap Go's `os/exec`. `shell` is
 the only entry today; `http` (recon-with-curl-fallback) and `git` /
@@ -2062,7 +2085,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.20. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.21. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

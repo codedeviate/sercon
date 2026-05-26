@@ -10,6 +10,32 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.21] — 2026-05-26
+
+Adds **`api.netstatus.check(host, opts?)`** — an aggregate
+connectivity probe that runs DNS / TCP / TLS / HTTP against one
+host concurrently and folds them into a single status object. No
+new dependency (composes `net` / `crypto/tls` / `net/http`).
+
+### Added
+
+- Fan-out via a WaitGroup; each sub-probe carries `ok` + an
+  `error` string on failure. `reachable` is `dns.ok && tcp.ok`;
+  TLS / HTTP are reported but don't gate it. Individual failures
+  are data, not throws — the result is always a complete snapshot.
+  Only a missing host argument throws.
+- Result `{ host, port, elapsedMs, reachable, dns, tcp, tls,
+  http }`.
+- 3 tests: unreachable-is-data (closed port → reachable false, no
+  throw), shape-complete (all four sub-probes always present),
+  missing-host throws.
+- `examples/scripts/net-probe.ts` grows a netstatus section;
+  MANUAL §5 ts block + prose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `netstatus::check` entry resolved.
+
 ## [0.5.20] — 2026-05-26
 
 Adds **`api.net.wss(url, opts?)`** — a WebSocket handshake probe.
