@@ -48,7 +48,8 @@ jobs:
             examples/scripts/compression.ts \
             examples/scripts/barcode.ts \
             examples/scripts/charset.ts \
-            examples/scripts/checkdigit.ts
+            examples/scripts/checkdigit.ts \
+            examples/scripts/archive.ts
 
   lint:
     name: golangci-lint

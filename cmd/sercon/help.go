@@ -408,7 +408,20 @@ const r = api.checkdigit.inspect("luhn", "4532015112830366");
 api.log(r.valid, r.given, r.computed); // true "6" "6"`)
 	note("Supported algos: luhn, isbn10, isbn13, ean13, ean8, upca. Sync — no Promise.")
 
-	header(21, "Email authentication (api.email.*)")
+	header(21, "Archives (api.archive.*)")
+	code(`// Format is inferred from the destination's extension:
+//   .zip / .tar / .tar.gz / .tgz
+const out = await api.archive.create("/tmp/demo.zip",
+  ["README.md", { path: "src", name: "source-tree" }]);
+api.log("wrote:", out.path, out.bytes, "bytes,", out.entries.length, "entries");
+
+// Extract back. overwrite: false (default) errors on collisions.
+const got = await api.archive.extract("/tmp/demo.zip", "/tmp/demo-out",
+  { overwrite: true });
+api.log("extracted:", got.entries.length, "entries to", got.dest);`)
+	note("Both bindings reject archive entries that try to escape the destination (zip-slip / tar-slip).")
+
+	header(22, "Email authentication (api.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
 // { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
 // or missing record rather than throwing.
@@ -430,4 +443,4 @@ api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 21
+const exampleCount = 22

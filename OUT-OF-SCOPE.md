@@ -46,13 +46,6 @@ the situation changes.
   bottleneck. **Library:** `googleapis/release-please-action` (GitHub
   Action, not a Go dep).
 
-### Archives & document handling
-
-- **`archive::create(path, files)`** / **`archive::extract(path, dest)`**
-  — Create/extract zip archives (script: `archive.rhai`).
-  **Library:** `archive/zip` and `archive/tar` (stdlib) cover the
-  baseline; combine with `compress/gzip` for `.tar.gz`.
-
 ### Data comparison
 
 - **`compare(a, b)`** — Unified diff of two strings or blobs; returns

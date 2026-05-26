@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.13</div>
+<div class="version">Version 0.4.14</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -421,6 +421,18 @@ declare const api: {
     };
   };
 
+  archive: {
+    create(
+      destPath: string,
+      sources: Array<string | { path: string; name?: string }>,
+    ): Promise<{ path: string; format: string; entries: string[]; bytes?: number }>;
+    extract(
+      archivePath: string,
+      destDir: string,
+      opts?: { overwrite?: boolean },
+    ): Promise<{ path: string; format: string; dest: string; entries: string[] }>;
+  };
+
   net: {
     tcp(target: string, opts?: { timeout?: number; port?: string }): Promise<{
       host: string; port: number; ip: string; latencyMs: number;
@@ -635,6 +647,26 @@ try/catch. `compute(algo, partial)` takes the input *without* its
 check digit and returns just that digit (or `"X"` for ISBN-10
 position 10). `inspect(algo, input)` returns the union of both
 views — useful when you want to display the diagnosis to a human.
+
+Archive bindings (`api.archive.*`) handle the three formats stdlib
+provides without external deps: `.zip`, `.tar`, and `.tar.gz`
+(also `.tgz`). Format is inferred from the destination's extension
+on `create` and from the source path on `extract`.
+
+- **`create(destPath, sources)`** — sources is an array of either
+  bare paths (the basename is used as the in-archive name) or
+  `{ path, name }` objects (override the in-archive name).
+  Directory sources are recursed; the directory's basename
+  becomes the archive subdir and the rest of the tree is added
+  relative to it. Returns the count + list of entries and the
+  output file size.
+- **`extract(archivePath, destDir, opts?)`** — unpacks into
+  destDir. `opts.overwrite` (default `false`) controls whether
+  existing files at the destination are clobbered; on `false` a
+  collision errors out (`os.ErrExist`-shaped). Every entry name
+  is run through a zip-slip / tar-slip guard that rejects
+  absolute paths, `..` segments, and anything that would resolve
+  outside destDir.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1067,7 +1099,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.13. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.14. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

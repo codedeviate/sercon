@@ -10,6 +10,59 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.14] — 2026-05-26
+
+Sole cut on **Easy / Archives & document handling**. Stdlib-only:
+`archive/zip` + `archive/tar` + `compress/gzip`. No new go.mod deps.
+
+### Added
+
+- `api.archive.create(destPath, sources)`:
+  - Format inferred from `destPath` extension: `.zip`, `.tar`,
+    `.tar.gz` (also `.tgz`).
+  - Sources are either bare strings (basename becomes the
+    in-archive name) or `{path, name?}` objects.
+  - Directories are walked recursively; the directory's basename
+    becomes the archive subdir and descendants land relative to
+    it. All in-archive paths use forward slashes so output is
+    cross-platform.
+  - Returns `{ path, format, entries, bytes }`.
+- `api.archive.extract(archivePath, destDir, opts?)`:
+  - Format inferred from `archivePath`'s extension.
+  - `opts.overwrite` defaults to `false`; collisions on existing
+    files cause an `os.ErrExist`-shaped failure unless explicitly
+    overwritten.
+  - Returns `{ path, format, dest, entries }`.
+- **zip-slip / tar-slip protection** via `safeJoin`. Refuses any
+  archive entry whose name is absolute (`/…` or `\…`), contains a
+  `..` segment, or whose resolved target falls outside destDir.
+  No silent sanitisation — malicious archives surface with a
+  clear error rather than getting rewritten into legal-looking
+  entries.
+- `TestArchive_RoundTrip` (3 sub-tests): create + extract round-
+  trip for zip / tar / tar.gz against a small fixture tree.
+- `TestArchive_SafeJoinRejectsEscape`: classic `../`, embedded
+  `sub/../../`, and absolute-path entries all rejected; legitimate
+  nested paths still accepted.
+- `TestArchive_ZipSlipRejected`: builds a hand-crafted tar with a
+  `../escape.txt` entry; extractTar refuses it.
+- `TestArchive_OverwriteFlag`: pre-existing destination file is
+  preserved when `overwrite:false`, clobbered with `overwrite:true`.
+- `examples/scripts/archive.ts` round-trips `README.md`,
+  `CHANGELOG.md`, `LICENSE` through all three formats and extracts
+  into sibling dirs. Verified live: zip 19 KB / tar 49 KB /
+  tar.gz 18.6 KB; 3 entries extracted from each.
+- `--examples` step 21 added; existing email step shifts to 22.
+  `exampleCount` is now 22.
+
+### Changed
+
+- `MANUAL.md` § Built-in `api` declares the `archive` shape; new
+  prose block covers the source-format conventions
+  (string vs `{path, name}` entries), the directory-recursion
+  rule, the `overwrite` opt's collision semantics, and the
+  zip-slip / tar-slip rejection policy.
+
 ## [0.4.13] — 2026-05-26
 
 Third and final cut on **Easy / Encoding / decoding / barcodes** —
