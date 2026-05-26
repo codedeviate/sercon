@@ -46,13 +46,6 @@ the situation changes.
   bottleneck. **Library:** `googleapis/release-please-action` (GitHub
   Action, not a Go dep).
 
-### External tool integrations
-
-- **`gh()`** — Wrap the GitHub `gh` CLI: `auth_status()`,
-  `pr_list()`, `repo_view()` (script: `gh.rhai`). Requires `gh` on
-  `PATH` and authentication. **Library:** `os/exec` (stdlib);
-  parse `gh --json` output via `encoding/json`.
-
 ## Moderate
 
 ### `.d.ts` generator

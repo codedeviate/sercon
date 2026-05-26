@@ -514,10 +514,25 @@ const r = await api.git.runText(["config", "user.email"]);
 api.log(r.stdout.trim());`)
 	note("All bindings accept opts.cwd. add/commit are mutating — guard with isClean / revParse before chaining.")
 
+	header(28, "GitHub CLI wrapper (api.gh.*)")
+	code(`// authStatus is a probe — missing gh or unauthenticated session
+// resolve as data, not a throw.
+const auth = await api.gh.authStatus();
+if (!auth.authenticated) { api.log("not authed:", auth.raw); }
+
+// repoView with no arg uses cwd's repo; pass "owner/name" for any repo.
+const repo = await api.gh.repoView("cli/cli");
+api.log(repo.owner + "/" + repo.name, "default:", repo.defaultBranch);
+
+// prList — gh's author.login is flattened to a plain string.
+const prs = await api.gh.prList({ state: "open", limit: 5 });
+prs.forEach(p => api.log("#" + p.number, p.title, "(" + p.author + ")"));`)
+	note("authStatus never throws on missing-gh; prList/repoView throw with gh's stderr on real failures.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 27
+const exampleCount = 28

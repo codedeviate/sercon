@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.19</div>
+<div class="version">Version 0.4.20</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -563,6 +563,41 @@ declare const api: {
     }>;
   };
 
+  gh: {
+    authStatus(): Promise<{
+      authenticated: boolean;
+      user: string;              // login or empty
+      raw: string;               // login on success, stderr / probe note on failure
+    }>;
+    prList(opts?: {
+      cwd?: string;
+      state?: "open" | "closed" | "merged" | "all";
+      limit?: number;            // default 30
+      author?: string;
+    }): Promise<Array<{
+      number: number;
+      title: string;
+      state: string;
+      author: string;            // login (flattened from gh's wrapper)
+      headRefName: string;
+      baseRefName: string;
+      url: string;
+      createdAt: string;
+      updatedAt: string;
+    }>>;
+    repoView(
+      repo?: string,             // "owner/name"; omit to use cwd's repo
+      opts?: { cwd?: string },
+    ): Promise<{
+      name: string;
+      owner: string;             // login (flattened)
+      description: string;
+      url: string;
+      defaultBranch: string;     // flattened from defaultBranchRef.name
+      visibility: string;
+    }>;
+  };
+
   email: {
     spf(domain: string): Promise<
       | { present: false }
@@ -890,6 +925,33 @@ single engine can work across multiple checkouts.
   exits do **not** throw — that's the whole point of having a
   generic wrapper; callers branch on `exitCode`. Spawn failures and
   context cancellation still throw.
+
+GitHub-CLI bindings (`api.gh.*`) wrap the `gh` binary. They respect
+whatever authentication state `gh auth` is already in; we don't try
+to swap accounts or manage tokens. Every call uses `gh --json` so
+the result is structured rather than parsed out of human-readable
+text.
+
+- **`authStatus()`** — Probe whether gh is installed *and*
+  authenticated. Under the hood this runs `gh api user --jq .login`
+  (machine-friendly: just the login on success, a clear error
+  otherwise) rather than `gh auth status` (multi-line human
+  report). Missing-gh and unauthenticated-session both resolve with
+  `{ authenticated: false, …}` rather than throwing — the whole
+  point of a status probe is that the script branches on it. Only
+  context cancellation throws.
+- **`prList(opts?)`** — Lists pull requests on the repo identified
+  by `opts.cwd` (or the engine's working directory). Defaults: open
+  state, limit 30. `gh`'s `author: { login, … }` wrapper is
+  flattened to just the login string so scripts can compare
+  directly.
+- **`repoView(repo?, opts?)`** — Returns metadata about a repo.
+  With no argument it asks `gh` about the cwd's repo (works from
+  inside a checkout); pass `"owner/name"` to look up any repo `gh`
+  has access to. Two convenience flattenings are applied: `owner`
+  is a login string (not `{login, …}`), and `defaultBranch` is the
+  branch name (not `defaultBranchRef.name`). Empty repos resolve
+  with `defaultBranch: ""` rather than `undefined`.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1322,7 +1384,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.19. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.20. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

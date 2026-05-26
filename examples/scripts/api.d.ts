@@ -42,6 +42,11 @@ declare const api: {
     http(...args: unknown[]): Promise<Record<string, unknown>>;
     shell(...args: unknown[]): Promise<Record<string, unknown>>;
   };
+  gh: {
+    authStatus(...args: unknown[]): Promise<Record<string, unknown>>;
+    prList(...args: unknown[]): Promise<Record<string, unknown>[]>;
+    repoView(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   git: {
     add(...args: unknown[]): Promise<Record<string, unknown>>;
     branch(...args: unknown[]): Promise<Record<string, unknown>>;

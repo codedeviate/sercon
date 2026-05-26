@@ -10,6 +10,59 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.20] — 2026-05-26
+
+Final slice of **Easy / External tool integrations**: a wrapper
+around the GitHub `gh` CLI. With this cut, every entry in the Easy
+bucket has shipped. Still no new dependencies — `os/exec` and
+`encoding/json`.
+
+### Added
+
+- `api.gh.authStatus()` → `Promise<{ authenticated, user, raw }>` —
+  status probe. Runs `gh api user --jq .login` (machine-friendly)
+  rather than `gh auth status` (multi-line human report). Missing
+  gh and unauthenticated sessions resolve as data (`authenticated:
+  false`), not throws — a status probe scripts can branch on.
+  Context cancellation still throws.
+- `api.gh.prList(opts?)` → `Promise<Array<{ number, title, state,
+  author, headRefName, baseRefName, url, createdAt, updatedAt }>>`.
+  Lists pull requests on the repo identified by `opts.cwd` (or the
+  engine's working directory). Defaults: open state, limit 30.
+  Filters: `state`, `limit`, `author`. `gh`'s `author: { login, …}`
+  wrapper is flattened to a bare login string.
+- `api.gh.repoView(repo?, opts?)` → `Promise<{ name, owner,
+  description, url, defaultBranch, visibility }>`. With no arg,
+  uses the cwd's repo; pass `"owner/name"` for any repo `gh` has
+  access to. Convenience flattenings: `owner` is a login string
+  (not `{login, …}`), `defaultBranch` is the branch name (not
+  `defaultBranchRef.name`). Empty repos resolve with
+  `defaultBranch: ""` rather than `undefined`.
+- `parsePRListJSON` and `parseRepoViewJSON` are pulled out as
+  testable helpers so the JSON-flattening logic can be exercised
+  without spawning `gh`.
+- `TestParsePRListJSON_*` / `TestParseRepoViewJSON_*` (5 sub-tests):
+  author-wrapper flattening, null-author preserved, owner +
+  defaultBranchRef flattening, null defaultBranchRef yields
+  `defaultBranch: ""`, malformed-JSON error.
+- `TestGhAuthStatus_NoGhResolvesFalse` pins the no-throw-on-missing
+  contract via `t.Setenv("PATH", "/nonexistent")`.
+- `TestGhAuthStatus_AgreesWithGhAuthStatus` is a skip-when-missing
+  integration probe that cross-checks our boolean against `gh auth
+  status`'s real exit code on the host.
+- `examples/scripts/gh.ts` gracefully degrades when `gh` is missing
+  or unauthenticated so it can be part of `make demo` everywhere.
+  Excluded from CI (needs network + a logged-in account).
+- `--examples` step 28 covers the binding; MANUAL section 5 gains
+  the `api.gh` block plus three bullets of prose.
+- `examples/scripts/api.d.ts` regenerated.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s Easy bucket no longer has an External tool
+  integrations subsection — every entry shipped across v0.4.17 –
+  v0.4.20.
+
 ## [0.4.19] — 2026-05-26
 
 Third slice of **Easy / External tool integrations**: a wrapper
