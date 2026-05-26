@@ -1,0 +1,82 @@
+# goreleaser config — driven by the release.yml workflow on tag push.
+# Mirror `make release`'s flags so the binaries CI ships are the same shape
+# as what we hand-build locally.
+
+version: 2
+
+project_name: sercon
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: sercon
+    main: ./cmd/sercon
+    binary: sercon
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # Windows ARM64 binaries aren't widely useful yet and goja's CI
+      # doesn't routinely cover them — leave the slot empty until there's
+      # demand.
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: sercon
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}_
+      {{- .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - MANUAL.md
+      - MANUAL.pdf
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# Pull release-note bullets straight from Conventional Commits, but trim the
+# noisy ones — docs / chore commits don't deserve a top-line bullet on the
+# GitHub release page.
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^docs(\(.+\))?:'
+      - '^chore(\(.+\))?:'
+      - '^test(\(.+\))?:'
+      - '^style(\(.+\))?:'
+
+release:
+  draft: false
+  prerelease: auto
+  # Pre-1.0: surface the breaking-change marker we already use in commit
+  # subjects so the release page reads correctly.
+  header: |
+    sercon {{ .Tag }}
+
+    See [CHANGELOG.md]({{ .GitURL }}/blob/{{ .Tag }}/CHANGELOG.md) for the
+    full per-release note.

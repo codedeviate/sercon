@@ -36,21 +36,15 @@ the situation changes.
 
 ### Repo / tooling
 
-- **CI workflow.** No GitHub Actions / equivalent yet. A simple
-  `go build`/`go test`/`go vet` matrix on Go 1.22+ would be a sensible
-  starting point. **Approach:** standard `actions/setup-go@v5` workflow.
-- **Release automation.** Releases are currently cut by hand
-  (bump `scriptengine.Version`, move `CHANGELOG.md` entries, tag,
-  `gh release create`). A release-please / cliff-style step keyed off
-  Conventional Commits would match the conventions in `CLAUDE.md`.
-  **Library:** `googleapis/release-please-action` or
-  `orhun/git-cliff-action` (GitHub Actions, not Go deps).
-- **Prebuilt binaries on releases.** GitHub releases currently ship
-  only the source tarball. Cross-compile darwin-{arm64,amd64},
-  linux-{amd64,arm64}, windows-amd64 with `make release`'s slim flags
-  and `gh release upload`. Needed before the Homebrew tap formula
-  can pull pinned binaries. **Library:** `goreleaser/goreleaser` (de
-  facto standard, pure Go) or a hand-rolled matrix in CI.
+- **`release-please` / Conventional-Commits-driven changelog.** The
+  `make release-prep` target wired in v0.4.5 covers the version-marker
+  bump and prints the next-step checklist, but the CHANGELOG move from
+  `## [Unreleased]` to the new section is still manual. A
+  `release-please` workflow would automate that move based on commit
+  subjects (`feat:` → minor bump, `fix:` → patch, `!` / `BREAKING
+  CHANGE:` → major). Defer until the manual flow becomes a real
+  bottleneck. **Library:** `googleapis/release-please-action` (GitHub
+  Action, not a Go dep).
 
 ### Protocol probes & connectivity
 

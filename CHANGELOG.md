@@ -10,6 +10,56 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.5] — 2026-05-26
+
+Fifth slice of the **Easy** bucket — the **Repo / tooling**
+sub-section. CI workflow, cross-platform release pipeline, and a
+local make target that handles the boring parts of cutting a
+release. No code changes; everything lands as new YAML and
+Makefile targets.
+
+### Added
+
+- **`.github/workflows/ci.yml`** — runs on every push to `master` and
+  every PR. Matrix: Go 1.22 + latest stable, on `ubuntu-latest` and
+  `macos-latest`. Each job: `go build` (slim flags), `go vet`,
+  `go test ./...`, plus the offline subset of `examples/scripts/*`
+  (excludes `async.ts`, which hits example.com). A separate `lint`
+  job runs `golangci-lint@v2.12.2` (pinned to match `make lint`'s
+  fallback).
+- **`.github/workflows/release.yml`** — triggers on `v*.*.*` tag
+  push. Runs `goreleaser release --clean` with the repo's
+  `.goreleaser.yml`. Uses `GITHUB_TOKEN` only — no PAT needed.
+- **`.goreleaser.yml`** — cross-compiles darwin-{amd64,arm64} /
+  linux-{amd64,arm64} / windows-amd64. Mirrors `make release`'s
+  `-trimpath` + `-s -w` flags. Each archive bundles LICENSE, README,
+  CHANGELOG, MANUAL.md, and MANUAL.pdf. Changelog block on the
+  release page is sourced from Conventional Commits with the
+  noisy types (`docs:`, `chore:`, `test:`, `style:`) filtered out.
+- **`make release-prep VERSION=x.y.z`** — bumps the three version
+  markers (`pkg/scriptengine/version.go`, MANUAL cover, MANUAL
+  footer), runs `version-check`, and prints the next-step checklist.
+  The CHANGELOG move stays manual because that's the part that
+  needs editorial judgement.
+- **`make version-check`** — standalone sanity check that the three
+  version markers agree. Run by `release-prep`; useful by itself
+  after editing one of them by hand.
+
+### Changed
+
+- `CLAUDE.md`'s common-commands block lists the two new make targets.
+- `CLAUDE.md` gains a "CI and release flow" section describing what
+  each workflow does and which tags will or won't trigger
+  `goreleaser` (tags pre-`v0.4.5` won't, because the YAML wasn't in
+  those commits — by design).
+
+### Notes
+
+- Tags `v0.2.4`–`v0.4.4` are still local-only and will keep their
+  source-only releases when eventually pushed. From `v0.4.5` onward,
+  pushing the tag triggers `goreleaser` and the release gains
+  prebuilt darwin / linux / windows archives plus `checksums.txt`.
+
 ## [0.4.4] — 2026-05-26
 
 Fourth slice of the **Easy** bucket — the **CLI** sub-section. Stdin

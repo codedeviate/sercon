@@ -13,6 +13,8 @@ make vet                                   # go vet ./...
 make lint                                  # golangci-lint v2 against .golangci.yml (one-shot via go run if not installed)
 make demo                                  # run every success-path script under examples/scripts/ (excludes hang.ts)
 make types                                 # regenerate examples/scripts/api.d.ts from the current CLI bindings
+make release-prep VERSION=x.y.z            # bump version markers + print the next-step checklist (CHANGELOG still manual)
+make version-check                         # verify pkg/scriptengine/version.go and MANUAL.md cover/footer agree
 make clean                                 # rm -f sercon MANUAL.pdf
 
 CGO_ENABLED=0 go build ./...               # whole repo (must stay cgo-free)
@@ -101,7 +103,13 @@ Whenever you add a flag: update the flag block in `main.go`, the `FLAGS` section
 
 Pure library-side changes (e.g. `WithScriptRoot`, `Engine.Reset()`) only need `MANUAL.md` + `CHANGELOG.md`; they aren't reachable from a `.ts` script, so the example scripts don't need to grow for them.
 
-Version bumps: edit `pkg/scriptengine/version.go`, add a new section to `CHANGELOG.md`, then tag `vX.Y.Z`. `--version` reads `scriptengine.Version`, so it follows the constant automatically — goja / esbuild versions in the same output come from `runtime/debug.ReadBuildInfo` and update with `go.mod`.
+Version bumps: run `make release-prep VERSION=x.y.z` to bump the three version markers (`pkg/scriptengine/version.go`, MANUAL cover, MANUAL footer). It prints the next-step checklist — the CHANGELOG move from `[Unreleased]` to the new section is still manual because that's the part that needs editorial judgement. `make version-check` is the standalone sanity check the same logic invokes. `--version` reads `scriptengine.Version`, so it follows the constant automatically — goja / esbuild versions in the same output come from `runtime/debug.ReadBuildInfo` and update with `go.mod`.
+
+## CI and release flow
+
+- **`.github/workflows/ci.yml`** runs on every push and PR. Matrix: Go 1.22 + latest stable, on ubuntu-latest and macos-latest. Each job runs `go build` (slim flags), `go vet`, `go test ./...`, and the offline subset of `examples/scripts/*` (excludes `async.ts`, which hits example.com over HTTPS — covered locally via `make demo`). A separate `lint` job runs `golangci-lint` v2.12.2 (pinned to match `make lint`'s fallback).
+- **`.github/workflows/release.yml`** runs only when a `v*.*.*` tag is pushed. Calls goreleaser with the repo's `.goreleaser.yml`, which cross-compiles darwin-{amd64,arm64} / linux-{amd64,arm64} / windows-amd64, mirrors `make release`'s `-trimpath -ldflags='-s -w'` flags, and uploads tarballs/zip + checksums to the auto-created GitHub release. Each archive bundles LICENSE, README, CHANGELOG, MANUAL.md, and MANUAL.pdf.
+- Tags pushed before `v0.4.5` won't trigger the release workflow — the YAML wasn't in those commits. That's by design; their existing source-only releases stay intact.
 
 ## Versioning and commits
 

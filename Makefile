@@ -17,6 +17,15 @@
 #   types    Regenerate examples/scripts/api.d.ts from the current CLI
 #            binding surface (the on-disk file is the source of truth for
 #            editor autocomplete and the public api shape).
+#   release-prep VERSION=x.y.z
+#            Bump every version marker (Go const + MANUAL cover + footer)
+#            and remind you to move the CHANGELOG Unreleased block into
+#            the new section. CI cuts artifacts on tag push; this target
+#            handles the part that has to happen on master first.
+#   version-check
+#            Verify the version markers in pkg/scriptengine/version.go and
+#            MANUAL.md all agree. Run by release-prep; useful standalone
+#            after editing one of the three by hand.
 #   clean    Remove built artifacts
 #
 # release and manual are intentionally separate from `build` so an
@@ -28,7 +37,7 @@ GOLANGCI_VERSION  ?= v2.12.2
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 
-.PHONY: build release manual test vet lint demo types clean
+.PHONY: build release manual test vet lint demo types release-prep version-check clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -80,6 +89,38 @@ demo: build
 
 types: build
 	./$(BIN) --emit-dts examples/scripts/api.d.ts
+
+release-prep:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "usage: make release-prep VERSION=x.y.z"; exit 2; \
+	fi
+	@echo "Bumping version markers to $(VERSION)..."
+	@sed -i.bak -E 's/^const Version = "[^"]+"/const Version = "$(VERSION)"/' pkg/scriptengine/version.go
+	@sed -i.bak -E 's|<div class="version">Version [^<]+</div>|<div class="version">Version $(VERSION)</div>|' MANUAL.md
+	@sed -i.bak -E 's/\*This manual covers sercon v[0-9.]+\./*This manual covers sercon v$(VERSION)./' MANUAL.md
+	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak
+	@$(MAKE) --no-print-directory version-check
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1) Edit CHANGELOG.md: move the [Unreleased] entries into [$(VERSION)] - $$(date +%Y-%m-%d)"
+	@echo "  2) make manual && make types && make test && make vet && make lint && make demo"
+	@echo "  3) git commit -am 'chore: cut v$(VERSION)'"
+	@echo "  4) git tag -a v$(VERSION) -m 'release v$(VERSION)'"
+	@echo "  5) git push origin master v$(VERSION)  # CI publishes binaries via goreleaser"
+
+version-check:
+	@const=$$(sed -nE 's/^const Version = "([^"]+)"/\1/p' pkg/scriptengine/version.go); \
+	cover=$$(sed -nE 's|<div class="version">Version ([^<]+)</div>|\1|p' MANUAL.md); \
+	footer=$$(sed -nE 's/\*This manual covers sercon v([0-9.]+)\..*/\1/p' MANUAL.md); \
+	if [ -z "$$const" ] || [ -z "$$cover" ] || [ -z "$$footer" ]; then \
+		echo "version markers not found: code='$$const' cover='$$cover' footer='$$footer'"; \
+		exit 1; \
+	fi; \
+	if [ "$$const" != "$$cover" ] || [ "$$const" != "$$footer" ]; then \
+		echo "version mismatch: code=$$const cover=$$cover footer=$$footer"; \
+		exit 1; \
+	fi; \
+	echo "version markers in sync at $$const"
 
 clean:
 	rm -f $(BIN) MANUAL.pdf

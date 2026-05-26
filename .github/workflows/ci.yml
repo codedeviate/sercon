@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: build & test (${{ matrix.os }}, go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # 1.22 is the minimum we claim; `stable` keeps us honest against
+        # whatever the latest GA Go release is when CI runs.
+        go: ['1.22', 'stable']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: build (cgo-free)
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags='-s -w' -o sercon ./cmd/sercon
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -count=1 ./...
+      # Offline example scripts — async.ts hits example.com so it's local-only.
+      - name: smoke examples
+        run: |
+          ./sercon examples/scripts/smoke.ts \
+            examples/scripts/hash.ts \
+            examples/scripts/strings.ts \
+            examples/scripts/path-and-time.ts \
+            examples/scripts/default-export.ts \
+            examples/scripts/tsx-demo.ts \
+            examples/scripts/json-import.ts \
+            examples/scripts/pkg-resolution.ts
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          # Pinned to match `make lint`'s one-shot fallback so contributors
+          # see the same rule set locally and in CI.
+          version: v2.12.2
