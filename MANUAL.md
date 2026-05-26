@@ -2,8 +2,8 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.2.3</div>
-<div class="date">2026-05-25</div>
+<div class="version">Version 0.2.4</div>
+<div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
 License · MIT
@@ -569,7 +569,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.2.3. Whenever you add, remove, or change a
+*This manual covers sercon v0.2.4. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

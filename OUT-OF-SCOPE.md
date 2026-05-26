@@ -24,6 +24,14 @@ buckets are:
 Library picks honour the project constraints: **pure Go, no cgo;
 stdlib first; trustworthy and maintained; no heavy frameworks**.
 
+A fifth bucket, **Deferred**, lives at the bottom of this file. Items
+land there when there's a concrete reason to put the work down rather
+than rank it by effort — no trustworthy pure-Go library exists, the
+feature depends on an external runtime we don't want to require yet,
+the design space is unsettled, or it conflicts with current direction.
+Each Deferred entry names the reason so it's easy to re-promote when
+the situation changes.
+
 ## Trivial
 
 ### Engine
@@ -391,16 +399,6 @@ stdlib first; trustworthy and maintained; no heavy frameworks**.
   `golang.org/x/image/webp` for WebP) needs to be wired in and the
   result shape designed.
 
-### Archives & document handling
-
-- **`pdf_export_page(src, page, dest_or_opts?, opts?)`** — Render one
-  PDF page to PNG/JPEG/WEBP (script: `pdf.rhai`). **Library:** no
-  trustworthy pure-Go PDF renderer exists — `github.com/unidoc/unipdf`
-  is commercial-licensed, MuPDF requires cgo, Poppler is C. The honest
-  options are (a) shell out to `pdftoppm` / `mutool` and parse output,
-  or (b) accept a cgo dependency. With sercon's no-cgo rule this likely
-  becomes a subprocess wrapper, hence Moderate rather than Easy.
-
 ### Browser-like HTTP session
 
 - **`browser()`** — Stateful HTTP session with automatic cookie jar
@@ -509,3 +507,22 @@ The hard rating reflects the orchestration scope, not any single call.
   goroutine has to be marshalled back onto goja's event loop safely
   (this is the same machinery `PromisifyAsync` already uses, but
   generalised for repeated callbacks rather than a one-shot resolve).
+
+## Deferred
+
+Items here aren't ranked by difficulty — they're parked for a stated
+reason. Move them back into Trivial / Easy / Moderate / Hard once the
+reason resolves.
+
+### Archives & document handling
+
+- **`pdf_export_page(src, page, dest_or_opts?, opts?)`** — Render one
+  PDF page to PNG/JPEG/WEBP (script: `pdf.rhai`).
+  **Reason:** no trustworthy pure-Go PDF renderer exists today —
+  `github.com/unidoc/unipdf` is commercial-licensed, MuPDF requires
+  cgo, Poppler is C. The realistic implementations are (a) shell out
+  to `pdftoppm` / `mutool` and parse output, or (b) accept a cgo
+  dependency. Both conflict with current direction (no-cgo, minimise
+  external CLI dependencies). Re-promote if a trustworthy pure-Go
+  renderer appears, or if we decide to allow optional CLI fallbacks
+  for niche features.

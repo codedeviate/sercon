@@ -8,12 +8,24 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.4] — 2026-05-26
+
 ### Fixed
 
 - `make manual` no longer passes `--toc`. recon's auto-injected TOC
   was being placed above the cover-page `<div>`, pushing the cover
   to page 2. `MANUAL.md` ships its own curated `## Table of contents`
   section, which stays in flow and renders in the correct order.
+
+### Changed
+
+- `OUT-OF-SCOPE.md` gains a top-level **Deferred** bucket alongside
+  Trivial / Easy / Moderate / Hard. Items land there with a stated
+  reason rather than an effort estimate, ready to re-promote when the
+  reason resolves. First occupant: `pdf_export_page` (no trustworthy
+  pure-Go PDF renderer).
 
 ## [0.2.3] — 2026-05-25
 
