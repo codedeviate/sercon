@@ -5,12 +5,15 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/dop251/goja"
 )
 
 // fixtureTree creates a small directory layout used by the round-trip
@@ -227,5 +230,53 @@ func TestArchive_OverwriteFlag(t *testing.T) {
 	}
 	if string(got) != "new" {
 		t.Errorf("contents after overwrite: %q (want %q)", got, "new")
+	}
+}
+
+// archiveExtract takes 3 positional args (path, destDir, opts). A previous
+// implementation read opts via the 2-arg helper, which silently dropped
+// `overwrite: true` and let O_EXCL trip on repeat extracts. This pins the
+// JS-binding signature so the bug doesn't come back.
+func TestArchiveExtract_OverwriteOptThroughBinding(t *testing.T) {
+	work := t.TempDir()
+	zipPath := filepath.Join(work, "x.zip")
+	{
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		f, err := zw.Create("x.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte("payload")); err != nil {
+			t.Fatal(err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(zipPath, buf.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dest := filepath.Join(work, "out")
+	vm := goja.New()
+	mk := func(opts map[string]any) goja.FunctionCall {
+		args := []goja.Value{vm.ToValue(zipPath), vm.ToValue(dest)}
+		if opts != nil {
+			args = append(args, vm.ToValue(opts))
+		}
+		return goja.FunctionCall{Arguments: args}
+	}
+
+	if _, err := archiveExtract(context.Background(), mk(nil)); err != nil {
+		t.Fatalf("first extract: %v", err)
+	}
+	// Second extract without overwrite must fail (the file is there).
+	if _, err := archiveExtract(context.Background(), mk(nil)); err == nil {
+		t.Errorf("second extract w/o overwrite should fail")
+	}
+	// With overwrite:true it should succeed — this was the silently-dropped path.
+	if _, err := archiveExtract(context.Background(), mk(map[string]any{"overwrite": true})); err != nil {
+		t.Errorf("extract with overwrite:true: %v", err)
 	}
 }

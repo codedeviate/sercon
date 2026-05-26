@@ -34,6 +34,7 @@ Or pick individual scripts:
 | `archive.ts` | `api.archive.create/extract` round-trip over zip / tar / tar.gz. |
 | `diff.ts` | `api.diff.compare` — unified diff of two text inputs. |
 | `jq.ts` | `api.jq.query/queryAll` — jq filters over JS data structures. |
+| `exec-shell.ts` | `api.exec.shell` — subprocess runner; POSIX-only (uses `/bin/echo` / `/usr/bin/tr` / `sleep`). |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't

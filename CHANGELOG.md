@@ -10,6 +10,62 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.4.17] — 2026-05-26
+
+First slice of **Easy / External tool integrations**: a generic
+subprocess runner, the foundation for the next two cuts (HTTP via
+recon-with-curl-fallback in 0.4.18, git/gh wrappers in 0.4.19). No
+new dependencies — `os/exec` and `context` from the standard library.
+
+### Added
+
+- `api.exec.shell(cmd, opts?)` → `Promise<{ stdout, stderr,
+  exitCode, success, durationMs }>` — generic subprocess runner.
+- String `cmd` is passed verbatim to `/bin/sh -c` (or `cmd /C` on
+  Windows) so pipes, redirects, and globs work as a user would
+  type them. Array `cmd` is treated as `argv` directly with no
+  shell involvement.
+- `opts.cwd` sets the working directory; `opts.env` is merged on
+  top of the parent process environment (not a replacement);
+  `opts.timeout` defaults to 30 000 ms; `opts.stdin` is piped to
+  the child.
+- Non-zero exits resolve with `success: false` and the real
+  `exitCode` — they do not throw, since "ran the linter, expected
+  to be told it failed" is a routine outcome.
+- Process-start failures (binary not on `PATH`, permission denied)
+  and context deadline / cancellation throw — those aren't normal
+  subprocess outcomes.
+- `TestExecShell_*` (8 sub-tests): string cmd via shell, argv mode,
+  non-zero exit not thrown, stdin pipe, env override, cwd
+  respected, timeout throws, input validation.
+- `examples/scripts/exec-shell.ts` walking through every form
+  above; included in `make demo` and the offline CI step.
+- `--examples` step 25 covers the binding; MANUAL section 5 gains
+  the `api.exec.shell` block plus a paragraph on the
+  throw-vs-resolve contract.
+- `examples/scripts/api.d.ts` regenerated.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s Easy / External tool integrations list drops
+  the `shell(cmd, opts?)` entry (now shipped); the `recon-with-curl`
+  HTTP entry and the `git` / `gh` wrappers remain as the next two
+  cuts.
+
+### Fixed
+
+- `api.archive.extract(path, dest, opts)` now respects
+  `opts.overwrite`. The previous implementation read opts via the
+  2-arg `optsAsMap` helper but the binding takes three positional
+  args, so the helper saw `destDir` (a string) as the opts arg and
+  silently fell back to `overwrite: false`. Re-extracting into a
+  populated destination tripped `O_EXCL` even when callers had
+  explicitly opted in. Pinned with a new
+  `TestArchiveExtract_OverwriteOptThroughBinding` that drives the
+  binding through its real `FunctionCall` shape (the existing
+  `TestArchive_OverwriteFlag` exercised the internal `extractZip`
+  helper directly and so missed the marshalling layer).
+
 ## [0.4.16] — 2026-05-26
 
 Sole cut on **Easy / JSON / querying**. One new pure-Go dep

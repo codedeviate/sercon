@@ -38,6 +38,9 @@ declare const api: {
   env: {
     get(...args: unknown[]): unknown;
   };
+  exec: {
+    shell(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   hash: {
     blake3(...args: unknown[]): unknown;
     crc32(...args: unknown[]): unknown;

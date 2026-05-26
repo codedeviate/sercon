@@ -112,10 +112,18 @@ func archiveExtract(_ context.Context, call goja.FunctionCall) (map[string]any, 
 	if archivePath == "" || destDir == "" {
 		return nil, errors.New("extract: archive path and destination required")
 	}
+	// archiveExtract takes 3 positional args (archivePath, destDir, opts),
+	// so the 2-arg optsAsMap helper would mistake destDir for opts.
+	// Pull the third arg out by hand. Same shape as the diff.compare fix.
 	overwrite := false
-	if opts := optsAsMap(call); opts != nil {
-		if b, ok := opts["overwrite"].(bool); ok {
-			overwrite = b
+	if len(call.Arguments) >= 3 {
+		arg := call.Argument(2)
+		if arg != nil && !goja.IsUndefined(arg) && !goja.IsNull(arg) {
+			if m, ok := arg.Export().(map[string]any); ok {
+				if b, ok := m["overwrite"].(bool); ok {
+					overwrite = b
+				}
+			}
 		}
 	}
 	if err := os.MkdirAll(destDir, 0o755); err != nil {

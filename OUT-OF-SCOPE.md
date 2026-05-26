@@ -57,9 +57,6 @@ the situation changes.
   which backend ran. Do **not** add a generic `curl` binding —
   prefer `recon`. **Library:** `os/exec` (stdlib) + argv builder; output
   parsed as JSON via `encoding/json`.
-- **`shell(cmd, opts?)`** — Run a subprocess with cwd / env / timeout
-  (script: `shell.rhai`). **Library:** `os/exec` + `context` (stdlib).
-  Synchronous variant only is genuinely easy.
 - **`git(repo_path)`** — Wrap the `git` CLI: `branch()`, `is_clean()`,
   `rev_parse()`, `status()`, `add()`, `commit()`, `log()`,
   `diff_stat()`, `run_text()` (script: `git.rhai`). Requires `git` on

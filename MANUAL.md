@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.4.16</div>
+<div class="version">Version 0.4.17</div>
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -492,6 +492,24 @@ declare const api: {
     }>;
   };
 
+  exec: {
+    shell(
+      cmd: string | string[],
+      opts?: {
+        cwd?: string;
+        env?: Record<string, string>;
+        timeout?: number; // ms; default 30000
+        stdin?: string;
+      },
+    ): Promise<{
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+      success: boolean;
+      durationMs: number;
+    }>;
+  };
+
   email: {
     spf(domain: string): Promise<
       | { present: false }
@@ -732,6 +750,30 @@ Parse errors and runtime errors (type mismatches, division by
 zero, …) both surface as JS exceptions. Use jq's optional access
 operator `?` (e.g. `.does.not.exist?`) to suppress missing-path
 errors and get `null` back instead.
+
+Subprocess bindings (`api.exec.*`) wrap Go's `os/exec`. `shell` is
+the only entry today; `http` (recon-with-curl-fallback) and `git` /
+`gh` wrappers ride on top of it in later 0.4.x cuts.
+
+- **`shell(cmd, opts?)`** — runs a subprocess and waits for it to
+  exit. `cmd` is either a **string** (passed verbatim to `/bin/sh -c`
+  on Unix or `cmd /C` on Windows so pipes, redirects, and globs work
+  as typed) or a **`string[]`** (treated as argv, no shell — use this
+  when arguments could be re-interpreted by the shell). Returns
+  `{ stdout, stderr, exitCode, success, durationMs }`.
+
+  Options: `cwd` sets the working directory; `env` is merged on top of
+  the parent process environment (not a replacement); `timeout` is in
+  milliseconds and defaults to **30 000 ms**; `stdin` is piped to the
+  child's standard input.
+
+  Process-start failures (host binary not on PATH, permission denied)
+  throw. Context deadline (`timeout`) and engine cancellation throw
+  too — the subprocess never got to choose its own exit code, so it
+  isn't reasonable to surface a fake one. Non-zero exits do **not**
+  throw: `success: false` + the real `exitCode` is what callers want
+  for the usual "ran the linter, expected to be told it failed"
+  flow.
 
 Hash bindings interpret the input as a UTF-8 byte sequence and return
 lowercase hex. SHA-3 functions are `sha3_256` / `sha3_512` (the IETF
@@ -1164,7 +1206,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.4.16. Whenever you add, remove, or change a
+*This manual covers sercon v0.4.17. Whenever you add, remove, or change a
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

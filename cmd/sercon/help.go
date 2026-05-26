@@ -459,10 +459,28 @@ api.log("dmarc policy:", all.dmarc.policy);
 api.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 	note("BIMI accepts opts.selector (defaults to 'default').")
 
+	header(25, "Subprocess execution (api.exec.shell)")
+	code(`// String cmd → routed through /bin/sh -c (cmd /C on Windows) so pipes,
+// redirects and globs work as typed at the prompt.
+const piped = await api.exec.shell("echo hi | tr a-z A-Z");
+api.log(piped.stdout.trim(), "exit:", piped.exitCode);
+
+// Array cmd → argv, no shell expansion.
+const literal = await api.exec.shell(["/bin/echo", "literal *"]);
+
+// opts: cwd, env (merged), timeout (ms, default 30000), stdin.
+const fed = await api.exec.shell(["/usr/bin/tr", "a-z", "A-Z"], {
+  stdin: "hello\n",
+  cwd: "/tmp",
+  env: { GREETING: "hi" },
+  timeout: 5000,
+});`)
+	note("Non-zero exits resolve with success:false; timeouts and spawn failures throw.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 24
+const exampleCount = 25
