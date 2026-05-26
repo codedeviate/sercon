@@ -167,5 +167,8 @@ func apiDocs() map[string]string {
 
 		// SQLite — pure-Go (modernc.org/sqlite, no cgo). open() returns a handle.
 		"sqlite.open": "Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, close }. Connection is Ping-ed before resolving.",
+
+		// Remote data stores (stateful handles; graceful-degrade in demos)
+		"redis.open": "Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses.",
 	}
 }

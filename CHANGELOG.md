@@ -10,6 +10,31 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 Nothing yet.
 
+## [0.5.23] — 2026-05-26
+
+Adds **`api.redis`** — RESP client over `redis/go-redis/v9`. A
+stateful-handle binding. New dependency: `github.com/redis/go-redis/v9`
+(official client; `alicebob/miniredis` as a test-only dep).
+
+### Added
+
+- `api.redis.open(url)` parses a `redis://[:password@]host:port/db`
+  URL, PINGs to surface a bad address, and resolves to
+  `{ do, ping, close }`.
+- `do(command, ...args)` runs an arbitrary RESP command — the
+  binding stays small by not mirroring hundreds of methods.
+  Replies map the obvious way; a missing key (nil reply) becomes
+  JS `null` rather than throwing. Redis-level errors throw.
+- 4 tests via in-process miniredis: SET/GET/DEL/PING, list + hash
+  commands, bad-URL throws, ping-fails-on-dead-server.
+- `examples/scripts/redis.ts` gracefully degrades without a server
+  (in the CI offline subset for that reason); MANUAL §5 ts block +
+  prose.
+
+### Changed
+
+- `OUT-OF-SCOPE.md`'s `redis` entry resolved.
+
 ## [0.5.22] — 2026-05-26
 
 Adds **`api.browser`** — a stateful HTTP session with an automatic

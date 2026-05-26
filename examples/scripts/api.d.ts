@@ -204,6 +204,10 @@ declare const api: {
     /** Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 / ${1} syntax. Backtracking engine — keep a timeout around untrusted input. */
     replace(arg0: string, arg1: string, arg2: string): unknown;
   };
+  redis: {
+    /** Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses. */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   sqlite: {
     /** Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, close }. Connection is Ping-ed before resolving. */
     open(...args: unknown[]): Promise<Record<string, unknown>>;

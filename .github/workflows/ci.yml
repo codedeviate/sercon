@@ -59,7 +59,8 @@ jobs:
             examples/scripts/preg2.ts \
             examples/scripts/jwt.ts \
             examples/scripts/encrypt.ts \
-            examples/scripts/sqlite.ts
+            examples/scripts/sqlite.ts \
+            examples/scripts/redis.ts
 
   lint:
     name: golangci-lint

@@ -45,6 +45,7 @@ Or pick individual scripts:
 | `jwt.ts` | `api.jwt.*` — sign / view / validate (HMAC only: HS256/HS384/HS512); demonstrates the resolve-on-failure contract for bad signature / expired / audience mismatch. |
 | `encrypt.ts` | `api.encrypt.*` — age X25519 keygen / encrypt / decrypt. Single + multi-recipient round-trip, public/private cross-check, binary payloads. |
 | `sqlite.ts` | `api.sqlite.*` — in-memory SQLite handle: schema, parameterised insert/query/queryValue, mutations with rowsAffected, BLOB round-trip, close. |
+| `redis.ts` | `api.redis.*` — RESP client (do/ping/close); gracefully degrades without a server. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't

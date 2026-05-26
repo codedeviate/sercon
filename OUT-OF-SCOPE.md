@@ -72,11 +72,6 @@ the situation changes.
 
 ### Remote services & caching
 
-- **`redis(url, command?)`** — Redis RESP protocol client (PING or
-  custom commands) (script: `redis.rhai`). **Library:**
-  `github.com/redis/go-redis/v9` (pure Go, official); moderate because
-  exposing arbitrary RESP commands to JS with sane argument coercion
-  and result shaping needs design.
 - **`memcached(url)`** — Memcached text protocol, version and stats
   (script: `memcached.rhai`). **Library:**
   `github.com/bradfitz/gomemcache/memcache` (pure Go, de facto

@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.5.22</div> <!-- x-release-please-version -->
+<div class="version">Version 0.5.23</div> <!-- x-release-please-version -->
 <div class="date">2026-05-26</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -648,6 +648,14 @@ declare const api: {
     }>;
   };
 
+  redis: {
+    open(url: string): Promise<{                 // redis://[:pass@]host:port/db
+      do(command: string, ...args: unknown[]): Promise<unknown>;  // arbitrary RESP command; null on missing key
+      ping(): Promise<string>;
+      close(): Promise<void>;
+    }>;
+  };
+
   browser: {
     open(): Promise<{                            // stateful HTTP session
       setUserAgent(ua: string): void;
@@ -1180,6 +1188,20 @@ HTTP are reported but don't gate it (a plain-HTTP host or one
 with an expired cert is still "reachable"). Only a missing host
 argument throws. No new library — it composes `net` /
 `crypto/tls` / `net/http` directly.
+
+Redis (`api.redis.open(url)`) is a stateful-handle binding over
+[`redis/go-redis/v9`](https://github.com/redis/go-redis) (the
+official client). `open` parses a `redis://[:password@]host:port/db`
+URL and PINGs to surface a bad address up front, then resolves to
+`{ do, ping, close }`. `do(command, ...args)` runs an arbitrary
+RESP command — `do("SET", "k", "v")`, `do("LRANGE", "l", "0",
+"-1")` — so the binding stays small instead of mirroring hundreds
+of methods. Replies map the obvious way (bulk strings → string,
+integers → number, arrays → array); a nil reply (missing key)
+becomes JS `null` rather than throwing, so
+`await r.do("GET", "absent")` is `null`. Redis-level errors
+(WRONGTYPE, unknown command) throw. Offline-testable via
+`alicebob/miniredis`.
 
 Browser sessions (`api.browser.open()`) give a stateful HTTP
 client — an automatic cookie jar (`net/http/cookiejar` with the
@@ -2108,7 +2130,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.5.22. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.5.23. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
