@@ -28,11 +28,15 @@ release:
 
 manual:
 	$(RECON) --md-to-pdf MANUAL.md -o MANUAL.pdf \
-		--gfm --toc --unsafe-html --page-break-on-h1 \
+		--gfm --unsafe-html --page-break-on-h1 \
 		--doc-title "sercon User Manual" \
 		--doc-author "Thomas Bjork" \
 		--doc-subject "Embeddable TypeScript script engine — reference and script-engine guide" \
 		--doc-keywords "sercon, typescript, scripting, goja, esbuild, embedded"
+# Note: --toc is intentionally omitted. MANUAL.md ships its own curated
+# "## Table of contents" section (with the actual section numbers), and
+# recon's auto-injected TOC lands above the cover-page <div>, pushing
+# the cover to page 2. The curated TOC stays in flow and avoids that.
 
 test:
 	$(GO) test ./...

@@ -8,7 +8,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `make manual` no longer passes `--toc`. recon's auto-injected TOC
+  was being placed above the cover-page `<div>`, pushing the cover
+  to page 2. `MANUAL.md` ships its own curated `## Table of contents`
+  section, which stays in flow and renders in the correct order.
 
 ## [0.2.3] — 2026-05-25
 
