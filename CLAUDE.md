@@ -26,9 +26,23 @@ go test ./pkg/scriptengine -run TestWriteTypes_Golden -update # refresh golden .
 ./sercon --help | --examples | --version   # in-depth colourised help / feature tour / version
 ```
 
+## Positioning: CLI-first, library unsupported
+
+`sercon` is **CLI-first**. The `sercon` command (reconnaissance,
+troubleshooting, testing) is the supported product. `pkg/scriptengine`
+exists to serve that CLI; embedding it as a library in another Go program
+is **unsupported and at the user's own risk** — its API may change without
+notice and there are no stability or sandboxing guarantees. This matters
+when weighing design trade-offs: constraints that exist only to make the
+package a well-behaved embeddable guest (strict per-`Run` isolation as a
+*public contract*, avoiding any process-owning behaviour) can be relaxed
+when the CLI is the only consumer. The internal isolation choices below are
+kept because they keep the engine correct across multiple scripts and
+`--watch` re-runs, not because we promise them to library callers.
+
 ## Architecture
 
-The library (`pkg/scriptengine`) executes TypeScript via goja, with esbuild used in-process as the TS→JS transpiler and `goja_nodejs/eventloop` + `goja_nodejs/require` providing Promises and module loading. There are several non-obvious design choices a reader should know before editing.
+The engine (`pkg/scriptengine`) executes TypeScript via goja, with esbuild used in-process as the TS→JS transpiler and `goja_nodejs/eventloop` + `goja_nodejs/require` providing Promises and module loading. There are several non-obvious design choices a reader should know before editing.
 
 ### Per-Run runtime, shared registry
 

@@ -17,14 +17,18 @@ A small built-in `api` surface gives scripts HTTP, shell exec, logging, and
 more, and the whole thing ships as a single static binary. Pure Go (no cgo),
 no Node.
 
-Under the hood it's an embeddable TypeScript script engine, usable two ways:
+Under the hood it's a TypeScript script engine in Go:
 
-- CLI: `cmd/sercon` — runs `.ts` files against the built-in `api` surface.
-  Reach for it when you need a repeatable, scriptable alternative to a pile
-  of ad-hoc `curl`/`jq`/shell one-liners for recon, debugging, and test checks.
-  Available via the `codedeviate/cli` Homebrew tap: `brew install codedeviate/cli/sercon`.
-- Library: `pkg/scriptengine` — embed in your own Go program and register
-  Go-callable bindings to expose a safe, sandboxed scripting surface.
+- CLI: `cmd/sercon` — **the supported product.** Runs `.ts` files against
+  the built-in `api` surface. Reach for it when you need a repeatable,
+  scriptable alternative to a pile of ad-hoc `curl`/`jq`/shell one-liners
+  for recon, debugging, and test checks. Available via the `codedeviate/cli`
+  Homebrew tap: `brew install codedeviate/cli/sercon`.
+- Library: `pkg/scriptengine` — the engine the CLI is built on. You *can*
+  embed it in your own Go program and register Go-callable bindings, but
+  **library use is unsupported**: the package exists to serve the CLI, its
+  API may change without notice, and there are no stability or sandboxing
+  guarantees. Use it as a library at your own risk.
 
 Runtime: [goja](https://github.com/dop251/goja). TypeScript is transpiled
 in-process with [esbuild](https://github.com/evanw/esbuild/tree/main/pkg/api).
