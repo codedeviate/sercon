@@ -58,6 +58,31 @@ the situation changes.
   re-nest under Hard (see "Script API ergonomics"). **Library:** none —
   a tweak to the d.ts emitter (`dts.go`) + `api_docs.go` summaries.
 
+### Databases
+
+`api.sqlite` already proves the pattern: `database/sql` + a pure-Go
+driver + an `open()`→handle shape (`exec` / `query` / `queryValue`,
+see `cmd/sercon/api_sqlite.go`). Every other SQL engine below is the
+same handle wired to a different `database/sql` driver and a DSN, so
+the marginal cost per engine is small. Open question to settle once
+(not blocking): one DSN-driven `api.db.open(driver, dsn)` vs. a
+namespace per engine (`api.mysql` / `api.postgres` / …). All drivers
+named are **pure Go (no cgo)**.
+
+- **MySQL / MariaDB.** One driver covers both (MariaDB speaks the
+  MySQL wire protocol). **Library:** `github.com/go-sql-driver/mysql`
+  (the de facto standard).
+- **PostgreSQL.** **Library:** `github.com/jackc/pgx` via its
+  `stdlib` `database/sql` adapter (modern, maintained; `lib/pq` is the
+  older alternative). CockroachDB and other Postgres-wire engines come
+  along for free.
+- **Microsoft SQL Server.** **Library:**
+  `github.com/microsoft/go-mssqldb` (pure Go).
+- **Other easy wins (same pattern, pure-Go drivers exist).**
+  ClickHouse (`github.com/ClickHouse/clickhouse-go`), Oracle
+  (`github.com/sijms/go-ora` — pure Go, unlike cgo-bound godror), and
+  Snowflake (`github.com/snowflakedb/gosnowflake`). Add on demand.
+
 
 ## Moderate
 
@@ -253,3 +278,17 @@ reason resolves.
   external CLI dependencies). Re-promote if a trustworthy pure-Go
   renderer appears, or if we decide to allow optional CLI fallbacks
   for niche features.
+
+### Databases
+
+- **ODBC connectivity.** A generic ODBC bridge would reach any engine
+  with a system DSN, but the only real Go option,
+  `github.com/alexbrainman/odbc`, links the platform ODBC driver
+  manager (unixODBC on Linux/macOS) via **cgo** — and needs that
+  manager plus a per-engine ODBC driver installed at runtime. That
+  conflicts with the no-cgo constraint on the platforms that matter
+  most here. **Reason:** no pure-Go ODBC implementation exists.
+  Re-promote if one appears, or skip ODBC entirely once the native
+  pure-Go drivers (MySQL / Postgres / MSSQL / Oracle / …, see the
+  Databases group under Easy) cover the engines people actually ask
+  for — which they largely do.
