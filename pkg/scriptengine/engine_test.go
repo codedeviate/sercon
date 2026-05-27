@@ -672,10 +672,15 @@ func TestWriteTypes_DocsAbsentNoBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := buf.String()
-	// The Sercon preamble carries its own JSDoc, so assert specifically that
-	// the *undocumented* binding has no JSDoc block directly above it.
-	if strings.Contains(got, "*/\ndeclare function undocumented") {
-		t.Errorf("expected no JSDoc above undocumented; got:\n%s", got)
+	// The only legitimate JSDoc in the output is the built-in Sercon
+	// preamble (it ends with "};\n\n"). An undocumented binding must add no
+	// JSDoc of its own, so there must be no "/**" anywhere after the preamble.
+	if i := strings.Index(got, "};\n\n"); i >= 0 {
+		if strings.Contains(got[i+len("};\n\n"):], "/**") {
+			t.Errorf("expected no JSDoc after the Sercon preamble; got:\n%s", got)
+		}
+	} else {
+		t.Fatalf("Sercon preamble not found in output:\n%s", got)
 	}
 	// And the declaration itself is still there, unchanged in shape.
 	if !strings.Contains(got, "declare function undocumented") {
@@ -700,8 +705,14 @@ func TestWriteTypes_DocsEmptyStringRemoves(t *testing.T) {
 	if strings.Contains(got, "Original") {
 		t.Errorf("expected doc to be cleared; got:\n%s", got)
 	}
-	if strings.Contains(got, "*/\ndeclare function toggle") {
-		t.Errorf("expected no JSDoc above toggle after clear; got:\n%s", got)
+	// Only the built-in Sercon preamble (ending "};\n\n") may carry JSDoc;
+	// after clearing toggle's doc there must be no "/**" past the preamble.
+	if i := strings.Index(got, "};\n\n"); i >= 0 {
+		if strings.Contains(got[i+len("};\n\n"):], "/**") {
+			t.Errorf("expected no JSDoc after the Sercon preamble; got:\n%s", got)
+		}
+	} else {
+		t.Fatalf("Sercon preamble not found in output:\n%s", got)
 	}
 }
 
