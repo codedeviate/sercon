@@ -18,6 +18,7 @@ Or pick individual scripts:
 |---|---|
 | `smoke.ts` | `api.log` and `api.assert.*` |
 | `async.ts` | `api.http.get`, `api.time.sleep`, top-level `await`, `import` from a sibling helper |
+| `argv.ts` | `Sercon.argv` — the per-script argument vector (program / script / user args). |
 | `hash.ts` | `api.hash.*` — all nine algorithms |
 | `strings.ts` | `api.str.*` — trim/pad/reverse/strip/encode/sprintf |
 | `path-and-time.ts` | `api.path.*` and `api.time.format` (strftime tokens, IANA zones) |
