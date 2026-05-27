@@ -221,6 +221,22 @@ every other Run.
 _, _ = eng.Run(ctx, "main.ts", source, scriptengine.WithScriptRoot("/path/to/run42"))
 ```
 
+```go
+func WithArgs(args []string) RunOption
+```
+
+Set the per-script argument vector. The script reads it as
+`Sercon.argv`, a global with Node/Bun layout: `argv[0]` is
+`Options.ProgramName` (defaults to `filepath.Base(os.Args[0])`;
+the CLI sets it to `"sercon"`), `argv[1]` is the running script's
+path, and the `WithArgs` values follow from index 2. The global is
+always present — with no args it is just `[programName, scriptPath]`.
+
+```go
+_, _ = eng.Run(ctx, "main.ts", source, scriptengine.WithArgs([]string{"--port", "8080"}))
+// inside the script: Sercon.argv === [ProgramName, "/abs/main.ts", "--port", "8080"]
+```
+
 ### `Reset`
 
 ```go
@@ -347,6 +363,27 @@ Each positional argument is either a path to a `.ts` / `.tsx` file or
 ```bash
 echo 'api.log(1 + 2);' | sercon -
 sercon prelude.ts -                 # prelude then stdin
+```
+
+### Passing arguments: `--` and `Sercon.argv`
+
+Everything after a standalone `--` is the script argument vector,
+exposed to every script as the `Sercon` runtime global:
+
+```bash
+sercon run.ts -- --port 8080 hello
+```
+
+`Sercon.argv` uses the Node/Bun layout `[programName, scriptPath,
+...userArgs]` — `argv[0]` is `"sercon"`, `argv[1]` is the path of the
+script currently executing, and the post-`--` arguments start at index
+2 (so `Sercon.argv.slice(2)` is just your args). All scripts in one
+invocation share the same `--` tail, but each sees its own path at
+`argv[1]`. The global is always present; with no `--` it is just
+`[programName, scriptPath]`.
+
+```ts
+const args = Sercon.argv.slice(2);   // ["--port", "8080", "hello"]
 ```
 
 Exit codes are distinct per failure type so shells can react sensibly.

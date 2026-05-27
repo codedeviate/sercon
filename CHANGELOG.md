@@ -8,7 +8,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `Sercon` runtime global exposing `Sercon.argv` to every script
+  (Node/Bun layout `[programName, scriptPath, ...userArgs]`). CLI args
+  after a standalone `--` form the argument tail
+  (`sercon run.ts -- --port 8080`); the library API adds the `WithArgs`
+  RunOption and `Options.ProgramName`.
 
 ## [0.5.30] — 2026-05-26
 
