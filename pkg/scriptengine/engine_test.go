@@ -672,8 +672,10 @@ func TestWriteTypes_DocsAbsentNoBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := buf.String()
-	if strings.Contains(got, "/**") {
-		t.Errorf("expected no JSDoc block; got:\n%s", got)
+	// The Sercon preamble carries its own JSDoc, so assert specifically that
+	// the *undocumented* binding has no JSDoc block directly above it.
+	if strings.Contains(got, "*/\ndeclare function undocumented") {
+		t.Errorf("expected no JSDoc above undocumented; got:\n%s", got)
 	}
 	// And the declaration itself is still there, unchanged in shape.
 	if !strings.Contains(got, "declare function undocumented") {
@@ -698,8 +700,8 @@ func TestWriteTypes_DocsEmptyStringRemoves(t *testing.T) {
 	if strings.Contains(got, "Original") {
 		t.Errorf("expected doc to be cleared; got:\n%s", got)
 	}
-	if strings.Contains(got, "/**") {
-		t.Errorf("expected no JSDoc block after clear; got:\n%s", got)
+	if strings.Contains(got, "*/\ndeclare function toggle") {
+		t.Errorf("expected no JSDoc above toggle after clear; got:\n%s", got)
 	}
 }
 
@@ -782,6 +784,25 @@ if (typeof Sercon.argv[0] !== "string" || Sercon.argv[0].length === 0) throw new
 `)
 	if err != nil {
 		t.Fatalf("run: %v", err)
+	}
+}
+
+// The Sercon runtime global is declared in every emitted .d.ts,
+// independent of the registered surface.
+func TestWriteTypes_SerconGlobalDeclared(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	for _, want := range []string{
+		"declare const Sercon: {",
+		"argv: string[];",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, got)
+		}
 	}
 }
 
