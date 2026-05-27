@@ -16,6 +16,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   (`sercon run.ts -- --port 8080`); the library API adds the `WithArgs`
   RunOption and `Options.ProgramName`.
 
+### Fixed
+
+- `api.exec.shell` now kills the whole subprocess group on a timeout or
+  cancellation. Previously, when the shell forked the command (rather
+  than exec-ing into it), the surviving grandchild held the stdout/stderr
+  pipe open and `Wait` blocked for the command's full duration — so a
+  short `timeout` did not return promptly. A `WaitDelay` backstop bounds
+  the wait if a process escapes the group.
+
 ## [0.5.30] — 2026-05-26
 
 Adds **module-graph invalidation to `--watch`** — a file change now

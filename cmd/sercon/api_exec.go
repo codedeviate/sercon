@@ -89,6 +89,10 @@ func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
+	// Make a timeout/cancel kill the whole subprocess tree promptly rather
+	// than blocking on a grandchild that still holds the output pipes.
+	configureProcessTermination(cmd)
+
 	start := time.Now()
 	runErr := cmd.Run()
 	durationMs := time.Since(start).Milliseconds()
