@@ -22,11 +22,11 @@ import (
 // scripts run with different failure types — that way a single integer
 // communicates the worst thing that happened.
 const (
-	exitOK       = 0 // every script passed
-	exitUsage    = 1 // CLI argument / setup error (flag parsing, missing scripts, …)
+	exitOK        = 0 // every script passed
+	exitUsage     = 1 // CLI argument / setup error (flag parsing, missing scripts, …)
 	exitTranspile = 2 // at least one script failed to transpile (never ran)
-	exitTimeout  = 3 // at least one script timed out or was context-cancelled
-	exitThrow    = 4 // at least one script ran and threw an exception
+	exitTimeout   = 3 // at least one script timed out or was context-cancelled
+	exitThrow     = 4 // at least one script ran and threw an exception
 )
 
 func main() {
@@ -34,6 +34,19 @@ func main() {
 }
 
 func run(args []string) int {
+	// Split the raw args at the first standalone "--": everything after it
+	// is the user argument vector handed to scripts as Sercon.argv[2:]. We
+	// do this before flag parsing because Go's flag package stops at the
+	// first positional token and would surface "--" as a bogus script path.
+	var userArgs []string
+	for i, a := range args {
+		if a == "--" {
+			userArgs = args[i+1:]
+			args = args[:i]
+			break
+		}
+	}
+
 	fs := flag.NewFlagSet("sercon", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	timeout := fs.Duration("timeout", 10*time.Second, "Per-script timeout")
@@ -89,8 +102,9 @@ func run(args []string) int {
 	}
 
 	engOpts := scriptengine.Options{
-		Timeout:    *timeout,
-		ScriptRoot: scriptRoot,
+		Timeout:     *timeout,
+		ScriptRoot:  scriptRoot,
+		ProgramName: "sercon",
 	}
 	if *verbose {
 		engOpts.Verbose = os.Stderr
@@ -123,12 +137,12 @@ func run(args []string) int {
 		// (always 0 on clean shutdown via Ctrl-C; usage errors on
 		// setup failure). Per-script throws inside a watch session
 		// are logged but don't propagate as the process exit.
-		return runWatchLoop(eng, scripts, scriptRoot, *verbose, os.Stdout)
+		return runWatchLoop(eng, scripts, scriptRoot, *verbose, os.Stdout, userArgs)
 	}
 
 	worst := exitOK
 	for _, s := range scripts {
-		err := runOne(eng, s, *verbose)
+		err := runOne(eng, s, *verbose, userArgs)
 		if err == nil {
 			continue
 		}
@@ -147,7 +161,7 @@ func run(args []string) int {
 
 // runOne executes a single script source, either a file path or "-" for
 // stdin. On success it prints a PASS line and returns nil.
-func runOne(eng *scriptengine.Engine, path string, verbose bool) error {
+func runOne(eng *scriptengine.Engine, path string, verbose bool, userArgs []string) error {
 	start := time.Now()
 	var err error
 	label := path
@@ -156,10 +170,10 @@ func runOne(eng *scriptengine.Engine, path string, verbose bool) error {
 		var data []byte
 		data, err = io.ReadAll(os.Stdin)
 		if err == nil {
-			_, err = eng.Run(context.Background(), "<stdin>", string(data))
+			_, err = eng.Run(context.Background(), "<stdin>", string(data), scriptengine.WithArgs(userArgs))
 		}
 	} else {
-		_, err = eng.RunFile(context.Background(), path)
+		_, err = eng.RunFile(context.Background(), path, scriptengine.WithArgs(userArgs))
 	}
 	dur := time.Since(start)
 	if err != nil {

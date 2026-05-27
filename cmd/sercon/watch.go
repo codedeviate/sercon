@@ -50,7 +50,7 @@ const watchDebounce = 150 * time.Millisecond
 // re-invoking runOne on the same Engine. Re-registering bindings
 // would double them; we keep the engine and let it serve repeated
 // runs.
-func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string, verbose bool, out io.Writer) int {
+func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string, verbose bool, out io.Writer, userArgs []string) int {
 	if scriptRoot == "" {
 		fmt.Fprintln(os.Stderr, "sercon: --watch needs a script root")
 		return exitUsage
@@ -79,7 +79,7 @@ func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string,
 	// Initial run. Always happens regardless of what the watcher
 	// later picks up so the user sees output immediately rather
 	// than after the first edit. Builds the initial import graphs.
-	runOnceForWatch(eng, scripts, graphs, verbose, out, "initial run")
+	runOnceForWatch(eng, scripts, graphs, verbose, out, "initial run", userArgs)
 
 	// changed accumulates the absolute paths touched during a debounce
 	// window, so the re-run can scope itself to the affected entries.
@@ -157,7 +157,7 @@ func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string,
 			// registry otherwise caches compiled bytecode across runs.
 			eng.ResetModuleCache()
 			fmt.Fprintln(out, "")
-			runOnceForWatch(eng, affected, graphs, verbose, out, "re-run")
+			runOnceForWatch(eng, affected, graphs, verbose, out, "re-run", userArgs)
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return exitOK
@@ -171,7 +171,7 @@ func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string,
 // graph as it goes (via the engine's resolve hook), then prints a
 // separator. The `reason` label distinguishes the initial run from
 // re-runs in the banner.
-func runOnceForWatch(eng *scriptengine.Engine, scripts []string, graphs map[string]map[string]bool, verbose bool, out io.Writer, reason string) {
+func runOnceForWatch(eng *scriptengine.Engine, scripts []string, graphs map[string]map[string]bool, verbose bool, out io.Writer, reason string, userArgs []string) {
 	fmt.Fprintf(out, "--- sercon %s @ %s ---\n", reason, time.Now().Format("15:04:05"))
 	for _, s := range scripts {
 		// Capture the dep set this run resolves. The entry's own file is
@@ -184,7 +184,7 @@ func runOnceForWatch(eng *scriptengine.Engine, scripts []string, graphs map[stri
 			}
 		}
 		eng.SetResolveHook(func(abs string) { deps[abs] = true })
-		err := runOne(eng, s, verbose)
+		err := runOne(eng, s, verbose, userArgs)
 		eng.SetResolveHook(nil)
 		graphs[s] = deps
 
