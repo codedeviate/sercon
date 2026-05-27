@@ -197,6 +197,9 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    Each positional argument is either a path to a `.ts`/`.tsx` file or")
 	fmt.Fprintln(w, "    `-` to read an entry script from standard input. Arguments are run in")
 	fmt.Fprintln(w, "    order; their results compose into the final exit code (highest wins).")
+	fmt.Fprintln(w, "    Everything after a standalone `--` is passed to the scripts as")
+	fmt.Fprintln(w, "    `Sercon.argv` (Node/Bun layout: [program, script, ...args]); all")
+	fmt.Fprintln(w, "    scripts in one invocation share that argument tail.")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("EXIT STATUS"))
@@ -217,6 +220,8 @@ func showHelp(w io.Writer) {
 		s.cyan("sercon --emit-dts api.d.ts"))
 	fmt.Fprintf(w, "    %s\n        One-liner from a shell pipeline (reads from stdin).\n",
 		s.cyan(`echo 'api.log(1+2);' | sercon -`))
+	fmt.Fprintf(w, "    %s\n        Pass arguments to a script via Sercon.argv.\n",
+		s.cyan("sercon run.ts -- --port 8080"))
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("SEE ALSO"))
@@ -446,7 +451,7 @@ api.log(await api.jq.queryAll(data,
 
 	header(24, "Email authentication (api.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
-// { present: boolean, ... } and resolve `+"`present: false`"+` for NXDOMAIN
+// { present: boolean, ... } and resolve ` + "`present: false`" + ` for NXDOMAIN
 // or missing record rather than throwing.
 const spf    = await api.email.spf("google.com");
 const dmarc  = await api.email.dmarc("google.com");
@@ -656,10 +661,20 @@ await ins.close();
 await db.close();   // no finalizer — always close.`)
 	note("Pure-Go driver (modernc.org/sqlite, no cgo). begin() must commit/rollback; prepare() must close. Params bind as ? placeholders; BLOBs round-trip as Uint8Array, TEXT as string.")
 
+	header(36, "Script arguments (Sercon.argv)")
+	code(`// Everything after a standalone -- on the command line lands in
+// Sercon.argv, using the Node/Bun layout [program, script, ...args]:
+//   sercon run.ts -- --port 8080 hello
+api.log("program:", Sercon.argv[0]);
+api.log("script:", Sercon.argv[1]);
+const args = Sercon.argv.slice(2);   // ["--port", "8080", "hello"]
+api.log("args:", JSON.stringify(args));`)
+	note("Always present (length >= 2). All scripts in one invocation share the same tail; argv[1] is each script's own path.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 35
+const exampleCount = 36
