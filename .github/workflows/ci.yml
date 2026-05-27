@@ -73,8 +73,9 @@ jobs:
         with:
           go-version: stable
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
           # Pinned to match `make lint`'s one-shot fallback so contributors
-          # see the same rule set locally and in CI.
+          # see the same rule set locally and in CI. golangci-lint v2 needs
+          # action v7+ (v6 rejects v2 version strings).
           version: v2.12.2
