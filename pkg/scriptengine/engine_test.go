@@ -752,6 +752,39 @@ func TestModuleLoader_ErrorAborts(t *testing.T) {
 	}
 }
 
+// Sercon.argv carries the program name (argv[0]), the running script path
+// (argv[1]), then the user args supplied via WithArgs (Node/Bun layout).
+func TestRun_SerconArgvWithArgs(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{
+		ScriptRoot:     t.TempDir(),
+		DisableConsole: true,
+		ProgramName:    "myprog",
+	})
+	_, err := eng.Run(context.Background(), "run.ts", `
+if (Sercon.argv[0] !== "myprog") throw new Error("argv[0]: " + Sercon.argv[0]);
+if (!Sercon.argv[1].endsWith("run.ts")) throw new Error("argv[1]: " + Sercon.argv[1]);
+if (Sercon.argv.length !== 4) throw new Error("length: " + Sercon.argv.length);
+if (Sercon.argv[2] !== "--port") throw new Error("argv[2]: " + Sercon.argv[2]);
+if (Sercon.argv[3] !== "8080") throw new Error("argv[3]: " + Sercon.argv[3]);
+`, scriptengine.WithArgs([]string{"--port", "8080"}))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// With no WithArgs, Sercon.argv is exactly [programName, scriptPath].
+func TestRun_SerconArgvDefaultsToProgramAndScript(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	_, err := eng.Run(context.Background(), "run.ts", `
+if (Sercon.argv.length !== 2) throw new Error("expected length 2, got " + Sercon.argv.length);
+if (!Sercon.argv[1].endsWith("run.ts")) throw new Error("argv[1]: " + Sercon.argv[1]);
+if (typeof Sercon.argv[0] !== "string" || Sercon.argv[0].length === 0) throw new Error("argv[0] empty");
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 // Robust import parsing: multi-line named imports with interleaved
 // comments and irregular whitespace must still rewrite correctly.
 func TestRun_AwkwardImports(t *testing.T) {

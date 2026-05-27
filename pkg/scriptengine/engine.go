@@ -49,6 +49,10 @@ type Options struct {
 	// suffix or basename rather than an exact path. Returning source for a
 	// `.ts` candidate gets it transpiled just like a disk read would.
 	ModuleLoader func(candidatePath string) (source string, found bool, err error)
+	// ProgramName is argv[0] in the per-script Sercon.argv. When empty,
+	// New defaults it to filepath.Base(os.Args[0]). The sercon CLI sets
+	// it to "sercon".
+	ProgramName string
 }
 
 // Engine is the embeddable TypeScript script engine.
@@ -89,6 +93,9 @@ func New(opts Options) *Engine {
 		if wd, err := os.Getwd(); err == nil {
 			opts.ScriptRoot = wd
 		}
+	}
+	if opts.ProgramName == "" {
+		opts.ProgramName = filepath.Base(os.Args[0])
 	}
 	return &Engine{
 		opts:          opts,
@@ -252,6 +259,7 @@ type RunOption func(*runConfig)
 
 type runConfig struct {
 	scriptRoot string
+	args       []string
 }
 
 // WithScriptRoot points this Run at a different base directory for
@@ -260,6 +268,13 @@ type runConfig struct {
 // each live under their own directory.
 func WithScriptRoot(dir string) RunOption {
 	return func(c *runConfig) { c.scriptRoot = dir }
+}
+
+// WithArgs sets the user argument vector exposed to the script as
+// Sercon.argv[2:]. argv[0] is Options.ProgramName and argv[1] is the
+// running script's path; these args follow. Applies only to this Run.
+func WithArgs(args []string) RunOption {
+	return func(c *runConfig) { c.args = args }
 }
 
 // Run executes source as the entry script for this engine. name is used in
@@ -343,6 +358,17 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 			scriptErr = err
 			return
 		}
+
+		// Inject the Sercon runtime global. argv mirrors Node/Bun:
+		// [programName, scriptPath, ...userArgs]. `name` is the absolute
+		// script path resolved above, so argv[1] is naturally per-Run.
+		// Injected after applyRegistrations so the built-in is authoritative.
+		argv := make([]string, 0, 2+len(cfg.args))
+		argv = append(argv, e.opts.ProgramName, name)
+		argv = append(argv, cfg.args...)
+		serconObj := vm.NewObject()
+		_ = serconObj.Set("argv", vm.ToValue(argv))
+		_ = vm.Set("Sercon", serconObj)
 
 		// __resolve / __reject are called by the async IIFE wrapper to surface
 		// completion of the top-level script (including any awaited promises).
