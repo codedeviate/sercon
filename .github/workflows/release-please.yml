@@ -17,6 +17,9 @@ name: release-please
 on:
   push:
     branches: [master]
+  # Allow manual re-runs from the Actions tab / `gh workflow run`, e.g.
+  # after granting the Actions PR-creation permission.
+  workflow_dispatch:
 
 permissions:
   contents: write
