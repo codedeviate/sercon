@@ -361,7 +361,7 @@ Each positional argument is either a path to a `.ts` / `.tsx` file or
 `-` to read an entry script from standard input:
 
 ```bash
-echo 'api.log(1 + 2);' | sercon -
+echo 'api.runtime.log(1 + 2);' | sercon -
 sercon prelude.ts -                 # prelude then stdin
 ```
 
@@ -470,6 +470,64 @@ actually takes effect — the registry otherwise caches compiled
 bytecode across runs.
 
 ## 5. Built-in script `api`
+
+### Migrating from 0.7
+
+`api.*` was reorganised in 0.8.0 from 32 flat groups into 9 category
+buckets. Every script written for 0.7 or earlier needs path updates.
+The mapping:
+
+| Old path                 | New path                       |
+|--------------------------|--------------------------------|
+| `api.log`                | `api.runtime.log`              |
+| `api.assert.equal`       | `api.runtime.assert.equal`     |
+| `api.assert.ok`          | `api.runtime.assert.ok`        |
+| `api.time.*`             | `api.runtime.time.*`           |
+| `api.env.get`            | `api.runtime.env.get`          |
+| `api.hash.*`             | `api.crypto.hash.*`            |
+| `api.jwt.*`              | `api.crypto.jwt.*`             |
+| `api.encrypt.*`          | `api.crypto.encrypt.*`         |
+| `api.str.*`              | `api.text.str.*`               |
+| `api.preg.*`             | `api.text.preg.*`              |
+| `api.preg2.*`            | `api.text.preg2.*`             |
+| `api.text.detect`        | `api.text.charset.detect`      |
+| `api.text.encode`        | `api.text.charset.encode`      |
+| `api.text.decode`        | `api.text.charset.decode`      |
+| `api.jq.*`               | `api.text.jq.*`                |
+| `api.diff.compare`       | `api.text.diff.compare`        |
+| `api.compression.*`      | `api.format.compression.*`     |
+| `api.barcode.*`          | `api.format.barcode.*`         |
+| `api.checkdigit.*`       | `api.format.checkdigit.*`      |
+| `api.path.*`             | `api.fs.path.*`                |
+| `api.archive.*`          | `api.fs.archive.*`             |
+| `api.http.*`             | `api.net.http.*`               |
+| `api.net.tcp`            | `api.net.probe.tcp`            |
+| `api.net.dns`            | `api.net.probe.dns`            |
+| `api.net.tls`            | `api.net.probe.tls`            |
+| `api.net.ntp`            | `api.net.probe.ntp`            |
+| `api.net.whois`          | `api.net.probe.whois`          |
+| `api.net.ping`           | `api.net.probe.ping`           |
+| `api.net.smtp`           | `api.net.probe.smtp`           |
+| `api.net.wss`            | `api.net.probe.wss`            |
+| `api.netstatus.*`        | `api.net.netstatus.*`          |
+| `api.email.*`            | `api.net.email.*`              |
+| `api.browser.*`          | `api.net.browser.*`            |
+| `api.sqlite.*`           | `api.db.sqlite.*`              |
+| `api.redis.*`            | `api.db.redis.*`               |
+| `api.memcached.*`        | `api.db.memcached.*`           |
+| `api.ldap.*`             | `api.db.ldap.*`                |
+| `api.dict.*`             | `api.db.dict.*`                |
+| `api.exec.shell`         | `api.tools.exec.shell`         |
+| `api.exec.http`          | `api.tools.exec.http`          |
+| `api.git.*`              | `api.tools.git.*`              |
+| `api.gh.*`               | `api.tools.gh.*`               |
+| `api.ai.*`               | `api.tools.ai.*`               |
+| `api.tui.layout`         | `api.ui.tui.layout`            |
+| `api.tui.pane`           | `api.ui.tui.pane`              |
+
+Every leaf function name stays the same; only the addressing changes.
+A mechanical sed pass over your scripts handles it — see the
+`CHANGELOG.md` 0.8.0 "Changed" entry for the canonical sed command.
 
 The CLI exposes the following globals to every script:
 
@@ -1071,20 +1129,20 @@ declare const api: {
 Examples:
 
 ```ts
-api.log("hello", 1 + 2);
-api.assert.equal(api.time.nowMs() > 0, true);
+api.runtime.log("hello", 1 + 2);
+api.runtime.assert.equal(api.runtime.time.nowMs() > 0, true);
 
-const r = await api.http.get("https://example.com");
-api.assert.ok(r.status === 200, `expected 200, got ${r.status}`);
+const r = await api.net.http.get("https://example.com");
+api.runtime.assert.ok(r.status === 200, `expected 200, got ${r.status}`);
 
-await api.time.sleep(50);
-const home = api.env.get("HOME") ?? "(none)";
+await api.runtime.time.sleep(50);
+const home = api.runtime.env.get("HOME") ?? "(none)";
 
-api.log(api.hash.sha256("abc"));
+api.runtime.log(api.crypto.hash.sha256("abc"));
 // → ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 ```
 
-`api.http.request(method, url, opts?)` is the full-featured client
+`api.net.http.request(method, url, opts?)` is the full-featured client
 beyond `get` / `post`: per-call `headers`, `body`, `timeout`
 (default 30s), `retry` (re-attempts on transport errors and 5xx —
 never 4xx, which are deterministic; linear backoff capped at 1s),
@@ -1099,7 +1157,7 @@ HTTP bindings use `net/http` with a 5-second default per-request timeout
 and surface real `Promise<…>` values through the event loop. They are
 *not* mockable from JS — they go to the real network.
 
-Compression bindings (`api.compression.*`) cover nine pure-Go
+Compression bindings (`api.format.compression.*`) cover nine pure-Go
 algorithms behind a uniform interface. Inputs are either strings
 (interpreted as UTF-8 byte sequences) or any `ArrayBuffer` /
 `Uint8Array`; outputs are `Uint8Array` — goja's representation of a
@@ -1117,11 +1175,11 @@ round-trips:
 | `xz` | [`github.com/ulikunitz/xz`](https://github.com/ulikunitz/xz) |
 | `snappy` | [`github.com/golang/snappy`](https://github.com/golang/snappy) |
 
-`api.compression.algos()` returns the supported names so scripts can
+`api.format.compression.algos()` returns the supported names so scripts can
 iterate without hard-coding the list. Unknown algorithm names throw
 a clear error rather than silently returning empty bytes.
 
-Barcode encoders (`api.barcode.*`) cover ten symbologies through one
+Barcode encoders (`api.format.barcode.*`) cover ten symbologies through one
 `encode(format, data, opts?)` entry point, all backed by the pure-Go
 [`github.com/boombuler/barcode`](https://github.com/boombuler/barcode)
 toolkit. Output is a PNG payload as `Uint8Array`; size defaults to
@@ -1139,11 +1197,11 @@ UPC to decode (see the decode quirks below).
   right length; `boombuler/ean.Encode` dispatches by length so all
   three variants share the same encoder.
 
-`api.barcode.formats()` returns the supported encode names;
-`api.barcode.decodableFormats()` returns the (slightly different)
+`api.format.barcode.formats()` returns the supported encode names;
+`api.format.barcode.decodableFormats()` returns the (slightly different)
 decode set.
 
-**Decoding** (`api.barcode.decode(data, format?)`) accepts PNG /
+**Decoding** (`api.format.barcode.decode(data, format?)`) accepts PNG /
 JPEG / WebP image bytes and reaches into
 [`github.com/makiuchi-d/gozxing`](https://github.com/makiuchi-d/gozxing).
 Returns `{ format, text }` — `format` is the snake-case label the
@@ -1201,7 +1259,7 @@ that `golang.org/x/text/encoding/htmlindex.Get` accepts —
 `GB18030`, `Big5`, `EUC-JP`, `EUC-KR`, etc., plus all documented
 aliases. Unknown names throw a clear error.
 
-Check-digit bindings (`api.checkdigit.*`) verify and compute the
+Check-digit bindings (`api.format.checkdigit.*`) verify and compute the
 trailing check digit of common numeric codes. All three members are
 synchronous — the algorithms are small bits of modular arithmetic,
 no I/O or library dependency. Supported algorithms (returned by
@@ -1224,7 +1282,7 @@ check digit and returns just that digit (or `"X"` for ISBN-10
 position 10). `inspect(algo, input)` returns the union of both
 views — useful when you want to display the diagnosis to a human.
 
-Archive bindings (`api.archive.*`) handle the three formats stdlib
+Archive bindings (`api.fs.archive.*`) handle the three formats stdlib
 provides without external deps: `.zip`, `.tar`, and `.tar.gz`
 (also `.tgz`). Format is inferred from the destination's extension
 on `create` and from the source path on `extract`.
@@ -1244,7 +1302,7 @@ on `create` and from the source path on `extract`.
   absolute paths, `..` segments, and anything that would resolve
   outside destDir.
 
-Diff bindings (`api.diff.compare(a, b, opts?)`) produce a unified
+Diff bindings (`api.text.diff.compare(a, b, opts?)`) produce a unified
 diff between two text inputs via
 [`github.com/pmezard/go-difflib`](https://github.com/pmezard/go-difflib).
 Inputs are strings (UTF-8) or any byte sequence (`ArrayBuffer` /
@@ -1265,7 +1323,7 @@ Inputs are strings (UTF-8) or any byte sequence (`ArrayBuffer` /
 `opts.fromFile` / `opts.toFile` (default `"a"` / `"b"`) set the
 labels in the diff headers.
 
-JSON-query bindings (`api.jq.*`) run jq filters over JS data via
+JSON-query bindings (`api.text.jq.*`) run jq filters over JS data via
 [`github.com/itchyny/gojq`](https://github.com/itchyny/gojq), a
 pure-Go re-implementation. The filter syntax is the same as
 command-line jq.
@@ -1289,7 +1347,7 @@ zero, …) both surface as JS exceptions. Use jq's optional access
 operator `?` (e.g. `.does.not.exist?`) to suppress missing-path
 errors and get `null` back instead.
 
-Aggregate connectivity (`api.netstatus.check(host, opts?)`) is an
+Aggregate connectivity (`api.net.netstatus.check(host, opts?)`) is an
 orchestration layer over the lower-level probes — it runs DNS,
 TCP, TLS, and HTTP against one host **concurrently** (fan-out via
 a WaitGroup) and folds them into a single status object. Each
@@ -1302,7 +1360,7 @@ with an expired cert is still "reachable"). Only a missing host
 argument throws. No new library — it composes `net` /
 `crypto/tls` / `net/http` directly.
 
-Redis (`api.redis.open(url)`) is a stateful-handle binding over
+Redis (`api.db.redis.open(url)`) is a stateful-handle binding over
 [`redis/go-redis/v9`](https://github.com/redis/go-redis) (the
 official client). `open` parses a `redis://[:password@]host:port/db`
 URL and PINGs to surface a bad address up front, then resolves to
@@ -1316,7 +1374,7 @@ becomes JS `null` rather than throwing, so
 (WRONGTYPE, unknown command) throw. Offline-testable via
 `alicebob/miniredis`.
 
-Memcached (`api.memcached.open(addr)`) is a stateful-handle binding
+Memcached (`api.db.memcached.open(addr)`) is a stateful-handle binding
 over [`bradfitz/gomemcache`](https://github.com/bradfitz/gomemcache)
 (the de facto standard client). `addr` is `host:port`; gomemcache
 pools connections lazily so there's no PING-on-open (the first op
@@ -1326,7 +1384,7 @@ on a cache miss; `set(key, value, expirySeconds?)` stores bytes
 (0 / omitted = never expire); `delete` returns `true` if the key
 existed, `false` on a miss. Server errors throw.
 
-LDAP (`api.ldap.open(url)`) is a stateful-handle binding over
+LDAP (`api.db.ldap.open(url)`) is a stateful-handle binding over
 [`go-ldap/v3`](https://github.com/go-ldap/ldap). Dials
 `ldap://host:port` (or `ldaps://`), does an anonymous bind by
 default (or a simple bind with `opts.bindDN` / `opts.password`),
@@ -1337,7 +1395,7 @@ subtree search and returns `{ dn, <attr>: [values] }` per entry
 (attributes stay arrays since LDAP is multi-valued). A read /
 inspection surface — no modify / add / delete.
 
-DICT (`api.dict.*`) is an RFC 2229 dictionary-server client. No
+DICT (`api.db.dict.*`) is an RFC 2229 dictionary-server client. No
 maintained pure-Go DICT library exists, so the protocol is
 hand-rolled over `net/textproto` (a simple line-based status-code
 protocol, much like SMTP). `define(host, word, opts?)` returns
@@ -1348,7 +1406,7 @@ with no entry resolves `found: false` (not an error).
 (connect → query → QUIT); `opts.database` (default `*` = all),
 `opts.port` (default 2628).
 
-AI agents (`api.ai.*`) shell out to a coding-assistant CLI.
+AI agents (`api.tools.ai.*`) shell out to a coding-assistant CLI.
 `providers()` lists which of `claude` / `codex` / `copilot` /
 `gemini` are on PATH (preference order); `send(opts)` runs a
 one-shot prompt through one of them — `opts.provider` picks
@@ -1364,20 +1422,20 @@ options-object shape rather than a builder chain — the idiomatic
 JS equivalent, and it sidesteps threading a mutable builder handle
 through goja. **Library:** `os/exec` (stdlib).
 
-Browser sessions (`api.browser.open()`) give a stateful HTTP
+Browser sessions (`api.net.browser.open()`) give a stateful HTTP
 client — an automatic cookie jar (`net/http/cookiejar` with the
 `golang.org/x/net/publicsuffix` list, so cookies scope correctly
 across subdomains) plus default headers replayed on every request.
 A second stateful-handle binding in the same shape as
-`api.sqlite`: `open()` resolves to `{ setUserAgent, setHeader,
+`api.db.sqlite`: `open()` resolves to `{ setUserAgent, setHeader,
 get, post, cookies }`. A login POST followed by a GET replays the
 session cookie without the script touching it; `cookies(url)`
 inspects the jar (handy for asserting a login set what you
 expect). `get` / `post` return the same `{ status, ok, headers,
-body, url }` shape as `api.http.request`. No explicit close — the
+body, url }` shape as `api.net.http.request`. No explicit close — the
 session is GC'd with the handle.
 
-Subprocess bindings (`api.exec.*`) wrap Go's `os/exec`. `shell` is
+Subprocess bindings (`api.tools.exec.*`) wrap Go's `os/exec`. `shell` is
 the only entry today; `http` (recon-with-curl-fallback) and `git` /
 `gh` wrappers ride on top of it in later 0.4.x cuts.
 
@@ -1425,7 +1483,7 @@ the only entry today; `http` (recon-with-curl-fallback) and `git` /
   deadline / cancellation throw. The error message includes the
   backend's stderr when present.
 
-Git bindings (`api.git.*`) shell out to the host `git` binary; no
+Git bindings (`api.tools.git.*`) shell out to the host `git` binary; no
 pure-Go alternative (`go-git` is heavier and would drift from the
 user's installed git). Every binding accepts an `opts.cwd` so a
 single engine can work across multiple checkouts.
@@ -1464,7 +1522,7 @@ single engine can work across multiple checkouts.
   generic wrapper; callers branch on `exitCode`. Spawn failures and
   context cancellation still throw.
 
-GitHub-CLI bindings (`api.gh.*`) wrap the `gh` binary. They respect
+GitHub-CLI bindings (`api.tools.gh.*`) wrap the `gh` binary. They respect
 whatever authentication state `gh auth` is already in; we don't try
 to swap accounts or manage tokens. Every call uses `gh --json` so
 the result is structured rather than parsed out of human-readable
@@ -1491,7 +1549,7 @@ text.
   branch name (not `defaultBranchRef.name`). Empty repos resolve
   with `defaultBranch: ""` rather than `undefined`.
 
-Regex bindings (`api.preg.*`) accept PHP-style `/pattern/flags`
+Regex bindings (`api.text.preg.*`) accept PHP-style `/pattern/flags`
 delimited input but run on Go's stdlib `regexp` (RE2). The "preg"
 naming is a deliberate homage; the semantics are RE2's. That means
 **no backreferences inside patterns**, **no lookahead / lookbehind**,
@@ -1520,12 +1578,12 @@ says so.
   already legitimate in the replacement. Use `$1` / `${1}` as in
   Go.
 
-PCRE regex bindings (`api.preg2.*`) are the heavier-engine sibling
-of `api.preg`. They run on
+PCRE regex bindings (`api.text.preg2.*`) are the heavier-engine sibling
+of `api.text.preg`. They run on
 [`github.com/dlclark/regexp2`](https://github.com/dlclark/regexp2),
 a port of .NET's regex engine, which **does** support lookahead,
 lookbehind, backreferences inside patterns, and possessive
-quantifiers — everything RE2 (and therefore `api.preg`) can't do.
+quantifiers — everything RE2 (and therefore `api.text.preg`) can't do.
 The API is identical (`match` / `matchAll` / `replace`, the same
 `/pattern/flags` delimited syntax, the same `{ match, groups,
 index }` shape) so switching engines is a one-word change. The
@@ -1534,13 +1592,13 @@ honour; `u` / `U` still error (regexp2 is Unicode-aware by default
 and has no global-ungreedy switch). `replace` uses .NET / regexp2
 `$1` / `${1}` substitution syntax.
 
-The trade-off is the reason `api.preg` exists at all: regexp2
+The trade-off is the reason `api.text.preg` exists at all: regexp2
 **backtracks**, so it has no linear-time guarantee. A pathological
 pattern against adversarial input can blow up exponentially. Use
-`api.preg` (RE2) by default; reach for `api.preg2` only when you
+`api.text.preg` (RE2) by default; reach for `api.text.preg2` only when you
 need a PCRE feature, and keep a timeout around untrusted input.
 
-JWT bindings (`api.jwt.*`) wrap
+JWT bindings (`api.crypto.jwt.*`) wrap
 [`golang-jwt/jwt/v5`](https://github.com/golang-jwt/jwt). The full
 RFC 7518 algorithm matrix is supported: HMAC (`HS256` / `HS384` /
 `HS512`), RSA-PKCS1v1.5 (`RS256` / `RS384` / `RS512`), RSA-PSS
@@ -1590,7 +1648,7 @@ failures.
   layer arbitrary application claims alongside them. Missing
   reserved claims aren't synthesised — scripts that want `iat` set
   should compute it explicitly (e.g.
-  `Math.floor(api.time.nowMs() / 1000)`).
+  `Math.floor(api.runtime.time.nowMs() / 1000)`).
 - **`view(token)`** — Decodes the header + payload **without
   verifying the signature**. Useful for debugging auth flows or
   surfacing `aud` / `iss` to the user before deciding whether to
@@ -1621,7 +1679,7 @@ failures.
   from the key shape because that would make the wrong default
   silent.
 
-Encryption (`api.encrypt.*`) supports **two backends** behind one
+Encryption (`api.crypto.encrypt.*`) supports **two backends** behind one
 API: age ([`filippo.io/age`](https://github.com/FiloSottile/age),
 the default) and PGP
 ([`ProtonMail/go-crypto/openpgp`](https://github.com/ProtonMail/go-crypto)).
@@ -1649,7 +1707,7 @@ BLOCK-----`), generated by `keygenPgp`.
 
 All three members are synchronous: encryption is pure CPU work
 with a small API surface, matching the call shape of the other
-crypto bindings (`api.jwt`, `api.hash`).
+crypto bindings (`api.crypto.jwt`, `api.crypto.hash`).
 
 - **`keygen()`** — Generate a fresh X25519 identity. Returns
   `{ publicKey, privateKey }` as the bech32 strings age writes to
@@ -1676,7 +1734,7 @@ crypto bindings (`api.jwt`, `api.hash`).
   still detects correctly). age then walks the identities and uses
   the first that matches a stanza in the header. Returns
   `Uint8Array`; let scripts decode to a string via
-  `api.text.decode(bytes, "utf-8")` if appropriate (goja doesn't
+  `api.text.charset.decode(bytes, "utf-8")` if appropriate (goja doesn't
   ship `TextDecoder`).
 - **`rekey(ciphertext, oldIdentities, newRecipients, opts?)`** —
   Re-encrypt a payload for a fresh recipient set without ever
@@ -1707,7 +1765,7 @@ crypto bindings (`api.jwt`, `api.hash`).
   still handle age recipients only. Useful for scripts that need
   to dispatch on the format ("is this an age recipient or a PGP
   block?") before deciding which encrypt path — e.g., a config
-  loader that routes some recipients through `api.encrypt.encrypt`
+  loader that routes some recipients through `api.crypto.encrypt.encrypt`
   and shells out to `gpg --encrypt` for others.
 
 Cross-checks fire at the binding boundary so the common JS-side
@@ -1729,7 +1787,7 @@ for recipient block"`. Scripts that want to silently try multiple
 identities should pass them all in one call (age tries each in
 turn internally) rather than catching this error.
 
-SQLite (`api.sqlite.*`) is sercon's first **stateful-handle**
+SQLite (`api.db.sqlite.*`) is sercon's first **stateful-handle**
 binding — the shape future protocol bindings (redis / ldap / …)
 will reuse. The namespace exposes only `open`; the object it
 resolves to carries the real surface. The driver is
@@ -1803,7 +1861,7 @@ the upstream `lukechampine.com/blake3` reference implementation with a
 32-byte output. `crc32` is the IEEE polynomial, zero-padded to 8 hex
 chars.
 
-String utilities (`api.str.*`) follow PHP-/recon-style semantics where
+String utilities (`api.text.str.*`) follow PHP-/recon-style semantics where
 they differ from JS:
 
 - `trim` / `ltrim` / `rtrim` accept an optional mask string; **any
@@ -1824,11 +1882,11 @@ they differ from JS:
 - `normalizeNewlines` canonicalises any mix of `\r\n`, `\r`, and `\n`
   to the requested style.
 
-Path utilities (`api.path.*`) are POSIX (forward-slash). On Windows
+Path utilities (`api.fs.path.*`) are POSIX (forward-slash). On Windows
 either pass forward-slash paths or convert separators yourself.
 
-Time formatting (`api.time.format(unixMs, fmt, tz?)`) takes Unix
-milliseconds (symmetric with `api.time.nowMs()`) and a small strftime
+Time formatting (`api.runtime.time.format(unixMs, fmt, tz?)`) takes Unix
+milliseconds (symmetric with `api.runtime.time.nowMs()`) and a small strftime
 token set: `%Y %y %m %d %H %M %S %F %T %j %A %a %B %b %z %Z %%`. Day
 and month names are in English. Pass a third-argument IANA zone name
 (e.g. `"UTC"`, `"America/New_York"`) to render in that zone; if
@@ -1901,7 +1959,7 @@ an optional `{ timeout: <ms> }` second arg; the default is 5 seconds.
   partial result for a failed upgrade. Not a streaming client —
   the connection doesn't outlive the call.
 
-Email-authentication probes (`api.email.*`) read DNS records and
+Email-authentication probes (`api.net.email.*`) read DNS records and
 surface the published policy. They all return `{ present: false }`
 when the relevant record is absent (NXDOMAIN or no TXT record
 matching the marker prefix), so scripts can write a single
@@ -1940,20 +1998,20 @@ presence-check pattern across the family.
   under `<probe>.error` so a partial result is still useful (e.g.
   SPF + DMARC found, MTA-STS policy fetch timed out).
 
-### `api.tui.*` — multi-pane TUI
+### `api.ui.tui.*` — multi-pane TUI
 
 Scripts that orchestrate multiple subprocesses (e.g. `brew`, `npm`,
 `cargo` updates running in parallel) can declare a multi-pane terminal
 layout and route each subprocess's stdout/stderr into its own pane.
 Activation is **script-driven**: the first call to
-`api.tui.layout(...)` enters TUI mode. If stdout is not a TTY (CI,
+`api.ui.tui.layout(...)` enters TUI mode. If stdout is not a TTY (CI,
 pipes, `make demo`), the same calls fall back to prefixed plain-text
 lines (`[paneName] line`) so the same script runs in both contexts.
 
 #### Layout
 
 ```ts
-api.tui.layout({
+api.ui.tui.layout({
   rows: [
     { name: "log", title: "Orchestrator", weight: 1 },
     { cols: [
@@ -1978,24 +2036,24 @@ tree. `layout` may be called **once** per Run; a second call throws.
 #### Pane handles
 
 ```ts
-const log = api.tui.pane("log");
+const log = api.ui.tui.pane("log");
 log.writeln("Updating Homebrew…");
 log.title("Done");
 log.clear();
 log.write("partial line ");
 ```
 
-`api.tui.pane(name)` returns a handle with `write`, `writeln`, `clear`,
+`api.ui.tui.pane(name)` returns a handle with `write`, `writeln`, `clear`,
 `title`. Methods are synchronous from the script's perspective — they
 enqueue to the TUI goroutine.
 
 #### Subprocess routing
 
-`api.exec.shell(cmd, opts)` accepts `opts.pane` (a Pane handle or a
+`api.tools.exec.shell(cmd, opts)` accepts `opts.pane` (a Pane handle or a
 pane name string):
 
 ```ts
-await api.exec.shell("brew update && brew upgrade", { pane: "brew" });
+await api.tools.exec.shell("brew update && brew upgrade", { pane: "brew" });
 ```
 
 When set, the subprocess's stdout **and** stderr stream into the pane
@@ -2020,9 +2078,9 @@ name and the active keys.
 
 #### Limitations (v1)
 
-- `api.tui` is **incompatible with `--watch`**: calling
-  `api.tui.layout()` under `--watch` throws. Use one or the other.
-- No mouse, no runtime layout mutation, no input panes (`api.tui.input`),
+- `api.ui.tui` is **incompatible with `--watch`**: calling
+  `api.ui.tui.layout()` under `--watch` throws. Use one or the other.
+- No mouse, no runtime layout mutation, no input panes (`api.ui.tui.input`),
   no snapshot-to-normal-screen on exit. The alt screen is restored at
   script end and the usual `PASS`/`FAIL` line prints.
 
@@ -2044,10 +2102,10 @@ ES6+**. The following are present and behave per spec:
 - `Proxy`, `Reflect` (partial)
 
 ```ts
-api.log(Math.PI.toFixed(4), Math.max(1, 9, 3));
-api.log(new Date().toISOString());
-api.log(JSON.stringify({ a: 1, b: [2, 3] }));
-api.log("abc".repeat(3), "abc".padStart(6, "_"));
+api.runtime.log(Math.PI.toFixed(4), Math.max(1, 9, 3));
+api.runtime.log(new Date().toISOString());
+api.runtime.log(JSON.stringify({ a: 1, b: [2, 3] }));
+api.runtime.log("abc".repeat(3), "abc".padStart(6, "_"));
 ```
 
 ### Collections
@@ -2057,7 +2115,7 @@ api.log("abc".repeat(3), "abc".padStart(6, "_"));
 ```ts
 const counts = new Map<string, number>();
 for (const ch of "banana") counts.set(ch, (counts.get(ch) ?? 0) + 1);
-api.log([...counts]); // [["b",1],["a",3],["n",2]]
+api.runtime.log([...counts]); // [["b",1],["a",3],["n",2]]
 ```
 
 ### Typed arrays
@@ -2069,7 +2127,7 @@ api.log([...counts]); // [["b",1],["a",3],["n",2]]
 ```ts
 const buf = new ArrayBuffer(4);
 new DataView(buf).setUint32(0, 0xCAFEBABE);
-api.log(new Uint8Array(buf)[0].toString(16)); // ca
+api.runtime.log(new Uint8Array(buf)[0].toString(16)); // ca
 ```
 
 ### Iteration and generators
@@ -2088,12 +2146,12 @@ function* fib() {
 }
 const it = fib();
 const first10 = Array.from({ length: 10 }, () => it.next().value);
-api.log(first10);
+api.runtime.log(first10);
 ```
 
 ### Not (yet) provided
 
-- `fetch` — use `api.http.*` from the CLI, or register your own binding.
+- `fetch` — use `api.net.http.*` from the CLI, or register your own binding.
 - `Worker`, threading primitives.
 - DOM globals (`window`, `document`).
 - Native ES modules (`import`/`export` are *transpiled* to CommonJS at
@@ -2106,9 +2164,9 @@ The event loop bundles a small Node-compatible runtime on top of goja:
 ### Timers
 
 ```ts
-setTimeout(() => api.log("after 50ms"), 50);
-setInterval(() => api.log("tick"), 100);
-setImmediate(() => api.log("next tick"));
+setTimeout(() => api.runtime.log("after 50ms"), 50);
+setInterval(() => api.runtime.log("tick"), 100);
+setImmediate(() => api.runtime.log("next tick"));
 clearTimeout(t); clearInterval(i); clearImmediate(im);
 ```
 
@@ -2182,8 +2240,8 @@ export.
 Top-level `await` works in entry scripts:
 
 ```ts
-const r = await api.http.get("https://example.com");
-api.log(r.status);
+const r = await api.net.http.get("https://example.com");
+api.runtime.log(r.status);
 ```
 
 How it works under the hood: esbuild rejects top-level await with the
@@ -2276,7 +2334,7 @@ _, err := eng.Run(ctx, "loop.ts", `while (true) {}`)
   exception when `err != nil`. The exception's `.message` is `err.Error()`.
 
   ```ts
-  try { mayFail(); } catch (e) { api.log(String(e)); }
+  try { mayFail(); } catch (e) { api.runtime.log(String(e)); }
   ```
 
 - A Go binding that `panic`s with a `*goja.Object` (e.g.
@@ -2369,7 +2427,7 @@ the seventh artifact in that chain).
 - **`RegisterConstructor` is d.ts-only today.** At runtime it behaves
   like `Register`. True `new`-able constructor semantics are on the
   roadmap.
-- **HTTP bindings are real network calls.** `api.http.*` uses
+- **HTTP bindings are real network calls.** `api.net.http.*` uses
   `net/http` with a 5s timeout. They are not mockable from JS.
 
 See [OUT-OF-SCOPE.md](./OUT-OF-SCOPE.md) for the active backlog of
