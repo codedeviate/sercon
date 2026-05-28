@@ -1,0 +1,137 @@
+package tui_test
+
+import (
+	"bytes"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine/tui"
+)
+
+// Non-TTY mode: writes route through FallbackPane.
+func TestController_FallbackMode(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{
+		"rows": []any{
+			map[string]any{"name": "log"},
+			map[string]any{"name": "brew"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.StartFallback(&buf); err != nil {
+		t.Fatal(err)
+	}
+	c.Pane("log").Writeln("orchestrator says hi")
+	c.Pane("brew").Writeln("brew installing\nbrew done")
+	c.Stop()
+	got := buf.String()
+	for _, want := range []string{
+		"[log] orchestrator says hi\n",
+		"[brew] brew installing\n",
+		"[brew] brew done\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("fallback output missing %q; got:\n%s", want, got)
+		}
+	}
+}
+
+// TTY mode: drive a tcell.SimulationScreen, write to a pane, assert the
+// pane's TextView contains the text. Focus cycles via Tab.
+func TestController_TUIMode_PaneWriteAndFocus(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{
+		"rows": []any{
+			map[string]any{"name": "log"},
+			map[string]any{"name": "brew"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(80, 20)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	// Synchronously wait for the application loop to be ready.
+	c.WaitReady(2 * time.Second)
+
+	c.Pane("log").Writeln("ready")
+	c.Pane("brew").Writeln("installing")
+
+	// Give the application loop a beat to draw.
+	c.Sync()
+
+	if got := c.FocusedPane(); got != "log" {
+		t.Errorf("initial focus: got %q, want log", got)
+	}
+
+	// Tab → focus next pane.
+	sim.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
+	c.Sync()
+	if got := c.FocusedPane(); got != "brew" {
+		t.Errorf("after Tab: got %q, want brew", got)
+	}
+
+	// Shift-Tab → focus previous.
+	sim.InjectKey(tcell.KeyBacktab, 0, tcell.ModNone)
+	c.Sync()
+	if got := c.FocusedPane(); got != "log" {
+		t.Errorf("after Shift-Tab: got %q, want log", got)
+	}
+
+	// Pane content is reachable via the controller (for tests).
+	if got := c.PaneContent("log"); !strings.Contains(got, "ready") {
+		t.Errorf("log pane missing 'ready'; got %q", got)
+	}
+
+	c.Stop()
+}
+
+// Pane handle for an unknown pane returns nil (binding translates to throw).
+func TestController_UnknownPaneNil(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{"name": "only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Pane("missing") != nil {
+		t.Fatal("expected nil for unknown pane")
+	}
+}
+
+// Two consecutive Stop() calls are safe (idempotent).
+func TestController_StopIdempotent(t *testing.T) {
+	root, _ := tui.ParseLayout(map[string]any{"name": "x"})
+	c, _ := tui.NewController(root)
+	var buf bytes.Buffer
+	if err := c.StartFallback(&buf); err != nil {
+		t.Fatal(err)
+	}
+	c.Stop()
+	// Second call must not panic.
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); c.Stop() }()
+	wg.Wait()
+}
