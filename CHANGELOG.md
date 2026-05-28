@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-28
+
 ### Added
 
 - `api.tui.*` — multi-pane terminal UI with focus + scrollback. Scripts
@@ -29,6 +31,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   failure mode in practice was an argv element being a goja Object
   instead of a string. Pre-existing latent bug surfaced by the api.tui
   demo's parallel subprocesses.
+
+### Changed
+
+- **Release flow:** dropped release-please in favour of goreleaser-only.
+  Maintainers now cut releases manually via `make release-prep VERSION=x.y.z`
+  + `git tag` + `git push`; the tag-triggered `release.yml` runs goreleaser
+  unchanged. The previous release-please-driven flow desynced state after
+  the manual `v0.6.0` cut (which we had to do while a separate Actions
+  permission was being granted) and re-anchoring it proved more work than
+  running the cut by hand. Removed: `.github/workflows/release-please.yml`,
+  `.github/workflows/sync-manual-pdf.yml`, `release-please-config.json`,
+  `.release-please-manifest.json`, `CHANGELOG-AUTO.md`. `make release-prep`'s
+  next-step checklist is the new source of truth.
 
 ## [0.6.0] — 2026-05-28
 

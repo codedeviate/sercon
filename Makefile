@@ -18,16 +18,14 @@
 #            binding surface (the on-disk file is the source of truth for
 #            editor autocomplete and the public api shape).
 #   release-prep VERSION=x.y.z
-#            Manual fallback: bump every version marker (Go const + MANUAL
-#            cover + footer). Normally release-please does this in CI
-#            (driven by Conventional Commits on master, see
-#            release-please-config.json + .github/workflows/release-please.yml);
-#            use this target only for ad-hoc local bumps when you're not
-#            going through the release-please PR flow.
+#            Bump every version marker (Go const + MANUAL cover + footer)
+#            in one shot, then print the next-step checklist. Releases are
+#            cut manually: this + edit CHANGELOG + make manual + tag + push.
+#            See CLAUDE.md > Versioning and commits.
 #   version-check
 #            Verify the version markers in pkg/scriptengine/version.go and
 #            MANUAL.md all agree. Run by release-prep; useful standalone
-#            after editing one of the three by hand.
+#            after editing one of the two by hand.
 #   clean    Remove built artifacts
 #
 # release and manual are intentionally separate from `build` so an
@@ -126,8 +124,7 @@ release-prep:
 	@sed -i.bak -E 's/(^const Version = ")[^"]+(")/\1$(VERSION)\2/' pkg/scriptengine/version.go
 	@sed -i.bak -E 's|(<div class="version">Version )[^<]+(</div>)|\1$(VERSION)\2|' MANUAL.md
 	@sed -i.bak -E 's/(\*This manual covers sercon v)[0-9.]+(\.)/\1$(VERSION)\2/' MANUAL.md
-	@sed -i.bak -E 's|(": ")[0-9.]+(")|\1$(VERSION)\2|' .release-please-manifest.json
-	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak .release-please-manifest.json.bak
+	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak
 	@$(MAKE) --no-print-directory version-check
 	@echo ""
 	@echo "Next steps:"
@@ -141,13 +138,12 @@ version-check:
 	@const=$$(sed -nE 's|^const Version = "([^"]+)".*$$|\1|p' pkg/scriptengine/version.go); \
 	cover=$$(sed -nE 's|.*<div class="version">Version ([^<]+)</div>.*|\1|p' MANUAL.md); \
 	footer=$$(sed -nE 's|\*This manual covers sercon v([0-9.]+)\..*|\1|p' MANUAL.md); \
-	manifest=$$(sed -nE 's|.*"\.": "([^"]+)".*|\1|p' .release-please-manifest.json); \
-	if [ -z "$$const" ] || [ -z "$$cover" ] || [ -z "$$footer" ] || [ -z "$$manifest" ]; then \
-		echo "version markers not found: code='$$const' cover='$$cover' footer='$$footer' manifest='$$manifest'"; \
+	if [ -z "$$const" ] || [ -z "$$cover" ] || [ -z "$$footer" ]; then \
+		echo "version markers not found: code='$$const' cover='$$cover' footer='$$footer'"; \
 		exit 1; \
 	fi; \
-	if [ "$$const" != "$$cover" ] || [ "$$const" != "$$footer" ] || [ "$$const" != "$$manifest" ]; then \
-		echo "version mismatch: code=$$const cover=$$cover footer=$$footer manifest=$$manifest"; \
+	if [ "$$const" != "$$cover" ] || [ "$$const" != "$$footer" ]; then \
+		echo "version mismatch: code=$$const cover=$$cover footer=$$footer"; \
 		exit 1; \
 	fi; \
 	echo "version markers in sync at $$const"

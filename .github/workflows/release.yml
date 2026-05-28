@@ -1,12 +1,11 @@
 name: release
 
-# Fires on `vX.Y.Z` tag push from either path:
-#   - release-please.yml merged its release PR (the tag was pushed by
-#     the release-please action).
-#   - A maintainer pushed a manual tag (escape hatch for hotfixes or
-#     when the release-please flow needs to be bypassed).
-# Either way, goreleaser builds and uploads the cross-platform binaries
-# to the GitHub Release (auto-created from the tag if not already there).
+# Fires on `vX.Y.Z` tag push. A maintainer cuts a release by running
+# `make release-prep VERSION=x.y.z` locally, finalising the CHANGELOG,
+# committing + pushing master, then pushing the tag — see the next-step
+# checklist printed by `make release-prep`. This workflow then builds and
+# uploads the cross-platform binaries to the GitHub Release (auto-created
+# from the tag if not already there).
 
 on:
   push:
