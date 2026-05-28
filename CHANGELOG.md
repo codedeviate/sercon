@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-28
+
 ### Added
 
 - `Sercon` runtime global exposing `Sercon.argv` to every script
