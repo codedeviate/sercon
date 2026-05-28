@@ -1940,6 +1940,92 @@ presence-check pattern across the family.
   under `<probe>.error` so a partial result is still useful (e.g.
   SPF + DMARC found, MTA-STS policy fetch timed out).
 
+### `api.tui.*` — multi-pane TUI
+
+Scripts that orchestrate multiple subprocesses (e.g. `brew`, `npm`,
+`cargo` updates running in parallel) can declare a multi-pane terminal
+layout and route each subprocess's stdout/stderr into its own pane.
+Activation is **script-driven**: the first call to
+`api.tui.layout(...)` enters TUI mode. If stdout is not a TTY (CI,
+pipes, `make demo`), the same calls fall back to prefixed plain-text
+lines (`[paneName] line`) so the same script runs in both contexts.
+
+#### Layout
+
+```ts
+api.tui.layout({
+  rows: [
+    { name: "log", title: "Orchestrator", weight: 1 },
+    { cols: [
+        { name: "brew" },
+        { name: "npm" },
+      ],
+      weight: 2,
+    },
+  ],
+});
+```
+
+Each layout node is one of:
+
+- `{ name: string, title?: string, weight?: number }` — a leaf pane.
+- `{ rows: LayoutNode[], weight?: number }` — a vertical split.
+- `{ cols: LayoutNode[], weight?: number }` — a horizontal split.
+
+`weight` defaults to 1. Pane names must be unique across the whole
+tree. `layout` may be called **once** per Run; a second call throws.
+
+#### Pane handles
+
+```ts
+const log = api.tui.pane("log");
+log.writeln("Updating Homebrew…");
+log.title("Done");
+log.clear();
+log.write("partial line ");
+```
+
+`api.tui.pane(name)` returns a handle with `write`, `writeln`, `clear`,
+`title`. Methods are synchronous from the script's perspective — they
+enqueue to the TUI goroutine.
+
+#### Subprocess routing
+
+`api.exec.shell(cmd, opts)` accepts `opts.pane` (a Pane handle or a
+pane name string):
+
+```ts
+await api.exec.shell("brew update && brew upgrade", { pane: "brew" });
+```
+
+When set, the subprocess's stdout **and** stderr stream into the pane
+line by line. The returned `{ exitCode, durationMs, success }` is the
+same as without `pane:` except `stdout` and `stderr` are empty (data
+was streamed, not captured). ANSI colors are translated to tview color
+tags and rendered natively; `\r` without `\n` overwrites the current
+line so progress spinners render cleanly.
+
+#### Keybindings (TTY mode only)
+
+| Key                  | Action                       |
+|----------------------|------------------------------|
+| `Tab` / `Shift-Tab`  | Cycle focus through panes    |
+| `PgUp` / `PgDn`      | Scroll focused pane one page |
+| `↑` / `↓`            | Scroll focused pane one line |
+| `Home` / `End`       | Jump to top / bottom         |
+| `Ctrl-C`             | Abort the script             |
+
+The focused pane has a yellow border; the bottom status bar shows its
+name and the active keys.
+
+#### Limitations (v1)
+
+- `api.tui` is **incompatible with `--watch`**: calling
+  `api.tui.layout()` under `--watch` throws. Use one or the other.
+- No mouse, no runtime layout mutation, no input panes (`api.tui.input`),
+  no snapshot-to-normal-screen on exit. The alt screen is restored at
+  script end and the usual `PASS`/`FAIL` line prints.
+
 ## 6. JavaScript runtime built-ins (goja)
 
 `scriptengine` runs on goja, which implements **ES5.1 + a large subset of

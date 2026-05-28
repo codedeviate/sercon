@@ -8,6 +8,28 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `api.tui.*` — multi-pane terminal UI with focus + scrollback. Scripts
+  declare a recursive split-tree layout (`api.tui.layout`), obtain Pane
+  handles (`api.tui.pane("name")`) with `write`/`writeln`/`clear`/`title`,
+  and route subprocess output via `api.exec.shell(cmd, { pane })`. ANSI
+  colors pass through. When stdout is not a TTY, the same calls fall
+  back to prefixed plain-text lines so scripts run in CI / pipes
+  unchanged. Incompatible with `--watch` in v1.
+- `Engine.AddRunCleanup(fn)` + `Options.WatchMode` — small engine hooks
+  enabling host bindings (e.g. the TUI) to register per-Run teardown and
+  refuse to start under `--watch`.
+
+### Fixed
+
+- `PromisifyAsync` snapshots `FunctionCall.Arguments` so concurrent async
+  bindings (Promise.all over multiple `api.exec.shell` calls, for
+  example) no longer race on goja's reusable arguments slice. The
+  failure mode in practice was an argv element being a goja Object
+  instead of a string. Pre-existing latent bug surfaced by the api.tui
+  demo's parallel subprocesses.
+
 ## [0.6.0] — 2026-05-28
 
 ### Added
