@@ -84,18 +84,17 @@ func TestController_TUIMode_PaneWriteAndFocus(t *testing.T) {
 	}
 
 	// Tab → focus next pane.
+	// Sync() alone isn't enough: tview's Application loop drains the
+	// screen's event channel (where InjectKey delivers) and the
+	// QueueUpdateDraw channel independently, so the no-op Sync callback
+	// can be processed before the key event. Poll FocusedPane until it
+	// matches, with a generous timeout.
 	sim.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
-	c.Sync()
-	if got := c.FocusedPane(); got != "brew" {
-		t.Errorf("after Tab: got %q, want brew", got)
-	}
+	waitFocus(t, c, "brew", 2*time.Second)
 
 	// Shift-Tab → focus previous.
 	sim.InjectKey(tcell.KeyBacktab, 0, tcell.ModNone)
-	c.Sync()
-	if got := c.FocusedPane(); got != "log" {
-		t.Errorf("after Shift-Tab: got %q, want log", got)
-	}
+	waitFocus(t, c, "log", 2*time.Second)
 
 	// Pane content is reachable via the controller (for tests).
 	if got := c.PaneContent("log"); !strings.Contains(got, "ready") {
@@ -134,4 +133,23 @@ func TestController_StopIdempotent(t *testing.T) {
 	wg.Add(1)
 	go func() { defer wg.Done(); c.Stop() }()
 	wg.Wait()
+}
+
+// waitFocus polls FocusedPane until it returns want or the timeout
+// elapses. Used in TTY-mode tests because tview's Application loop
+// drains the screen-event channel and the QueueUpdateDraw channel
+// independently — Sync() alone doesn't guarantee a previously
+// InjectKey-delivered event has been processed.
+func waitFocus(t *testing.T, c *tui.Controller, want string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var got string
+	for time.Now().Before(deadline) {
+		got = c.FocusedPane()
+		if got == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("focus didn't reach %q within %s; last seen %q", want, timeout, got)
 }
