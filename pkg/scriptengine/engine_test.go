@@ -899,3 +899,30 @@ if (a + b + c !== 6) throw new Error("sum: " + (a + b + c));
 	}
 }
 
+// PromisifyAsync must snapshot FunctionCall.Arguments before launching
+// the work goroutine — goja reuses the slice's backing array across
+// calls, so under Promise.all (multiple async bindings outstanding
+// before any resolves) a later call's arguments would otherwise overwrite
+// an earlier call's view. Regression test for a real bug surfaced by
+// `api.exec.shell` with `await Promise.all([...])` (see api.tui demo).
+func TestRun_PromisifyAsyncSnapshotsArguments(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.RegisterFactory("captureArg", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
+		return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (int64, error) {
+			// Give goja time to potentially reuse the FunctionCall slot for
+			// the second call before we touch ours.
+			time.Sleep(20 * time.Millisecond)
+			return call.Argument(0).ToInteger(), nil
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "race.ts", `
+const [a, b] = await Promise.all([captureArg(11), captureArg(22)]);
+if (a !== 11) throw new Error("a: expected 11, got " + a);
+if (b !== 22) throw new Error("b: expected 22, got " + b);
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}

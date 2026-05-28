@@ -65,8 +65,18 @@ func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work fun
 		// it on resolution so the loop drains exactly when the work is done.
 		keepAlive := loop.SetTimeout(func(*goja.Runtime) {}, 24*time.Hour)
 
+		// goja documents that FunctionCall.Arguments must not be retained
+		// past the native function's return — goja reuses the slice's
+		// backing array across calls. With Promise.all (or any pattern
+		// where multiple async bindings fire before any resolves), a later
+		// call would mutate the earlier goroutine's view. Snapshot the
+		// arguments now so each work goroutine has a stable view.
+		argsCopy := make([]goja.Value, len(call.Arguments))
+		copy(argsCopy, call.Arguments)
+		snap := goja.FunctionCall{This: call.This, Arguments: argsCopy}
+
 		go func() {
-			val, err := work(ctx, call)
+			val, err := work(ctx, snap)
 			loop.RunOnLoop(func(vm *goja.Runtime) {
 				// reject/resolve only error if the promise has already
 				// settled — impossible here since we own both ends.
