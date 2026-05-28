@@ -105,6 +105,7 @@ func run(args []string) int {
 		Timeout:     *timeout,
 		ScriptRoot:  scriptRoot,
 		ProgramName: "sercon",
+		WatchMode:   *watch,
 	}
 	if *verbose {
 		engOpts.Verbose = os.Stderr
