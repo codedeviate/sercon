@@ -28,7 +28,9 @@ import (
 // impossible.
 func jwtNamespace(vm *goja.Runtime) map[string]any {
 	return map[string]any{
-		"sign":     func(claims map[string]any, secret string, opts goja.Value) goja.Value { return jwtSign(vm, claims, secret, opts) },
+		"sign": func(claims map[string]any, secret string, opts goja.Value) goja.Value {
+			return jwtSign(vm, claims, secret, opts)
+		},
 		"view":     func(token string) goja.Value { return jwtView(vm, token) },
 		"validate": func(token, secret string, opts goja.Value) goja.Value { return jwtValidate(vm, token, secret, opts) },
 	}

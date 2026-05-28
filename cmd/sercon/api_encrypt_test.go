@@ -214,7 +214,6 @@ func TestEncrypt_NonAgeCiphertextThrows(t *testing.T) {
 	}
 }
 
-
 // opts.armored true produces age's ASCII-armoured format — payload
 // starts with the literal `-----BEGIN AGE ENCRYPTED FILE-----`
 // banner. Round-trips through the same decrypt call.

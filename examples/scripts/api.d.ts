@@ -296,5 +296,12 @@ declare const api: {
     /** Resolve after `ms` milliseconds. Cancellable via the engine timeout. */
     sleep(...args: unknown[]): Promise<unknown>;
   };
+  /** Multi-pane TUI runtime. layout(tree) declares panes (rows/cols recursive tree); pane(name) returns a handle with write/writeln/clear/title. api.exec.shell({pane}) streams subprocess I/O into a pane. Auto-falls-back to prefixed plain-text lines when stdout is not a TTY. */
+  tui: {
+    /** Declare the pane layout for this Run. Tree nodes: { name, title?, weight? } (leaf), { rows: [...], weight? } (vertical split), { cols: [...], weight? } (horizontal split). Throws on duplicate names, empty rows/cols, unknown keys, or under --watch. */
+    layout(...args: unknown[]): unknown;
+    /** Return a Pane handle for a declared pane. Throws if the name wasn't in the layout. Handle methods: write(text), writeln(text), clear(), title(text). */
+    pane(...args: unknown[]): unknown;
+  };
 };
 

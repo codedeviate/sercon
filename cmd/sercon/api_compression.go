@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/andybalholm/brotli"
-	dsnetbzip2 "github.com/dsnet/compress/bzip2"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
+	dsnetbzip2 "github.com/dsnet/compress/bzip2"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"

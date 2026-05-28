@@ -16,11 +16,11 @@ func TestText_RoundTrip(t *testing.T) {
 	cases := []struct {
 		name, charset, text string
 	}{
-		{name: "utf-8",        charset: "UTF-8",        text: "hello world 1234 — UTF-8"},
-		{name: "iso-8859-1",   charset: "ISO-8859-1",   text: "café crème — 1985"},
+		{name: "utf-8", charset: "UTF-8", text: "hello world 1234 — UTF-8"},
+		{name: "iso-8859-1", charset: "ISO-8859-1", text: "café crème — 1985"},
 		{name: "windows-1252", charset: "Windows-1252", text: "smart “quotes” and €5"},
-		{name: "shift-jis",    charset: "Shift_JIS",    text: "こんにちは"},
-		{name: "gbk",          charset: "GBK",          text: "你好"},
+		{name: "shift-jis", charset: "Shift_JIS", text: "こんにちは"},
+		{name: "gbk", charset: "GBK", text: "你好"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

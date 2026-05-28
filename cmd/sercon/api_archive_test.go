@@ -24,8 +24,8 @@ func fixtureTree(t *testing.T, root string) []string {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		"hello.txt":    "hello world\n",
-		"sub/note.md":  "# Note\n\nContent.\n",
+		"hello.txt":   "hello world\n",
+		"sub/note.md": "# Note\n\nContent.\n",
 	}
 	var names []string
 	for rel, content := range files {

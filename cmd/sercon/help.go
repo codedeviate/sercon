@@ -173,9 +173,10 @@ func showHelp(w io.Writer) {
 
 	fmt.Fprintln(w, s.bold("DESCRIPTION"))
 	fmt.Fprintln(w, "    Runs one or more TypeScript files against a built-in `api` surface")
-	fmt.Fprintln(w, "    (logging, assertions, http, time, env). Each script gets a fresh")
-	fmt.Fprintln(w, "    runtime; helpers are loaded via require()/import. See MANUAL.md for")
-	fmt.Fprintln(w, "    the full reference.")
+	fmt.Fprintln(w, "    (logging, assertions, http, time, env, exec, plus a multi-pane TUI")
+	fmt.Fprintln(w, "    under `api.tui` for scripts that want to route subprocess output to")
+	fmt.Fprintln(w, "    named panes). Each script gets a fresh runtime; helpers are loaded")
+	fmt.Fprintln(w, "    via require()/import. See MANUAL.md for the full reference.")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("FLAGS"))
@@ -671,10 +672,23 @@ const args = Sercon.argv.slice(2);   // ["--port", "8080", "hello"]
 api.log("args:", JSON.stringify(args));`)
 	note("Always present (length >= 2). All scripts in one invocation share the same tail; argv[1] is each script's own path.")
 
+	header(37, "Multi-pane TUI (api.tui.*)")
+	code(`api.tui.layout({rows: [
+  { name: "log", title: "Orchestrator" },
+  { cols: [{name:"brew"}, {name:"npm"}], weight: 2 },
+]});
+const log = api.tui.pane("log");
+log.writeln("Updating Homebrew…");
+await api.exec.shell("brew update && brew upgrade", { pane: "brew" });
+log.writeln("Updating npm globals…");
+await api.exec.shell("npm -g update",              { pane: "npm" });
+log.writeln("All done.");`)
+	note("Tab cycles focus, PgUp/PgDn scroll. Pipe stdout (CI / make demo) to get prefixed plain-text lines instead.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 36
+const exampleCount = 37

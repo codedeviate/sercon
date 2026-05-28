@@ -9,14 +9,14 @@ import "testing"
 func TestCheckdigit_KnownVectors(t *testing.T) {
 	cases := []struct {
 		algo, valid string
-		check      string // the expected check digit (last char of `valid`)
+		check       string // the expected check digit (last char of `valid`)
 	}{
-		{"luhn", "4532015112830366", "6"},     // Visa-style 16-digit
-		{"luhn", "79927398713", "3"},          // Wikipedia Luhn example
-		{"luhn", "5500000000000004", "4"},     // MasterCard prefix sample
-		{"isbn10", "0306406152", "2"},         // ISBN-10 with numeric check
-		{"isbn10", "048665088X", "X"},         // ISBN-10 with X check
-		{"isbn13", "9780306406157", "7"},      // ISBN-13 (978 prefix)
+		{"luhn", "4532015112830366", "6"}, // Visa-style 16-digit
+		{"luhn", "79927398713", "3"},      // Wikipedia Luhn example
+		{"luhn", "5500000000000004", "4"}, // MasterCard prefix sample
+		{"isbn10", "0306406152", "2"},     // ISBN-10 with numeric check
+		{"isbn10", "048665088X", "X"},     // ISBN-10 with X check
+		{"isbn13", "9780306406157", "7"},  // ISBN-13 (978 prefix)
 		{"ean13", "5901234123457", "7"},
 		{"ean8", "73513537", "7"},
 		{"upca", "036000291452", "2"},

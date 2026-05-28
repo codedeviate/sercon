@@ -24,10 +24,10 @@ type mod10Config struct {
 }
 
 var mod10Configs = map[string]mod10Config{
-	"ean13": {length: 13, weightCycle: []int{1, 3}},
+	"ean13":  {length: 13, weightCycle: []int{1, 3}},
 	"isbn13": {length: 13, weightCycle: []int{1, 3}},
-	"ean8":  {length: 8, weightCycle: []int{3, 1}},
-	"upca":  {length: 12, weightCycle: []int{3, 1}},
+	"ean8":   {length: 8, weightCycle: []int{3, 1}},
+	"upca":   {length: 12, weightCycle: []int{3, 1}},
 }
 
 // checkdigitNamespace wires `api.checkdigit.*`. All members are synchronous —

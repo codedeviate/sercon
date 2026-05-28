@@ -55,7 +55,7 @@ func TestShouldWatchDir(t *testing.T) {
 	}{
 		{"src", true},
 		{"a/b/c", true},
-		{".", false},          // current dir treated as hidden by the dotfile rule
+		{".", false}, // current dir treated as hidden by the dotfile rule
 		{".git", false},
 		{".vscode", false},
 		{".hidden", false},

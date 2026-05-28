@@ -18,8 +18,8 @@ func apiDocs() map[string]string {
 		"assert.ok":    "Throw when cond is falsy. Optional msg appears in the error.",
 
 		// HTTP (built-in)
-		"http.get":  "Perform an HTTP GET with a 5-second default timeout. Returns { status, body }.",
-		"http.post": "Perform an HTTP POST with a 5-second default timeout. Returns { status, body }.",
+		"http.get":     "Perform an HTTP GET with a 5-second default timeout. Returns { status, body }.",
+		"http.post":    "Perform an HTTP POST with a 5-second default timeout. Returns { status, body }.",
 		"http.request": "Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.",
 
 		// Time
@@ -158,25 +158,30 @@ func apiDocs() map[string]string {
 		"jwt.validate": "Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.",
 
 		// Encryption — age (default) + PGP backends, auto-dispatched
-		"encrypt.keygen":    "Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.",
-		"encrypt.keygenPgp": "Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. Returns armored { publicKey, privateKey } blocks. encrypt/decrypt auto-route to PGP when they see these.",
-		"encrypt.encrypt": "Seal data to recipients. age public keys (age1...) → age backend (opts.armored for ASCII); PGP public-key blocks → PGP backend (always armored). Auto-dispatched on key format. Multi-recipient: any listed identity decrypts.",
-		"encrypt.decrypt": "Open a payload with one of the supplied identities. Routes to age or PGP based on the identity / ciphertext format. age: binary or armored auto-detected. Wrong identity throws.",
-		"encrypt.rekey":   "Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop.",
+		"encrypt.keygen":        "Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.",
+		"encrypt.keygenPgp":     "Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. Returns armored { publicKey, privateKey } blocks. encrypt/decrypt auto-route to PGP when they see these.",
+		"encrypt.encrypt":       "Seal data to recipients. age public keys (age1...) → age backend (opts.armored for ASCII); PGP public-key blocks → PGP backend (always armored). Auto-dispatched on key format. Multi-recipient: any listed identity decrypts.",
+		"encrypt.decrypt":       "Open a payload with one of the supplied identities. Routes to age or PGP based on the identity / ciphertext format. age: binary or armored auto-detected. Wrong identity throws.",
+		"encrypt.rekey":         "Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop.",
 		"encrypt.detectBackend": "Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown', kind?: 'public'|'private' }. Pure prefix matching; no parsing or I/O. PGP encrypt/decrypt is a future cut — classifier is useful standalone.",
 
 		// SQLite — pure-Go (modernc.org/sqlite, no cgo). open() returns a handle.
 		"sqlite.open": "Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, close }. Connection is Ping-ed before resolving.",
 
 		// Remote data stores (stateful handles; graceful-degrade in demos)
-		"redis.open": "Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses.",
+		"redis.open":     "Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses.",
 		"memcached.open": "Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?).",
-		"ldap.open": "Dial LDAP (ldap://host:port), anonymous bind (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata.",
-		"dict.define":  "RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error).",
-		"dict.match":   "RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database, opts.port (default 2628).",
+		"ldap.open":      "Dial LDAP (ldap://host:port), anonymous bind (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata.",
+		"dict.define":    "RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error).",
+		"dict.match":     "RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database, opts.port (default 2628).",
 
 		// AI agent CLIs
 		"ai.providers": "Which of claude / codex / copilot / gemini are on PATH, in preference order.",
-		"ai.send": "Run a one-shot prompt through a provider. opts { prompt (required), provider?, system?, context?, timeout? }. Returns { provider, output, exitCode }. Non-zero exit is data; no provider throws.",
+		"ai.send":      "Run a one-shot prompt through a provider. opts { prompt (required), provider?, system?, context?, timeout? }. Returns { provider, output, exitCode }. Non-zero exit is data; no provider throws.",
+
+		// TUI — multi-pane terminal UI
+		"tui":        "Multi-pane TUI runtime. layout(tree) declares panes (rows/cols recursive tree); pane(name) returns a handle with write/writeln/clear/title. api.exec.shell({pane}) streams subprocess I/O into a pane. Auto-falls-back to prefixed plain-text lines when stdout is not a TTY.",
+		"tui.layout": "Declare the pane layout for this Run. Tree nodes: { name, title?, weight? } (leaf), { rows: [...], weight? } (vertical split), { cols: [...], weight? } (horizontal split). Throws on duplicate names, empty rows/cols, unknown keys, or under --watch.",
+		"tui.pane":   "Return a Pane handle for a declared pane. Throws if the name wasn't in the layout. Handle methods: write(text), writeln(text), clear(), title(text).",
 	}
 }

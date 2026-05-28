@@ -139,7 +139,7 @@ max_age: 604800`,
 			},
 		},
 		{
-			name: "crlf, comments, leading whitespace",
+			name:  "crlf, comments, leading whitespace",
 			input: "# comment line\r\n\r\n  version : STSv1 \r\nmode:testing\r\n   mx :  alt.example.com\r\n",
 			check: func(t *testing.T, out map[string]any) {
 				if out["version"] != "STSv1" {
