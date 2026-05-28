@@ -817,6 +817,61 @@ func TestWriteTypes_SerconGlobalDeclared(t *testing.T) {
 	}
 }
 
+// AddRunCleanup registers a callback invoked after the Run's loop completes.
+// Callbacks run in LIFO order (last registered = first called).
+func TestRun_AddRunCleanupLIFO(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	var calls []string
+	if err := eng.RegisterNamespaceFactory("hooks", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		eng.AddRunCleanup(func() { calls = append(calls, "first") })
+		eng.AddRunCleanup(func() { calls = append(calls, "second") })
+		return map[string]any{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Run(context.Background(), "run.ts", `;`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	want := []string{"second", "first"}
+	if len(calls) != 2 || calls[0] != want[0] || calls[1] != want[1] {
+		t.Fatalf("cleanup order: got %v, want %v", calls, want)
+	}
+}
+
+// Cleanups are drained per-Run: a second Run starts with no inherited
+// cleanups even if a previous Run registered them.
+func TestRun_AddRunCleanupPerRun(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	count := 0
+	if err := eng.RegisterNamespaceFactory("hooks", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		eng.AddRunCleanup(func() { count++ })
+		return map[string]any{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := eng.Run(context.Background(), "r.ts", `;`); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+	}
+	// Each Run registered exactly one cleanup; expect 3 total invocations.
+	if count != 3 {
+		t.Fatalf("expected 3 cleanups (one per Run), got %d", count)
+	}
+}
+
+// Options.WatchMode propagates onto the Engine so bindings can read it.
+func TestEngine_WatchModeExposed(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{
+		ScriptRoot:     t.TempDir(),
+		DisableConsole: true,
+		WatchMode:      true,
+	})
+	if !eng.WatchMode() {
+		t.Fatal("expected WatchMode() to be true")
+	}
+}
+
 // Robust import parsing: multi-line named imports with interleaved
 // comments and irregular whitespace must still rewrite correctly.
 func TestRun_AwkwardImports(t *testing.T) {
