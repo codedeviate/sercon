@@ -227,3 +227,49 @@ api.assert.equal(r.exitCode, 0);
 		t.Errorf("got: %q", captured.String())
 	}
 }
+
+// With opts.pane, exec.Cmd's stdout and stderr copy goroutines both
+// write to the SAME io.Writer (pane.AsWriter()). The adapter must
+// serialise concurrent Write calls or a race will fire under -race.
+// /bin/sh's printf to stderr below ensures both streams produce
+// output to drive the concurrency.
+func TestExecShell_PaneSerialisesStdoutAndStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses /bin/sh")
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerExampleAPI(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	withTestStdout(&captured, func() {
+		// Loop 50 times alternating stdout / stderr to get repeated
+		// concurrent Write calls from the two copy goroutines.
+		_, err := eng.Run(context.Background(), "run.ts", `
+api.tui.layout({name: "out"});
+const p = api.tui.pane("out");
+const r = await api.exec.shell(
+  ["/bin/sh", "-c", "for i in $(seq 1 50); do printf 'out %s\\n' $i; printf 'err %s\\n' $i 1>&2; done"],
+  { pane: p },
+);
+api.assert.equal(r.exitCode, 0);
+`)
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	})
+	got := captured.String()
+	// We don't assert exact line ordering — stdout and stderr
+	// interleave non-deterministically. Just confirm we got the
+	// expected line count, which proves no Write was dropped.
+	// 50 stdout lines + 50 stderr lines = 100 lines total.
+	lines := 0
+	for _, c := range got {
+		if c == '\n' {
+			lines++
+		}
+	}
+	if lines != 100 {
+		t.Errorf("expected 100 lines (50 out + 50 err); got %d. Output:\n%s", lines, got)
+	}
+}

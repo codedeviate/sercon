@@ -321,11 +321,26 @@ func (h paneHandle) Title(s string) {
 	}
 }
 
-func (h paneHandle) AsWriter() io.Writer { return paneIOWriter{h: h} }
+// AsWriter returns an io.Writer that streams into this pane. Used by
+// the api.exec.shell pane: option to wire cmd.Stdout / cmd.Stderr. Each
+// call to AsWriter returns a fresh adapter with its own mutex; exec.Cmd
+// spawns separate goroutines for stdout and stderr copies, so when the
+// same writer is wired to both, concurrent Write calls must be
+// serialised. TTY-mode writes go through QueueUpdateDraw (safe), but the
+// fallback path writes directly into FallbackPane's strings.Builder
+// and would race without this guard.
+func (h paneHandle) AsWriter() io.Writer {
+	return &paneIOWriter{h: h}
+}
 
-type paneIOWriter struct{ h paneHandle }
+type paneIOWriter struct {
+	h  paneHandle
+	mu sync.Mutex
+}
 
-func (w paneIOWriter) Write(p []byte) (int, error) {
+func (w *paneIOWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.h.write(p)
 	return len(p), nil
 }
