@@ -57,7 +57,7 @@ func TestFallback_StripsANSI(t *testing.T) {
 }
 
 func TestFallback_OverwriteOnCarriageReturn(t *testing.T) {
-	// Pending line is reset by bare \r, matching PaneBuffer's behaviour.
+	// Pending line is reset by bare \r so progress spinners overwrite cleanly.
 	var buf bytes.Buffer
 	w := tui.NewFallbackPane(&buf, "x")
 	w.Write([]byte("10%\r50%\r100%\n"))

@@ -1,25 +1,18 @@
 // Package tui owns the multi-pane terminal UI runtime for sercon scripts.
 // The package has four units, each in its own file:
 //
-//   - layout.go : parsing and validation of the script-supplied layout
+//   - layout.go   : parsing and validation of the script-supplied layout
 //     tree (this file).
-//   - ansi.go   : translating subprocess ANSI SGR escapes into tview
+//   - ansi.go     : translating subprocess ANSI SGR escapes into tview
 //     color tags.
-//   - pane.go   : per-pane line buffer with \r overwrite + scrollback
-//     capacity.
-//   - runtime.go: the tview-driven Controller that realises a LayoutNode
+//   - fallback.go : per-pane prefixed-line writer used when stdout is
+//     not a TTY (CI / pipelines / make demo).
+//   - runtime.go  : the tview-driven Controller that realises a LayoutNode
 //     as a Flex tree of TextView leaves and runs the
 //     application goroutine.
-//
-// runtime.go also dispatches to fallback.go's writer when stdout is not
-// a TTY (CI / pipelines / make demo), so the same scripts run in both
-// contexts.
 package tui
 
-import (
-	"errors"
-	"fmt"
-)
+import "fmt"
 
 // LayoutNode is a node in the script-declared layout tree. Exactly one
 // of Name, Rows, Cols is set per node; ParseLayout enforces this.
@@ -217,16 +210,3 @@ func pathPrefix(p string) string {
 	return p + "."
 }
 
-// ErrEmpty is returned when ParseLayout is called with nil. Exported so
-// the binding can produce a friendly message.
-var ErrEmpty = errors.New("layout is empty")
-
-// ParseLayoutOrEmpty is like ParseLayout but returns a sentinel error
-// for nil input. Callers that already handle nil before calling ParseLayout
-// can ignore this.
-func ParseLayoutOrEmpty(v any) (LayoutNode, error) {
-	if v == nil {
-		return LayoutNode{}, ErrEmpty
-	}
-	return ParseLayout(v)
-}
