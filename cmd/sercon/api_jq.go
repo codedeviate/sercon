@@ -12,7 +12,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// jqNamespace wires `api.jq.*`. The two members differ only in how much of
+// jqNamespace wires `api.text.jq.*`. The two members differ only in how much of
 // the iterator they consume: `query` stops after the first result;
 // `queryAll` drains the iterator. Both share the same parse / run plumbing
 // via runJqQuery.

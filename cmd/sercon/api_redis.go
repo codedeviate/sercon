@@ -12,7 +12,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// redisNamespace wires `api.redis.*`. `open(url)` connects (a
+// redisNamespace wires `api.db.redis.*`. `open(url)` connects (a
 // standard `redis://[:password@]host:port/db` URL) and PINGs to
 // surface a bad address up front, then returns a stateful handle
 // `{ do, ping, close }`. `do` runs an arbitrary command, so the

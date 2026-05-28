@@ -16,7 +16,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// gitNamespace wires `api.git.*`. The wrapper shells out to the host
+// gitNamespace wires `api.tools.git.*`. The wrapper shells out to the host
 // `git` binary (no go-git dep) so behaviour matches whatever the user
 // has installed — that parity matters more than a self-contained pure-Go
 // implementation here. Every binding accepts an `opts.cwd` so a single

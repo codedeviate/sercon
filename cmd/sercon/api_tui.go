@@ -15,7 +15,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine/tui"
 )
 
-// tuiOutputForTest, when non-nil, replaces os.Stdout for the api.tui
+// tuiOutputForTest, when non-nil, replaces os.Stdout for the api.ui.tui
 // fallback writer. Only set by api_tui_test.go's withTestStdout helper.
 // In production this stays nil and the fallback writes to os.Stdout.
 var (
@@ -23,7 +23,7 @@ var (
 	tuiOutputForTestMu sync.Mutex
 )
 
-// withTestStdout runs fn with os.Stdout-replacement enabled for the api.tui
+// withTestStdout runs fn with os.Stdout-replacement enabled for the api.ui.tui
 // fallback path. Tests use this to capture pane writes without juggling
 // real file descriptors.
 func withTestStdout(w io.Writer, fn func()) {
@@ -38,7 +38,7 @@ func withTestStdout(w io.Writer, fn func()) {
 	fn()
 }
 
-// tuiNamespace builds the api.tui factory function. It captures the
+// tuiNamespace builds the api.ui.tui factory function. It captures the
 // engine so the controller's Stop can be registered as an AddRunCleanup.
 // The factory itself is invoked once per Run; the closure variables
 // (controller, ctrlMu) are therefore per-Run state.
@@ -52,7 +52,7 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 	}
 	layout := func(call goja.FunctionCall) goja.Value {
 		if eng.WatchMode() {
-			throw("api.tui is not supported under --watch")
+			throw("api.ui.tui is not supported under --watch")
 		}
 		ctrlMu.Lock()
 		defer ctrlMu.Unlock()
@@ -61,32 +61,32 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 		}
 		arg := call.Argument(0)
 		if arg == nil || goja.IsUndefined(arg) || goja.IsNull(arg) {
-			throw("api.tui.layout: tree argument is required")
+			throw("api.ui.tui.layout: tree argument is required")
 		}
 		root, err := tui.ParseLayout(arg.Export())
 		if err != nil {
-			throw("api.tui.layout: " + err.Error())
+			throw("api.ui.tui.layout: " + err.Error())
 		}
 		c, err := tui.NewController(root)
 		if err != nil {
-			throw("api.tui.layout: " + err.Error())
+			throw("api.ui.tui.layout: " + err.Error())
 		}
 		out := pickFallbackOutput()
 		if isTTY(os.Stdout) && out == os.Stdout {
 			screen, err := tcell.NewScreen()
 			if err != nil {
-				throw("api.tui.layout: " + err.Error())
+				throw("api.ui.tui.layout: " + err.Error())
 			}
 			if err := screen.Init(); err != nil {
-				throw("api.tui.layout: " + err.Error())
+				throw("api.ui.tui.layout: " + err.Error())
 			}
 			if err := c.StartScreen(screen); err != nil {
 				screen.Fini()
-				throw("api.tui.layout: " + err.Error())
+				throw("api.ui.tui.layout: " + err.Error())
 			}
 		} else {
 			if err := c.StartFallback(out); err != nil {
-				throw("api.tui.layout: " + err.Error())
+				throw("api.ui.tui.layout: " + err.Error())
 			}
 		}
 		ctrl = c
@@ -102,12 +102,12 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 		c := ctrl
 		ctrlMu.Unlock()
 		if c == nil {
-			throw("api.tui.pane: call api.tui.layout(...) first")
+			throw("api.ui.tui.pane: call api.ui.tui.layout(...) first")
 		}
 		name := call.Argument(0).String()
 		h := c.Pane(name)
 		if h == nil {
-			throw(fmt.Sprintf("api.tui.pane: unknown pane %q (declared: %v)", name, c.PaneNames()))
+			throw(fmt.Sprintf("api.ui.tui.pane: unknown pane %q (declared: %v)", name, c.PaneNames()))
 		}
 		obj := vm.NewObject()
 		_ = obj.Set("write", func(call goja.FunctionCall) goja.Value {
@@ -126,7 +126,7 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 			h.Title(call.Argument(0).String())
 			return goja.Undefined()
 		})
-		// Expose the Go handle for api.exec.shell's pane: option to
+		// Expose the Go handle for api.tools.exec.shell's pane: option to
 		// pick up without going back through the name → handle lookup.
 		// Stored under a non-enumerable, internal property name.
 		_ = obj.DefineDataProperty("__sercon_pane__", vm.ToValue(h),
@@ -140,7 +140,7 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 }
 
 // activeController holds the TUI controller for the current Run.
-// Populated by the api.tui.layout binding; read by api.exec.shell's
+// Populated by the api.ui.tui.layout binding; read by api.tools.exec.shell's
 // pane: option when a string name is given. Cleared by the Engine's
 // AddRunCleanup hook at Run end.
 var (

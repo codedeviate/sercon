@@ -26,7 +26,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// barcodeFormats enumerates the symbology names accepted by api.barcode.encode.
+// barcodeFormats enumerates the symbology names accepted by api.format.barcode.encode.
 // All ten map onto the boombuler/barcode toolkit's pure-Go encoders. Names
 // are lowercase + alphanumeric so JS callers don't have to remember
 // punctuation.
@@ -36,7 +36,7 @@ var barcodeFormats = []string{
 	"ean13", "ean8", "upca",
 }
 
-// barcodeNamespace builds the `api.barcode.*` member map. `encode` returns
+// barcodeNamespace builds the `api.format.barcode.*` member map. `encode` returns
 // a PNG payload as an ArrayBuffer (scripts wrap with `new Uint8Array(...)`
 // to inspect bytes; a typical use is to base64-encode for embedding).
 func barcodeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {

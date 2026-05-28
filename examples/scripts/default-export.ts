@@ -4,5 +4,5 @@
 
 import answer from "./helpers/answer";
 
-api.assert.equal(answer, 42);
-api.log("default import OK:", answer);
+api.runtime.assert.equal(answer, 42);
+api.runtime.log("default import OK:", answer);

@@ -9,7 +9,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// pregNamespace wires `api.preg.*`. The name is an homage to PHP's PCRE
+// pregNamespace wires `api.text.preg.*`. The name is an homage to PHP's PCRE
 // family (preg_match / preg_replace / preg_match_all). The pattern
 // syntax follows PHP's `/regex/flags` delimited form — that's the
 // "preg" part — but the matching engine is Go's stdlib `regexp` (RE2).

@@ -19,7 +19,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// archiveNamespace wires `api.archive.*`. Both members are async because
+// archiveNamespace wires `api.fs.archive.*`. Both members are async because
 // each call may walk a directory tree on disk and serialise it; running on
 // the event loop's goroutine keeps the JS side responsive.
 func archiveNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {

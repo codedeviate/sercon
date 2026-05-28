@@ -30,7 +30,7 @@ var mod10Configs = map[string]mod10Config{
 	"upca":   {length: 12, weightCycle: []int{3, 1}},
 }
 
-// checkdigitNamespace wires `api.checkdigit.*`. All members are synchronous —
+// checkdigitNamespace wires `api.format.checkdigit.*`. All members are synchronous —
 // the algorithms are pure local math, no I/O — so we return plain Go types
 // directly and let goja's reflection convert them. `compute` returns
 // `(string, error)`; goja turns a non-nil error into a JS exception.

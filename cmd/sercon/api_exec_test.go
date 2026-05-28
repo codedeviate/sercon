@@ -186,12 +186,12 @@ func TestExecShell_PaneStreamsStdout(t *testing.T) {
 	var captured bytes.Buffer
 	withTestStdout(&captured, func() {
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.tui.layout({name: "out"});
-const p = api.tui.pane("out");
-const r = await api.exec.shell(["/bin/echo", "hello-from-shell"], { pane: p });
-api.assert.equal(r.exitCode, 0);
-api.assert.equal(r.stdout, "");
-api.assert.equal(r.stderr, "");
+api.ui.tui.layout({name: "out"});
+const p = api.ui.tui.pane("out");
+const r = await api.tools.exec.shell(["/bin/echo", "hello-from-shell"], { pane: p });
+api.runtime.assert.equal(r.exitCode, 0);
+api.runtime.assert.equal(r.stdout, "");
+api.runtime.assert.equal(r.stderr, "");
 `)
 		if err != nil {
 			t.Fatalf("run: %v", err)
@@ -215,9 +215,9 @@ func TestExecShell_PaneAcceptsStringName(t *testing.T) {
 	var captured bytes.Buffer
 	withTestStdout(&captured, func() {
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.tui.layout({name: "out"});
-const r = await api.exec.shell(["/bin/echo", "via-name"], { pane: "out" });
-api.assert.equal(r.exitCode, 0);
+api.ui.tui.layout({name: "out"});
+const r = await api.tools.exec.shell(["/bin/echo", "via-name"], { pane: "out" });
+api.runtime.assert.equal(r.exitCode, 0);
 `)
 		if err != nil {
 			t.Fatalf("run: %v", err)
@@ -246,13 +246,13 @@ func TestExecShell_PaneSerialisesStdoutAndStderr(t *testing.T) {
 		// Loop 50 times alternating stdout / stderr to get repeated
 		// concurrent Write calls from the two copy goroutines.
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.tui.layout({name: "out"});
-const p = api.tui.pane("out");
-const r = await api.exec.shell(
+api.ui.tui.layout({name: "out"});
+const p = api.ui.tui.pane("out");
+const r = await api.tools.exec.shell(
   ["/bin/sh", "-c", "for i in $(seq 1 50); do printf 'out %s\\n' $i; printf 'err %s\\n' $i 1>&2; done"],
   { pane: p },
 );
-api.assert.equal(r.exitCode, 0);
+api.runtime.assert.equal(r.exitCode, 0);
 `)
 		if err != nil {
 			t.Fatalf("run: %v", err)

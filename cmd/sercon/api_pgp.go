@@ -10,7 +10,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 )
 
-// PGP support for api.encrypt.*. The age path stays the default;
+// PGP support for api.crypto.encrypt.*. The age path stays the default;
 // these functions are reached only when detectBackend classifies a
 // recipient / identity / ciphertext as PGP. The dispatch lives in
 // api_encrypt.go (encryptEncrypt / encryptDecrypt); this file holds

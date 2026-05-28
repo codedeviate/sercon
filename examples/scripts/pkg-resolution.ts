@@ -12,7 +12,7 @@
 
 import { v, greet } from "./helpers/pkg";
 
-api.assert.equal(v, "from-source");
-api.assert.ok(greet("world").includes("src/lib.ts"));
-api.log("source preferred:", v);
-api.log("greet:           ", greet("world"));
+api.runtime.assert.equal(v, "from-source");
+api.runtime.assert.ok(greet("world").includes("src/lib.ts"));
+api.runtime.log("source preferred:", v);
+api.runtime.log("greet:           ", greet("world"));

@@ -13,13 +13,13 @@ const samples: Array<[string, string]> = [
   ["GBK",          "你好"],
 ];
 
-api.log("=== api.text.encode / decode round-trip ===");
+api.runtime.log("=== api.text.charset.encode / decode round-trip ===");
 for (const [charset, text] of samples) {
-  const encoded = await api.text.encode(text, charset);
-  const decoded = await api.text.decode(encoded, charset);
+  const encoded = await api.text.charset.encode(text, charset);
+  const decoded = await api.text.charset.decode(encoded, charset);
   const bytes = new Uint8Array(encoded);
   const ok = decoded === text;
-  api.log(
+  api.runtime.log(
     `  ${charset.padEnd(13)} ${ok ? "✓" : "✗"} ` +
     `${bytes.length.toString().padStart(3)} bytes  ${JSON.stringify(decoded)}`,
   );
@@ -29,17 +29,17 @@ for (const [charset, text] of samples) {
 // Detection: feed Latin-1-encoded bytes and confirm chardet doesn't
 // classify them as UTF-8 (byte 0xE9 isn't a valid UTF-8 lead byte
 // without a continuation).
-api.log("");
-api.log("=== api.text.detect on Latin-1 sample ===");
-const sample = await api.text.encode(
+api.runtime.log("");
+api.runtime.log("=== api.text.charset.detect on Latin-1 sample ===");
+const sample = await api.text.charset.encode(
   "café crème — un éléphant marche dans la rue. ".repeat(20),
   "ISO-8859-1",
 );
-const result = await api.text.detect(sample);
-api.log("top charset:", result.charset, " confidence:", result.confidence,
+const result = await api.text.charset.detect(sample);
+api.runtime.log("top charset:", result.charset, " confidence:", result.confidence,
         result.language ? " language: " + result.language : "");
-api.log("candidates :", result.candidates.length);
+api.runtime.log("candidates :", result.candidates.length);
 for (const c of result.candidates.slice(0, 4)) {
-  api.log("  -", c.charset.padEnd(14), "conf=" + c.confidence,
+  api.runtime.log("  -", c.charset.padEnd(14), "conf=" + c.confidence,
           c.language ? " (" + c.language + ")" : "");
 }

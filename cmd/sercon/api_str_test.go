@@ -11,7 +11,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// TestStrNamespace exercises every `api.str.*` member against known vectors
+// TestStrNamespace exercises every `api.text.str.*` member against known vectors
 // driven through a real Engine + Run.
 func TestStrNamespace(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})

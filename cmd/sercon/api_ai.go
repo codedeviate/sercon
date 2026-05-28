@@ -22,7 +22,7 @@ import (
 // takes the prompt as a single argument.
 var aiProviders = []string{"claude", "codex", "copilot", "gemini"}
 
-// aiNamespace wires `api.ai.*`. Two members:
+// aiNamespace wires `api.tools.ai.*`. Two members:
 //
 //   - `providers()` — which of the supported CLIs are on PATH.
 //   - `send(opts)` — run a one-shot prompt through a provider and

@@ -16,7 +16,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// ghNamespace wires `api.gh.*` — a thin wrapper around the GitHub CLI
+// ghNamespace wires `api.tools.gh.*` — a thin wrapper around the GitHub CLI
 // (`gh`). Everything goes through `gh --json` so we get structured
 // output instead of parsing human-readable text. The wrapper respects
 // whatever authentication state `gh auth` is already in; we don't try

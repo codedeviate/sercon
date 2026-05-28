@@ -12,7 +12,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// smtpProbe implements `api.net.smtp(host, opts?)` — a capability
+// smtpProbe implements `api.net.probe.smtp(host, opts?)` — a capability
 // probe, not a send pipeline. It opens the connection, reads the
 // greeting banner, sends EHLO, and parses the advertised extensions
 // (STARTTLS availability, AUTH mechanisms, SIZE limit, …). Then it

@@ -10,7 +10,7 @@ import (
 )
 
 // In non-TTY mode the binding routes pane writes to the fallback writer.
-// We exercise the full layer: api.tui.layout → api.tui.pane → pane.writeln.
+// We exercise the full layer: api.ui.tui.layout → api.ui.tui.pane → pane.writeln.
 // The factory uses os.Stdout's TTY-ness to decide; we capture the
 // fallback output via withTestStdout which the binding consults instead
 // of os.Stdout when set.
@@ -25,12 +25,12 @@ func TestAPITUI_FallbackEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.tui.layout({rows: [
+api.ui.tui.layout({rows: [
   { name: "log" },
   { name: "brew" },
 ]});
-const log = api.tui.pane("log");
-const brew = api.tui.pane("brew");
+const log = api.ui.tui.pane("log");
+const brew = api.ui.tui.pane("brew");
 log.writeln("hello");
 brew.writeln("upgrading");
 `)
@@ -59,7 +59,7 @@ func TestAPITUI_LayoutValidationThrows(t *testing.T) {
 	withTestStdout(&captured, func() {
 		_, err := eng.Run(context.Background(), "run.ts", `
 try {
-  api.tui.layout({rows: [{name: "x"}, {name: "x"}]});
+  api.ui.tui.layout({rows: [{name: "x"}, {name: "x"}]});
   throw new Error("expected validation error");
 } catch (e) {
   if (!String(e).includes("duplicate pane name")) {
@@ -82,9 +82,9 @@ func TestAPITUI_UnknownPaneThrows(t *testing.T) {
 	var captured bytes.Buffer
 	withTestStdout(&captured, func() {
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.tui.layout({name: "only"});
+api.ui.tui.layout({name: "only"});
 try {
-  api.tui.pane("missing");
+  api.ui.tui.pane("missing");
   throw new Error("expected throw");
 } catch (e) {
   if (!String(e).includes("unknown pane")) throw new Error("got: " + e);
@@ -105,9 +105,9 @@ func TestAPITUI_LayoutOnceThrows(t *testing.T) {
 	var captured bytes.Buffer
 	withTestStdout(&captured, func() {
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.tui.layout({name: "a"});
+api.ui.tui.layout({name: "a"});
 try {
-  api.tui.layout({name: "b"});
+  api.ui.tui.layout({name: "b"});
   throw new Error("expected throw");
 } catch (e) {
   if (!String(e).includes("layout already declared")) throw new Error("got: " + e);
@@ -119,7 +119,7 @@ try {
 	})
 }
 
-// WatchMode rejects api.tui.layout.
+// WatchMode rejects api.ui.tui.layout.
 func TestAPITUI_WatchModeRejectsLayout(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{
 		ScriptRoot:     t.TempDir(),
@@ -133,7 +133,7 @@ func TestAPITUI_WatchModeRejectsLayout(t *testing.T) {
 	withTestStdout(&captured, func() {
 		_, err := eng.Run(context.Background(), "run.ts", `
 try {
-  api.tui.layout({name: "a"});
+  api.ui.tui.layout({name: "a"});
   throw new Error("expected throw");
 } catch (e) {
   if (!String(e).includes("not supported under --watch")) throw new Error("got: " + e);

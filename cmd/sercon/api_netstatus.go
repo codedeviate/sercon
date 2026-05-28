@@ -15,7 +15,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// netstatusNamespace wires `api.netstatus.*`. The single member,
+// netstatusNamespace wires `api.net.netstatus.*`. The single member,
 // `check`, is an orchestration layer over the lower-level probes: it
 // runs DNS / TCP / TLS / HTTP against one host concurrently and folds
 // the results into a single status object with an overall `reachable`

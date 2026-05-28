@@ -12,7 +12,7 @@ import (
 // process group and arranges for a timeout/cancel to SIGKILL the entire
 // group rather than just the direct child.
 //
-// Why this matters: `api.exec.shell` runs string commands as
+// Why this matters: `api.tools.exec.shell` runs string commands as
 // `/bin/sh -c "<cmd>"`. On platforms where the shell forks the command
 // instead of exec-ing into it, killing the shell on a context timeout
 // leaves the grandchild (the actual command) alive — and it still holds

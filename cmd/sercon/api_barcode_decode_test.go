@@ -17,8 +17,8 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// encodeAndDecode drives a single round-trip through api.barcode.encode
-// followed by api.barcode.decode against the engine boundary. The hint
+// encodeAndDecode drives a single round-trip through api.format.barcode.encode
+// followed by api.format.barcode.decode against the engine boundary. The hint
 // is passed straight through to decode; pass "" to exercise the
 // auto-detect path. Returns (decodedFormat, decodedText) — the format
 // label is the snake-case identifier the engine surfaces.
@@ -309,7 +309,7 @@ func TestSniffImageFormat(t *testing.T) {
 // setting and a payload that has plenty of error-correction
 // headroom (medium QR, short text).
 func TestBarcodeDecode_JPEGInput(t *testing.T) {
-	// Build a QR PNG via api.barcode.encode, then re-encode as JPEG.
+	// Build a QR PNG via api.format.barcode.encode, then re-encode as JPEG.
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 10 * time.Second})
 	if err := eng.RegisterNamespaceFactory("barcode", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return barcodeNamespace(vm, loop)

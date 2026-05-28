@@ -10,7 +10,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// wssProbe implements `api.net.wss(url, opts?)` — opens a WebSocket
+// wssProbe implements `api.net.probe.wss(url, opts?)` — opens a WebSocket
 // handshake against `url` (ws:// or wss://), optionally measures a
 // ping/pong round-trip, and closes cleanly. A connectivity / liveness
 // probe, not a streaming client; the connection doesn't outlive the

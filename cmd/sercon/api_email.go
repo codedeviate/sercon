@@ -16,7 +16,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// emailNamespace builds the `api.email.*` member map. Each member returns a
+// emailNamespace builds the `api.net.email.*` member map. Each member returns a
 // Promise. Lookups for record types that aren't found return
 // `{ present: false }` rather than throwing, so scripts can use a uniform
 // presence-check pattern across the email-auth probe family.

@@ -12,24 +12,9 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
 
-	"github.com/codedeviate/sercon/pkg/scriptengine"
 	"github.com/codedeviate/sercon/pkg/scriptengine/tui"
 )
-
-// execNamespace wires `api.exec.*`. `shell` is the generic subprocess
-// entry; `http` is a curl-compatible HTTP client routed through the
-// `recon` binary (preferred) with `curl` as a fallback. The git / gh
-// wrappers land in v0.4.19. Lives under its own namespace because
-// subprocess work has different operational concerns than the pure-Go
-// bindings — host binary on PATH, environment, working directory.
-func execNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-	return map[string]any{
-		"shell": scriptengine.PromisifyAsync(vm, loop, execShell),
-		"http":  scriptengine.PromisifyAsync(vm, loop, execHTTP),
-	}
-}
 
 // execShell runs a subprocess and waits for it to exit. The contract:
 //
@@ -142,11 +127,11 @@ func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 
 // resolvePane extracts the pane handle from the raw opts goja.Value. The
 // "pane" key may hold:
-//   - A Pane JS object (returned by api.tui.pane(name)): carries the Go-side
+//   - A Pane JS object (returned by api.ui.tui.pane(name)): carries the Go-side
 //     tui.Pane under the non-enumerable "__sercon_pane__" property, accessed
 //     via goja.Object.Get so non-enumerable entries are reachable.
 //   - A plain string: interpreted as a pane name to look up on the active TUI
-//     controller (set by api.tui.layout in the current Run).
+//     controller (set by api.ui.tui.layout in the current Run).
 //
 // Returns (nil, nil) when no "pane" key is present or the opts arg is absent.
 func resolvePane(optsArg goja.Value) (tui.Pane, error) {
@@ -165,7 +150,7 @@ func resolvePane(optsArg goja.Value) (tui.Pane, error) {
 	if name, ok := paneVal.Export().(string); ok {
 		c := activeTUIController()
 		if c == nil {
-			return nil, errors.New("shell: pane option set but no api.tui.layout has been declared")
+			return nil, errors.New("shell: pane option set but no api.ui.tui.layout has been declared")
 		}
 		h := c.Pane(name)
 		if h == nil {

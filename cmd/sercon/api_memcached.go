@@ -12,7 +12,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// memcachedNamespace wires `api.memcached.*`. `open(addr)` connects
+// memcachedNamespace wires `api.db.memcached.*`. `open(addr)` connects
 // to a memcached server (`host:port`) and returns a stateful handle
 // `{ get, set, delete }`. gomemcache pools connections lazily, so
 // there's no PING-on-open (the first operation surfaces a bad
