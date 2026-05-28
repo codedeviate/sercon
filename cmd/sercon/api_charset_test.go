@@ -12,7 +12,7 @@ import (
 // a single-byte European encoding (Latin-1 / Windows-1252), and a
 // multi-byte CJK one (Shift_JIS, GBK). The text in each test is chosen
 // so every character has a representation in the target encoding.
-func TestText_RoundTrip(t *testing.T) {
+func TestCharset_RoundTrip(t *testing.T) {
 	cases := []struct {
 		name, charset, text string
 	}{
@@ -45,7 +45,7 @@ func TestText_RoundTrip(t *testing.T) {
 
 // Unknown charset names must surface a clean error from htmlindex.Get so
 // scripts can react sensibly (try a fallback, surface to the user, …).
-func TestText_UnknownCharset(t *testing.T) {
+func TestCharset_UnknownCharset(t *testing.T) {
 	if _, err := htmlindex.Get("totally-fake-encoding"); err == nil {
 		t.Fatal("expected error for unknown charset")
 	}
@@ -57,7 +57,7 @@ func TestText_UnknownCharset(t *testing.T) {
 // on character frequencies — but the input should NOT be classified as
 // UTF-8 because it contains byte 0xE9 (é in Latin-1) with no UTF-8
 // continuation prefix.
-func TestText_DetectLatin1NotUTF8(t *testing.T) {
+func TestCharset_DetectLatin1NotUTF8(t *testing.T) {
 	enc, _ := htmlindex.Get("ISO-8859-1")
 	sample, err := enc.NewEncoder().Bytes([]byte(strings.Repeat("café crème — un éléphant marche dans la rue. ", 20)))
 	if err != nil {
@@ -65,7 +65,7 @@ func TestText_DetectLatin1NotUTF8(t *testing.T) {
 	}
 	// Use chardet directly so this test stays a pure-Go check without
 	// spinning up a goja runtime.
-	out, err := textDetectInline(sample)
+	out, err := charsetDetectInline(sample)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,10 +78,10 @@ func TestText_DetectLatin1NotUTF8(t *testing.T) {
 	}
 }
 
-// textDetectInline runs the same detection pipeline charsetDetect uses but
+// charsetDetectInline runs the same detection pipeline charsetDetect uses but
 // without the goja shim — keeps the test offline and skips the
 // PromisifyAsync round-trip.
-func textDetectInline(in []byte) (map[string]any, error) {
+func charsetDetectInline(in []byte) (map[string]any, error) {
 	// reuse charsetDetect by faking a goja FunctionCall is more setup than
 	// needed; call the upstream chardet directly with the same logic.
 	results, err := chardet.NewTextDetector().DetectAll(in)

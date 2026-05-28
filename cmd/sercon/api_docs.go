@@ -2,9 +2,10 @@ package main
 
 // apiDocs returns the doc strings consumed by Engine.SetMemberDocs to
 // decorate the emitted api.d.ts with JSDoc blocks. Keys are dotted
-// member paths under the `api` namespace ("log", "http.get",
-// "exec.shell"). Docs are intentionally terse — one or two sentences
-// each — so editor hover stays readable. The full prose lives in
+// member paths under the `api` namespace ("runtime.log",
+// "net.http.get", "tools.exec.shell"). Docs are intentionally terse —
+// one or two sentences each — so editor hover stays readable. The full
+// prose lives in
 // MANUAL.md; this map is the at-a-glance summary.
 //
 // When adding or changing a binding, update the corresponding entry

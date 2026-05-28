@@ -395,7 +395,7 @@ const ean = await api.format.barcode.encode("ean13", "5901234123457");
 api.runtime.log("EAN-13 PNG:", new Uint8Array(ean).length, "bytes");`)
 	note("Decoders / scanners ship in a later cut (Easy / Encoding part 3).")
 
-	header(19, "Charset detection + conversion (api.text.*)")
+	header(19, "Charset detection + conversion (api.text.charset.*)")
 	code(`// Detect: feed bytes, get the top guess + a candidate list.
 const sample = await api.text.charset.encode("café crème", "ISO-8859-1");
 const det    = await api.text.charset.detect(sample);
