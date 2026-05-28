@@ -300,7 +300,7 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 			"hash":        hashNamespace(vm),
 			"str":         strNamespace(vm),
 			"path":        pathNamespace(vm),
-			"net":         netNamespace(vm, loop),
+			"net":         probeNamespace(vm, loop),
 			"email":       emailNamespace(vm, loop),
 			"compression": compressionNamespace(vm, loop),
 			"barcode":     barcodeNamespace(vm, loop),

@@ -65,7 +65,7 @@ func runSMTPScript(t *testing.T, body string) any {
 	var captured any
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 10 * time.Second})
 	if err := eng.RegisterNamespaceFactory("net", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return netNamespace(vm, loop)
+		return probeNamespace(vm, loop)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestNetSMTP_NoStartTLS(t *testing.T) {
 func TestNetSMTP_ConnectionRefusedThrows(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
 	if err := eng.RegisterNamespaceFactory("net", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return netNamespace(vm, loop)
+		return probeNamespace(vm, loop)
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -27,7 +27,7 @@ func newNetEngine(t *testing.T) *scriptengine.Engine {
 	t.Helper()
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := eng.RegisterNamespaceFactory("net", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return netNamespace(vm, loop)
+		return probeNamespace(vm, loop)
 	}); err != nil {
 		t.Fatal(err)
 	}

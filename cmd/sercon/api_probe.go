@@ -20,12 +20,12 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// netNamespace builds the `api.net.*` member map: `tcp`, `dns`, `tls`,
+// probeNamespace builds the `api.net.*` member map: `tcp`, `dns`, `tls`,
 // `ntp`, `whois`. Every member returns a Promise (uses
 // `scriptengine.PromisifyAsync` under the hood) so scripts can
 // `await api.net.tcp("host:port")`. All bindings honour a `timeout` opt in
 // milliseconds; defaults vary per binding.
-func netNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+func probeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"tcp":   scriptengine.PromisifyAsync(vm, loop, tcpProbe),
 		"dns":   scriptengine.PromisifyAsync(vm, loop, dnsLookup),
