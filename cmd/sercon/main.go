@@ -323,6 +323,7 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 			"ldap":        ldapNamespace(vm, loop),
 			"dict":        dictNamespace(vm, loop),
 			"ai":          aiNamespace(vm, loop),
+			"tui":         tuiNamespace(vm, loop, e),
 		}
 	}); err != nil {
 		return err
