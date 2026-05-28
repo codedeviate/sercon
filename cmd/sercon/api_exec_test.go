@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 	"github.com/dop251/goja"
 )
 
@@ -167,5 +169,61 @@ func TestExecShell_InputValidation(t *testing.T) {
 	}
 	if _, err := runShell(t, shellCall{cmd: []any{}}); err == nil {
 		t.Error("empty argv should error")
+	}
+}
+
+// With opts.pane, stdout streams into the pane (verified via the
+// fallback writer). The returned shell result's stdout/stderr are
+// empty because the data was streamed, not captured.
+func TestExecShell_PaneStreamsStdout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses /bin/echo")
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerExampleAPI(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	withTestStdout(&captured, func() {
+		_, err := eng.Run(context.Background(), "run.ts", `
+api.tui.layout({name: "out"});
+const p = api.tui.pane("out");
+const r = await api.exec.shell(["/bin/echo", "hello-from-shell"], { pane: p });
+api.assert.equal(r.exitCode, 0);
+api.assert.equal(r.stdout, "");
+api.assert.equal(r.stderr, "");
+`)
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	})
+	got := captured.String()
+	if !strings.Contains(got, "[out] hello-from-shell\n") {
+		t.Errorf("expected streamed line in pane; got:\n%s", got)
+	}
+}
+
+// pane: also accepts a string (pane name) for ergonomics.
+func TestExecShell_PaneAcceptsStringName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses /bin/echo")
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerExampleAPI(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	withTestStdout(&captured, func() {
+		_, err := eng.Run(context.Background(), "run.ts", `
+api.tui.layout({name: "out"});
+const r = await api.exec.shell(["/bin/echo", "via-name"], { pane: "out" });
+api.assert.equal(r.exitCode, 0);
+`)
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	})
+	if !strings.Contains(captured.String(), "[out] via-name\n") {
+		t.Errorf("got: %q", captured.String())
 	}
 }

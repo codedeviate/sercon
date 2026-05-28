@@ -90,7 +90,11 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 			}
 		}
 		ctrl = c
-		eng.AddRunCleanup(c.Stop)
+		setActiveController(c)
+		eng.AddRunCleanup(func() {
+			c.Stop()
+			setActiveController(nil)
+		})
 		return goja.Undefined()
 	}
 	pane := func(call goja.FunctionCall) goja.Value {
@@ -133,6 +137,27 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 		"layout": layout,
 		"pane":   pane,
 	}
+}
+
+// activeController holds the TUI controller for the current Run.
+// Populated by the api.tui.layout binding; read by api.exec.shell's
+// pane: option when a string name is given. Cleared by the Engine's
+// AddRunCleanup hook at Run end.
+var (
+	activeController   *tui.Controller
+	activeControllerMu sync.RWMutex
+)
+
+func activeTUIController() *tui.Controller {
+	activeControllerMu.RLock()
+	defer activeControllerMu.RUnlock()
+	return activeController
+}
+
+func setActiveController(c *tui.Controller) {
+	activeControllerMu.Lock()
+	activeController = c
+	activeControllerMu.Unlock()
 }
 
 // pickFallbackOutput returns the writer the non-TTY fallback should use.

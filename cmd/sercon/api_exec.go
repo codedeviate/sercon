@@ -15,6 +15,7 @@ import (
 	"github.com/dop251/goja_nodejs/eventloop"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
+	"github.com/codedeviate/sercon/pkg/scriptengine/tui"
 )
 
 // execNamespace wires `api.exec.*`. `shell` is the generic subprocess
@@ -86,8 +87,21 @@ func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
+	pane, err := resolvePane(call.Argument(1))
+	if err != nil {
+		return nil, err
+	}
+	if pane != nil {
+		// Stream stdout+stderr live into the pane. The result's
+		// stdout/stderr strings stay empty in that mode (data was
+		// streamed, not captured) — documented in MANUAL.md.
+		w := pane.AsWriter()
+		cmd.Stdout = w
+		cmd.Stderr = w
+	} else {
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
+	}
 
 	// Make a timeout/cancel kill the whole subprocess tree promptly rather
 	// than blocking on a grandchild that still holds the output pipes.
@@ -124,6 +138,57 @@ func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 		"success":    success,
 		"durationMs": durationMs,
 	}, nil
+}
+
+// resolvePane extracts the pane handle from the raw opts goja.Value. The
+// "pane" key may hold:
+//   - A Pane JS object (returned by api.tui.pane(name)): carries the Go-side
+//     tui.Pane under the non-enumerable "__sercon_pane__" property, accessed
+//     via goja.Object.Get so non-enumerable entries are reachable.
+//   - A plain string: interpreted as a pane name to look up on the active TUI
+//     controller (set by api.tui.layout in the current Run).
+//
+// Returns (nil, nil) when no "pane" key is present or the opts arg is absent.
+func resolvePane(optsArg goja.Value) (tui.Pane, error) {
+	if optsArg == nil || goja.IsUndefined(optsArg) || goja.IsNull(optsArg) {
+		return nil, nil
+	}
+	optsObj, ok := optsArg.(*goja.Object)
+	if !ok {
+		return nil, nil
+	}
+	paneVal := optsObj.Get("pane")
+	if paneVal == nil || goja.IsUndefined(paneVal) || goja.IsNull(paneVal) {
+		return nil, nil
+	}
+	// String name: look up via the active TUI controller.
+	if name, ok := paneVal.Export().(string); ok {
+		c := activeTUIController()
+		if c == nil {
+			return nil, errors.New("shell: pane option set but no api.tui.layout has been declared")
+		}
+		h := c.Pane(name)
+		if h == nil {
+			return nil, fmt.Errorf("shell: unknown pane %q (declared: %v)", name, c.PaneNames())
+		}
+		return h, nil
+	}
+	// Pane JS object: the Go handle lives under the non-enumerable property
+	// "__sercon_pane__". Access via goja.Object.Get (not Export) so the
+	// non-enumerable entry is visible.
+	paneObj, ok := paneVal.(*goja.Object)
+	if !ok {
+		return nil, fmt.Errorf("shell: pane option must be a Pane or string name, got %T", paneVal.Export())
+	}
+	raw := paneObj.Get("__sercon_pane__")
+	if raw == nil || goja.IsUndefined(raw) {
+		return nil, errors.New("shell: pane option is not a Pane handle")
+	}
+	p, ok := raw.Export().(tui.Pane)
+	if !ok {
+		return nil, errors.New("shell: pane handle is malformed")
+	}
+	return p, nil
 }
 
 // buildArgv converts the JS cmd argument into a Go []string. String input
