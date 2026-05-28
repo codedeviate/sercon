@@ -5,11 +5,18 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
+
+// stopTimeout bounds how long Stop() waits for the tview application
+// goroutine to exit after app.Stop(). Terminal teardown is sub-
+// millisecond in practice; 200ms is generous and avoids piling up
+// per-test latency in large test suites.
+const stopTimeout = 200 * time.Millisecond
 
 // Controller realises a LayoutNode tree as a tview Flex layout of
 // TextView leaves and runs the tview Application on its own goroutine.
@@ -39,6 +46,11 @@ type Controller struct {
 	stopOnce sync.Once
 
 	syncMu sync.Mutex
+
+	// stopped is set by Stop() before app.Stop() so any post-stop writes
+	// to QueueUpdateDraw are silently dropped instead of hanging on the
+	// dead event loop's done-channel wait.
+	stopped atomic.Bool
 }
 
 type controllerMode int
@@ -156,6 +168,11 @@ func (c *Controller) WaitReady(timeout time.Duration) {
 
 // Sync schedules a no-op QueueUpdateDraw and waits for it to land, so
 // tests can assert state after a pending event has been processed.
+//
+// MUST NOT be called from within a QueueUpdateDraw callback or any
+// function executing on the tview event-loop goroutine — doing so
+// deadlocks (the loop blocks on its own callback's done channel).
+// Intended for test code on a different goroutine.
 func (c *Controller) Sync() {
 	if c.mode != modeTUI || c.app == nil {
 		return
@@ -174,13 +191,14 @@ func (c *Controller) Stop() {
 		switch c.mode {
 		case modeTUI:
 			if c.app != nil {
+				c.stopped.Store(true)
 				c.app.Stop()
 			}
 			// Wait for the application goroutine to actually exit so
 			// the alt screen is fully restored before we return.
 			select {
 			case <-c.stopCh:
-			case <-time.After(2 * time.Second):
+			case <-time.After(stopTimeout):
 			}
 		case modeFallback:
 			for _, ps := range c.panes {
@@ -193,13 +211,26 @@ func (c *Controller) Stop() {
 }
 
 // FocusedPane returns the name of the currently focused pane (TUI mode
-// only; "" in fallback mode).
+// only; "" in fallback mode). Reads the focus index on the event-loop
+// goroutine via QueueUpdateDraw so the read is properly synchronised.
+// Must not be invoked from within an event-loop callback (see Sync).
 func (c *Controller) FocusedPane() string {
 	if c.mode != modeTUI {
 		return ""
 	}
-	c.Sync()
-	return c.order[c.focused]
+	c.syncMu.Lock()
+	defer c.syncMu.Unlock()
+	if c.stopped.Load() {
+		return ""
+	}
+	var name string
+	done := make(chan struct{})
+	c.app.QueueUpdateDraw(func() {
+		name = c.order[c.focused]
+		close(done)
+	})
+	<-done
+	return name
 }
 
 // PaneContent returns the current text content of a pane. In TUI mode it
@@ -253,6 +284,9 @@ func (h paneHandle) Writeln(s string) { h.write([]byte(s + "\n")) }
 func (h paneHandle) write(b []byte) {
 	switch h.c.mode {
 	case modeTUI:
+		if h.c.stopped.Load() {
+			return
+		}
 		tagged := h.ps.ansi.Translate(string(b))
 		tv := h.ps.textView
 		h.c.app.QueueUpdateDraw(func() { _, _ = tv.Write([]byte(tagged)) })
@@ -264,6 +298,9 @@ func (h paneHandle) write(b []byte) {
 func (h paneHandle) Clear() {
 	switch h.c.mode {
 	case modeTUI:
+		if h.c.stopped.Load() {
+			return
+		}
 		tv := h.ps.textView
 		h.c.app.QueueUpdateDraw(func() { tv.Clear() })
 	case modeFallback:
@@ -274,6 +311,9 @@ func (h paneHandle) Clear() {
 func (h paneHandle) Title(s string) {
 	switch h.c.mode {
 	case modeTUI:
+		if h.c.stopped.Load() {
+			return
+		}
 		tv := h.ps.textView
 		h.c.app.QueueUpdateDraw(func() { tv.SetTitle(" " + s + " ") })
 	case modeFallback:
@@ -340,12 +380,8 @@ func buildTextViews(node LayoutNode, panes map[string]*paneState, app *tview.App
 			SetWrap(true).
 			SetWordWrap(false)
 		tv.SetBorder(true).SetTitle(" " + paneTitle(node) + " ").SetBorderColor(tcell.ColorGray)
-		// Auto-scroll when at bottom.
-		tv.SetChangedFunc(func() {
-			if app != nil {
-				app.Draw()
-			}
-		})
+		// Trigger a redraw whenever text is appended so the view auto-scrolls.
+		tv.SetChangedFunc(func() { app.Draw() })
 		ps.textView = tv
 		return
 	}
