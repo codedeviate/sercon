@@ -8,6 +8,25 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-28
+
+### Changed
+
+- **BREAKING — `api.*` surface re-nested into 9 category buckets.**
+  Every existing path moves to `api.<category>.<group>.<fn>` (or
+  `api.<category>.<fn>` for bare functions like `log`). The 9
+  categories are `runtime`, `crypto`, `text`, `format`, `fs`, `net`,
+  `db`, `tools`, `ui`. Two leaf renames within the new layout:
+  `api.net.*` (TCP/DNS/TLS/NTP/WHOIS/ping/smtp/wss probes) becomes
+  `api.net.probe.*`, and `api.text.*` (charset detection) becomes
+  `api.text.charset.*`. `path` and `archive` move into a new
+  `api.fs.*` bucket. No deprecation aliases — old paths are removed
+  in this release. See MANUAL.md §5 "Migrating from 0.7" for the
+  full substitution table.
+
+  The mechanical migration for user scripts is a single search-replace
+  pass per script — see the table in MANUAL.md §5 for the full mapping.
+
 ## [0.7.0] — 2026-05-28
 
 ### Added
