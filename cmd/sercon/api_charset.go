@@ -13,24 +13,24 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// textNamespace builds the `api.text.*` member map. The three members all
+// charsetNamespace builds the `api.text.*` member map. The three members all
 // share the same JS surface shape — binary in, structured out for detect,
 // string out for decode, bytes out for encode. Charset names follow the
 // HTML5 / WHATWG aliases that `htmlindex.Get` understands (UTF-8,
 // ISO-8859-1, Windows-1252, Shift_JIS, GBK, …).
-func textNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+func charsetNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"detect": scriptengine.PromisifyAsync(vm, loop, textDetect),
-		"decode": scriptengine.PromisifyAsync(vm, loop, textDecode),
-		"encode": scriptengine.PromisifyAsync(vm, loop, textEncode),
+		"detect": scriptengine.PromisifyAsync(vm, loop, charsetDetect),
+		"decode": scriptengine.PromisifyAsync(vm, loop, charsetDecode),
+		"encode": scriptengine.PromisifyAsync(vm, loop, charsetEncode),
 	}
 }
 
-// textDetect runs the saintfish/chardet detector over the input bytes and
+// charsetDetect runs the saintfish/chardet detector over the input bytes and
 // returns the most-confident match plus the full candidate list. chardet
 // reports an integer confidence on a 0–100 scale; we surface it verbatim
 // so scripts can compare against the publisher's docs.
-func textDetect(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+func charsetDetect(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
 	in, err := exportBytes(call.Argument(0))
 	if err != nil {
 		return nil, fmt.Errorf("text.detect: %w", err)
@@ -68,12 +68,12 @@ func textDetect(_ context.Context, call goja.FunctionCall) (map[string]any, erro
 	return out, nil
 }
 
-// textDecode converts a byte sequence in `charset` to a JS string (which
+// charsetDecode converts a byte sequence in `charset` to a JS string (which
 // goja stores as Go UTF-8). htmlindex.Get accepts every name the WHATWG
 // Encoding Living Standard catalogues (`UTF-8`, `ISO-8859-1`,
 // `Windows-1252`, `Shift_JIS`, `GBK`, etc., plus all their documented
 // aliases) so callers don't have to memorise a sercon-specific list.
-func textDecode(_ context.Context, call goja.FunctionCall) (string, error) {
+func charsetDecode(_ context.Context, call goja.FunctionCall) (string, error) {
 	in, err := exportBytes(call.Argument(0))
 	if err != nil {
 		return "", fmt.Errorf("text.decode: %w", err)
@@ -90,11 +90,11 @@ func textDecode(_ context.Context, call goja.FunctionCall) (string, error) {
 	return string(decoded), nil
 }
 
-// textEncode converts a UTF-8 string to a byte sequence in `charset`.
+// charsetEncode converts a UTF-8 string to a byte sequence in `charset`.
 // Characters with no representation in the target encoding produce an
 // error from the encoder rather than being silently dropped — callers
 // who want lossy behaviour can pre-process the input themselves.
-func textEncode(_ context.Context, call goja.FunctionCall) ([]byte, error) {
+func charsetEncode(_ context.Context, call goja.FunctionCall) ([]byte, error) {
 	text := call.Argument(0).String()
 	charset := call.Argument(1).String()
 	enc, err := htmlindex.Get(charset)

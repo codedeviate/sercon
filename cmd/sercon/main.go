@@ -304,7 +304,7 @@ func registerExampleAPI(e *scriptengine.Engine) error {
 			"email":       emailNamespace(vm, loop),
 			"compression": compressionNamespace(vm, loop),
 			"barcode":     barcodeNamespace(vm, loop),
-			"text":        textNamespace(vm, loop),
+			"text":        charsetNamespace(vm, loop),
 			"checkdigit":  checkdigitNamespace(vm),
 			"archive":     archiveNamespace(vm, loop),
 			"diff":        diffNamespace(vm, loop),

@@ -78,11 +78,11 @@ func TestText_DetectLatin1NotUTF8(t *testing.T) {
 	}
 }
 
-// textDetectInline runs the same detection pipeline textDetect uses but
+// textDetectInline runs the same detection pipeline charsetDetect uses but
 // without the goja shim — keeps the test offline and skips the
 // PromisifyAsync round-trip.
 func textDetectInline(in []byte) (map[string]any, error) {
-	// reuse textDetect by faking a goja FunctionCall is more setup than
+	// reuse charsetDetect by faking a goja FunctionCall is more setup than
 	// needed; call the upstream chardet directly with the same logic.
 	results, err := chardet.NewTextDetector().DetectAll(in)
 	if err != nil {
