@@ -106,7 +106,7 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 Seven artifacts must stay aligned whenever the script/binding/feature surface changes:
 
 - `MANUAL.md` — long-form reference; covers the library API, CLI, script `api`, goja built-ins, eventloop additions.
-- `MANUAL.pdf` — regenerated from `MANUAL.md` via `make manual` (which calls `recon --md-to-pdf`). Run this whenever `MANUAL.md` changes and include the resulting `MANUAL.pdf` in the same commit.
+- `MANUAL.pdf` — regenerated from `MANUAL.md` via `make manual` (which calls `recon --md-to-pdf`). Run this whenever `MANUAL.md` changes and include the resulting `MANUAL.pdf` in the same commit. The one exception is release-please's own version-string bumps in `MANUAL.md` — those land on the "chore: release X.Y.Z" PR branch, and `.github/workflows/sync-manual-pdf.yml` regenerates `MANUAL.pdf` there automatically so the PR merges with `MANUAL.md` and `MANUAL.pdf` in lockstep.
 - `cmd/sercon/help.go::showHelp` — the `--help` / `-h` screen. Flags table must mirror the actual flags defined in `main.go`.
 - `cmd/sercon/help.go::showExamples` — the `--examples` walkthrough. The `exampleCount` constant must equal the number of `header(N, …)` calls.
 - `examples/scripts/` — runnable `.ts` (or `.tsx`) demo files. **Any change to a user-visible binding, flag, or script-facing behaviour requires updating or adding the relevant example here.** Verify with `make demo`, which runs every success-path script (and skips `hang.ts`, the intentional timeout demo). New example files must also be added to `DEMO_SCRIPTS` in the `Makefile` and the table in `examples/README.md`.

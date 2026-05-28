@@ -1,0 +1,76 @@
+name: sync-manual-pdf
+
+# When release-please opens or updates its "chore: release X.Y.Z" PR, it
+# bumps the `x-release-please-version` strings in MANUAL.md but does NOT
+# run `make manual`. The committed MANUAL.pdf then drifts from MANUAL.md
+# until someone regenerates it locally. This workflow closes the gap by
+# regenerating MANUAL.pdf on the release PR branch, so merging the PR
+# brings MANUAL.md and MANUAL.pdf into master atomically and in lockstep.
+#
+# Trigger: push to any release-please-managed branch
+# (release-please--branches--master--components--sercon and similar).
+# Loop guard: skip pushes whose commit message contains our own marker —
+# this workflow is the only thing that creates such commits, so a marker
+# match means we're seeing our own push echo back.
+
+on:
+  push:
+    branches:
+      - 'release-please--**'
+
+# Default GITHUB_TOKEN needs contents:write to push the regen commit back
+# to the release PR branch. Requires the repo's "Allow GitHub Actions to
+# create and approve pull requests" setting to be on (release-please
+# itself depends on the same setting).
+permissions:
+  contents: write
+
+env:
+  # Pinned for cache reproducibility; bump when recon / agent-browser
+  # ship versions worth picking up. The cache key includes these so a
+  # bump auto-invalidates the cache and reinstalls.
+  RECON_VERSION: 0.90.0
+  AGENT_BROWSER_VERSION: 0.27.0
+
+jobs:
+  sync-pdf:
+    name: regenerate MANUAL.pdf
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, 'regenerate MANUAL.pdf') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache recon-cli + agent-browser binaries
+        id: cache-cargo-bins
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/recon
+            ~/.cargo/bin/agent-browser
+          key: ${{ runner.os }}-pdf-tools-recon-${{ env.RECON_VERSION }}-ab-${{ env.AGENT_BROWSER_VERSION }}
+
+      - name: Install recon-cli + agent-browser
+        if: steps.cache-cargo-bins.outputs.cache-hit != 'true'
+        run: |
+          cargo install --locked recon-cli@${{ env.RECON_VERSION }}
+          cargo install --locked agent-browser@${{ env.AGENT_BROWSER_VERSION }}
+
+      - name: Regenerate MANUAL.pdf
+        run: make manual
+
+      - name: Commit and push if MANUAL.pdf changed
+        run: |
+          if git diff --quiet -- MANUAL.pdf; then
+            echo "MANUAL.pdf unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add MANUAL.pdf
+          git commit -m "chore: regenerate MANUAL.pdf for upcoming release [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
