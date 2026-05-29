@@ -199,7 +199,14 @@ func smtpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 			return vm.ToValue(stoppedPromise)
 		}
 		go func() {
+			// server.Close() closes s.done so Serve returns cleanly, but it
+			// only closes listeners already registered in s.listeners. If
+			// close() races ahead of the `go server.Serve(ln)` goroutine's
+			// registration step, Serve would otherwise block in Accept
+			// forever. Closing ln directly guarantees Accept unblocks
+			// regardless of ordering. Double-close is harmless (ignored).
 			_ = server.Close()
+			_ = ln.Close()
 		}()
 		return vm.ToValue(stoppedPromise)
 	})
