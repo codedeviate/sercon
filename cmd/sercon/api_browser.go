@@ -17,12 +17,12 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// browserNamespace wires `api.net.browser.*` — a stateful HTTP session
+// browserNamespace wires `net.browser.*` — a stateful HTTP session
 // with an automatic cookie jar and replayed default headers, like a
 // browser keeping a session across requests. The namespace exposes
 // only `open`; the handle it returns carries the surface
 // (setUserAgent / setHeader / get / post / cookies). Another
-// stateful-handle binding, in the same shape as `api.db.sqlite`.
+// stateful-handle binding, in the same shape as `db.sqlite`.
 //
 // Pure stdlib: `net/http` + `net/http/cookiejar` +
 // `golang.org/x/net/publicsuffix` (the jar's public-suffix list, so
@@ -84,7 +84,7 @@ func (s *browserSession) setHeader(name, value string) {
 }
 
 // do performs a request with the session's accumulated headers and
-// shared cookie jar. Result shape mirrors api.net.http.request:
+// shared cookie jar. Result shape mirrors net.http.request:
 // `{ status, ok, headers, body, url }`. The cookie jar is updated
 // automatically by the http.Client, so a login POST followed by a
 // GET replays the session cookie without the script touching it.

@@ -127,11 +127,11 @@ func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 
 // resolvePane extracts the pane handle from the raw opts goja.Value. The
 // "pane" key may hold:
-//   - A Pane JS object (returned by api.ui.tui.pane(name)): carries the Go-side
+//   - A Pane JS object (returned by tui.pane(name)): carries the Go-side
 //     tui.Pane under the non-enumerable "__sercon_pane__" property, accessed
 //     via goja.Object.Get so non-enumerable entries are reachable.
 //   - A plain string: interpreted as a pane name to look up on the active TUI
-//     controller (set by api.ui.tui.layout in the current Run).
+//     controller (set by tui.layout in the current Run).
 //
 // Returns (nil, nil) when no "pane" key is present or the opts arg is absent.
 func resolvePane(optsArg goja.Value) (tui.Pane, error) {
@@ -150,7 +150,7 @@ func resolvePane(optsArg goja.Value) (tui.Pane, error) {
 	if name, ok := paneVal.Export().(string); ok {
 		c := activeTUIController()
 		if c == nil {
-			return nil, errors.New("shell: pane option set but no api.ui.tui.layout has been declared")
+			return nil, errors.New("shell: pane option set but no tui.layout has been declared")
 		}
 		h := c.Pane(name)
 		if h == nil {

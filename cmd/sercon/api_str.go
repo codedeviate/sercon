@@ -11,7 +11,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// strNamespace returns the `api.text.str.*` member map. Inputs are JS strings;
+// strNamespace returns the `text.str.*` member map. Inputs are JS strings;
 // outputs are JS strings unless noted. Mask arguments to trim/ltrim/rtrim
 // follow PHP's "any character in this set" semantics. urlEncode uses
 // form-style (`+` for space) to match recon's `urlencode`. Padding follows

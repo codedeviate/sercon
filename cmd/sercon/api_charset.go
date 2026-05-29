@@ -13,7 +13,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// charsetNamespace builds the `api.text.*` member map. The three members all
+// charsetNamespace builds the `text.*` member map. The three members all
 // share the same JS surface shape — binary in, structured out for detect,
 // string out for decode, bytes out for encode. Charset names follow the
 // HTML5 / WHATWG aliases that `htmlindex.Get` understands (UTF-8,

@@ -5,11 +5,11 @@
 
 import data from "./helpers/data.json";
 
-api.runtime.assert.equal(data.name, "abc");
-api.runtime.assert.equal(data.n, 7);
-api.runtime.assert.equal(data.tags.length, 3);
-api.runtime.log("import OK:", JSON.stringify(data));
+runtime.assert.equal(data.name, "abc");
+runtime.assert.equal(data.n, 7);
+runtime.assert.equal(data.tags.length, 3);
+runtime.log("import OK:", JSON.stringify(data));
 
 const r = require("./helpers/data.json");
-api.runtime.assert.equal(r.name, "abc");
-api.runtime.log("require OK:", r.tags.join(", "));
+runtime.assert.equal(r.name, "abc");
+runtime.log("require OK:", r.tags.join(", "));

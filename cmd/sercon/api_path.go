@@ -7,7 +7,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// pathNamespace returns the `api.fs.path.*` member map. Semantics are POSIX
+// pathNamespace returns the `fs.path.*` member map. Semantics are POSIX
 // (forward slashes); on Windows pass already-normalised paths or convert
 // separators yourself.
 func pathNamespace(vm *goja.Runtime) map[string]any {

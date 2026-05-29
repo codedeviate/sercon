@@ -1,37 +1,37 @@
-// Demonstrates api.db.redis.* — RESP client over redis/go-redis.
+// Demonstrates db.redis.* — RESP client over redis/go-redis.
 // Gracefully degrades when no Redis server is reachable, so it stays
 // green in `make demo` without a running server.
 
-const url = api.runtime.env.get("REDIS_URL") ?? "redis://localhost:6379/0";
-api.runtime.log("connecting to", url, "...");
+const url = runtime.env.get("REDIS_URL") ?? "redis://localhost:6379/0";
+runtime.log("connecting to", url, "...");
 
 let r;
 try {
-  r = await api.db.redis.open(url);
+  r = await db.redis.open(url);
 } catch (e) {
-  api.runtime.log("no Redis reachable — skipping demo:", String(e).slice(0, 60));
-  api.runtime.log("(set REDIS_URL or run `redis-server` to see it live)");
+  runtime.log("no Redis reachable — skipping demo:", String(e).slice(0, 60));
+  runtime.log("(set REDIS_URL or run `redis-server` to see it live)");
 }
 
 if (r) {
-  api.runtime.log("PING ->", await r.ping());
+  runtime.log("PING ->", await r.ping());
 
   // `do` runs any command — the binding stays small by not mirroring
   // hundreds of methods.
   await r.do("SET", "sercon:greeting", "hello from sercon");
-  api.runtime.log("GET ->", await r.do("GET", "sercon:greeting"));
+  runtime.log("GET ->", await r.do("GET", "sercon:greeting"));
 
   await r.do("RPUSH", "sercon:list", "a", "b", "c");
-  api.runtime.log("LRANGE ->", (await r.do("LRANGE", "sercon:list", "0", "-1")).join(", "));
+  runtime.log("LRANGE ->", (await r.do("LRANGE", "sercon:list", "0", "-1")).join(", "));
 
   await r.do("HSET", "sercon:hash", "field", "value");
-  api.runtime.log("HGET ->", await r.do("HGET", "sercon:hash", "field"));
+  runtime.log("HGET ->", await r.do("HGET", "sercon:hash", "field"));
 
   // Missing key returns null, not an error.
-  api.runtime.log("missing key ->", await r.do("GET", "sercon:absent"));
+  runtime.log("missing key ->", await r.do("GET", "sercon:absent"));
 
   // Clean up + close.
   await r.do("DEL", "sercon:greeting", "sercon:list", "sercon:hash");
   await r.close();
-  api.runtime.log("closed");
+  runtime.log("closed");
 }

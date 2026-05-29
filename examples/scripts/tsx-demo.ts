@@ -6,7 +6,7 @@
 import { makeBox } from "./helpers/el";
 
 const box = makeBox("hello");
-api.runtime.assert.equal(box.tag, "div");
-api.runtime.assert.equal(box.props.className, "box");
-api.runtime.assert.equal(box.children[0], "hello");
-api.runtime.log("tsx OK:", JSON.stringify(box));
+runtime.assert.equal(box.tag, "div");
+runtime.assert.equal(box.props.className, "box");
+runtime.assert.equal(box.children[0], "hello");
+runtime.log("tsx OK:", JSON.stringify(box));

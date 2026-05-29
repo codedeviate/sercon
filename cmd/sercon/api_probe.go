@@ -20,10 +20,10 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// probeNamespace builds the `api.net.*` member map: `tcp`, `dns`, `tls`,
+// probeNamespace builds the `net.*` member map: `tcp`, `dns`, `tls`,
 // `ntp`, `whois`. Every member returns a Promise (uses
 // `scriptengine.PromisifyAsync` under the hood) so scripts can
-// `await api.net.probe.tcp("host:port")`. All bindings honour a `timeout` opt in
+// `await net.probe.tcp("host:port")`. All bindings honour a `timeout` opt in
 // milliseconds; defaults vary per binding.
 func probeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
@@ -207,7 +207,7 @@ func dnsLookup(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 // hostname-mismatched certs can be inspected — the binding is for surveying
 // the certificate, not for proving it's valid. Hosts that care about that
 // should re-validate themselves with crypto/x509.Verify or
-// scripts can call api.net.probe.tls and decide based on the returned fields.
+// scripts can call net.probe.tls and decide based on the returned fields.
 func tlsProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 	target := call.Argument(0).String()
 	opts := optsAsMap(call)

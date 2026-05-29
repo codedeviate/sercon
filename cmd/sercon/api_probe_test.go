@@ -21,7 +21,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// engine wires the same api.net namespace the CLI does so tests drive it
+// engine wires the same net namespace the CLI does so tests drive it
 // through a real Run.
 func newNetEngine(t *testing.T) *scriptengine.Engine {
 	t.Helper()

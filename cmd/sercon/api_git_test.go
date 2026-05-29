@@ -44,7 +44,7 @@ func writeFile(t *testing.T, dir, name, contents string) {
 	}
 }
 
-// runGit drives a goja-flavoured FunctionCall into one of the api.tools.git
+// runGit drives a goja-flavoured FunctionCall into one of the services.git
 // bindings. Positional args go through vm.ToValue so the receiver sees
 // the same JS-shaped types it would in production.
 func runGit[T any](t *testing.T, fn func(context.Context, goja.FunctionCall) (T, error), args ...any) (T, error) {

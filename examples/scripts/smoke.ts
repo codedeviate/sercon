@@ -1,3 +1,3 @@
-api.runtime.log("hello from ts");
-api.runtime.assert.equal(1 + 1, 2);
-api.runtime.assert.ok(api.runtime.time.nowMs() > 0);
+runtime.log("hello from ts");
+runtime.assert.equal(1 + 1, 2);
+runtime.assert.ok(runtime.time.nowMs() > 0);

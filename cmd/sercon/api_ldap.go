@@ -12,7 +12,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// ldapNamespace wires `api.db.ldap.*`. `open(url)` dials an LDAP server
+// ldapNamespace wires `db.ldap.*`. `open(url)` dials an LDAP server
 // (`ldap://host:port` or `ldaps://...`) and does an anonymous bind,
 // then returns a stateful handle `{ rootDSE, search, close }`. A
 // directory-inspection binding — anonymous read queries, not a

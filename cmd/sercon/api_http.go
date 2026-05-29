@@ -12,9 +12,9 @@ import (
 	"github.com/dop251/goja"
 )
 
-// httpRequestCall implements `api.net.http.request(method, url, opts?)` —
+// httpRequestCall implements `net.http.request(method, url, opts?)` —
 // the full-featured HTTP client that goes beyond the two-line
-// `api.net.http.get` / `api.net.http.post`. It's pure `net/http`; the work is
+// `net.http.get` / `net.http.post`. It's pure `net/http`; the work is
 // shaping the option surface (headers, body, timeout, retry, basic
 // auth, redirect control) into a JS-friendly object and a single
 // result shape.

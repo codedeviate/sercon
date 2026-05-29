@@ -12,7 +12,7 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwk"
 )
 
-// jwtNamespace wires `api.crypto.jwt.*`. Supports the full RFC 7518
+// jwtNamespace wires `crypto.jwt.*`. Supports the full RFC 7518
 // algorithm matrix: HMAC (HS256 / HS384 / HS512), RSA-PKCS1 (RS256
 // / RS384 / RS512), RSA-PSS (PS256 / PS384 / PS512), ECDSA (ES256
 // / ES384 / ES512), and EdDSA (Ed25519). All three members are

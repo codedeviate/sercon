@@ -14,7 +14,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// sqliteNamespace wires `api.db.sqlite.*`. The namespace only exposes
+// sqliteNamespace wires `db.sqlite.*`. The namespace only exposes
 // `open`; the handle object that `open` returns is where the real
 // surface lives (exec / query / queryValue / close). This is the
 // first stateful-handle binding sercon ships — the pattern future

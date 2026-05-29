@@ -12,7 +12,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// pingProbe implements `api.net.probe.ping(host, opts?)`. Two modes:
+// pingProbe implements `net.probe.ping(host, opts?)`. Two modes:
 //
 //   - "tcp" (default) — dials host:port `count` times and measures the
 //     connect RTT. No special privileges; works everywhere. The

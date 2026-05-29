@@ -13,7 +13,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// diffNamespace wires `api.text.diff.*`. Only one member for now (`compare`);
+// diffNamespace wires `text.diff.*`. Only one member for now (`compare`);
 // the namespace exists so future additions (word-level / char-level
 // diffs, patch application) land in a stable location.
 func diffNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {

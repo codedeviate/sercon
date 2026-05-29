@@ -180,18 +180,18 @@ func TestExecShell_PaneStreamsStdout(t *testing.T) {
 		t.Skip("uses /bin/echo")
 	}
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
-	if err := registerExampleAPI(eng); err != nil {
+	if err := registerSurface(eng); err != nil {
 		t.Fatal(err)
 	}
 	var captured bytes.Buffer
 	withTestStdout(&captured, func() {
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.ui.tui.layout({name: "out"});
-const p = api.ui.tui.pane("out");
-const r = await api.tools.exec.shell(["/bin/echo", "hello-from-shell"], { pane: p });
-api.runtime.assert.equal(r.exitCode, 0);
-api.runtime.assert.equal(r.stdout, "");
-api.runtime.assert.equal(r.stderr, "");
+tui.layout({name: "out"});
+const p = tui.pane("out");
+const r = await services.exec.shell(["/bin/echo", "hello-from-shell"], { pane: p });
+runtime.assert.equal(r.exitCode, 0);
+runtime.assert.equal(r.stdout, "");
+runtime.assert.equal(r.stderr, "");
 `)
 		if err != nil {
 			t.Fatalf("run: %v", err)
@@ -209,15 +209,15 @@ func TestExecShell_PaneAcceptsStringName(t *testing.T) {
 		t.Skip("uses /bin/echo")
 	}
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
-	if err := registerExampleAPI(eng); err != nil {
+	if err := registerSurface(eng); err != nil {
 		t.Fatal(err)
 	}
 	var captured bytes.Buffer
 	withTestStdout(&captured, func() {
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.ui.tui.layout({name: "out"});
-const r = await api.tools.exec.shell(["/bin/echo", "via-name"], { pane: "out" });
-api.runtime.assert.equal(r.exitCode, 0);
+tui.layout({name: "out"});
+const r = await services.exec.shell(["/bin/echo", "via-name"], { pane: "out" });
+runtime.assert.equal(r.exitCode, 0);
 `)
 		if err != nil {
 			t.Fatalf("run: %v", err)
@@ -238,7 +238,7 @@ func TestExecShell_PaneSerialisesStdoutAndStderr(t *testing.T) {
 		t.Skip("uses /bin/sh")
 	}
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
-	if err := registerExampleAPI(eng); err != nil {
+	if err := registerSurface(eng); err != nil {
 		t.Fatal(err)
 	}
 	var captured bytes.Buffer
@@ -246,13 +246,13 @@ func TestExecShell_PaneSerialisesStdoutAndStderr(t *testing.T) {
 		// Loop 50 times alternating stdout / stderr to get repeated
 		// concurrent Write calls from the two copy goroutines.
 		_, err := eng.Run(context.Background(), "run.ts", `
-api.ui.tui.layout({name: "out"});
-const p = api.ui.tui.pane("out");
-const r = await api.tools.exec.shell(
+tui.layout({name: "out"});
+const p = tui.pane("out");
+const r = await services.exec.shell(
   ["/bin/sh", "-c", "for i in $(seq 1 50); do printf 'out %s\\n' $i; printf 'err %s\\n' $i 1>&2; done"],
   { pane: p },
 );
-api.runtime.assert.equal(r.exitCode, 0);
+runtime.assert.equal(r.exitCode, 0);
 `)
 		if err != nil {
 			t.Fatalf("run: %v", err)

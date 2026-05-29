@@ -9,16 +9,16 @@ import (
 	"github.com/dop251/goja"
 )
 
-// preg2Namespace wires `api.text.preg2.*` — the PCRE-flavoured sibling of
-// `api.text.preg`. Where `api.text.preg` runs on Go's RE2 (linear-time, no
-// lookaround or backreferences), `api.text.preg2` runs on
+// preg2Namespace wires `text.preg2.*` — the PCRE-flavoured sibling of
+// `text.preg`. Where `text.preg` runs on Go's RE2 (linear-time, no
+// lookaround or backreferences), `text.preg2` runs on
 // [`github.com/dlclark/regexp2`](https://github.com/dlclark/regexp2),
 // a port of .NET's regex engine. That buys lookahead, lookbehind,
 // backreferences, and possessive quantifiers — at the cost of RE2's
 // linear-time guarantee (a pathological pattern can backtrack
 // exponentially, so don't run untrusted patterns without a timeout).
 //
-// The API mirrors `api.text.preg` exactly (match / matchAll / replace,
+// The API mirrors `text.preg` exactly (match / matchAll / replace,
 // `/pattern/flags` syntax, the same `{ match, groups, index }`
 // result shape) so scripts can switch engines by changing the
 // namespace name. The flag set adds `x` (ignore-pattern-whitespace),

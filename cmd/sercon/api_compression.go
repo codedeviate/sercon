@@ -31,7 +31,7 @@ var compressionAlgos = []string{
 	"gzip", "deflate", "zlib", "bzip2", "zstd", "brotli", "lz4", "xz", "snappy",
 }
 
-// compressionNamespace builds the `api.format.compression.*` member map. Inputs are
+// compressionNamespace builds the `codec.compression.*` member map. Inputs are
 // either strings (interpreted as UTF-8 bytes) or Uint8Array / ArrayBuffer
 // values exported from JS as `[]byte` by goja. Outputs are `[]byte`, which
 // goja surfaces back to JS as an ArrayBuffer; scripts typically wrap that

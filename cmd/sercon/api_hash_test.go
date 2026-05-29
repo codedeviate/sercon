@@ -10,7 +10,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// TestHashNamespace verifies the api.crypto.hash.* surface against well-known
+// TestHashNamespace verifies the crypto.hash.* surface against well-known
 // vectors for the empty string and the canonical "abc" input. Tests live
 // inside the package so they can drive hashNamespace through a real Engine.
 func TestHashNamespace(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 	"lukechampine.com/blake3"
 )
 
-// hashNamespace builds the `api.crypto.hash.*` member map. Inputs are interpreted as
+// hashNamespace builds the `crypto.hash.*` member map. Inputs are interpreted as
 // UTF-8 byte sequences; outputs are lowercase hex strings. crc32 uses the
 // IEEE polynomial (the universal default).
 func hashNamespace(vm *goja.Runtime) map[string]any {

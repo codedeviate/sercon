@@ -19,8 +19,8 @@ import (
 	_ "golang.org/x/image/webp" // register WebP decoder with image.Decode
 )
 
-// barcodeDecodableFormats lists the symbologies api.format.barcode.decode can
-// recognise. PDF417 isn't here even though api.format.barcode.encode produces
+// barcodeDecodableFormats lists the symbologies codec.barcode.decode can
+// recognise. PDF417 isn't here even though codec.barcode.encode produces
 // it — gozxing v0.1.1 has no PDF417 decoder. Scripts that need to
 // round-trip PDF417 will get a clear "decoder not available" error
 // from formatReader rather than a silent miss.

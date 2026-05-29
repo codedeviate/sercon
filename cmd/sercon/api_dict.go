@@ -15,7 +15,7 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// dictNamespace wires `api.db.dict.*` — an RFC 2229 DICT protocol client
+// dictNamespace wires `db.dict.*` — an RFC 2229 DICT protocol client
 // for dictionary-server word lookups. No popular pure-Go DICT client
 // exists, so the protocol is hand-rolled over `net/textproto` (it's a
 // simple line-based status-code protocol, much like SMTP). Two

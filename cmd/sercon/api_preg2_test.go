@@ -92,7 +92,7 @@ func TestPreg2_Replace(t *testing.T) {
 }
 
 // Flags i / m / s / x all map onto regexp2 options. `x` is the one
-// RE2 (api.text.preg) couldn't support.
+// RE2 (text.preg) couldn't support.
 func TestPreg2_Flags(t *testing.T) {
 	if got := runPreg2Script(t, `const __result = preg2.match("/HELLO/i", "hello") !== null;`); got != true {
 		t.Errorf("i flag: %v", got)

@@ -111,7 +111,7 @@ func run(args []string) int {
 		engOpts.Verbose = os.Stderr
 	}
 	eng := scriptengine.New(engOpts)
-	if err := registerExampleAPI(eng); err != nil {
+	if err := registerSurface(eng); err != nil {
 		fmt.Fprintln(os.Stderr, "sercon:", err)
 		return exitUsage
 	}
@@ -207,153 +207,201 @@ func classifyErr(err error) int {
 	}
 }
 
-// registerExampleAPI wires the script-facing `api` surface, organised into
-// nine category buckets: api.runtime (log, assert, time, env),
-// api.crypto (hash, jwt, encrypt), api.text (str, preg, preg2, charset,
-// jq, diff), api.format (compression, barcode, checkdigit), api.fs (path,
-// archive), api.net (http, probe, netstatus, email, browser),
-// api.db (sqlite, redis, memcached, ldap, dict), api.tools (exec, git, gh,
-// ai), api.ui (tui).
-func registerExampleAPI(e *scriptengine.Engine) error {
-	if err := e.RegisterNamespaceFactory("api", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+// registerSurface wires sercon's nine top-level script-facing globals:
+// runtime, crypto, text, codec, fs, net, db, services, tui. Each is
+// registered via RegisterNamespaceFactory so per-Run constructions that
+// need the loop (Promise-returning bindings, TUI controller) get fresh
+// state every run. JSDoc lives in api_docs.go; the engine patches
+// runtime.argv onto the runtime namespace at Run time.
+func registerSurface(e *scriptengine.Engine) error {
+	if err := e.RegisterNamespaceFactory("runtime", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
-			"runtime": map[string]any{
-				"log": func(call goja.FunctionCall) goja.Value {
-					parts := make([]string, 0, len(call.Arguments))
-					for _, a := range call.Arguments {
-						parts = append(parts, a.String())
+			"log": func(call goja.FunctionCall) goja.Value {
+				parts := make([]string, 0, len(call.Arguments))
+				for _, a := range call.Arguments {
+					parts = append(parts, a.String())
+				}
+				fmt.Println(strings.Join(parts, " "))
+				return goja.Undefined()
+			},
+			"assert": map[string]any{
+				"equal": func(actual, expected goja.Value, args ...goja.Value) {
+					if !valuesEqual(actual, expected) {
+						msg := "assert.equal failed"
+						if len(args) > 0 && args[0] != nil && !goja.IsUndefined(args[0]) {
+							msg = args[0].String()
+						}
+						panic(vm.NewGoError(fmt.Errorf("%s: expected %s, got %s", msg, expected.String(), actual.String())))
 					}
-					fmt.Println(strings.Join(parts, " "))
+				},
+				"ok": func(cond goja.Value, args ...goja.Value) {
+					if cond == nil || !cond.ToBoolean() {
+						msg := "assert.ok failed"
+						if len(args) > 0 && args[0] != nil && !goja.IsUndefined(args[0]) {
+							msg = args[0].String()
+						}
+						panic(vm.NewGoError(errors.New(msg)))
+					}
+				},
+			},
+			"time": map[string]any{
+				"nowMs": func() int64 { return time.Now().UnixMilli() },
+				"sleep": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+					ms := call.Argument(0).ToInteger()
+					timer := time.NewTimer(time.Duration(ms) * time.Millisecond)
+					defer timer.Stop()
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-timer.C:
+						return nil, nil
+					}
+				}),
+				"format": func(call goja.FunctionCall) goja.Value {
+					ms := call.Argument(0).ToInteger()
+					layout := call.Argument(1).String()
+					loc := time.Local
+					if v := call.Argument(2); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+						l, err := time.LoadLocation(v.String())
+						if err != nil {
+							panic(vm.NewGoError(fmt.Errorf("time.format: %w", err)))
+						}
+						loc = l
+					}
+					return vm.ToValue(strftime(time.UnixMilli(ms).In(loc), layout))
+				},
+			},
+			"env": map[string]any{
+				"get": func(call goja.FunctionCall) goja.Value {
+					name := call.Argument(0).String()
+					if v, ok := os.LookupEnv(name); ok {
+						return vm.ToValue(v)
+					}
 					return goja.Undefined()
 				},
-				"assert": map[string]any{
-					"equal": func(actual, expected goja.Value, args ...goja.Value) {
-						if !valuesEqual(actual, expected) {
-							msg := "assert.equal failed"
-							if len(args) > 0 && args[0] != nil && !goja.IsUndefined(args[0]) {
-								msg = args[0].String()
-							}
-							panic(vm.NewGoError(fmt.Errorf("%s: expected %s, got %s", msg, expected.String(), actual.String())))
-						}
-					},
-					"ok": func(cond goja.Value, args ...goja.Value) {
-						if cond == nil || !cond.ToBoolean() {
-							msg := "assert.ok failed"
-							if len(args) > 0 && args[0] != nil && !goja.IsUndefined(args[0]) {
-								msg = args[0].String()
-							}
-							panic(vm.NewGoError(errors.New(msg)))
-						}
-					},
-				},
-				"time": map[string]any{
-					"nowMs": func() int64 { return time.Now().UnixMilli() },
-					"sleep": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-						ms := call.Argument(0).ToInteger()
-						timer := time.NewTimer(time.Duration(ms) * time.Millisecond)
-						defer timer.Stop()
-						select {
-						case <-ctx.Done():
-							return nil, ctx.Err()
-						case <-timer.C:
-							return nil, nil
-						}
-					}),
-					"format": func(call goja.FunctionCall) goja.Value {
-						ms := call.Argument(0).ToInteger()
-						layout := call.Argument(1).String()
-						loc := time.Local
-						if v := call.Argument(2); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-							l, err := time.LoadLocation(v.String())
-							if err != nil {
-								panic(vm.NewGoError(fmt.Errorf("time.format: %w", err)))
-							}
-							loc = l
-						}
-						return vm.ToValue(strftime(time.UnixMilli(ms).In(loc), layout))
-					},
-				},
-				"env": map[string]any{
-					"get": func(call goja.FunctionCall) goja.Value {
-						name := call.Argument(0).String()
-						if v, ok := os.LookupEnv(name); ok {
-							return vm.ToValue(v)
-						}
-						return goja.Undefined()
-					},
-				},
 			},
-			"crypto": map[string]any{
-				"hash":    hashNamespace(vm),
-				"jwt":     jwtNamespace(vm),
-				"encrypt": encryptNamespace(vm),
-			},
-			"text": map[string]any{
-				"str":     strNamespace(vm),
-				"preg":    pregNamespace(vm),
-				"preg2":   preg2Namespace(vm),
-				"charset": charsetNamespace(vm, loop),
-				"jq":      jqNamespace(vm, loop),
-				"diff":    diffNamespace(vm, loop),
-			},
-			"format": map[string]any{
-				"compression": compressionNamespace(vm, loop),
-				"barcode":     barcodeNamespace(vm, loop),
-				"checkdigit":  checkdigitNamespace(vm),
-			},
-			"fs": map[string]any{
-				"path":    pathNamespace(vm),
-				"archive": archiveNamespace(vm, loop),
-			},
-			"net": map[string]any{
-				"http": map[string]any{
-					"get": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-						url := call.Argument(0).String()
-						return httpDo(ctx, http.MethodGet, url, "")
-					}),
-					"post": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-						url := call.Argument(0).String()
-						body := ""
-						if len(call.Arguments) > 1 {
-							body = call.Argument(1).String()
-						}
-						return httpDo(ctx, http.MethodPost, url, body)
-					}),
-					"request": scriptengine.PromisifyAsync(vm, loop, httpRequestCall),
-				},
-				"probe":     probeNamespace(vm, loop),
-				"netstatus": netstatusNamespace(vm, loop),
-				"email":     emailNamespace(vm, loop),
-				"browser":   browserNamespace(vm, loop),
-			},
-			"db": map[string]any{
-				"sqlite":    sqliteNamespace(vm, loop),
-				"redis":     redisNamespace(vm, loop),
-				"memcached": memcachedNamespace(vm, loop),
-				"ldap":      ldapNamespace(vm, loop),
-				"dict":      dictNamespace(vm, loop),
-			},
-			"tools": map[string]any{
-				"exec": map[string]any{
-					"shell": scriptengine.PromisifyAsync(vm, loop, execShell),
-					"http":  scriptengine.PromisifyAsync(vm, loop, execHTTP),
-				},
-				"git": gitNamespace(vm, loop),
-				"gh":  ghNamespace(vm, loop),
-				"ai":  aiNamespace(vm, loop),
-			},
-			"ui": map[string]any{
-				"tui": tuiNamespace(vm, loop, e),
-			},
+			// argv is a placeholder: the engine patches the real per-Run argv
+			// onto this object after registrations are applied. Registering
+			// here ensures the d.ts emitter surfaces `argv: string[]` with
+			// JSDoc — runtime behaviour is identical to v0.8.x.
+			"argv": []string{},
 		}
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("crypto", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"hash":    hashNamespace(vm),
+			"jwt":     jwtNamespace(vm),
+			"encrypt": encryptNamespace(vm),
+		}
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("text", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"str":     strNamespace(vm),
+			"preg":    pregNamespace(vm),
+			"preg2":   preg2Namespace(vm),
+			"charset": charsetNamespace(vm, loop),
+			"jq":      jqNamespace(vm, loop),
+			"diff":    diffNamespace(vm, loop),
+		}
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("codec", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"compression": compressionNamespace(vm, loop),
+			"barcode":     barcodeNamespace(vm, loop),
+			"checkdigit":  checkdigitNamespace(vm),
+		}
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("fs", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"path":    pathNamespace(vm),
+			"archive": archiveNamespace(vm, loop),
+		}
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("net", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"http": map[string]any{
+				"get": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+					url := call.Argument(0).String()
+					return httpDo(ctx, http.MethodGet, url, "")
+				}),
+				"post": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+					url := call.Argument(0).String()
+					body := ""
+					if len(call.Arguments) > 1 {
+						body = call.Argument(1).String()
+					}
+					return httpDo(ctx, http.MethodPost, url, body)
+				}),
+				"request": scriptengine.PromisifyAsync(vm, loop, httpRequestCall),
+			},
+			"probe":     probeNamespace(vm, loop),
+			"netstatus": netstatusNamespace(vm, loop),
+			"email":     emailNamespace(vm, loop),
+			"browser":   browserNamespace(vm, loop),
+		}
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("db", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"sqlite":    sqliteNamespace(vm, loop),
+			"redis":     redisNamespace(vm, loop),
+			"memcached": memcachedNamespace(vm, loop),
+			"ldap":      ldapNamespace(vm, loop),
+			"dict":      dictNamespace(vm, loop),
+		}
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("services", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"exec": map[string]any{
+				"shell": scriptengine.PromisifyAsync(vm, loop, execShell),
+				"http":  scriptengine.PromisifyAsync(vm, loop, execHTTP),
+			},
+			"git": gitNamespace(vm, loop),
+			"gh":  ghNamespace(vm, loop),
+			"ai":  aiNamespace(vm, loop),
+		}
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("tui", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return tuiNamespace(vm, loop, e)
 	}); err != nil {
 		return err
 	}
 	// Decorate the registered surface with JSDoc strings so the emitted
 	// .d.ts grows useful editor hover. Docs are gathered in api_docs.go
 	// (centralised so lockstep updates touch one file).
-	e.SetDocs("api", "sercon's built-in script surface. The full reference lives in MANUAL.md; the JSDoc blocks here are the at-a-glance summary.")
-	e.SetMemberDocs("api", apiDocs())
+	e.SetDocs("runtime", "Script-host scaffolding: logging, assertions, time, environment, runtime.argv.")
+	e.SetMemberDocs("runtime", runtimeDocs())
+	e.SetDocs("crypto", "Hashing, JWT, age encryption — anything that produces a digest, signature, or ciphertext.")
+	e.SetMemberDocs("crypto", cryptoDocs())
+	e.SetDocs("text", "String / regex / charset / data manipulation — all text-shaped transforms.")
+	e.SetMemberDocs("text", textDocs())
+	e.SetDocs("codec", "Binary-format codecs: compression, barcodes, check digits.")
+	e.SetMemberDocs("codec", codecDocs())
+	e.SetDocs("fs", "Filesystem operations: path manipulation and archive create/extract.")
+	e.SetMemberDocs("fs", fsDocs())
+	e.SetDocs("net", "Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions.")
+	e.SetMemberDocs("net", netDocs())
+	e.SetDocs("db", "Database / KV / directory clients: SQLite, Redis, memcached, LDAP, dict.")
+	e.SetMemberDocs("db", dbDocs())
+	e.SetDocs("services", "Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers.")
+	e.SetMemberDocs("services", servicesDocs())
+	e.SetDocs("tui", "Multi-pane terminal UI: layout, pane, write, focus.")
+	e.SetMemberDocs("tui", tuiDocs())
 	return nil
 }
 

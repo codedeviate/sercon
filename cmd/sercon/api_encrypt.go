@@ -12,7 +12,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// encryptNamespace wires `api.crypto.encrypt.*`. v0.5.5 ships the core
+// encryptNamespace wires `crypto.encrypt.*`. v0.5.5 ships the core
 // round-trip — keygen / encrypt / decrypt — over age's X25519
 // identity flavour (`age1...` recipients, `AGE-SECRET-KEY-1...`
 // identities). Armoured output, rekeying, and a PGP detection
@@ -21,7 +21,7 @@ import (
 //
 // All three members are synchronous: age encryption is pure CPU
 // work, the API surface is small (no streaming handles), and the
-// existing crypto bindings (`api.crypto.jwt`, `api.crypto.hash`) are sync too —
+// existing crypto bindings (`crypto.jwt`, `crypto.hash`) are sync too —
 // matching that pattern keeps the call shape uniform.
 func encryptNamespace(vm *goja.Runtime) map[string]any {
 	return map[string]any{
@@ -83,7 +83,7 @@ func isPGPPrivateBlock(s string) bool {
 // would extend the encrypt path to also accept PGP recipients
 // detected here. The classifier is useful standalone for routing
 // (e.g., a script that reads recipient strings from a config file
-// and decides whether to call `api.crypto.encrypt.encrypt` or shell out
+// and decides whether to call `crypto.encrypt.encrypt` or shell out
 // to `gpg --encrypt`).
 func encryptDetectBackend(vm *goja.Runtime, input string) goja.Value {
 	trimmed := strings.TrimSpace(input)
@@ -128,7 +128,7 @@ func encryptDetectBackend(vm *goja.Runtime, input string) goja.Value {
 //
 // Scripts that want both halves in one go can destructure:
 //
-//	const { publicKey, privateKey } = api.crypto.encrypt.keygen();
+//	const { publicKey, privateKey } = crypto.encrypt.keygen();
 func encryptKeygen(vm *goja.Runtime) goja.Value {
 	id, err := age.GenerateX25519Identity()
 	if err != nil {
