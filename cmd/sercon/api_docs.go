@@ -125,6 +125,7 @@ func netDocs() map[string]string {
 		"email.tlsRpt":  "Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua.",
 		"email.bimi":    "Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'.",
 		"email.all":     "Run all five email probes in parallel — five-way handshake aggregate.",
+		"email.send":    "Send an outbound email: net.email.send({to, from, subject, body, html?, attachments?, headers?, server: {host, port?, auth?, tls?}, timeout?}) → Promise<{accepted: string[], rejected: [{address, reason}]}>. One TCP connection per call; per-recipient outcome captured. Transport failures throw; per-RCPT rejections surface in the result. TLS modes: starttls (default), tls, none.",
 		"browser.open":  "Open a stateful HTTP session: { setUserAgent, setHeader, get, post, cookies }. Cookie jar + default headers persist across requests (like a browser).",
 	}
 }

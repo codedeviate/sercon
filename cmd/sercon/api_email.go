@@ -28,6 +28,7 @@ func emailNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any 
 		"tlsRpt": scriptengine.PromisifyAsync(vm, loop, emailTLSRPT),
 		"bimi":   scriptengine.PromisifyAsync(vm, loop, emailBIMI),
 		"all":    scriptengine.PromisifyAsync(vm, loop, emailAll),
+		"send":   emailSend(vm, loop),
 	}
 }
 
