@@ -172,14 +172,17 @@ func showHelp(w io.Writer) {
 	fmt.Fprintf(w, "    %s --examples | --help | --version\n\n", s.cyan("sercon"))
 
 	fmt.Fprintln(w, s.bold("DESCRIPTION"))
-	fmt.Fprintln(w, "    Runs one or more TypeScript files against a built-in `api` surface")
-	fmt.Fprintln(w, "    organised into nine categories: api.runtime (logging, assertions,")
-	fmt.Fprintln(w, "    time, env), api.crypto (hash/jwt/encrypt), api.text (string/regex/")
-	fmt.Fprintln(w, "    charset/jq/diff), api.format (compression/barcode/checkdigit),")
-	fmt.Fprintln(w, "    api.fs (path/archive), api.net (http/probe/email/...), api.db")
-	fmt.Fprintln(w, "    (sqlite/redis/...), api.tools (exec/git/gh/ai), api.ui (tui). Each")
-	fmt.Fprintln(w, "    script gets a fresh runtime; helpers are loaded via require()/")
-	fmt.Fprintln(w, "    import. See MANUAL.md for the full reference.")
+	fmt.Fprintln(w, "    Scripts get nine reserved top-level globals — runtime, crypto,")
+	fmt.Fprintln(w, "    text, codec, fs, net, db, services, tui — each holding a")
+	fmt.Fprintln(w, "    related group of bindings: runtime (logging, assertions, time,")
+	fmt.Fprintln(w, "    env, argv), crypto (hash/jwt/encrypt), text (string/regex/")
+	fmt.Fprintln(w, "    charset/jq/diff), codec (compression/barcode/checkdigit), fs")
+	fmt.Fprintln(w, "    (path/archive), net (http/probe/email/...), db (sqlite/")
+	fmt.Fprintln(w, "    redis/...), services (exec/git/gh/ai), tui (multi-pane UI).")
+	fmt.Fprintln(w, "    Each script gets a fresh runtime; helpers are loaded via")
+	fmt.Fprintln(w, "    require()/import. See MANUAL.md §5 for the full reference, or")
+	fmt.Fprintln(w, "    --examples for a guided tour. The generated api.d.ts (see")
+	fmt.Fprintln(w, "    -emit-dts) is the machine-readable spec.")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("FLAGS"))
@@ -202,7 +205,7 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    `-` to read an entry script from standard input. Arguments are run in")
 	fmt.Fprintln(w, "    order; their results compose into the final exit code (highest wins).")
 	fmt.Fprintln(w, "    Everything after a standalone `--` is passed to the scripts as")
-	fmt.Fprintln(w, "    `Sercon.argv` (Node/Bun layout: [program, script, ...args]); all")
+	fmt.Fprintln(w, "    `runtime.argv` (Node/Bun layout: [program, script, ...args]); all")
 	fmt.Fprintln(w, "    scripts in one invocation share that argument tail.")
 	fmt.Fprintln(w, "")
 
@@ -223,8 +226,8 @@ func showHelp(w io.Writer) {
 	fmt.Fprintf(w, "    %s\n        Emit a declaration file for editor autocomplete.\n",
 		s.cyan("sercon --emit-dts api.d.ts"))
 	fmt.Fprintf(w, "    %s\n        One-liner from a shell pipeline (reads from stdin).\n",
-		s.cyan(`echo 'api.runtime.log(1+2);' | sercon -`))
-	fmt.Fprintf(w, "    %s\n        Pass arguments to a script via Sercon.argv.\n",
+		s.cyan(`echo 'runtime.log(1+2);' | sercon -`))
+	fmt.Fprintf(w, "    %s\n        Pass arguments to a script via runtime.argv.\n",
 		s.cyan("sercon run.ts -- --port 8080"))
 	fmt.Fprintln(w, "")
 
@@ -251,33 +254,33 @@ func showExamples(w io.Writer) {
 
 	fmt.Fprintln(w, s.bold(s.cyan("sercon")), s.dim("— script feature tour"))
 	fmt.Fprintln(w, s.dim("Each example is a complete .ts file you can save and run with"))
-	fmt.Fprintln(w, s.dim("`sercon path/to/file.ts`. Snippets use the built-in `api` surface."))
+	fmt.Fprintln(w, s.dim("`sercon path/to/file.ts`. Snippets use the nine reserved top-level globals."))
 
 	header(1, "Logging")
-	code(`api.runtime.log("hello", 1 + 2, { a: 1 });
+	code(`runtime.log("hello", 1 + 2, { a: 1 });
 // any arguments are coerced to strings and space-joined`)
 
 	header(2, "Assertions")
-	code(`api.runtime.assert.equal(1 + 1, 2);
-api.runtime.assert.ok([1, 2, 3].length > 0, "non-empty");`)
+	code(`runtime.assert.equal(1 + 1, 2);
+runtime.assert.ok([1, 2, 3].length > 0, "non-empty");`)
 	note("Failure throws and surfaces as a non-zero exit.")
 
 	header(3, "HTTP — sync via top-level await")
-	code(`const r = await api.net.http.get("https://example.com");
-api.runtime.log(r.status, r.body.length);
+	code(`const r = await net.http.get("https://example.com");
+runtime.log(r.status, r.body.length);
 
-const p = await api.net.http.post("https://httpbin.org/post", "hello");
-api.runtime.log(p.status);`)
-	note("api.net.http.get/post return Promise<{status:number, body:string}>.")
+const p = await net.http.post("https://httpbin.org/post", "hello");
+runtime.log(p.status);`)
+	note("net.http.get/post return Promise<{status:number, body:string}>.")
 
 	header(4, "Time")
-	code(`const start = api.runtime.time.nowMs();
-await api.runtime.time.sleep(50);
-api.runtime.log("waited", api.runtime.time.nowMs() - start, "ms");`)
+	code(`const start = runtime.time.nowMs();
+await runtime.time.sleep(50);
+runtime.log("waited", runtime.time.nowMs() - start, "ms");`)
 
 	header(5, "Environment")
-	code(`const home = api.runtime.env.get("HOME") ?? "(unset)";
-api.runtime.log("home:", home);`)
+	code(`const home = runtime.env.get("HOME") ?? "(unset)";
+runtime.log("home:", home);`)
 
 	header(6, "Shared helpers via import")
 	code(`// helpers/assert.ts
@@ -296,16 +299,16 @@ check(true, "ok");`)
 
 	header(8, "Promises directly")
 	code(`const winner = await Promise.race([
-  api.runtime.time.sleep(20).then(() => "fast"),
-  api.runtime.time.sleep(60).then(() => "slow"),
+  runtime.time.sleep(20).then(() => "fast"),
+  runtime.time.sleep(60).then(() => "slow"),
 ]);
-api.runtime.log(winner); // → fast`)
+runtime.log(winner); // → fast`)
 
 	header(9, "Catching Go-side errors")
 	code(`try {
-  await api.net.http.get("http://this-host-does-not-resolve.invalid");
+  await net.http.get("http://this-host-does-not-resolve.invalid");
 } catch (e) {
-  api.runtime.log("caught:", String(e));
+  runtime.log("caught:", String(e));
 }`)
 	note("Errors returned from Go bindings throw as JS exceptions.")
 
@@ -318,168 +321,168 @@ while (true) {}   // interrupted, exit code 1`)
 	code(`// All ES5.1 + most ES6 built-ins are available:
 const m = new Map<string, number>([["a", 1]]);
 const s = new Set([1, 2, 3]);
-api.runtime.log(JSON.stringify([...m]), [...s].reduce((a, b) => a + b, 0));
-api.runtime.log(Math.PI.toFixed(3), new Date().toISOString());`)
+runtime.log(JSON.stringify([...m]), [...s].reduce((a, b) => a + b, 0));
+runtime.log(Math.PI.toFixed(3), new Date().toISOString());`)
 	note("See MANUAL.md → 'JavaScript runtime built-ins' for the full list.")
 
 	header(12, "Console + setTimeout (from goja_nodejs)")
 	code(`console.log("via console module");
 setTimeout(() => console.log("tick"), 10);
-await api.runtime.time.sleep(50);`)
+await runtime.time.sleep(50);`)
 
-	header(13, "Hashing (api.crypto.hash.*)")
-	code(`api.runtime.log(api.crypto.hash.md5("abc"));      // 900150983cd24fb0d6963f7d28e17f72
-api.runtime.log(api.crypto.hash.sha256("abc"));   // ba7816bf...
-api.runtime.log(api.crypto.hash.sha3_512("abc")); // SHA-3
-api.runtime.log(api.crypto.hash.blake3("abc"));   // BLAKE3
-api.runtime.log(api.crypto.hash.crc32("abc"));    // 352441c2`)
+	header(13, "Hashing (crypto.hash.*)")
+	code(`runtime.log(crypto.hash.md5("abc"));      // 900150983cd24fb0d6963f7d28e17f72
+runtime.log(crypto.hash.sha256("abc"));   // ba7816bf...
+runtime.log(crypto.hash.sha3_512("abc")); // SHA-3
+runtime.log(crypto.hash.blake3("abc"));   // BLAKE3
+runtime.log(crypto.hash.crc32("abc"));    // 352441c2`)
 	note("All algos take a UTF-8 string and return lowercase hex (crc32 is zero-padded to 8 chars).")
 
-	header(14, "String utilities (api.text.str.*)")
-	code(`api.runtime.log(api.text.str.trim("  hi  "));               // "hi"
-api.runtime.log(api.text.str.trim("///x///", "/"));          // "x"
-api.runtime.log(api.text.str.reverse("café"));               // "éfac" (rune-aware)
-api.runtime.log(api.text.str.stripHtml("<b>bold</b>"));      // "bold"
-api.runtime.log(api.text.str.base64Encode("hello"));         // "aGVsbG8="
-api.runtime.log(api.text.str.urlEncode("a b/c"));            // "a+b%2Fc"
-api.runtime.log(api.text.str.sprintf("%-6s %d", "name", 42)); // "name   42"
-api.runtime.log(api.text.str.lpad("7", 4, "0"));             // "0007"`)
+	header(14, "String utilities (text.str.*)")
+	code(`runtime.log(text.str.trim("  hi  "));               // "hi"
+runtime.log(text.str.trim("///x///", "/"));          // "x"
+runtime.log(text.str.reverse("café"));               // "éfac" (rune-aware)
+runtime.log(text.str.stripHtml("<b>bold</b>"));      // "bold"
+runtime.log(text.str.base64Encode("hello"));         // "aGVsbG8="
+runtime.log(text.str.urlEncode("a b/c"));            // "a+b%2Fc"
+runtime.log(text.str.sprintf("%-6s %d", "name", 42)); // "name   42"
+runtime.log(text.str.lpad("7", 4, "0"));             // "0007"`)
 	note("All members accept JS strings. sprintf uses Go fmt verbs (%s/%d/%x/%.2f/...).")
 
-	header(15, "Paths and time formatting (api.fs.path.* / api.runtime.time.format)")
-	code(`api.runtime.log(api.fs.path.dirname("/a/b/c.txt"));        // "/a/b"
-api.runtime.log(api.fs.path.basename("/a/b/c.txt", ".txt")); // "c"
-api.runtime.log(api.runtime.time.format(api.runtime.time.nowMs(), "%F %T", "UTC"));
+	header(15, "Paths and time formatting (fs.path.* / runtime.time.format)")
+	code(`runtime.log(fs.path.dirname("/a/b/c.txt"));        // "/a/b"
+runtime.log(fs.path.basename("/a/b/c.txt", ".txt")); // "c"
+runtime.log(runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC"));
 // strftime tokens supported: %Y %y %m %d %H %M %S %F %T %j %A %a %B %b %z %Z %%`)
 
-	header(16, "Protocol probes (api.net.*)")
+	header(16, "Protocol probes (net.*)")
 	code(`// All five return Promises and hit the real network.
-const t = await api.net.probe.tcp("example.com:443");
-api.runtime.log("ip:", t.ip, "latencyMs:", t.latencyMs);
+const t = await net.probe.tcp("example.com:443");
+runtime.log("ip:", t.ip, "latencyMs:", t.latencyMs);
 
-const d = await api.net.probe.dns("example.com", { types: ["a", "mx"] });
-api.runtime.log("ips:", d.a, "mx:", d.mx);
+const d = await net.probe.dns("example.com", { types: ["a", "mx"] });
+runtime.log("ips:", d.a, "mx:", d.mx);
 
-const c = await api.net.probe.tls("example.com");
-api.runtime.log("cn:", c.cn, "daysRemaining:", c.daysRemaining);
+const c = await net.probe.tls("example.com");
+runtime.log("cn:", c.cn, "daysRemaining:", c.daysRemaining);
 
-const n = await api.net.probe.ntp("pool.ntp.org");
-api.runtime.log("offsetMs:", n.offsetMs, "rttMs:", n.rttMs, "stratum:", n.stratum);
+const n = await net.probe.ntp("pool.ntp.org");
+runtime.log("offsetMs:", n.offsetMs, "rttMs:", n.rttMs, "stratum:", n.stratum);
 
-const w = await api.net.probe.whois("example.com");
-api.runtime.log("registrar:", w.registrar?.name, "expires:", w.domain?.expirationDate);`)
+const w = await net.probe.whois("example.com");
+runtime.log("registrar:", w.registrar?.name, "expires:", w.domain?.expirationDate);`)
 	note("Optional { timeout: ms } on every probe. Default ports: tcp 80, tls 443, ntp 123.")
 
-	header(17, "Compression (api.format.compression.*)")
+	header(17, "Compression (codec.compression.*)")
 	code(`// Nine pure-Go algorithms with a uniform interface. Inputs are strings
 // (UTF-8) or ArrayBuffer; outputs are ArrayBuffer.
-api.runtime.log(api.format.compression.algos().join(", "));
+runtime.log(codec.compression.algos().join(", "));
 
-const c = await api.format.compression.compress("zstd", "hello world");
-api.runtime.log("zstd:", new Uint8Array(c).length, "bytes");
+const c = await codec.compression.compress("zstd", "hello world");
+runtime.log("zstd:", new Uint8Array(c).length, "bytes");
 
-const back = await api.format.compression.decompress("zstd", c);
-api.runtime.log("round-trip ok:", Array.from(new Uint8Array(back)).map(b => String.fromCharCode(b)).join(""));`)
+const back = await codec.compression.decompress("zstd", c);
+runtime.log("round-trip ok:", Array.from(new Uint8Array(back)).map(b => String.fromCharCode(b)).join(""));`)
 	note("All algos round-trip byte-for-byte. gzip / deflate / zlib / bzip2 use stdlib; the others are klauspost / brotli / lz4 / xz / snappy.")
 
-	header(18, "Barcodes (api.format.barcode.*)")
+	header(18, "Barcodes (codec.barcode.*)")
 	code(`// 10 symbologies (QR, DataMatrix, Aztec, PDF417, Code128, Code39,
 // Codabar, EAN-13, EAN-8, UPC-A) behind one encode() call. Output is
 // a PNG payload (Uint8Array).
-api.runtime.log(api.format.barcode.formats().join(", "));
+runtime.log(codec.barcode.formats().join(", "));
 
-const qrPng = await api.format.barcode.encode("qr", "hello", { width: 256, height: 256 });
-api.runtime.log("QR PNG:", new Uint8Array(qrPng).length, "bytes");
+const qrPng = await codec.barcode.encode("qr", "hello", { width: 256, height: 256 });
+runtime.log("QR PNG:", new Uint8Array(qrPng).length, "bytes");
 
-const ean = await api.format.barcode.encode("ean13", "5901234123457");
-api.runtime.log("EAN-13 PNG:", new Uint8Array(ean).length, "bytes");`)
+const ean = await codec.barcode.encode("ean13", "5901234123457");
+runtime.log("EAN-13 PNG:", new Uint8Array(ean).length, "bytes");`)
 	note("Decoders / scanners ship in a later cut (Easy / Encoding part 3).")
 
-	header(19, "Charset detection + conversion (api.text.charset.*)")
+	header(19, "Charset detection + conversion (text.charset.*)")
 	code(`// Detect: feed bytes, get the top guess + a candidate list.
-const sample = await api.text.charset.encode("café crème", "ISO-8859-1");
-const det    = await api.text.charset.detect(sample);
-api.runtime.log("guess:", det.charset, "@", det.confidence + "%", det.language);
+const sample = await text.charset.encode("café crème", "ISO-8859-1");
+const det    = await text.charset.detect(sample);
+runtime.log("guess:", det.charset, "@", det.confidence + "%", det.language);
 
 // Round-trip a Japanese string through Shift_JIS.
-const sjis = await api.text.charset.encode("こんにちは", "Shift_JIS");
-api.runtime.log("sjis bytes:", new Uint8Array(sjis).length);
-const back = await api.text.charset.decode(sjis, "Shift_JIS");
-api.runtime.log("back to utf-8:", back);`)
+const sjis = await text.charset.encode("こんにちは", "Shift_JIS");
+runtime.log("sjis bytes:", new Uint8Array(sjis).length);
+const back = await text.charset.decode(sjis, "Shift_JIS");
+runtime.log("back to utf-8:", back);`)
 	note("Charset names follow WHATWG aliases (UTF-8, ISO-8859-1, Windows-1252, Shift_JIS, GBK, …).")
 
-	header(20, "Check digits (api.format.checkdigit.*)")
-	code(`api.runtime.log(api.format.checkdigit.validate("luhn",   "4532015112830366")); // true
-api.runtime.log(api.format.checkdigit.validate("isbn13", "9780306406157"));      // true
-api.runtime.log(api.format.checkdigit.compute("luhn",  "453201511283036"));      // "6"
-api.runtime.log(api.format.checkdigit.compute("isbn10", "048665088"));           // "X"
+	header(20, "Check digits (codec.checkdigit.*)")
+	code(`runtime.log(codec.checkdigit.validate("luhn",   "4532015112830366")); // true
+runtime.log(codec.checkdigit.validate("isbn13", "9780306406157"));      // true
+runtime.log(codec.checkdigit.compute("luhn",  "453201511283036"));      // "6"
+runtime.log(codec.checkdigit.compute("isbn10", "048665088"));           // "X"
 
-const r = api.format.checkdigit.inspect("luhn", "4532015112830366");
-api.runtime.log(r.valid, r.given, r.computed); // true "6" "6"`)
+const r = codec.checkdigit.inspect("luhn", "4532015112830366");
+runtime.log(r.valid, r.given, r.computed); // true "6" "6"`)
 	note("Supported algos: luhn, isbn10, isbn13, ean13, ean8, upca. Sync — no Promise.")
 
-	header(21, "Archives (api.fs.archive.*)")
+	header(21, "Archives (fs.archive.*)")
 	code(`// Format is inferred from the destination's extension:
 //   .zip / .tar / .tar.gz / .tgz
-const out = await api.fs.archive.create("/tmp/demo.zip",
+const out = await fs.archive.create("/tmp/demo.zip",
   ["README.md", { path: "src", name: "source-tree" }]);
-api.runtime.log("wrote:", out.path, out.bytes, "bytes,", out.entries.length, "entries");
+runtime.log("wrote:", out.path, out.bytes, "bytes,", out.entries.length, "entries");
 
 // Extract back. overwrite: false (default) errors on collisions.
-const got = await api.fs.archive.extract("/tmp/demo.zip", "/tmp/demo-out",
+const got = await fs.archive.extract("/tmp/demo.zip", "/tmp/demo-out",
   { overwrite: true });
-api.runtime.log("extracted:", got.entries.length, "entries to", got.dest);`)
+runtime.log("extracted:", got.entries.length, "entries to", got.dest);`)
 	note("Both bindings reject archive entries that try to escape the destination (zip-slip / tar-slip).")
 
-	header(22, "Diff (api.text.diff.compare)")
-	code(`const r = await api.text.diff.compare("one\ntwo\n", "one\ntwo-edited\nthree\n", {
+	header(22, "Diff (text.diff.compare)")
+	code(`const r = await text.diff.compare("one\ntwo\n", "one\ntwo-edited\nthree\n", {
   fromFile: "old.txt",
   toFile:   "new.txt",
 });
-api.runtime.log("added:", r.added, "removed:", r.removed);
-api.runtime.log(r.diff);
+runtime.log("added:", r.added, "removed:", r.removed);
+runtime.log(r.diff);
 
 // Identical inputs short-circuit; binary inputs (NUL byte) skip diffing.
-api.runtime.log("same:", (await api.text.diff.compare("abc", "abc")).identical);`)
+runtime.log("same:", (await text.diff.compare("abc", "abc")).identical);`)
 	note("Inputs are strings (UTF-8) or ArrayBuffer / Uint8Array. Binary inputs return binary:true with empty diff.")
 
-	header(23, "JSON querying (api.text.jq.*)")
+	header(23, "JSON querying (text.jq.*)")
 	code(`const data = {
   users: [{ name: "alice", admin: true }, { name: "bob", admin: false }],
 };
-api.runtime.log(await api.text.jq.query(data, ".users[0].name"));          // "alice"
-api.runtime.log(await api.text.jq.queryAll(data, ".users[].name"));        // ["alice","bob"]
-api.runtime.log(await api.text.jq.queryAll(data,
+runtime.log(await text.jq.query(data, ".users[0].name"));          // "alice"
+runtime.log(await text.jq.queryAll(data, ".users[].name"));        // ["alice","bob"]
+runtime.log(await text.jq.queryAll(data,
   ".users[] | select(.admin) | .name"));                       // ["alice"]`)
 	note("Filters are full jq syntax via itchyny/gojq. Missing paths via `?` return null instead of throwing.")
 
-	header(24, "Email authentication (api.net.email.*)")
+	header(24, "Email authentication (net.email.*)")
 	code(`// Five individual probes plus an aggregate. All return
 // { present: boolean, ... } and resolve ` + "`present: false`" + ` for NXDOMAIN
 // or missing record rather than throwing.
-const spf    = await api.net.email.spf("google.com");
-const dmarc  = await api.net.email.dmarc("google.com");
-const mtaSts = await api.net.email.mtaSts("google.com");
-const tlsRpt = await api.net.email.tlsRpt("google.com");
-const bimi   = await api.net.email.bimi("google.com");
+const spf    = await net.email.spf("google.com");
+const dmarc  = await net.email.dmarc("google.com");
+const mtaSts = await net.email.mtaSts("google.com");
+const tlsRpt = await net.email.tlsRpt("google.com");
+const bimi   = await net.email.bimi("google.com");
 
 // Or all five in parallel:
-const all = await api.net.email.all("google.com");
-api.runtime.log("dmarc policy:", all.dmarc.policy);
-api.runtime.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
+const all = await net.email.all("google.com");
+runtime.log("dmarc policy:", all.dmarc.policy);
+runtime.log("mta-sts mode:", all.mtaSts.policy?.mode);`)
 	note("BIMI accepts opts.selector (defaults to 'default').")
 
-	header(25, "Subprocess execution (api.tools.exec.shell)")
+	header(25, "Subprocess execution (services.exec.shell)")
 	code(`// String cmd → routed through /bin/sh -c (cmd /C on Windows) so pipes,
 // redirects and globs work as typed at the prompt.
-const piped = await api.tools.exec.shell("echo hi | tr a-z A-Z");
-api.runtime.log(piped.stdout.trim(), "exit:", piped.exitCode);
+const piped = await services.exec.shell("echo hi | tr a-z A-Z");
+runtime.log(piped.stdout.trim(), "exit:", piped.exitCode);
 
 // Array cmd → argv, no shell expansion.
-const literal = await api.tools.exec.shell(["/bin/echo", "literal *"]);
+const literal = await services.exec.shell(["/bin/echo", "literal *"]);
 
 // opts: cwd, env (merged), timeout (ms, default 30000), stdin.
-const fed = await api.tools.exec.shell(["/usr/bin/tr", "a-z", "A-Z"], {
+const fed = await services.exec.shell(["/usr/bin/tr", "a-z", "A-Z"], {
   stdin: "hello\n",
   cwd: "/tmp",
   env: { GREETING: "hi" },
@@ -487,166 +490,166 @@ const fed = await api.tools.exec.shell(["/usr/bin/tr", "a-z", "A-Z"], {
 });`)
 	note("Non-zero exits resolve with success:false; timeouts and spawn failures throw.")
 
-	header(26, "HTTP via recon (with curl fallback) (api.tools.exec.http)")
+	header(26, "HTTP via recon (with curl fallback) (services.exec.http)")
 	code(`// Auto backend prefers recon; falls back to curl when recon is missing.
-const r = await api.tools.exec.http("GET", "https://httpbin.org/get");
-api.runtime.log(r.status, r.backend, r.durationMs + "ms");
+const r = await services.exec.http("GET", "https://httpbin.org/get");
+runtime.log(r.status, r.backend, r.durationMs + "ms");
 
 // Force a specific backend if you need one.
-const c = await api.tools.exec.http("GET", "https://httpbin.org/get",
+const c = await services.exec.http("GET", "https://httpbin.org/get",
   { backend: "curl" });
 
 // POST with custom headers + body.
-const p = await api.tools.exec.http("POST", "https://httpbin.org/post", {
+const p = await services.exec.http("POST", "https://httpbin.org/post", {
   headers: { "X-Sercon": "demo", "Content-Type": "application/json" },
   body: JSON.stringify({ hello: "world" }),
 });
-api.runtime.log("echo:", JSON.parse(p.body).data);`)
+runtime.log("echo:", JSON.parse(p.body).data);`)
 	note("4xx/5xx resolve as status; transport errors and timeouts throw. opts: timeout, follow, insecure, backend.")
 
-	header(27, "Git CLI wrapper (api.tools.git.*)")
+	header(27, "Git CLI wrapper (services.git.*)")
 	code(`// Read-only ops — branch / isClean / revParse / status / log /
 // diffStat — plus add / commit and a runText escape hatch.
-const b = await api.tools.git.branch();              // current + all locals
-const head = await api.tools.git.revParse("HEAD");   // 40-char SHA
-const clean = await api.tools.git.isClean();         // porcelain check
+const b = await services.git.branch();              // current + all locals
+const head = await services.git.revParse("HEAD");   // 40-char SHA
+const clean = await services.git.isClean();         // porcelain check
 
 // log fields: sha, shortSha, author, email, timestamp (unix s), subject.
-const recent = await api.tools.git.log({ limit: 3 });
-recent.forEach(c => api.runtime.log(c.shortSha, c.subject));
+const recent = await services.git.log({ limit: 3 });
+recent.forEach(c => runtime.log(c.shortSha, c.subject));
 
 // diffStat aggregates --shortstat output.
-const stat = await api.tools.git.diffStat({ revRange: "HEAD~1..HEAD" });
-api.runtime.log("+" + stat.insertions, "-" + stat.deletions);
+const stat = await services.git.diffStat({ revRange: "HEAD~1..HEAD" });
+runtime.log("+" + stat.insertions, "-" + stat.deletions);
 
 // Escape hatch: non-zero exits surface as data, not a throw.
-const r = await api.tools.git.runText(["config", "user.email"]);
-api.runtime.log(r.stdout.trim());`)
+const r = await services.git.runText(["config", "user.email"]);
+runtime.log(r.stdout.trim());`)
 	note("All bindings accept opts.cwd. add/commit are mutating — guard with isClean / revParse before chaining.")
 
-	header(28, "GitHub CLI wrapper (api.tools.gh.*)")
+	header(28, "GitHub CLI wrapper (services.gh.*)")
 	code(`// authStatus is a probe — missing gh or unauthenticated session
 // resolve as data, not a throw.
-const auth = await api.tools.gh.authStatus();
-if (!auth.authenticated) { api.runtime.log("not authed:", auth.raw); }
+const auth = await services.gh.authStatus();
+if (!auth.authenticated) { runtime.log("not authed:", auth.raw); }
 
 // repoView with no arg uses cwd's repo; pass "owner/name" for any repo.
-const repo = await api.tools.gh.repoView("cli/cli");
-api.runtime.log(repo.owner + "/" + repo.name, "default:", repo.defaultBranch);
+const repo = await services.gh.repoView("cli/cli");
+runtime.log(repo.owner + "/" + repo.name, "default:", repo.defaultBranch);
 
 // prList — gh's author.login is flattened to a plain string.
-const prs = await api.tools.gh.prList({ state: "open", limit: 5 });
-prs.forEach(p => api.runtime.log("#" + p.number, p.title, "(" + p.author + ")"));`)
+const prs = await services.gh.prList({ state: "open", limit: 5 });
+prs.forEach(p => runtime.log("#" + p.number, p.title, "(" + p.author + ")"));`)
 	note("authStatus never throws on missing-gh; prList/repoView throw with gh's stderr on real failures.")
 
-	header(29, "PHP-style regex (api.text.preg.*)")
+	header(29, "PHP-style regex (text.preg.*)")
 	code(`// /pattern/flags syntax over Go's RE2 — no lookaround / backrefs in
 // patterns; use goja's native RegExp if you need those.
-const m = api.text.preg.match("/(\\w+)\\s+(\\d+)/", "alice 30 bob 27");
-if (m) api.runtime.log(m.match, m.groups, m.index);
+const m = text.preg.match("/(\\w+)\\s+(\\d+)/", "alice 30 bob 27");
+if (m) runtime.log(m.match, m.groups, m.index);
 
 // matchAll drains every hit, replace uses $1 / ${1} backrefs.
-const xs = api.text.preg.matchAll("/(\\w+)=(\\w+)/", "k1=v1 k2=v2 k3=v3");
-const out = api.text.preg.replace("/(\\w+)@(\\w+)/", "$2/$1", "alice@corp");
+const xs = text.preg.matchAll("/(\\w+)=(\\w+)/", "k1=v1 k2=v2 k3=v3");
+const out = text.preg.replace("/(\\w+)@(\\w+)/", "$2/$1", "alice@corp");
 
 // Flags: i / m / s supported; u / U / x and unknown flags throw.
-api.text.preg.match("/HELLO/i", "Hello world");
-api.text.preg.matchAll("/^x/m", "x\\nx\\nx");`)
+text.preg.match("/HELLO/i", "Hello world");
+text.preg.matchAll("/^x/m", "x\\nx\\nx");`)
 	note("RE2 is UTF-8 by default — the `u` flag is unnecessary and explicitly errors. Optional groups that didn't match surface as empty strings.")
 
-	header(34, "PCRE regex (api.text.preg2.*)")
-	code(`// Same shape as api.text.preg, but on dlclark/regexp2 — lookaround,
+	header(34, "PCRE regex (text.preg2.*)")
+	code(`// Same shape as text.preg, but on dlclark/regexp2 — lookaround,
 // backreferences, and the x flag all work (RE2 can't do these).
-api.text.preg2.match("/foo(?=bar)/", "foobar");          // lookahead
-api.text.preg2.match("/(?<=\\$)\\d+/", "$42");           // lookbehind
-api.text.preg2.match("/(\\w+) \\1/", "the the");         // backreference
-api.text.preg2.matchAll("/\\d+/", "a1 b22");             // [1, 22]
-api.text.preg2.replace("/(\\w+)@(\\w+)/", "$2/$1", "alice@corp");`)
-	note("No linear-time guarantee — regexp2 backtracks. Prefer api.text.preg (RE2) unless you need a PCRE feature; keep a timeout around untrusted input.")
+text.preg2.match("/foo(?=bar)/", "foobar");          // lookahead
+text.preg2.match("/(?<=\\$)\\d+/", "$42");           // lookbehind
+text.preg2.match("/(\\w+) \\1/", "the the");         // backreference
+text.preg2.matchAll("/\\d+/", "a1 b22");             // [1, 22]
+text.preg2.replace("/(\\w+)@(\\w+)/", "$2/$1", "alice@corp");`)
+	note("No linear-time guarantee — regexp2 backtracks. Prefer text.preg (RE2) unless you need a PCRE feature; keep a timeout around untrusted input.")
 
-	header(35, "HTTP — full client (api.net.http.request)")
-	code(`// Beyond api.net.http.get/post: headers, body, timeout, retry, auth,
+	header(35, "HTTP — full client (net.http.request)")
+	code(`// Beyond net.http.get/post: headers, body, timeout, retry, auth,
 // redirect control. Returns { status, ok, headers, body, url }.
-const r = await api.net.http.request("POST", "https://api.example/v1", {
+const r = await net.http.request("POST", "https://example/v1", {
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ q: "search" }),
   timeout: 5000,
   retry: 2,                  // re-attempt on transport error / 5xx
   username: "user", password: "pass",   // basic auth
 });
-if (r.ok) api.runtime.log(r.body); else api.runtime.log("HTTP", r.status);`)
+if (r.ok) runtime.log(r.body); else runtime.log("HTTP", r.status);`)
 	note("4xx/5xx are normal responses (r.ok = status in [200,400)); transport errors and timeouts throw. retry never re-attempts 4xx. follow:false surfaces 3xx directly.")
 
-	header(30, "JWT — sign / view / validate (api.crypto.jwt.*)")
+	header(30, "JWT — sign / view / validate (crypto.jwt.*)")
 	code(`// HMAC — opts.algorithm defaults to HS256.
-const t = api.crypto.jwt.sign(
+const t = crypto.jwt.sign(
   { sub: "alice", exp: Math.floor(Date.now() / 1000) + 3600 },
   "shared-secret",
 );
-const { header, payload, signature } = api.crypto.jwt.view(t);   // decode w/o verify
-const ok = api.crypto.jwt.validate(t, "shared-secret");
-if (ok.valid) api.runtime.log(ok.claims.sub); else api.runtime.log("reject:", ok.reason);
+const { header, payload, signature } = crypto.jwt.view(t);   // decode w/o verify
+const ok = crypto.jwt.validate(t, "shared-secret");
+if (ok.valid) runtime.log(ok.claims.sub); else runtime.log("reject:", ok.reason);
 
 // Asymmetric — secret is PEM-encoded (private for sign, public for validate).
-const tok = api.crypto.jwt.sign(
+const tok = crypto.jwt.sign(
   { sub: "bob" },
   privatePEM,
   { algorithm: "EdDSA" },     // RS256/RS384/RS512, PS256/PS384/PS512,
 );                            // ES256/ES384/ES512, EdDSA — all supported
-const v = api.crypto.jwt.validate(tok, publicPEM, { algorithm: "EdDSA" });`)
+const v = crypto.jwt.validate(tok, publicPEM, { algorithm: "EdDSA" });`)
 	note("Set opts.algorithm on validate for asymmetric tokens — that's the algo-confusion guard. PEM/HMAC cross-checks throw at the binding boundary.")
 
-	header(31, "Barcode decode (api.format.barcode.decode)")
+	header(31, "Barcode decode (codec.barcode.decode)")
 	code(`// Round-trip a QR. PNG / JPEG / WebP input all work.
-const png = await api.format.barcode.encode("qr", "round-trip via gozxing");
-const r = await api.format.barcode.decode(png);                  // auto-detect
-api.runtime.log(r.format, "->", r.text);
+const png = await codec.barcode.encode("qr", "round-trip via gozxing");
+const r = await codec.barcode.decode(png);                  // auto-detect
+runtime.log(r.format, "->", r.text);
 
 // With a format hint, only that reader runs. Mismatched hint throws.
-const c = await api.format.barcode.decode(png, "qr");
+const c = await codec.barcode.decode(png, "qr");
 
 // Decoder set: qr / datamatrix / aztec / code128 / code39 / code93 /
 // codabar / ean13 / ean8 / upca / upce / itf.  PDF417 is encode-only
 // for now (no pure-Go decoder in gozxing v0.1.1).
-api.runtime.log(api.format.barcode.decodableFormats());`)
+runtime.log(codec.barcode.decodableFormats());`)
 	note("Code 39 returns the Mod-43 checksum char; codabar strips A…A wrappers. EAN/UPC need a quiet zone — pass encode opts.quietZone:true to round-trip.")
 
-	header(32, "Age encryption (api.crypto.encrypt.*)")
+	header(32, "Age encryption (crypto.encrypt.*)")
 	code(`// Keygen — bech32 age1... public + AGE-SECRET-KEY-1... private.
-const { publicKey, privateKey } = api.crypto.encrypt.keygen();
+const { publicKey, privateKey } = crypto.encrypt.keygen();
 
 // Encrypt — default is binary age format. recipients can be one key
 // or an array for multi-recipient (any listed identity can decrypt).
-const ct = api.crypto.encrypt.encrypt("hello world", publicKey);
-const ct2 = api.crypto.encrypt.encrypt(payloadBytes, [alicePub, bobPub]);
+const ct = crypto.encrypt.encrypt("hello world", publicKey);
+const ct2 = crypto.encrypt.encrypt(payloadBytes, [alicePub, bobPub]);
 
 // opts.armored = true wraps in age's ASCII armor — safe to embed
 // in JSON / YAML / email. Decrypt auto-detects either form.
-const armored = api.crypto.encrypt.encrypt("embed me", publicKey, { armored: true });
+const armored = crypto.encrypt.encrypt("embed me", publicKey, { armored: true });
 
 // Decrypt — pass any identity that matches the header. Returns
-// Uint8Array; use api.text.charset.decode(bytes, "utf-8") for a string.
-const plain = api.crypto.encrypt.decrypt(ct, privateKey);
+// Uint8Array; use text.charset.decode(bytes, "utf-8") for a string.
+const plain = crypto.encrypt.decrypt(ct, privateKey);
 
 // Rekey — rotate recipients without exposing plaintext. Output
 // format defaults to match the input (binary / armored).
-const rotated = api.crypto.encrypt.rekey(ct, privateKey, newPublicKey);
+const rotated = crypto.encrypt.rekey(ct, privateKey, newPublicKey);
 
 // detectBackend — classify a recipient string by backend.
 // { backend: "age" | "pgp" | "unknown", kind?: "public" | "private" }
-const c = api.crypto.encrypt.detectBackend(somePubKey);
-if (c.backend === "age") /* use api.crypto.encrypt.encrypt */;
+const c = crypto.encrypt.detectBackend(somePubKey);
+if (c.backend === "age") /* use crypto.encrypt.encrypt */;
 else if (c.backend === "pgp") /* shell out to gpg --encrypt */;`)
 	note("Cross-checks catch private-as-recipient and public-as-identity mix-ups with named-key hints. PGP encrypt/decrypt backend lands in a later cut.")
 
-	header(33, "SQLite — stateful DB handle (api.db.sqlite.*)")
+	header(33, "SQLite — stateful DB handle (db.sqlite.*)")
 	code(`// open() returns a handle: { exec, query, queryValue, close }.
 // ":memory:" is in-RAM; any other string is a file path.
-const db = await api.db.sqlite.open(":memory:");
+const db = await db.sqlite.open(":memory:");
 
 await db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
 const ins = await db.exec("INSERT INTO users (name) VALUES (?)", "alice");
-api.runtime.log("new id:", ins.lastInsertId, "rows:", ins.rowsAffected);
+runtime.log("new id:", ins.lastInsertId, "rows:", ins.rowsAffected);
 
 // query → array of row objects; queryValue → first column of first row.
 const rows = await db.query("SELECT id, name FROM users");
@@ -665,26 +668,26 @@ await ins.close();
 await db.close();   // no finalizer — always close.`)
 	note("Pure-Go driver (modernc.org/sqlite, no cgo). begin() must commit/rollback; prepare() must close. Params bind as ? placeholders; BLOBs round-trip as Uint8Array, TEXT as string.")
 
-	header(36, "Script arguments (Sercon.argv)")
+	header(36, "Script arguments (runtime.argv)")
 	code(`// Everything after a standalone -- on the command line lands in
-// Sercon.argv, using the Node/Bun layout [program, script, ...args]:
+// runtime.argv, using the Node/Bun layout [program, script, ...args]:
 //   sercon run.ts -- --port 8080 hello
-api.runtime.log("program:", Sercon.argv[0]);
-api.runtime.log("script:", Sercon.argv[1]);
-const args = Sercon.argv.slice(2);   // ["--port", "8080", "hello"]
-api.runtime.log("args:", JSON.stringify(args));`)
+runtime.log("program:", runtime.argv[0]);
+runtime.log("script:", runtime.argv[1]);
+const args = runtime.argv.slice(2);   // ["--port", "8080", "hello"]
+runtime.log("args:", JSON.stringify(args));`)
 	note("Always present (length >= 2). All scripts in one invocation share the same tail; argv[1] is each script's own path.")
 
-	header(37, "Multi-pane TUI (api.ui.tui.*)")
-	code(`api.ui.tui.layout({rows: [
+	header(37, "Multi-pane TUI (tui.*)")
+	code(`tui.layout({rows: [
   { name: "log", title: "Orchestrator" },
   { cols: [{name:"brew"}, {name:"npm"}], weight: 2 },
 ]});
-const log = api.ui.tui.pane("log");
+const log = tui.pane("log");
 log.writeln("Updating Homebrew…");
-await api.tools.exec.shell("brew update && brew upgrade", { pane: "brew" });
+await services.exec.shell("brew update && brew upgrade", { pane: "brew" });
 log.writeln("Updating npm globals…");
-await api.tools.exec.shell("npm -g update",              { pane: "npm" });
+await services.exec.shell("npm -g update",              { pane: "npm" });
 log.writeln("All done.");`)
 	note("Tab cycles focus, PgUp/PgDn scroll. Pipe stdout (CI / make demo) to get prefixed plain-text lines instead.")
 

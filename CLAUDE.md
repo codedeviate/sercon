@@ -21,7 +21,7 @@ CGO_ENABLED=0 go build ./...               # whole repo (must stay cgo-free)
 go test ./pkg/scriptengine -run TestRun_PromiseResolveAwait   # single test
 go test ./pkg/scriptengine -run TestWriteTypes_Golden -update # refresh golden .d.ts
 ./sercon examples/scripts/smoke.ts examples/scripts/async.ts  # smoke + async demo
-./sercon -emit-dts /tmp/api.d.ts           # emit declaration file for the CLI's api surface
+./sercon -emit-dts /tmp/api.d.ts           # emit declaration file for the CLI's reserved-global surface
 ./sercon -timeout 200ms examples/scripts/hang.ts              # timeout demo (exits non-zero ~213ms)
 ./sercon --help | --examples | --version   # in-depth colourised help / feature tour / version
 ```
@@ -90,7 +90,7 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - `pkg/scriptengine/timeout.go` — `ErrScriptTimeout` sentinel only; the live cancellation watcher is inline in `engine.go`.
 - `pkg/scriptengine/dts.go` — declaration generator with cycle detection.
 - `pkg/scriptengine/engine_test.go` — 11 cases covering the 10 spec-required scenarios; uses `-update` flag for the golden `.d.ts`.
-- `cmd/sercon/main.go` — CLI plus the example `api` namespace (registered as a factory).
+- `cmd/sercon/main.go` — CLI plus the nine reserved top-level globals (`runtime`, `crypto`, `text`, `codec`, `fs`, `net`, `db`, `services`, `tui`), each registered as a namespace factory by `registerSurface`.
 - `examples/scripts/` — runnable sample scripts; `hang.ts` is the timeout demo and must stay a single `while(true){}`.
 - `claude-code-prompt.md` — the original spec for this build. Refer to it before redesigning anything significant.
 
@@ -99,21 +99,21 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - Don't add cgo. The README and spec both lock this in; `CGO_ENABLED=0 go build ./...` is a deliverable check.
 - Don't introduce package-level state in `pkg/scriptengine` — everything hangs off `Engine`.
 - Errors returned as the second value of a Go binding surface as thrown JS exceptions automatically (via `vm.NewGoError`). Don't swallow them at the binding layer.
-- If you change the registered example surface in `cmd/sercon/main.go`, regenerate the golden in `pkg/scriptengine/testdata/` only if you also touched bindings used by `TestWriteTypes_Golden` (it has its own minimal fixture set, not the CLI's `api`).
+- If you change the registered example surface in `cmd/sercon/main.go`, regenerate the golden in `pkg/scriptengine/testdata/` only if you also touched bindings used by `TestWriteTypes_Golden` (it has its own minimal fixture set, not the CLI's reserved globals).
 
 ## Keeping docs in lockstep
 
 Seven artifacts must stay aligned whenever the script/binding/feature surface changes:
 
-- `MANUAL.md` — long-form reference; covers the library API, CLI, script `api`, goja built-ins, eventloop additions.
+- `MANUAL.md` — long-form reference; covers the library API, CLI, the nine reserved script globals, goja built-ins, eventloop additions.
 - `MANUAL.pdf` — regenerated from `MANUAL.md` via `make manual` (which calls `recon --md-to-pdf`). Run this whenever `MANUAL.md` changes and include the resulting `MANUAL.pdf` in the same commit. Release cuts (which bump the version strings in `MANUAL.md` via `make release-prep`) need a `make manual` pass too — the `make release-prep` next-step checklist calls this out explicitly.
 - `cmd/sercon/help.go::showHelp` — the `--help` / `-h` screen. Flags table must mirror the actual flags defined in `main.go`.
 - `cmd/sercon/help.go::showExamples` — the `--examples` walkthrough. The `exampleCount` constant must equal the number of `header(N, …)` calls.
 - `examples/scripts/` — runnable `.ts` (or `.tsx`) demo files. **Any change to a user-visible binding, flag, or script-facing behaviour requires updating or adding the relevant example here.** Verify with `make demo`, which runs every success-path script (and skips `hang.ts`, the intentional timeout demo). New example files must also be added to `DEMO_SCRIPTS` in the `Makefile` and the table in `examples/README.md`.
-- `examples/scripts/api.d.ts` — auto-generated TypeScript declaration file mirroring the CLI's `api.*` surface. Regenerate via `make types` whenever the CLI binding set or the d.ts emitter changes. Tracked in git so editor autocomplete and PR reviewers see the surface without running the binary.
+- `examples/scripts/api.d.ts` — auto-generated TypeScript declaration file mirroring the CLI's reserved-global surface (`runtime`, `crypto`, `text`, `codec`, `fs`, `net`, `db`, `services`, `tui`). Regenerate via `make types` whenever the CLI binding set or the d.ts emitter changes. Tracked in git so editor autocomplete and PR reviewers see the surface without running the binary.
 - `CHANGELOG.md` — every user-visible change lands here under `## [Unreleased]` (or the active version section) per Keep a Changelog.
 
-Whenever you add a flag: update the flag block in `main.go`, the `FLAGS` section in `showHelp`, mention it in `MANUAL.md § CLI`, add a CHANGELOG entry. Whenever you add a script-side binding: update `showExamples` (and bump `exampleCount`), add the signature to `MANUAL.md § Built-in script api`, add a one-line JSDoc summary to `cmd/sercon/api_docs.go` so the emitted `api.d.ts` grows readable editor hover, run `make types` to refresh `examples/scripts/api.d.ts` (and the golden if it touches `TestWriteTypes_Golden`), add or update an example file under `examples/scripts/`, run `make demo` to confirm it passes, add a CHANGELOG entry.
+Whenever you add a flag: update the flag block in `main.go`, the `FLAGS` section in `showHelp`, mention it in `MANUAL.md § CLI`, add a CHANGELOG entry. Whenever you add a script-side binding: update `showExamples` (and bump `exampleCount`), add the signature to `MANUAL.md § Reserved globals`, add a one-line JSDoc summary to `cmd/sercon/api_docs.go` so the emitted `api.d.ts` grows readable editor hover, run `make types` to refresh `examples/scripts/api.d.ts` (and the golden if it touches `TestWriteTypes_Golden`), add or update an example file under `examples/scripts/`, run `make demo` to confirm it passes, add a CHANGELOG entry.
 
 Pure library-side changes (e.g. `WithScriptRoot`, `Engine.Reset()`) only need `MANUAL.md` + `CHANGELOG.md`; they aren't reachable from a `.ts` script, so the example scripts don't need to grow for them.
 

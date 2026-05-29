@@ -8,6 +8,33 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** The `api.*` wrapper is removed. The nine v0.8.0 buckets
+  are now top-level globals: `runtime`, `crypto`, `text`, `codec`,
+  `fs`, `net`, `db`, `services`, `tui`. Scripts must drop the `api.`
+  prefix; the bucket and member shape inside each global is unchanged
+  except for the three renames below.
+- **BREAKING:** `api.tools.*` → `services.*` (was a poor description of
+  CLI/service wrappers; `services` reads more naturally).
+- **BREAKING:** `api.format.*` → `codec.*` (the bucket holds binary-format
+  codecs: compression, barcode, checkdigit).
+- **BREAKING:** `api.ui.tui.*` → `tui.*` (the `ui` wrapper was empty
+  scaffolding; `tui` is hoisted to a top-level global).
+- **BREAKING:** The `Sercon` global is removed. `Sercon.argv` is now
+  `runtime.argv`; the layout (`[programName, scriptPath, …userArgs]`)
+  is unchanged.
+
+### Migration
+
+Drop the `api.` prefix from every script call:
+- `api.crypto.hash.sha256(x)` → `crypto.hash.sha256(x)`
+- `api.net.http.get(url)` → `net.http.get(url)`
+- `api.runtime.log("hi")` → `runtime.log("hi")`
+
+Then apply the three renames (`tools→services`, `format→codec`,
+`ui.tui→tui`) and replace `Sercon.argv` with `runtime.argv`.
+
 ## [0.8.0] — 2026-05-28
 
 ### Changed
