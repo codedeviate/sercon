@@ -104,6 +104,14 @@ type Engine struct {
 	// network handles, ...) before the next Run starts.
 	runCleanupMu sync.Mutex
 	runCleanups  []func()
+
+	// holdRun* support Engine.HoldRun for long-lived bindings. The loop
+	// pointer is set at the top of Run and cleared at the end via
+	// holdRunBegin/holdRunEnd; sentinels are released en masse at Run end
+	// as a safety net.
+	holdRunMu        sync.Mutex
+	holdRunLoop      *eventloop.EventLoop
+	holdRunSentinels map[*holdRunEntry]struct{}
 }
 
 // New constructs an Engine with the supplied options. Defaults are applied for
@@ -338,6 +346,8 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 		eventloop.WithRegistry(reg),
 		eventloop.EnableConsole(e.enableConsole),
 	)
+	e.holdRunBegin(loop)
+	defer e.holdRunEnd()
 
 	var (
 		result    goja.Value
