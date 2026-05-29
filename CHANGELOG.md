@@ -8,6 +8,30 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-05-30
+
+### Fixed
+
+- **TUI: second run no longer hangs / corrupts the terminal.** The TTY
+  path double-initialised the tcell screen — `api_tui.go` called
+  `screen.Init()` and then `Controller.StartScreen` → tview `SetScreen`
+  init'd it again. tcell's `tty.Start` runs `term.MakeRaw`, which returns
+  the termios as it was *before* the call, so the second Init saved the
+  already-raw state as the restore target. The single `Fini()` on teardown
+  then restored the terminal to raw mode (no echo, Ctrl-C as a keystroke),
+  so the next `tui` run hung and only killing the terminal recovered it.
+  The screen is now initialised exactly once (by tview's `SetScreen`, per
+  its documented contract). Guarded by a regression test.
+
+### Changed
+
+- `make demo` now runs with `-timeout 90s` (was the 10s default). The
+  `ai.ts` demo shells out to an AI CLI (`claude -p`, …) which can exceed
+  the 10s engine ceiling when another AI session is active, killing the
+  run before the script's own 60s timeout + try/catch could degrade
+  gracefully. The larger ceiling only matters for `ai.ts`; every other
+  demo finishes in milliseconds.
+
 ## [0.11.0] — 2026-05-30
 
 ### Added

@@ -5,4 +5,4 @@ package scriptengine
 // release PR; the `x-release-please-version` marker below tells the
 // generic file updater which line to rewrite. The git tag (with `v`
 // prefix) is created in the same release-please commit.
-const Version = "0.11.0" // x-release-please-version
+const Version = "0.11.1" // x-release-please-version
