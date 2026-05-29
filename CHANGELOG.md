@@ -8,6 +8,24 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.11.2] — 2026-05-30
+
+### Fixed
+
+- **`text.preg` / `text.preg2` match results now have a stable JSON key
+  order.** The `{ match, groups, index }` result was built as a Go map,
+  and goja derives a JS object's property order from Go map iteration —
+  which Go randomizes per process — so `JSON.stringify(result)` emitted
+  the keys in a different order on nearly every run. That breaks any
+  caller that hashes a canonical serialization (payment-style request
+  signing, webhook signature verification), where key order is part of
+  the signed bytes. The result is now built as an ordered object
+  (`match`, then `groups`, then `index`) shared by both engines, so the
+  serialization is byte-stable. Values and shape are unchanged. Guarded
+  by tests asserting the exact serialized string. (Note: other bindings
+  that return objects via Go maps share this characteristic; only the
+  regex bindings are addressed here.)
+
 ## [0.11.1] — 2026-05-30
 
 ### Fixed
