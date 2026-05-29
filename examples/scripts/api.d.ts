@@ -332,10 +332,14 @@ declare const server: {
   http: {
     /** Bind an HTTP listener: server.http.listen({port, host?, routes, use?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. */
     listen(...args: unknown[]): unknown;
+    /** Static-file mount: server.http.static({dir, stripPrefix, index?, etag?}) → handler. Assign to a wildcard route (GET /assets/{rest...}). Internally stdlib http.FileServer with stripPrefix; ETag/Last-Modified/range requests work; no directory listing. */
+    static(...args: unknown[]): unknown;
   };
   https: {
     /** Like server.http.listen plus required cert/key (file paths OR inline PEM strings). No autocert; no self-signed magic. */
     listen(...args: unknown[]): unknown;
+    /** Like server.http.static; same options. */
+    static(...args: unknown[]): unknown;
   };
 };
 

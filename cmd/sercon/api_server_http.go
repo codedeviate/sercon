@@ -36,7 +36,7 @@ func httpServerMembers(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scripte
 		"listen": func(call goja.FunctionCall) goja.Value {
 			return httpListen(vm, loop, eng, isTLS, call)
 		},
-		// "static" filled in by Task 3.
+		"static": httpStaticBinding(vm, loop),
 	}
 }
 
@@ -87,6 +87,11 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		routeVal := routesObj.Get(key)
 		handler, perRouteMW, err := compileRoute(vm, loop, routeVal)
 		if err != nil {
+			if sre, ok := err.(*staticRouteError); ok {
+				// Register the static handler directly on the mux.
+				mux.Handle(pattern, sre.handler)
+				continue
+			}
 			panic(vm.NewTypeError(fmt.Sprintf("server.http.listen: route %q: %v", pattern, err)))
 		}
 		chain := append([]*scriptengine.LoopCallable{}, globalMW...)
@@ -183,9 +188,22 @@ func loadCert(certSrc, keySrc string) (tls.Certificate, error) {
 	return tls.LoadX509KeyPair(certSrc, keySrc)
 }
 
+// staticRouteError is a sentinel returned from compileRoute when a route
+// value is a *staticMarker. The httpListen route loop catches it and
+// registers the raw stdlib handler on the mux instead of going through
+// the LoopCallable dispatch. Not a real error — just a convenient way
+// to thread the carried handler back to the listener.
+type staticRouteError struct{ handler http.Handler }
+
+func (e *staticRouteError) Error() string { return "static-route marker" }
+
 // compileRoute turns a route value (bare function OR {use, handler} object)
 // into a LoopCallable + per-route middleware slice.
 func compileRoute(vm *goja.Runtime, loop *eventloop.EventLoop, val goja.Value) (*scriptengine.LoopCallable, []*scriptengine.LoopCallable, error) {
+	// Static-handler marker: bypass LoopCallable; register raw stdlib handler.
+	if marker, ok := val.Export().(*staticMarker); ok {
+		return nil, nil, &staticRouteError{handler: marker.handler}
+	}
 	// Bare function form: (req, res) => …
 	if fn, ok := goja.AssertFunction(val); ok {
 		return scriptengine.NewLoopCallable(loop, fn), nil, nil
