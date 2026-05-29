@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-29
+
 ### Changed
 
 - **BREAKING:** The `api.*` wrapper is removed. The nine v0.8.0 buckets
