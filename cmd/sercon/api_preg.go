@@ -40,7 +40,7 @@ func pregNamespace(vm *goja.Runtime) map[string]any {
 		if idxs == nil {
 			return goja.Null()
 		}
-		return vm.ToValue(buildMatchObject(subject, idxs))
+		return buildMatchObject(vm, subject, idxs)
 	}
 
 	matchAll := func(pattern, subject string) goja.Value {
@@ -49,9 +49,9 @@ func pregNamespace(vm *goja.Runtime) map[string]any {
 			return throw(err)
 		}
 		all := re.FindAllStringSubmatchIndex(subject, -1)
-		out := make([]map[string]any, 0, len(all))
+		out := make([]any, 0, len(all))
 		for _, idxs := range all {
-			out = append(out, buildMatchObject(subject, idxs))
+			out = append(out, buildMatchObject(vm, subject, idxs))
 		}
 		return vm.ToValue(out)
 	}
@@ -153,7 +153,7 @@ func translateFlags(flags string) (string, error) {
 // `(-1, -1)`) surface as empty strings — JS's RegExp returns
 // `undefined` for those, but a consistent string type keeps the
 // downstream shape easier to reason about.
-func buildMatchObject(subject string, idxs []int) map[string]any {
+func buildMatchObject(vm *goja.Runtime, subject string, idxs []int) goja.Value {
 	full := ""
 	if idxs[0] >= 0 {
 		full = subject[idxs[0]:idxs[1]]
@@ -169,9 +169,24 @@ func buildMatchObject(subject string, idxs []int) map[string]any {
 		}
 		groups[i] = subject[start:end]
 	}
-	return map[string]any{
-		"match":  full,
-		"groups": groups,
-		"index":  idxs[0],
-	}
+	return newMatchObject(vm, full, groups, idxs[0])
+}
+
+// newMatchObject builds the shared regex match result `{ match, groups,
+// index }` as a goja object with a STABLE key order. It deliberately
+// does NOT return a Go map: goja derives a JS object's property order
+// from Go map iteration, which Go randomizes per process, so
+// `JSON.stringify(result)` would emit the keys in a different order on
+// every run. Callers that hash a canonical serialization — payment-style
+// request signing, webhook signature verification — need the order
+// fixed. Insertion order into a goja.Object is preserved, and
+// JSON.stringify enumerates own string keys in that order. Shared by both
+// the RE2 (text.preg) and PCRE (text.preg2) bindings so their result
+// shape stays byte-for-byte identical.
+func newMatchObject(vm *goja.Runtime, match string, groups []string, index int) goja.Value {
+	o := vm.NewObject()
+	_ = o.Set("match", match)
+	_ = o.Set("groups", groups)
+	_ = o.Set("index", index)
+	return o
 }

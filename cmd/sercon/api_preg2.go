@@ -38,7 +38,7 @@ func preg2Namespace(vm *goja.Runtime) map[string]any {
 		if m == nil {
 			return goja.Null()
 		}
-		return vm.ToValue(buildMatch2(m))
+		return buildMatch2(vm, m)
 	}
 
 	matchAll := func(pattern, subject string) goja.Value {
@@ -46,13 +46,13 @@ func preg2Namespace(vm *goja.Runtime) map[string]any {
 		if err != nil {
 			return throw(err)
 		}
-		out := []map[string]any{}
+		out := []any{}
 		m, err := re.FindStringMatch(subject)
 		if err != nil {
 			return throw(fmt.Errorf("preg2: matchAll: %w", err))
 		}
 		for m != nil {
-			out = append(out, buildMatch2(m))
+			out = append(out, buildMatch2(vm, m))
 			m, err = re.FindNextMatch(m)
 			if err != nil {
 				return throw(fmt.Errorf("preg2: matchAll: %w", err))
@@ -152,15 +152,13 @@ func translateFlags2(flags string) (regexp2.RegexOptions, error) {
 // didn't participate surfaces as an empty string (regexp2's
 // Group.String() already returns "" for those), matching the RE2
 // binding's stable-shape policy.
-func buildMatch2(m *regexp2.Match) map[string]any {
+func buildMatch2(vm *goja.Runtime, m *regexp2.Match) goja.Value {
 	groups := m.Groups()
 	out := make([]string, 0, len(groups)-1)
 	for i := 1; i < len(groups); i++ {
 		out = append(out, groups[i].String())
 	}
-	return map[string]any{
-		"match":  m.String(),
-		"groups": out,
-		"index":  m.Index,
-	}
+	// Shared with text.preg via newMatchObject so the key order is stable
+	// (see that helper for why a Go map would shuffle JSON.stringify keys).
+	return newMatchObject(vm, m.String(), out, m.Index)
 }
