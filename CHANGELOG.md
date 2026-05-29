@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-30
+
 ### Added
 
 - New binding `server.smtp.listen({…})` — inbound SMTP listener with
