@@ -389,6 +389,7 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 	loop.Run(func(vm *goja.Runtime) {
 		vmRef.Store(vm)
 		vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
+		installPolyfills(vm)
 
 		if err := e.applyRegistrations(vm, loop); err != nil {
 			scriptErr = err

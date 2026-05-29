@@ -97,7 +97,7 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		chain := append([]*scriptengine.LoopCallable{}, globalMW...)
 		chain = append(chain, perRouteMW...)
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			dispatchHandler(loop, chain, handler, w, r)
+			dispatchHandler(loop, eng, chain, handler, w, r)
 		})
 	}
 
@@ -295,7 +295,7 @@ func (rs *responseState) markError(msg string) {
 // schedules a loop callback that builds req/res, invokes the middleware
 // chain + handler, and waits on res.notify for finalization (either via
 // a terminal call or via the handler-Promise's settlement).
-func dispatchHandler(loop *eventloop.EventLoop, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request) {
+func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request) {
 	// Read body up front; small price for the simpler script API.
 	bodyBytes, _ := io.ReadAll(r.Body)
 	_ = r.Body.Close()
@@ -308,7 +308,7 @@ func dispatchHandler(loop *eventloop.EventLoop, chain []*scriptengine.LoopCallab
 	// invoking each middleware with a `next` function.
 	_, err := loopSchedule(loop, func(vm *goja.Runtime) (goja.Value, error) {
 		req := buildRequestObject(vm, r, bodyBytes)
-		res := buildResponseObject(vm, state)
+		res := buildResponseObject(vm, loop, eng, state, w, r)
 
 		// Middleware runner. Each level returns a Promise that settles when
 		// that level's chain (and everything beneath it) has finished its
@@ -532,8 +532,10 @@ func buildRequestObject(vm *goja.Runtime, r *http.Request, bodyBytes []byte) goj
 }
 
 // buildResponseObject constructs the JS `res` builder. Methods mutate
-// the responseState; terminals call markFinal.
-func buildResponseObject(vm *goja.Runtime, state *responseState) *goja.Object {
+// the responseState; terminals call markFinal. The loop/eng/w/r tuple
+// is threaded purely to feed res.upgradeWebSocket (Task 4); the rest
+// of the builder doesn't need them.
+func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, state *responseState, w http.ResponseWriter, r *http.Request) *goja.Object {
 	res := vm.NewObject()
 	// Re-add `res` to its own methods so chaining returns the same object.
 	self := vm.ToValue(res)
@@ -653,6 +655,17 @@ func buildResponseObject(vm *goja.Runtime, state *responseState) *goja.Object {
 		state.markFinal()
 		return self
 	})
+	// upgradeWebSocket — hijack the connection and return a JS object
+	// that's both an AsyncIterable<WSMessage> and has .send / .close.
+	// See api_server_ws.go for the implementation.
+	_ = res.Set("upgradeWebSocket", func(call goja.FunctionCall) goja.Value {
+		var opts goja.Value
+		if len(call.Arguments) > 0 {
+			opts = call.Argument(0)
+		}
+		return upgradeWebSocketImpl(vm, loop, eng, state, w, r, opts)
+	})
+
 	_ = res.Set("redirect", func(call goja.FunctionCall) goja.Value {
 		loc := call.Argument(0).String()
 		code := http.StatusFound

@@ -16,6 +16,20 @@ type transpileResult struct {
 	SourceFile string
 }
 
+// gojaUnsupported tells esbuild which language features goja can't parse
+// natively, forcing esbuild to lower them even when the target year would
+// otherwise leave them alone. The headline case is for-await-of: ES2018
+// syntax that goja's parser still rejects (issue tracker: dop251/goja #1218
+// and friends). Listing the feature in `Supported: false` lets esbuild
+// rewrite it into an async-iterator IIFE that goja can execute. We also
+// disable `async-generator` because the lowered for-await template uses
+// it; without this flag esbuild would generate generators and goja chokes
+// on those too.
+var gojaUnsupported = map[string]bool{
+	"for-await":       false,
+	"async-generator": false,
+}
+
 // transpileTS converts TypeScript source into CommonJS-compatible JavaScript
 // using esbuild. The sourceFile parameter is used for diagnostic messages and
 // for resolving the sourcefile name esbuild embeds in errors.
@@ -35,6 +49,7 @@ func transpileTS(source, sourceFile string) (transpileResult, error) {
 		Format:     esbuild.FormatCommonJS,
 		Target:     esbuild.ES2020,
 		Sourcefile: sourceFile,
+		Supported:  gojaUnsupported,
 		// Keep names so stack traces are easier to read.
 		KeepNames: true,
 	})
@@ -57,6 +72,7 @@ func transpileEntry(source, sourceFile string) (transpileResult, error) {
 		Format:     esbuild.FormatESModule,
 		Target:     esbuild.ES2022,
 		Sourcefile: sourceFile,
+		Supported:  gojaUnsupported,
 		KeepNames:  true,
 	})
 	if len(result.Errors) > 0 {
