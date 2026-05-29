@@ -30,15 +30,16 @@ otherwise noted.
 3. [Library API — `pkg/scriptengine`](#3-library-api--pkgscriptengine)
 4. [CLI — `sercon`](#4-cli--sercon)
 5. [Reserved globals (script surface)](#5-reserved-globals-script-surface)
-6. [JavaScript runtime built-ins (goja)](#6-javascript-runtime-built-ins-goja)
-7. [Async runtime additions (goja_nodejs)](#7-async-runtime-additions-goja_nodejs)
-8. [TypeScript support](#8-typescript-support)
-9. [Top-level `await`](#9-top-level-await)
-10. [Module resolution](#10-module-resolution)
-11. [Timeouts and cancellation](#11-timeouts-and-cancellation)
-12. [Error semantics](#12-error-semantics)
-13. [Type generation (.d.ts)](#13-type-generation-dts)
-14. [Limitations and gotchas](#14-limitations-and-gotchas)
+6. [Servers](#6-servers)
+7. [JavaScript runtime built-ins (goja)](#7-javascript-runtime-built-ins-goja)
+8. [Async runtime additions (goja_nodejs)](#8-async-runtime-additions-goja_nodejs)
+9. [TypeScript support](#9-typescript-support)
+10. [Top-level `await`](#10-top-level-await)
+11. [Module resolution](#11-module-resolution)
+12. [Timeouts and cancellation](#12-timeouts-and-cancellation)
+13. [Error semantics](#13-error-semantics)
+14. [Type generation (.d.ts)](#14-type-generation-dts)
+15. [Limitations and gotchas](#15-limitations-and-gotchas)
 
 ---
 
@@ -254,7 +255,7 @@ func (e *Engine) WriteTypes(w io.Writer) error
 ```
 
 Emits a `.d.ts` describing the registered surface. See section
-[13. Type generation](#13-type-generation-dts) for what the mapping
+[14. Type generation](#14-type-generation-dts) for what the mapping
 looks like.
 
 ### `SetDocs` and `SetMemberDocs`
@@ -403,7 +404,7 @@ runs, after the ESM→CJS rewrite + async IIFE wrapper) and every
 module-resolution event, so debugging an unexpected resolve target or a
 mis-rewritten import is straightforward.
 
-The CLI registers nine reserved top-level globals; see the next section.
+The CLI registers ten reserved top-level globals; see the next section.
 
 ### `--watch`: re-run on file change
 
@@ -469,17 +470,69 @@ entry whose graph isn't known yet re-run unconditionally
 actually takes effect — the registry otherwise caches compiled
 bytecode across runs.
 
+### `sercon serve`: long-running scripts with production niceties
+
+```
+sercon serve [flags] <script.ts> [-- args...]
+```
+
+`sercon serve` is a sibling subcommand that wraps the same engine
+but adds the conveniences a process supervisor (systemd, docker,
+launchd) usually wants from a long-lived script. Use it whenever a
+script binds an HTTP/HTTPS listener (or any future `server.*`
+protocol) and is expected to keep running. Vanilla `sercon
+script.ts` also keeps the loop alive while listeners are bound, but
+gives you none of the deltas below.
+
+| Flag | Purpose |
+|---|---|
+| `--shutdown-timeout DURATION` | Graceful-shutdown deadline on SIGTERM/SIGINT (default `30s`). After the deadline the engine hard-cancels. |
+| `--port-override N` | If non-zero, replaces every literal `port:` in `server.*.listen({...})` calls with `N`. Useful for spinning up the same script on a different port without editing source. Only literal port values are rewritten — computed expressions (`{port: getPort()}`) are left alone. |
+| `-timeout DURATION` | Per-script wall-clock limit. Defaults to `0` (disabled) under `serve` so listeners don't get cut off; opt back in if you want one. |
+| `-root DIR` | Script root for `require`/`import` resolution (same semantics as vanilla `sercon`). |
+| `-v` | Verbose engine tracing to stderr. |
+
+Behavioural deltas vs vanilla `sercon`:
+
+- **Access log to stderr.** Each request emits one line in the
+  format `ts remote method path status dur_µs`, e.g.
+  `2026-05-29T10:23:14Z 127.0.0.1:54321 GET /users/42 200 1843µs`.
+  WebSocket upgrades log only the upgrade line; per-frame traffic
+  is suppressed.
+- **Readiness signal to stdout.** When each listener calls back
+  into the binding with `bound`, the binding prints `READY
+  listening on tcp/0.0.0.0:8080` to stdout. Multiple listeners
+  produce one READY line each. Supervisors that read-line on
+  startup (`systemd-notify`, `docker-compose` healthchecks) can
+  wait on it.
+- **Graceful shutdown.** SIGTERM / SIGINT triggers `srv.close()`
+  on every active listener concurrently, then waits up to
+  `--shutdown-timeout` for the script to drain. Clean exit is
+  exit code `0`. Past the deadline, `loop.Terminate()` fires
+  and the process exits with the usual classification.
+- **No `--watch`.** Re-running while a listener is bound would
+  race port rebinding; `sercon serve --watch …` exits with a
+  usage error. Use vanilla `sercon --watch script.ts` for the
+  hot-reload development loop.
+
+```bash
+sercon serve examples/scripts/server-http.ts
+sercon serve --port-override 9090 server.ts
+sercon serve --shutdown-timeout 10s server.ts
+```
+
 ## 5. Reserved globals (script surface)
 
-sercon scripts get nine reserved top-level globals. Use them directly —
+sercon scripts get ten reserved top-level globals. Use them directly —
 there is no enclosing namespace. The full per-binding reference is the
 generated `examples/scripts/api.d.ts`; this section is the at-a-glance
 prose.
 
 **Reserved names:** `runtime`, `crypto`, `text`, `codec`, `fs`, `net`,
-`db`, `services`, `tui`. User code can shadow these with a local
-`let`/`const`/`var` per normal JavaScript scoping — sercon does not
-intervene at runtime.
+`db`, `server`, `services`, `tui`. User code can shadow these with a
+local `let`/`const`/`var` per normal JavaScript scoping — sercon does
+not intervene at runtime. `server` (added in v0.10.0) covers inbound
+listeners — see [section 6](#6-servers) for the long-form treatment.
 
 ### Migration from v0.8.0
 
@@ -713,7 +766,339 @@ name and the active keys.
   no snapshot-to-normal-screen on exit. The alt screen is restored at
   script end and the usual `PASS`/`FAIL` line prints.
 
-## 6. JavaScript runtime built-ins (goja)
+## 6. Servers
+
+The `server` global (added in v0.10.0) hosts inbound listeners — scripts
+that *accept* connections rather than make them. The first sub-spec
+ships `server.http` and `server.https`; future cycles will add SMTP,
+IMAP, FTP, and POP3 against the same engine foundation.
+
+### 6.1 Foundation: `HoldRun` + `LoopCallable`
+
+Two engine primitives back every long-lived binding. They live on
+`*scriptengine.Engine` (CLI use of them is internal; the public
+contract is "use these if you write a similar binding yourself").
+
+**`Engine.HoldRun(reason string) (release func())`** — keeps
+`loop.Run` from exiting while a binding has resources outstanding.
+The event loop normally exits as soon as its `jobCount` drops to
+zero; `setTimeout` / `setInterval` / `setImmediate` are the only
+things that count. `HoldRun` parks a 24-hour sentinel timer under
+the hood (same trick `PromisifyAsync` uses for one-shot async work),
+returns a `release` function that clears it, and increments a
+refcount so multiple concurrent holders compose. `release` is
+idempotent. Any sentinels still parked when `Run` returns are
+cleanup-drained automatically as a safety net — a binding that
+forgets to call `release` does not leak into the next Run.
+
+**`scriptengine.NewLoopCallable(loop, fn)`** — wraps a captured
+`goja.Callable` (a JS function reference) so it can be invoked from
+*any* goroutine. Goja's runtime is single-threaded; calling a
+Callable directly from a non-loop goroutine corrupts engine state.
+`LoopCallable.Call(buildArgs)` enqueues a `loop.RunOnLoop` callback,
+builds the arg list on the loop (where `vm.ToValue` is valid),
+invokes the callable, and returns the result to the caller's
+goroutine. `LoopCallable.CallOnLoop(vm, args...)` is the
+already-on-the-loop variant — using `Call` from inside a loop
+callback deadlocks because the new `RunOnLoop` job can't run until
+the current one returns.
+
+You use them together. A typical server binding holds one or two
+`LoopCallable`s for the user's handlers, parks one `HoldRun`
+sentinel per active listener, and releases on close. The CLI
+bindings under `cmd/sercon/api_server*.go` follow this pattern.
+
+**Concurrency model.** Because every handler invocation marshals
+back onto the single goja loop, **handlers serialize**: only one
+JS handler runs at a time, across all listeners. This is a feature
+(no JS data races, no shared-state confusion) and a throughput
+ceiling. For CPU-bound work in a handler, offload to a Go
+binding that does the work in a goroutine and resolves a Promise.
+
+### 6.2 `server.http.listen` / `server.https.listen`
+
+```ts
+// HTTP
+const srv = await server.http.listen({
+  port:   8080,                              // required
+  host:   "0.0.0.0",                         // default
+  routes: { "GET /":  (req, res) => res.text("hi") },
+  use:    [logger],                          // optional global middleware
+});
+
+// HTTPS — identical plus cert/key (file paths OR inline PEM strings)
+const srv2 = await server.https.listen({
+  port: 8443,
+  cert: "/etc/ssl/server.pem",
+  key:  "/etc/ssl/server.key",
+  routes,
+});
+
+srv.address;          // "tcp/0.0.0.0:8080"
+await srv.close();    // graceful: stop accepting, drain, release HoldRun
+await srv.stopped;    // Promise that resolves when the listener exits
+```
+
+**Options:**
+
+| Key | Type | Notes |
+|---|---|---|
+| `port` | `number` | Required. Bind port. `0` lets the kernel pick; read the chosen port off `srv.address`. |
+| `host` | `string` | Default `"0.0.0.0"`. Pass `"127.0.0.1"` for loopback-only. |
+| `routes` | `Record<string, RouteValue>` | Required (may be `{}`). Keys are stdlib `http.ServeMux` patterns. |
+| `use` | `Middleware[]` | Optional global middleware; runs in array order before any per-route middleware. |
+| `cert` | `string` | **HTTPS only.** File path *or* inline PEM. |
+| `key`  | `string` | **HTTPS only.** File path *or* inline PEM. |
+
+**Route patterns** are stdlib Go 1.22+ `http.ServeMux` syntax:
+`"METHOD /path/{param}/{rest...}"`. The leading method is optional
+(omit to match any). `{name}` captures one path segment;
+`{name...}` captures the tail (wildcard). No new routing library —
+stdlib does the matching, including longest-prefix wins. Captured
+values land in `req.params`.
+
+**`RouteValue`** is either a bare handler — `(req, res) =>
+res.text("…")` — or an object `{ use?: Middleware[], handler:
+HandlerFn }` for per-route middleware (see §6.4).
+
+**Request shape** (`req`):
+
+```ts
+type Request = {
+  method:    string;                       // "GET"
+  url:       string;                       // full URL incl. scheme + host
+  path:      string;                       // "/users/42"
+  query:     Record<string, string[]>;     // ?a=1&a=2 → {a: ["1","2"]}
+  headers:   Record<string, string[]>;     // lowercase keys
+  params:    Record<string, string>;       // path-pattern captures
+  body:      string;                       // UTF-8 decoded request body
+  bodyBytes: Uint8Array;                   // same data as raw bytes
+  remote:    string;                       // "1.2.3.4:54321"
+  cookies:   Record<string, string>;       // parsed Cookie header
+};
+```
+
+**Response builder** (`res`) — every method returns `res` for
+chaining; the terminal `.json` / `.text` / `.html` / `.bytes` /
+`.empty` / `.redirect` sets the body and flips an internal
+`finalized` flag:
+
+```ts
+type CookieOpts = {
+  domain?:   string;
+  path?:     string;
+  maxAge?:   number;                // seconds; 0 = session; <0 = delete
+  expires?:  number;                // unix ms
+  secure?:   boolean;
+  httpOnly?: boolean;
+  sameSite?: "strict" | "lax" | "none";
+};
+
+type Response = {
+  status(code: number): Response;
+  header(name: string, value: string): Response;
+  cookie(name: string, value: string, opts?: CookieOpts): Response;
+  // Terminals (all return res so they remain chainable but no further
+  // write makes sense after one fires; a second terminal throws):
+  json(value: unknown): Response;       // → application/json
+  text(s: string):     Response;        // → text/plain
+  html(s: string):     Response;        // → text/html
+  bytes(b: Uint8Array, ct?: string): Response;  // default application/octet-stream
+  empty():             Response;        // no body; pair with .status() for 204/304
+  redirect(loc: string, code?: number): Response;  // default 302
+  // Upgrade (WebSocket):
+  upgradeWebSocket(opts?: { readBuffer?: number }): Promise<WebSocket>;
+};
+```
+
+After the handler's returned Promise resolves, the engine checks
+`res.finalized`:
+
+- **true** — buffered status / headers / body get written to the
+  underlying `http.ResponseWriter`.
+- **false** — engine sends `204 No Content`.
+- **handler threw** (sync or async) — engine sends `500 Internal
+  Server Error` and logs the error (`stderr` under vanilla
+  `sercon`; access log under `sercon serve`). The script keeps
+  running; only that one request is affected.
+
+Calling a terminal twice on the same `res` throws a `TypeError`
+(the second call sees `finalized === true` and refuses).
+
+**Multiple listeners** compose naturally. A script can run
+
+```ts
+const [a, b] = await Promise.all([
+  server.http.listen({ port: 80,  routes }),
+  server.https.listen({ port: 443, routes, cert, key }),
+]);
+```
+
+Each `listen` call holds its own `HoldRun` sentinel; closing one
+listener does not affect the other.
+
+### 6.3 Static-file serving
+
+```ts
+"GET /assets/{rest...}": server.http.static({
+  dir:         "/var/www/public",   // root directory on disk
+  stripPrefix: "/assets/",          // URL prefix to strip before disk lookup
+  index?:      "index.html",        // accepted but currently unused (stdlib default applies)
+  etag?:       true,                // accepted but currently unused (stdlib default applies)
+}),
+```
+
+`server.http.static({...})` returns an opaque handler the route
+compiler unwraps and registers directly on the mux. **The route
+pattern must include a `{rest...}` wildcard** — without it the
+match only ever produces the literal prefix and no subpath ever
+resolves on disk. Internally a stdlib `http.FileServer(http.Dir(dir))`
+wrapped in `http.StripPrefix(stripPrefix, …)`; ETag and range
+requests work out of the box. Symlinks outside `dir` are blocked
+(stdlib `http.Dir`'s default). No directory listing customisation
+yet — `index` and `etag` options are reserved for future tuning;
+v0.10.0 inherits the stdlib defaults.
+
+### 6.4 Middleware
+
+Onion model. A middleware is `(req, res, next) => Promise<void>`.
+`next` is an async function that runs the rest of the chain;
+awaiting it lets the middleware post-process.
+
+```ts
+const logger = async (req, res, next) => {
+  const start = runtime.time.nowMs();
+  await next();                              // run downstream chain
+  runtime.log(req.method, req.path, "→", runtime.time.nowMs() - start, "ms");
+};
+
+await server.http.listen({
+  port: 8080,
+  use: [logger],                             // global middleware
+  routes: {
+    "GET /api/secure": {                     // per-route middleware
+      use: [authCheck],
+      handler: (req, res) => res.json({ ok: true }),
+    },
+  },
+});
+```
+
+**Attachment points:**
+
+- **Global** — `use:` array in `listen({...})` options. Runs for
+  every request, in declaration order, before any per-route
+  middleware.
+- **Per-route** — when a route value is `{ use: [...], handler:
+  fn }`, those middleware run after globals but before the
+  handler.
+
+For a request to `POST /api/secure` with global middleware `[A, B]`
+and per-route middleware `[C]`, the composition is:
+
+```
+A(req, res, () => B(req, res, () => C(req, res, () => handler(req, res))))
+```
+
+Each layer can `await next()` then mutate response headers or
+record timings, exactly like Express / Koa.
+
+**Short-circuit:** a middleware that does *not* call `await next()`
+stops the chain. It must terminate `res` itself (e.g.
+`res.status(401).text("denied")`) — otherwise the engine sends
+`204 No Content` per the unfinalized-response rule.
+
+**Throwing:** any throw mid-chain (sync or via rejected Promise)
+bubbles to the engine's 500 path. Wrap with `try`/`catch` if you
+want custom error handling.
+
+### 6.5 WebSocket upgrade
+
+```ts
+"GET /ws": async (req, res) => {
+  const ws = await res.upgradeWebSocket({ readBuffer: 64 });
+  // ws is both an async iterator AND has .send / .close.
+  for await (const msg of ws) {
+    if (msg.type === "text") {
+      await ws.send("echo:" + msg.text);
+    } else {
+      await ws.send(msg.bytes);              // msg.type === "binary"
+    }
+  }
+  // iterator ends on close; ws.closeCode / ws.closeReason populated
+},
+```
+
+**Type:**
+
+```ts
+type WSMessage =
+  | { type: "text";   text:  string     }
+  | { type: "binary"; bytes: Uint8Array };
+
+type WebSocket = AsyncIterable<WSMessage> & {
+  send(data: string | Uint8Array): Promise<void>;
+  close(code?: number, reason?: string): Promise<void>;
+  closeCode?:   number;
+  closeReason?: string;
+  remote:       string;
+};
+```
+
+**Library:** `github.com/coder/websocket` (the modern successor to
+`nhooyr.io/websocket`; gorilla/websocket is in maintenance mode).
+Pure Go, zero deps.
+
+**Marshalling.** Per upgraded connection, a Go goroutine reads
+frames into a buffered channel (capacity = `readBuffer`, default
+64). Each `next()` on the async iterator pulls one message off the
+channel and resolves on the loop via `LoopCallable`. `ws.send()`
+schedules a write back through the connection-owning goroutine.
+
+**Backpressure.** If the read buffer fills (slow JS consumer),
+back-pressure propagates into the websocket library's read loop —
+the client eventually sees `1009 message too big` after the
+library's own limit (1MB default). Bump `readBuffer` if your
+workload bursts and you want more in-flight queueing.
+
+`ws.close()` closes the send channel, drains the receive channel,
+sends a close frame, and ends the async iterator on the next
+`next()` call. The script's `for await` exits cleanly; the
+handler's Promise resolves; the connection's goroutine returns.
+The HTTP server's `HoldRun` is **unaffected** — it stays alive for
+new connections until `srv.close()`.
+
+`async function*` and `for await (...)` are not natively parsed
+by goja. esbuild's `Supported` flag lowers both during transpile
+(see CHANGELOG), and every Run installs `Symbol.asyncIterator =
+Symbol.for("@@asyncIterator")` so the lowered helper and user code
+agree on the same iteration key.
+
+### 6.6 Lifecycle
+
+**Vanilla `sercon script.ts`.** Each `server.*.listen` call parks
+a `HoldRun` sentinel and the event loop stays alive while the
+listener is bound. SIGINT terminates abruptly: the engine's
+interrupt watcher calls `loop.Terminate()`, the cleanup drain runs
+(closing each listener), and the process exits. No access log, no
+readiness signal, no shutdown timeout.
+
+**`sercon serve script.ts`.** Adds the production niceties
+documented in §4: structured access log to stderr, a `READY
+listening on tcp/…` line on stdout per listener, and graceful
+shutdown with `--shutdown-timeout` (default `30s`). Clean SIGTERM
+exits `0`. Choose `serve` whenever the script is supervised
+(systemd, docker compose, launchd).
+
+```bash
+# Quick local test:
+sercon examples/scripts/server-http.ts
+
+# Production-style supervised run:
+sercon serve examples/scripts/server-http.ts
+```
+
+## 7. JavaScript runtime built-ins (goja)
 
 `scriptengine` runs on goja, which implements **ES5.1 + a large subset of
 ES6+**. The following are present and behave per spec:
@@ -784,9 +1169,9 @@ runtime.log(first10);
 - `Worker`, threading primitives.
 - DOM globals (`window`, `document`).
 - Native ES modules (`import`/`export` are *transpiled* to CommonJS at
-  load time — see [section 8](#8-typescript-support)).
+  load time — see [section 9](#9-typescript-support)).
 
-## 7. Async runtime additions (goja_nodejs)
+## 8. Async runtime additions (goja_nodejs)
 
 The event loop bundles a small Node-compatible runtime on top of goja:
 
@@ -819,7 +1204,7 @@ namespace.
 ### `require`
 
 CommonJS require, with TS-aware extension fallback added by sercon (see
-[section 10](#10-module-resolution)):
+[section 11](#11-module-resolution)):
 
 ```ts
 const helpers = require("./helpers");
@@ -830,7 +1215,7 @@ Both `require("./foo")` and `import { x } from "./foo"` resolve to the
 same module instance per Run; esbuild rewrites `import` to
 `require` at transpile time.
 
-## 8. TypeScript support
+## 9. TypeScript support
 
 TS is transpiled by esbuild in-process. There is no `tsc`, no
 `tsconfig.json`, no type-checking — types are erased and the resulting
@@ -864,7 +1249,7 @@ works through the entry-script rewriter's `__esModule ? .default : m`
 unwrap, so `import answer from "./mod"` resolves to the default
 export.
 
-## 9. Top-level `await`
+## 10. Top-level `await`
 
 Top-level `await` works in entry scripts:
 
@@ -888,7 +1273,7 @@ through `require`) is transpiled with `format=cjs` and does **not**
 support top-level await — wrap in `(async () => …)()` yourself if you
 need it inside a module.
 
-## 10. Module resolution
+## 11. Module resolution
 
 The engine plugs a custom source loader into `goja_nodejs/require` that
 adds:
@@ -934,7 +1319,7 @@ const r = require("./data.json");
 loader doesn't currently transpile through that path — keep TS helpers
 under `ScriptRoot`.
 
-## 11. Timeouts and cancellation
+## 12. Timeouts and cancellation
 
 Two mechanisms interrupt a running script:
 
@@ -957,7 +1342,7 @@ _, err := eng.Run(ctx, "loop.ts", `while (true) {}`)
 // err is scriptengine.ErrScriptTimeout, returned ~200-300ms after Run.
 ```
 
-## 12. Error semantics
+## 13. Error semantics
 
 - A Go binding returning `(T, error)` automatically throws as a JS
   exception when `err != nil`. The exception's `.message` is `err.Error()`.
@@ -976,7 +1361,7 @@ _, err := eng.Run(ctx, "loop.ts", `while (true) {}`)
   Cancellation errors satisfy `errors.Is(err, context.Canceled)` or
   `context.DeadlineExceeded`.
 
-## 13. Type generation (.d.ts)
+## 14. Type generation (.d.ts)
 
 `Engine.WriteTypes(w)` walks the registered bindings and emits a
 TypeScript declaration file. The mapping table (abbreviated):
@@ -1037,7 +1422,7 @@ entries there when adding new bindings (the lockstep rule keeps
 `--examples` / MANUAL / `api.d.ts` in sync, and the doc map is now
 the seventh artifact in that chain).
 
-## 14. Limitations and gotchas
+## 15. Limitations and gotchas
 
 - **No native ES modules at runtime.** All `import` is rewritten to
   `require` by esbuild. Side-effect-only imports run the module body

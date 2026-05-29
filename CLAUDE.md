@@ -90,8 +90,16 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - `pkg/scriptengine/timeout.go` — `ErrScriptTimeout` sentinel only; the live cancellation watcher is inline in `engine.go`.
 - `pkg/scriptengine/dts.go` — declaration generator with cycle detection.
 - `pkg/scriptengine/engine_test.go` — 11 cases covering the 10 spec-required scenarios; uses `-update` flag for the golden `.d.ts`.
-- `cmd/sercon/main.go` — CLI plus the nine reserved top-level globals (`runtime`, `crypto`, `text`, `codec`, `fs`, `net`, `db`, `services`, `tui`), each registered as a namespace factory by `registerSurface`.
-- `examples/scripts/` — runnable sample scripts; `hang.ts` is the timeout demo and must stay a single `while(true){}`.
+- `pkg/scriptengine/loop_callable.go` — `LoopCallable` wrapper + `NewLoopCallable` constructor; lets a captured `goja.Callable` be invoked from any goroutine. `.Call(buildArgs)` for off-loop callers; `.CallOnLoop(vm, args...)` for on-loop sites (using `Call` from a loop callback deadlocks).
+- `pkg/scriptengine/hold_run.go` — `Engine.HoldRun(reason)` + sentinel-timer bookkeeping; keeps `loop.Run` alive while long-lived bindings (HTTP listeners, etc.) hold a refcount. Drained on Run end as a safety net.
+- `pkg/scriptengine/polyfill.go` — per-Run `Symbol.asyncIterator = Symbol.for("@@asyncIterator")` install so esbuild's `__forAwait` lowering and user code agree on the same iteration key.
+- `cmd/sercon/main.go` — CLI plus the ten reserved top-level globals (`runtime`, `crypto`, `text`, `codec`, `fs`, `net`, `db`, `server`, `services`, `tui`), each registered as a namespace factory by `registerSurface`.
+- `cmd/sercon/api_server.go` — top-level `server` namespace factory; thin dispatcher to per-protocol sub-factories.
+- `cmd/sercon/api_server_http.go` — `server.http` / `server.https` listener: options parsing, route compilation (stdlib `http.ServeMux` Go 1.22+ patterns), middleware chain, request marshalling, fluent `res` builder.
+- `cmd/sercon/api_server_static.go` — `server.http.static({dir, stripPrefix, …})` returning a marker the route compiler unwraps into a stdlib `http.FileServer` mounted under `http.StripPrefix`.
+- `cmd/sercon/api_server_ws.go` — `res.upgradeWebSocket(opts?)`; per-connection goroutine + buffered channel pump; async iterator that resolves frames on the loop via `LoopCallable`. Backed by `github.com/coder/websocket`.
+- `cmd/sercon/serve_cmd.go` — `sercon serve` subcommand: flag parsing (`--shutdown-timeout`, `--port-override`), access-log writer, READY-line writer on stdout, SIGTERM-graceful shutdown.
+- `examples/scripts/` — runnable sample scripts; `hang.ts` is the timeout demo and must stay a single `while(true){}`. The `server-*.ts` demos bind a high random port (38080–38082), self-test, and `await srv.close()`.
 - `claude-code-prompt.md` — the original spec for this build. Refer to it before redesigning anything significant.
 
 ## Editing rules of thumb
@@ -100,12 +108,14 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - Don't introduce package-level state in `pkg/scriptengine` — everything hangs off `Engine`.
 - Errors returned as the second value of a Go binding surface as thrown JS exceptions automatically (via `vm.NewGoError`). Don't swallow them at the binding layer.
 - If you change the registered example surface in `cmd/sercon/main.go`, regenerate the golden in `pkg/scriptengine/testdata/` only if you also touched bindings used by `TestWriteTypes_Golden` (it has its own minimal fixture set, not the CLI's reserved globals).
+- For bindings that need to invoke a captured JS Callable from a goroutine: use `scriptengine.NewLoopCallable(loop, fn)` + `.Call(buildArgs)`. On-loop callers should use `.CallOnLoop(vm, args...)` instead — invoking `Call` from a loop callback re-enters `RunOnLoop` and deadlocks. Do NOT call the Callable directly from a non-loop goroutine; goja's runtime is single-threaded.
+- For long-lived bindings (servers, listeners, anything that doesn't have a single Promise to keep the loop's `jobCount` nonzero): call `eng.HoldRun(reason)` to keep `loop.Run` alive; release via the returned function on close. `HoldRun` is refcounted; multiple concurrent holds compose; `release` is idempotent and the cleanup drain on Run end catches any that leaked.
 
 ## Keeping docs in lockstep
 
 Seven artifacts must stay aligned whenever the script/binding/feature surface changes:
 
-- `MANUAL.md` — long-form reference; covers the library API, CLI, the nine reserved script globals, goja built-ins, eventloop additions.
+- `MANUAL.md` — long-form reference; covers the library API, CLI, the ten reserved script globals, the `server` namespace (§6), goja built-ins, eventloop additions.
 - `MANUAL.pdf` — regenerated from `MANUAL.md` via `make manual` (which calls `recon --md-to-pdf`). Run this whenever `MANUAL.md` changes and include the resulting `MANUAL.pdf` in the same commit. Release cuts (which bump the version strings in `MANUAL.md` via `make release-prep`) need a `make manual` pass too — the `make release-prep` next-step checklist calls this out explicitly.
 - `cmd/sercon/help.go::showHelp` — the `--help` / `-h` screen. Flags table must mirror the actual flags defined in `main.go`.
 - `cmd/sercon/help.go::showExamples` — the `--examples` walkthrough. The `exampleCount` constant must equal the number of `header(N, …)` calls.

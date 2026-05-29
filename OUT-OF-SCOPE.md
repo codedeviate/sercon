@@ -37,9 +37,9 @@ the situation changes.
 ### Tooling / developer experience
 
 - **Editor autocomplete wiring (VSCode / Zed / any tsserver editor).**
-  The pieces already exist: `sercon -emit-dts` emits the nine reserved
+  The pieces already exist: `sercon -emit-dts` emits the ten reserved
   top-level globals (`codec`, `crypto`, `db`, `fs`, `net`, `runtime`,
-  `services`, `text`, `tui`) as ambient `declare const` blocks with
+  `server`, `services`, `text`, `tui`) as ambient `declare const` blocks with
   JSDoc on every member, so any TypeScript language-server-backed
   editor (VSCode, Zed, Neovim+coc, Sublime LSP, …) gives completion +
   hover docs once the `.d.ts` is in its program. No per-editor plugin
@@ -154,43 +154,30 @@ read/write client sockets exposed to scripts.
 
 ### Networking — servers & broad protocol coverage
 
-All server work shares one genuinely hard problem: a
-request/connection/packet arrives on a Go goroutine and has to invoke
-a JS handler **back on goja's event loop**, the same marshalling
-`shell_stream` needs (generalised for repeated callbacks, not a
-one-shot resolve). That part is intrinsic and stays Hard.
+The two engine primitives that earlier made server work Hard —
+`LoopCallable` (loop-bound callback marshalling for repeated
+invocations) and `Engine.HoldRun` (long-lived `Run` keep-alive) —
+shipped in v0.10.0 alongside the first protocol family (HTTP/HTTPS).
+Per-protocol surface area remains in this list; each is its own
+sub-spec cycle built on the existing foundation.
 
-The *other* concern — that `Engine.Run` builds a fresh event loop per
-call and exits when `jobCount` hits zero, so a long-lived listener
-needs a keep-alive (cf. `PromisifyAsync`'s sentinel) plus shutdown —
-is largely a **library** concern, and sercon is CLI-first with library
-use unsupported (see project memory). A dedicated `serve`-style command
-can simply own the process: keep the loop alive trivially and exit on
-Ctrl-C / signal, no embeddability gymnastics. So the lifecycle work is
-smaller than it looks; the HTTP server in particular is closer to
-Moderate once the callback-marshalling helper exists. ICMP raw sockets
-(privileges) and the broad-protocol umbrella keep this group as a whole
-in Hard.
-
-- **HTTP / HTTPS server with optional router.** Serve script-defined
-  handlers; optional path routing. **Library:** stdlib `net/http`
-  with `http.ServeMux` (Go 1.22+ pattern routing covers most needs;
-  a small router lib only if richer matching is wanted). Needs TLS
-  config, graceful shutdown, and JS handler dispatch on the loop.
 - **TCP / UDP / ICMP servers (listeners).** Accept loops that hand
-  each connection or packet to a JS callback. **Library:** stdlib
-  `net` for TCP/UDP; `golang.org/x/net/icmp` for ICMP (raw sockets,
-  so elevated privileges). Listener lifecycle within the per-Run loop
-  is the crux.
+  each connection or packet to a JS callback. The HTTP listener
+  exercises the TCP path implicitly; raw TCP / UDP / ICMP server
+  surfaces are not exposed to scripts. **Library:** stdlib `net`
+  for TCP/UDP; `golang.org/x/net/icmp` for ICMP (raw sockets, so
+  elevated privileges). Listener lifecycle uses the same
+  `HoldRun` + `LoopCallable` pattern as the HTTP server.
 - **Client + server for the common internet protocols.** Umbrella
   goal: broad protocol coverage on both sides. Clients already ship
   for several (`net.probe.{dns,tls,ntp,whois,smtp,wss}`,
   `net.http`, plus `db.redis` / `db.memcached` /
-  `db.ldap` / `db.dict`); the gaps are server-side
-  counterparts and additional protocols (e.g. FTP, IMAP / POP3,
-  MQTT). Rated Hard for the aggregate scope, not any single
-  protocol — promote individual protocols as they're actually needed
-  rather than tackling the umbrella wholesale.
+  `db.ldap` / `db.dict`); HTTP/HTTPS server lands in v0.10.0; SMTP,
+  IMAP, FTP, and POP3 servers are planned as separate sub-spec
+  cycles using the v0.10.0 foundation. Additional protocols (e.g.
+  MQTT) and broader client coverage stay rated Hard for the
+  aggregate scope — promote individual protocols as they're
+  actually needed.
 
 ### Agent-browser automation
 
@@ -242,10 +229,11 @@ The hard rating reflects the orchestration scope, not any single call.
 - **`shell_stream(cmd, cb)`** — Stream stdout/stderr line by line into
   a JS callback (script: `shell.rhai`). Needed as a building block for
   the recon-fallback path. **Library:** `os/exec` (stdlib) + `bufio`.
-  Hard rather than easy because invoking a JS callback from a Go
-  goroutine has to be marshalled back onto goja's event loop safely
-  (this is the same machinery `PromisifyAsync` already uses, but
-  generalised for repeated callbacks rather than a one-shot resolve).
+  Now Moderate rather than Hard: v0.10.0 introduced
+  `scriptengine.NewLoopCallable` (loop-bound callback marshalling
+  for repeated invocations) and `Engine.HoldRun` (keeps the loop
+  alive while the subprocess is in flight) — the engine work is done
+  and only the binding remains.
 
 ## Deferred
 
@@ -279,3 +267,39 @@ reason resolves.
   pure-Go drivers (MySQL / Postgres / MSSQL / Oracle / …, see the
   Databases group under Easy) cover the engines people actually ask
   for — which they largely do.
+
+### Networking — servers
+
+- **HTTP/3.** stdlib's HTTP server auto-upgrades HTTP/1.1 to HTTP/2
+  over TLS; H2 ships with the v0.10.0 HTTPS listener for free. H3
+  would need `quic-go` and explicit handling. **Reason:** new
+  dependency without a current demand signal. Re-promote when
+  there's a clear request.
+- **Let's Encrypt autocert.** `golang.org/x/crypto/acme/autocert`
+  brings stateful disk caching, renewal coordination, and a
+  side-effecting registration step — useful for production
+  deployments but heavy for an embeddable script engine.
+  **Reason:** sercon is CLI-first and the cert is best owned by
+  the supervisor (caddy, traefik, nginx in front). Defer until
+  clear demand.
+- **Self-signed dev certificate generation.** A `cert: "self-signed"`
+  magic option for `server.https.listen` would be a convenience for
+  local dev but adds key-management complexity (cache the key, or
+  regenerate every run?). **Reason:** small payoff for the design
+  cost. Users can `openssl req -x509 …` once locally.
+- **Server-Sent Events (SSE).** Could be a small helper on top of
+  `server.http.listen` (set headers, flush on every write). YAGNI
+  for now. **Reason:** no asks. Add when someone wants it.
+- **Custom error pages / `server.http.onError(handler)`.** Handler
+  throws today produce a stock `500 Internal Server Error` and a
+  log line. A future hook for custom rendering can be added.
+  **Reason:** no design pressure yet; the per-route try/catch
+  pattern covers the common case.
+- **Server-side SMTP, IMAP, FTP.** Planned as separate sub-spec
+  cycles built on the v0.10.0 `LoopCallable` + `HoldRun`
+  foundation. Each gets its own brainstorm → plan → ship cycle.
+  Promote from Deferred once the spec lands.
+- **Server-side POP3.** Same foundation as the above, but
+  **Reason:** no mature pure-Go POP3 server library exists today.
+  Re-promote when one appears or when there's enough demand to
+  justify writing one in tree.

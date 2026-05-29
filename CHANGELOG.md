@@ -8,6 +8,45 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- New top-level global `server` with HTTP/HTTPS listeners, stdlib
+  `http.ServeMux` pattern routing, onion-style middleware, a
+  static-file mount helper, and WebSocket upgrade via async iterator.
+  Reserved globals grow from 9 to 10. See MANUAL.md §6.
+- New CLI subcommand `sercon serve script.ts` adds production
+  niceties for long-running scripts: structured access log to
+  stderr (format `ts remote method path status dur_µs`),
+  `--shutdown-timeout` (default `30s`), `--port-override`, and a
+  `READY listening on tcp/…` line on stdout per listener. Clean
+  SIGTERM exits `0`. Vanilla `sercon script.ts` is unchanged.
+- New engine API: `scriptengine.NewLoopCallable(loop, fn)` returns a
+  wrapper that lets a captured JS Callable be invoked from any
+  goroutine via `.Call(buildArgs)`. The on-loop variant
+  `.CallOnLoop(vm, args...)` invokes synchronously when the caller
+  is already on the loop.
+- New engine API: `Engine.HoldRun(reason string) (release func())`.
+  Refcounted sentinel-timer that keeps `loop.Run` alive until
+  `release()` fires; cleanup-drained on Run end as a safety net.
+  Multiple concurrent holds compose; `release` is idempotent.
+- esbuild now lowers `for await (...)` and async generators (via the
+  `Supported` flag) so they work in scripts running on goja, which
+  doesn't parse them natively.
+- New polyfill: every Run installs `Symbol.asyncIterator =
+  Symbol.for("@@asyncIterator")` so esbuild's `__forAwait` helper
+  and user code that does `obj[Symbol.asyncIterator] = ...` agree
+  on the same key.
+
+### Changed
+
+- `PromisifyAsync` now delegates to `LoopCallable` internally
+  (non-breaking refactor — script-visible behaviour is unchanged).
+
+### Migration
+
+No script-side migration required — additive only. Existing scripts
+keep working without changes.
+
 ## [0.9.0] — 2026-05-29
 
 ### Changed

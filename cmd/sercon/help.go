@@ -172,15 +172,16 @@ func showHelp(w io.Writer) {
 	fmt.Fprintf(w, "    %s --examples | --help | --version\n\n", s.cyan("sercon"))
 
 	fmt.Fprintln(w, s.bold("DESCRIPTION"))
-	fmt.Fprintln(w, "    Scripts get nine reserved top-level globals — runtime, crypto,")
-	fmt.Fprintln(w, "    text, codec, fs, net, db, services, tui — each holding a")
-	fmt.Fprintln(w, "    related group of bindings: runtime (logging, assertions, time,")
-	fmt.Fprintln(w, "    env, argv), crypto (hash/jwt/encrypt), text (string/regex/")
-	fmt.Fprintln(w, "    charset/jq/diff), codec (compression/barcode/checkdigit), fs")
-	fmt.Fprintln(w, "    (path/archive), net (http/probe/email/...), db (sqlite/")
-	fmt.Fprintln(w, "    redis/...), services (exec/git/gh/ai), tui (multi-pane UI).")
-	fmt.Fprintln(w, "    Each script gets a fresh runtime; helpers are loaded via")
-	fmt.Fprintln(w, "    require()/import. See MANUAL.md §5 for the full reference, or")
+	fmt.Fprintln(w, "    Scripts get ten reserved top-level globals — runtime, crypto,")
+	fmt.Fprintln(w, "    text, codec, fs, net, db, server, services, tui — each holding")
+	fmt.Fprintln(w, "    a related group of bindings: runtime (logging, assertions,")
+	fmt.Fprintln(w, "    time, env, argv), crypto (hash/jwt/encrypt), text (string/")
+	fmt.Fprintln(w, "    regex/charset/jq/diff), codec (compression/barcode/checkdigit),")
+	fmt.Fprintln(w, "    fs (path/archive), net (http/probe/email/...), db (sqlite/")
+	fmt.Fprintln(w, "    redis/...), server (http/https listeners + WebSocket), services")
+	fmt.Fprintln(w, "    (exec/git/gh/ai), tui (multi-pane UI). Each script gets a fresh")
+	fmt.Fprintln(w, "    runtime; helpers are loaded via require()/import. See MANUAL.md")
+	fmt.Fprintln(w, "    §5 for the full reference and §6 for the server surface, or")
 	fmt.Fprintln(w, "    --examples for a guided tour. The generated api.d.ts (see")
 	fmt.Fprintln(w, "    -emit-dts) is the machine-readable spec.")
 	fmt.Fprintln(w, "")
@@ -235,6 +236,8 @@ func showHelp(w io.Writer) {
 		s.cyan(`echo 'runtime.log(1+2);' | sercon -`))
 	fmt.Fprintf(w, "    %s\n        Pass arguments to a script via runtime.argv.\n",
 		s.cyan("sercon run.ts -- --port 8080"))
+	fmt.Fprintf(w, "    %s\n        Long-running server with graceful shutdown + access log.\n",
+		s.cyan("sercon serve server.ts"))
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("SEE ALSO"))
@@ -260,7 +263,7 @@ func showExamples(w io.Writer) {
 
 	fmt.Fprintln(w, s.bold(s.cyan("sercon")), s.dim("— script feature tour"))
 	fmt.Fprintln(w, s.dim("Each example is a complete .ts file you can save and run with"))
-	fmt.Fprintln(w, s.dim("`sercon path/to/file.ts`. Snippets use the nine reserved top-level globals."))
+	fmt.Fprintln(w, s.dim("`sercon path/to/file.ts`. Snippets use the ten reserved top-level globals."))
 
 	header(1, "Logging")
 	code(`runtime.log("hello", 1 + 2, { a: 1 });
@@ -697,10 +700,84 @@ await services.exec.shell("npm -g update",              { pane: "npm" });
 log.writeln("All done.");`)
 	note("Tab cycles focus, PgUp/PgDn scroll. Pipe stdout (CI / make demo) to get prefixed plain-text lines instead.")
 
+	header(38, "Server (server.http.listen + routes)")
+	code(`// Bind an HTTP listener. Routes use stdlib http.ServeMux Go 1.22+
+// pattern syntax: "METHOD /path/{param}/{rest...}".
+const srv = await server.http.listen({
+  port: 8080,
+  routes: {
+    "GET /":      (req, res) => res.text("hello, world"),
+    "GET /json":  (req, res) => res.json({ path: req.path, query: req.query }),
+    "POST /echo": (req, res) => res.status(201).json({ echoed: req.body }),
+  },
+});
+runtime.log("listening on", srv.address);  // "tcp/0.0.0.0:8080"
+// ... handle requests ...
+await srv.close();   // graceful shutdown`)
+	note("Handlers serialize on the goja loop — no JS data races, single-threaded throughput ceiling. Vanilla sercon keeps the loop alive while bound; sercon serve adds access log + graceful shutdown.")
+
+	header(39, "Server middleware (onion chain)")
+	code(`// Middleware: async (req, res, next) => void. Awaiting next() runs
+// the rest of the chain; not awaiting it short-circuits.
+const logger = async (req, res, next) => {
+  const start = runtime.time.nowMs();
+  await next();
+  runtime.log(req.method, req.path, "→", runtime.time.nowMs() - start, "ms");
+};
+
+await server.http.listen({
+  port: 8080,
+  use: [logger],                        // global; runs every request
+  routes: {
+    "GET /": (req, res) => res.text("hi"),
+    "GET /api/secure": {                // per-route middleware
+      use: [authCheck],
+      handler: (req, res) => res.json({ ok: true }),
+    },
+  },
+});`)
+	note("Throws bubble to the 500 path. Middleware that doesn't await next() must terminate res itself, else the engine sends 204 No Content.")
+
+	header(40, "Server (server.http.static)")
+	code(`// Serve a directory tree at a URL prefix. Route MUST include a
+// {rest...} wildcard so subpaths resolve on disk.
+const srv = await server.http.listen({
+  port: 8081,
+  routes: {
+    "GET /assets/{rest...}": server.http.static({
+      dir: "/var/www/public",
+      stripPrefix: "/assets/",
+    }),
+    "GET /": (req, res) => res.text("home"),
+  },
+});`)
+	note("Wraps stdlib http.FileServer + http.StripPrefix. ETag + range requests work out of the box; symlink escape blocked by http.Dir.")
+
+	header(41, "Server (WebSocket via async iterator)")
+	code(`// res.upgradeWebSocket returns a WebSocket that is both an async
+// iterator over incoming frames AND has .send / .close methods.
+const srv = await server.http.listen({
+  port: 8082,
+  routes: {
+    "GET /ws": async (req, res) => {
+      const ws = await res.upgradeWebSocket({ readBuffer: 64 });
+      for await (const msg of ws) {
+        if (msg.type === "text" && msg.text === "bye") {
+          await ws.close(1000, "bye");
+          break;
+        }
+        if (msg.type === "text")   await ws.send("echo:" + msg.text);
+        if (msg.type === "binary") await ws.send(msg.bytes);
+      }
+    },
+  },
+});`)
+	note("Backed by coder/websocket (pure Go). esbuild lowers async generators + for-await; every Run installs Symbol.asyncIterator so the lowering and user code agree on the iteration key.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 37
+const exampleCount = 41

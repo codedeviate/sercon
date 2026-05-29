@@ -210,12 +210,13 @@ func classifyErr(err error) int {
 	}
 }
 
-// registerSurface wires sercon's nine top-level script-facing globals:
-// runtime, crypto, text, codec, fs, net, db, services, tui. Each is
-// registered via RegisterNamespaceFactory so per-Run constructions that
-// need the loop (Promise-returning bindings, TUI controller) get fresh
-// state every run. JSDoc lives in api_docs.go; the engine patches
-// runtime.argv onto the runtime namespace at Run time.
+// registerSurface wires sercon's ten top-level script-facing globals:
+// runtime, crypto, text, codec, fs, net, db, server, services, tui.
+// Each is registered via RegisterNamespaceFactory so per-Run
+// constructions that need the loop (Promise-returning bindings, TUI
+// controller, server listeners) get fresh state every run. JSDoc lives
+// in api_docs.go; the engine patches runtime.argv onto the runtime
+// namespace at Run time.
 func registerSurface(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("runtime", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
