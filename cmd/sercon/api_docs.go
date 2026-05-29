@@ -174,5 +174,6 @@ func serverDocs() map[string]string {
 		"https.listen": "Like server.http.listen plus required cert/key (file paths OR inline PEM strings). No autocert; no self-signed magic.",
 		"http.static":  "Static-file mount: server.http.static({dir, stripPrefix, index?, etag?}) → handler. Assign to a wildcard route (GET /assets/{rest...}). Internally stdlib http.FileServer with stripPrefix; ETag/Last-Modified/range requests work; no directory listing.",
 		"https.static": "Like server.http.static; same options.",
+		"smtp.listen":  "Bind an SMTP listener: server.smtp.listen({port, hostname?, handlers: {onMail, onRcpt, onData}, auth?, starttls?, allowInsecureAuth?, maxMessageBytes?, maxRecipients?, sessionTimeout?}) → handle with .address, .close(), .stopped Promise. Handlers receive (envelope, …) per stage; return true/undefined to accept, false to reject, a string for a 550 reason, throw for 451 temp-fail. onData receives a parsed Message with text/html bodies, attachments, and raw bytes.",
 	}
 }
