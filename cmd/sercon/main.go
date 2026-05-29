@@ -35,7 +35,7 @@ func main() {
 
 func run(args []string) int {
 	// Split the raw args at the first standalone "--": everything after it
-	// is the user argument vector handed to scripts as Sercon.argv[2:]. We
+	// is the user argument vector handed to scripts as runtime.argv[2:]. We
 	// do this before flag parsing because Go's flag package stops at the
 	// first positional token and would surface "--" as a bogus script path.
 	var userArgs []string

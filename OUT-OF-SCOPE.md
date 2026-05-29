@@ -37,8 +37,10 @@ the situation changes.
 ### Tooling / developer experience
 
 - **Editor autocomplete wiring (VSCode / Zed / any tsserver editor).**
-  The pieces already exist: `sercon -emit-dts` emits `declare const api`
-  as an ambient global with JSDoc on every member, so any TypeScript
+  The pieces already exist: `sercon -emit-dts` emits the top-level globals
+  (`runtime`, `fs`, `http`, `net`, `db`, `crypto`, `text`, `codec`,
+  `services`, `tui`, …) as ambient `declare const` blocks with JSDoc on
+  every member, so any TypeScript
   language-server-backed editor (VSCode, Zed, Neovim+coc, Sublime LSP,
   …) gives completion + hover docs once the `.d.ts` is in its program.
   No per-editor plugin needed. The gap is the *glue* that makes editors
@@ -52,14 +54,14 @@ the situation changes.
   fallback. **Library:** stdlib only (file emit already exists).
 ### Databases
 
-`api.db.sqlite` already proves the pattern: `database/sql` + a pure-Go
+`db.sqlite` already proves the pattern: `database/sql` + a pure-Go
 driver + an `open()`→handle shape (`exec` / `query` / `queryValue`,
 see `cmd/sercon/api_sqlite.go`). Every other SQL engine below is the
 same handle wired to a different `database/sql` driver and a DSN, so
 the marginal cost per engine is small. Open question to settle once
-(not blocking): one DSN-driven `api.db.open(driver, dsn)` vs. a
-sibling namespace per engine inside `api.db` (`api.db.mysql` /
-`api.db.postgres` / …). All drivers named are **pure Go (no cgo)**.
+(not blocking): one DSN-driven `db.open(driver, dsn)` vs. a
+sibling namespace per engine inside `db` (`db.mysql` /
+`db.postgres` / …). All drivers named are **pure Go (no cgo)**.
 
 - **MySQL / MariaDB.** One driver covers both (MariaDB speaks the
   MySQL wire protocol). **Library:** `github.com/go-sql-driver/mysql`
@@ -79,12 +81,12 @@ sibling namespace per engine inside `api.db` (`api.db.mysql` /
 ## Moderate
 
 Every other Moderate item shipped across v0.5.0 – v0.5.30 (the
-`.d.ts` JSDoc generator, `api.text.preg` / `api.text.preg2`, the
-full `api.crypto.jwt` + `api.crypto.encrypt` crypto surfaces,
-barcode decode + quiet-zone, `api.net.http.request`, the
-`api.net.probe` family, `api.net.netstatus`, `api.net.browser`,
-`api.db.sqlite`, `api.db.redis` / `api.db.memcached` /
-`api.db.ldap` / `api.db.dict`, `api.tools.ai`, the `--watch` CLI
+`.d.ts` JSDoc generator, `text.preg` / `text.preg2`, the
+full `crypto.jwt` + `crypto.encrypt` crypto surfaces,
+barcode decode + quiet-zone, `net.http.request`, the
+`net.probe` family, `net.netstatus`, `net.browser`,
+`db.sqlite`, `db.redis` / `db.memcached` /
+`db.ldap` / `db.dict`, `services.ai`, the `--watch` CLI
 flag with module-graph invalidation, the `Options.ModuleLoader`
 hook, and robust import parsing — all originally shipped under flat
 paths and re-bucketed under v0.8.0's 9-category surface). The
@@ -93,7 +95,7 @@ remaining open items:
 ### Encoding / decoding / barcodes
 
 - **PDF417 decoder.** v0.5.4 shipped what is now
-  `api.format.barcode.decode` over gozxing, which doesn't cover
+  `codec.barcode.decode` over gozxing, which doesn't cover
   PDF417 (the encoder still works via boombuler). A pure-Go PDF417
   reader would close the symmetry. No obvious maintained library
   exists — porting ZXing's Java PDF417 reader would be the realistic
@@ -101,11 +103,11 @@ remaining open items:
 
 ### Networking — clients & raw sockets
 
-Today's `api.net.probe.*` family is **connect-probe** oriented, not
+Today's `net.probe.*` family is **connect-probe** oriented, not
 a general socket surface (see `cmd/sercon/api_probe.go`). The gap is
 read/write client sockets exposed to scripts.
 
-- **TCP client sockets.** `api.net.probe.tcp` only reports
+- **TCP client sockets.** `net.probe.tcp` only reports
   reachability / latency; a real client would expose a connection
   handle with `write` / `read` (or a data callback) and `close`.
   **Library:** stdlib `net`. Moderate for the usual reason — a
@@ -113,14 +115,14 @@ read/write client sockets exposed to scripts.
   dial itself.
 - **UDP client sockets.** No binding today. **Library:** stdlib
   `net` (`net.DialUDP` / `ListenUDP` for the reply socket).
-- **ICMP client.** `api.net.probe.ping` already does an ICMP echo
+- **ICMP client.** `net.probe.ping` already does an ICMP echo
   round trip; a general send/receive ICMP surface (other message
   types, custom payloads) is the extension. **Library:**
   `golang.org/x/net/icmp` (pure Go), but raw ICMP sockets need
   elevated privileges on most platforms — worth noting in the API.
 - **General Go `net` access.** Direct dial / lookup / interface
   enumeration primitives beyond the curated probes. Mostly already
-  covered piecemeal by `api.net.*`; promote only if a script needs
+  covered piecemeal by `net.*`; promote only if a script needs
   raw access the probe family doesn't expose.
 
 
@@ -180,9 +182,9 @@ in Hard.
   is the crux.
 - **Client + server for the common internet protocols.** Umbrella
   goal: broad protocol coverage on both sides. Clients already ship
-  for several (`api.net.probe.{dns,tls,ntp,whois,smtp,wss}`,
-  `api.net.http`, plus `api.db.redis` / `api.db.memcached` /
-  `api.db.ldap` / `api.db.dict`); the gaps are server-side
+  for several (`net.probe.{dns,tls,ntp,whois,smtp,wss}`,
+  `net.http`, plus `db.redis` / `db.memcached` /
+  `db.ldap` / `db.dict`); the gaps are server-side
   counterparts and additional protocols (e.g. FTP, IMAP / POP3,
   MQTT). Rated Hard for the aggregate scope, not any single
   protocol — promote individual protocols as they're actually needed
@@ -192,7 +194,7 @@ in Hard.
 
 `agent-browser` is recon's headless-Chrome driver. The recon script
 bindings are extensive and worth a dedicated namespace
-(e.g. `api.tools.agentBrowser.*` — the `api.tools.*` bucket already
+(e.g. `services.agentBrowser.*` — the `services.*` bucket already
 holds the external-CLI wrappers like git, gh, ai). All of these
 require the `agent-browser` CLI on `PATH`; gate calls on an
 `agentBrowser.available` boolean and surface a clean error otherwise.

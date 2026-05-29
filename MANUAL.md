@@ -501,7 +501,7 @@ The `api` global no longer exists; reading it throws a
 `ReferenceError`. The `Sercon` global is also gone.
 
 A mechanical sed pass over your scripts handles the prefix drop and the
-three renames — see the `CHANGELOG.md` `[Unreleased]` "Changed" entry
+three renames — see the `CHANGELOG.md` `[0.9.0]` "Changed" entry
 for a sketch.
 
 ### `runtime`

@@ -40,7 +40,7 @@ Promises, `setTimeout`, and `require` come from [goja_nodejs](https://github.com
 go build -o sercon ./cmd/sercon
 
 cat > hello.ts <<'EOF'
-api.log("hello", await api.http.get("https://example.com").then(r => r.status));
+log("hello", await http.get("https://example.com").then(r => r.status));
 EOF
 
 ./sercon hello.ts
