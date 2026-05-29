@@ -80,10 +80,12 @@ func runServe(args []string) int {
 	// so re-running runServe in the same process (e.g. tests) starts clean.
 	servePortOverride = *portOverride
 	serveAccessLogger = stderrAccessLogger
+	serveSMTPLogger = smtpStderrLogger
 	serveReadyWriter = os.Stdout
 	defer func() {
 		servePortOverride = 0
 		serveAccessLogger = nil
+		serveSMTPLogger = nil
 		serveReadyWriter = nil
 	}()
 
@@ -136,4 +138,20 @@ func runServe(args []string) int {
 func stderrAccessLogger(remote, method, path string, status int, dur time.Duration) {
 	fmt.Fprintf(os.Stderr, "%s %s %s %s %d %dµs\n",
 		time.Now().UTC().Format(time.RFC3339), remote, method, path, status, dur.Microseconds())
+}
+
+// smtpStderrLogger writes one per-stage SMTP log line to stderr.
+// Format: ts remote STAGE detail ACCEPTED|REJECTED durµs
+func smtpStderrLogger(remote, stage, detail string, accepted bool, dur time.Duration) {
+	verdict := "ACCEPTED"
+	if !accepted {
+		verdict = "REJECTED"
+	}
+	if detail == "" {
+		fmt.Fprintf(os.Stderr, "%s %s %s %s %dµs\n",
+			time.Now().UTC().Format(time.RFC3339), remote, stage, verdict, dur.Microseconds())
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s %s %s %s %s %dµs\n",
+		time.Now().UTC().Format(time.RFC3339), remote, stage, detail, verdict, dur.Microseconds())
 }
