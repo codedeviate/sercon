@@ -73,15 +73,7 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 		}
 		out := pickFallbackOutput()
 		if isTTY(os.Stdout) && out == os.Stdout {
-			screen, err := tcell.NewScreen()
-			if err != nil {
-				throw("tui.layout: " + err.Error())
-			}
-			if err := screen.Init(); err != nil {
-				throw("tui.layout: " + err.Error())
-			}
-			if err := c.StartScreen(screen); err != nil {
-				screen.Fini()
+			if err := startControllerScreen(c); err != nil {
 				throw("tui.layout: " + err.Error())
 			}
 		} else {
@@ -137,6 +129,36 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 		"layout": layout,
 		"pane":   pane,
 	}
+}
+
+// tuiNewScreen creates the tcell screen for the TTY path. It is a package
+// var so tests can substitute an Init-counting screen to guard the
+// single-Init contract (see startControllerScreen).
+var tuiNewScreen = tcell.NewScreen
+
+// startControllerScreen creates a tcell screen and hands it to the
+// Controller for the TTY path.
+//
+// It deliberately does NOT call screen.Init(): Controller.StartScreen
+// builds a tview.Application via SetScreen, and SetScreen initialises the
+// screen exactly once (its doc even notes "Init() need not be called on
+// the screen"). Calling Init() here as well double-initialises the tcell
+// tty — tcell's tty.Start runs term.MakeRaw, which returns the termios as
+// it was *before* the call, so the second Init saves the already-raw
+// state as the restore target. The single Fini() on teardown then
+// restores the terminal to raw mode instead of cooked, leaving it with no
+// echo and Ctrl-C delivered as a keystroke. That was the v0.11.0 bug where
+// a second `tui` run hung and only killing the terminal recovered it.
+func startControllerScreen(c *tui.Controller) error {
+	screen, err := tuiNewScreen()
+	if err != nil {
+		return err
+	}
+	if err := c.StartScreen(screen); err != nil {
+		screen.Fini()
+		return err
+	}
+	return nil
 }
 
 // activeController holds the TUI controller for the current Run.

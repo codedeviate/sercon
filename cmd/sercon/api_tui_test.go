@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/gdamore/tcell/v2"
+
 	"github.com/codedeviate/sercon/pkg/scriptengine"
+	"github.com/codedeviate/sercon/pkg/scriptengine/tui"
 )
 
 // In non-TTY mode the binding routes pane writes to the fallback writer.
@@ -143,4 +147,47 @@ try {
 			t.Fatalf("run: %v", err)
 		}
 	})
+}
+
+// initCountingScreen wraps a SimulationScreen and counts Init calls.
+type initCountingScreen struct {
+	tcell.SimulationScreen
+	inits int32
+}
+
+func (s *initCountingScreen) Init() error {
+	atomic.AddInt32(&s.inits, 1)
+	return s.SimulationScreen.Init()
+}
+
+// TestStartControllerScreen_InitsScreenExactlyOnce guards against the
+// v0.11.0 double-init bug: startControllerScreen must NOT call screen.Init()
+// itself — Controller.StartScreen → tview SetScreen inits it once. Two
+// Inits make tcell save the already-raw termios as the restore state, so
+// Fini() leaves the terminal in raw mode and the next TUI run hangs.
+func TestStartControllerScreen_InitsScreenExactlyOnce(t *testing.T) {
+	cs := &initCountingScreen{SimulationScreen: tcell.NewSimulationScreen("")}
+	orig := tuiNewScreen
+	tuiNewScreen = func() (tcell.Screen, error) { return cs, nil }
+	defer func() { tuiNewScreen = orig }()
+
+	root, err := tui.ParseLayout(map[string]any{"rows": []any{
+		map[string]any{"name": "a"},
+		map[string]any{"name": "b"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := startControllerScreen(c); err != nil {
+		t.Fatalf("startControllerScreen: %v", err)
+	}
+	c.Stop()
+
+	if n := atomic.LoadInt32(&cs.inits); n != 1 {
+		t.Fatalf("screen Init called %d times, want exactly 1 (double-init leaves the terminal in raw mode after teardown)", n)
+	}
 }
