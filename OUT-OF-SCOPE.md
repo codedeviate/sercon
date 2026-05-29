@@ -50,24 +50,16 @@ the situation changes.
   - optionally an `sercon init <dir>` helper that drops both in.
   Per-file `/// <reference path="./api.d.ts" />` is the no-config
   fallback. **Library:** stdlib only (file emit already exists).
-- **Group the completion list with `@category` JSDoc tags
-  (non-breaking).** The first level of `api.` is ~30 namespaces wide, so
-  completion dumps a long flat list. Tagging groups by category in the
-  emitted JSDoc lets editors cluster them visually without renaming
-  anything. A cheap discoverability win that stops short of the breaking
-  re-nest under Hard (see "Script API ergonomics"). **Library:** none —
-  a tweak to the d.ts emitter (`dts.go`) + `api_docs.go` summaries.
-
 ### Databases
 
-`api.sqlite` already proves the pattern: `database/sql` + a pure-Go
+`api.db.sqlite` already proves the pattern: `database/sql` + a pure-Go
 driver + an `open()`→handle shape (`exec` / `query` / `queryValue`,
 see `cmd/sercon/api_sqlite.go`). Every other SQL engine below is the
 same handle wired to a different `database/sql` driver and a DSN, so
 the marginal cost per engine is small. Open question to settle once
 (not blocking): one DSN-driven `api.db.open(driver, dsn)` vs. a
-namespace per engine (`api.mysql` / `api.postgres` / …). All drivers
-named are **pure Go (no cgo)**.
+sibling namespace per engine inside `api.db` (`api.db.mysql` /
+`api.db.postgres` / …). All drivers named are **pure Go (no cgo)**.
 
 - **MySQL / MariaDB.** One driver covers both (MariaDB speaks the
   MySQL wire protocol). **Library:** `github.com/go-sql-driver/mysql`
@@ -87,39 +79,43 @@ named are **pure Go (no cgo)**.
 ## Moderate
 
 Every other Moderate item shipped across v0.5.0 – v0.5.30 (the
-`.d.ts` JSDoc generator, `api.preg` / `api.preg2`, the full `api.jwt`
-+ `api.encrypt` crypto surfaces, barcode decode + quiet-zone,
-`api.http.request`, the `api.net` probe family, `api.netstatus`,
-`api.browser`, `api.sqlite`, `api.redis` / `api.memcached` /
-`api.ldap` / `api.dict`, `api.ai`, the `--watch` CLI flag with
-module-graph invalidation, the `Options.ModuleLoader` hook, and
-robust import parsing). The remaining open items:
+`.d.ts` JSDoc generator, `api.text.preg` / `api.text.preg2`, the
+full `api.crypto.jwt` + `api.crypto.encrypt` crypto surfaces,
+barcode decode + quiet-zone, `api.net.http.request`, the
+`api.net.probe` family, `api.net.netstatus`, `api.net.browser`,
+`api.db.sqlite`, `api.db.redis` / `api.db.memcached` /
+`api.db.ldap` / `api.db.dict`, `api.tools.ai`, the `--watch` CLI
+flag with module-graph invalidation, the `Options.ModuleLoader`
+hook, and robust import parsing — all originally shipped under flat
+paths and re-bucketed under v0.8.0's 9-category surface). The
+remaining open items:
 
 ### Encoding / decoding / barcodes
 
-- **PDF417 decoder.** v0.5.4 shipped `api.barcode.decode` over
-  gozxing, which doesn't cover PDF417 (the encoder still works via
-  boombuler). A pure-Go PDF417 reader would close the symmetry. No
-  obvious maintained library exists — porting ZXing's Java PDF417
-  reader would be the realistic path. Defer until someone actually
-  needs PDF417 round-tripping.
+- **PDF417 decoder.** v0.5.4 shipped what is now
+  `api.format.barcode.decode` over gozxing, which doesn't cover
+  PDF417 (the encoder still works via boombuler). A pure-Go PDF417
+  reader would close the symmetry. No obvious maintained library
+  exists — porting ZXing's Java PDF417 reader would be the realistic
+  path. Defer until someone actually needs PDF417 round-tripping.
 
 ### Networking — clients & raw sockets
 
-Today's `api.net.*` family is **connect-probe** oriented, not a
-general socket surface (see `cmd/sercon/api_net.go`). The gap is
+Today's `api.net.probe.*` family is **connect-probe** oriented, not
+a general socket surface (see `cmd/sercon/api_probe.go`). The gap is
 read/write client sockets exposed to scripts.
 
-- **TCP client sockets.** `api.net.tcp` only reports reachability /
-  latency; a real client would expose a connection handle with
-  `write` / `read` (or a data callback) and `close`. **Library:**
-  stdlib `net`. Moderate for the usual reason — a stateful handle
-  with lifetime and event-loop concerns, not the dial itself.
+- **TCP client sockets.** `api.net.probe.tcp` only reports
+  reachability / latency; a real client would expose a connection
+  handle with `write` / `read` (or a data callback) and `close`.
+  **Library:** stdlib `net`. Moderate for the usual reason — a
+  stateful handle with lifetime and event-loop concerns, not the
+  dial itself.
 - **UDP client sockets.** No binding today. **Library:** stdlib
   `net` (`net.DialUDP` / `ListenUDP` for the reply socket).
-- **ICMP client.** `api.net.ping` already does an ICMP echo round
-  trip; a general send/receive ICMP surface (other message types,
-  custom payloads) is the extension. **Library:**
+- **ICMP client.** `api.net.probe.ping` already does an ICMP echo
+  round trip; a general send/receive ICMP surface (other message
+  types, custom payloads) is the extension. **Library:**
   `golang.org/x/net/icmp` (pure Go), but raw ICMP sockets need
   elevated privileges on most platforms — worth noting in the API.
 - **General Go `net` access.** Direct dial / lookup / interface
@@ -151,21 +147,6 @@ read/write client sockets exposed to scripts.
   and respects the returned Go type's methods is open work.
   **Approach:** goja `Runtime.ToValue` + prototype wiring + reflect; no
   drop-in library exists for this.
-
-### Script API ergonomics
-
-- **Re-nest the `api` surface into category tiers (breaking).** Today
-  everything hangs off one ~30-wide root (`api.<group>.<fn>`), so finding
-  the right group means scanning a long list. Folding groups into a
-  handful of category buckets (e.g. `api.crypto.{hash,jwt,encrypt}`,
-  `api.data.{json,diff,jq}`, `api.net.{…}`, `api.sys.{exec,path,…}`)
-  shrinks the first level to ~6–8 and makes the taxonomy self-guiding.
-  Rated Hard for **design**, not mechanics: it renames the public
-  script-facing surface, so it breaks every example, the d.ts golden,
-  MANUAL.md, and any user script, and the bucket taxonomy itself needs
-  deciding up front (brainstorm before touching code). The non-breaking
-  half-measure — `@category` tags for completion grouping — lives under
-  Easy. **Approach:** engine/CLI internals; no library.
 
 ### Networking — servers & broad protocol coverage
 
@@ -199,19 +180,21 @@ in Hard.
   is the crux.
 - **Client + server for the common internet protocols.** Umbrella
   goal: broad protocol coverage on both sides. Clients already ship
-  for several (`api.net.{dns,tls,ntp,whois,smtp,wss}`, `api.http`,
-  plus `api.redis` / `api.memcached` / `api.ldap` / `api.dict`); the
-  gaps are server-side counterparts and additional protocols
-  (e.g. FTP, IMAP / POP3, MQTT). Rated Hard for the aggregate scope,
-  not any single protocol — promote individual protocols as they're
-  actually needed rather than tackling the umbrella wholesale.
+  for several (`api.net.probe.{dns,tls,ntp,whois,smtp,wss}`,
+  `api.net.http`, plus `api.db.redis` / `api.db.memcached` /
+  `api.db.ldap` / `api.db.dict`); the gaps are server-side
+  counterparts and additional protocols (e.g. FTP, IMAP / POP3,
+  MQTT). Rated Hard for the aggregate scope, not any single
+  protocol — promote individual protocols as they're actually needed
+  rather than tackling the umbrella wholesale.
 
 ### Agent-browser automation
 
 `agent-browser` is recon's headless-Chrome driver. The recon script
 bindings are extensive and worth a dedicated namespace
-(e.g. `api.agentBrowser.*`). All of these require the
-`agent-browser` CLI on `PATH`; gate calls on an
+(e.g. `api.tools.agentBrowser.*` — the `api.tools.*` bucket already
+holds the external-CLI wrappers like git, gh, ai). All of these
+require the `agent-browser` CLI on `PATH`; gate calls on an
 `agentBrowser.available` boolean and surface a clean error otherwise.
 The hard rating reflects the orchestration scope, not any single call.
 
