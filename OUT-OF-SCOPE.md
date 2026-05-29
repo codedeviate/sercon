@@ -172,11 +172,12 @@ sub-spec cycle built on the existing foundation.
   goal: broad protocol coverage on both sides. Clients already ship
   for several (`net.probe.{dns,tls,ntp,whois,smtp,wss}`,
   `net.http`, plus `db.redis` / `db.memcached` /
-  `db.ldap` / `db.dict`); HTTP/HTTPS server lands in v0.10.0; SMTP,
-  IMAP, FTP, and POP3 servers are planned as separate sub-spec
-  cycles using the v0.10.0 foundation. Additional protocols (e.g.
-  MQTT) and broader client coverage stay rated Hard for the
-  aggregate scope — promote individual protocols as they're
+  `db.ldap` / `db.dict`); the HTTP/HTTPS server (with router,
+  middleware, static-file mount, and WebSocket upgrade) shipped in
+  v0.10.0; SMTP, IMAP, FTP, and POP3 servers are planned as
+  separate sub-spec cycles using the v0.10.0 foundation. Additional
+  protocols (e.g. MQTT) and broader client coverage stay rated Hard
+  for the aggregate scope — promote individual protocols as they're
   actually needed.
 
 ### Agent-browser automation
