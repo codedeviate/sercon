@@ -11,9 +11,9 @@ import (
 )
 
 // TestTopLevelGlobals_Shape asserts the script-facing surface is exactly
-// the nine reserved top-level globals — and crucially that `api` is
+// the ten reserved top-level globals — and crucially that `api` is
 // NOT present. Guards against accidental re-introduction of the old
-// wrapper or drift adding a 10th reserved name.
+// wrapper or drift adding an 11th reserved name.
 func TestTopLevelGlobals_Shape(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := registerSurface(eng); err != nil {
@@ -43,7 +43,7 @@ func TestTopLevelGlobals_Shape(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := eng.Run(context.Background(), "shape.ts", `
-const wanted = ["crypto", "db", "codec", "fs", "net", "runtime", "text", "services", "tui"];
+const wanted = ["crypto", "db", "codec", "fs", "net", "runtime", "text", "services", "tui", "server"];
 const present = wanted.filter(n => typeof globalThis[n] !== "undefined");
 __recordKeys(present);
 __recordApi(typeof globalThis["api"] === "undefined" ? undefined : globalThis["api"]);
@@ -52,7 +52,7 @@ __recordApi(typeof globalThis["api"] === "undefined" ? undefined : globalThis["a
 		t.Fatalf("run: %v", err)
 	}
 	sort.Strings(keys)
-	want := []string{"codec", "crypto", "db", "fs", "net", "runtime", "services", "text", "tui"}
+	want := []string{"codec", "crypto", "db", "fs", "net", "runtime", "server", "services", "text", "tui"}
 	if len(keys) != len(want) {
 		t.Fatalf("reserved globals: got %v, want %v", keys, want)
 	}

@@ -38,6 +38,23 @@ func NewLoopCallable(loop *eventloop.EventLoop, fn goja.Callable) *LoopCallable 
 	return &LoopCallable{fn: fn, loop: loop}
 }
 
+// CallOnLoop invokes the wrapped callable directly without scheduling.
+// The caller MUST already be running on the event loop (e.g. inside a
+// RunOnLoop callback or a binding called from JS). Using Call() while
+// already on the loop deadlocks because Call enqueues a new RunOnLoop and
+// waits for it, but the loop is single-threaded and can't process the new
+// job until the current callback returns.
+//
+// vm is the loop's runtime (the one received by the enclosing RunOnLoop
+// callback). args are the JS arguments to pass; build them with vm.ToValue
+// or by passing already-loop-bound goja.Values.
+func (lc *LoopCallable) CallOnLoop(vm *goja.Runtime, args ...goja.Value) (goja.Value, error) {
+	if lc == nil || lc.fn == nil {
+		return nil, errors.New("scriptengine: LoopCallable.CallOnLoop on uninitialised value")
+	}
+	return lc.fn(goja.Undefined(), args...)
+}
+
 // Call schedules a callback on the loop, builds the arg list on the loop
 // via buildArgs, invokes the wrapped callable, and returns the result to
 // the caller goroutine. Blocks until the loop callback completes.

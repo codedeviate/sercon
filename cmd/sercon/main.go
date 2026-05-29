@@ -381,6 +381,11 @@ func registerSurface(e *scriptengine.Engine) error {
 	}); err != nil {
 		return err
 	}
+	if err := e.RegisterNamespaceFactory("server", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return serverNamespace(vm, loop, e)
+	}); err != nil {
+		return err
+	}
 	// Decorate the registered surface with JSDoc strings so the emitted
 	// .d.ts grows useful editor hover. Docs are gathered in api_docs.go
 	// (centralised so lockstep updates touch one file).
@@ -402,6 +407,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocs("services", servicesDocs())
 	e.SetDocs("tui", "Multi-pane terminal UI: layout, pane, write, focus.")
 	e.SetMemberDocs("tui", tuiDocs())
+	e.SetDocs("server", "Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.")
+	e.SetMemberDocs("server", serverDocs())
 	return nil
 }
 

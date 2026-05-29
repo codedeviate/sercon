@@ -1,0 +1,696 @@
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
+)
+
+// bridgeProg is the compiled JS bridge used by bridgeHandlerResult to
+// chain .then() onto a handler-returned Promise. *goja.Program is safe
+// to share across runtimes (per goja docs), so we compile once at
+// package init and reuse for every request. Avoids per-request
+// goja.Compile cost on the dispatch hot-path.
+var bridgeProg = goja.MustCompile("internal:bridgeHandlerResult",
+	`(p, onSettle, onReject) => p.then(onSettle, onReject)`, false)
+
+// httpServerMembers builds the {listen} map exposed as server.http or
+// server.https. isTLS picks the listener path; otherwise the two are
+// identical (same handler dispatch, same route compilation).
+func httpServerMembers(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, isTLS bool) map[string]any {
+	return map[string]any{
+		"listen": func(call goja.FunctionCall) goja.Value {
+			return httpListen(vm, loop, eng, isTLS, call)
+		},
+		// "static" filled in by Task 3.
+	}
+}
+
+// httpListen is the entry called as `server.http.listen({...})` from JS.
+// Synchronously starts the listener (so bind errors throw immediately),
+// then returns a server handle object with close() and a stopped Promise.
+func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, isTLS bool, call goja.FunctionCall) goja.Value {
+	opts := call.Argument(0)
+	if opts == nil || goja.IsUndefined(opts) {
+		panic(vm.NewTypeError("server.http.listen: options object required"))
+	}
+	optsObj := opts.ToObject(vm)
+
+	port := int(optsObj.Get("port").ToInteger())
+	if port == 0 {
+		panic(vm.NewTypeError("server.http.listen: `port` is required"))
+	}
+	host := "0.0.0.0"
+	if v := optsObj.Get("host"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		host = v.String()
+	}
+
+	// Routes
+	routesVal := optsObj.Get("routes")
+	if routesVal == nil || goja.IsUndefined(routesVal) {
+		panic(vm.NewTypeError("server.http.listen: `routes` is required"))
+	}
+	routesObj := routesVal.ToObject(vm)
+
+	// Global middleware
+	var globalMW []*scriptengine.LoopCallable
+	if v := optsObj.Get("use"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		arr := v.ToObject(vm)
+		n := int(arr.Get("length").ToInteger())
+		for i := 0; i < n; i++ {
+			fn, ok := goja.AssertFunction(arr.Get(fmt.Sprintf("%d", i)))
+			if !ok {
+				panic(vm.NewTypeError(fmt.Sprintf("server.http.listen: use[%d] is not a function", i)))
+			}
+			globalMW = append(globalMW, scriptengine.NewLoopCallable(loop, fn))
+		}
+	}
+
+	// Compile routes into a ServeMux
+	mux := http.NewServeMux()
+	for _, key := range routesObj.Keys() {
+		pattern := key
+		routeVal := routesObj.Get(key)
+		handler, perRouteMW, err := compileRoute(vm, loop, routeVal)
+		if err != nil {
+			panic(vm.NewTypeError(fmt.Sprintf("server.http.listen: route %q: %v", pattern, err)))
+		}
+		chain := append([]*scriptengine.LoopCallable{}, globalMW...)
+		chain = append(chain, perRouteMW...)
+		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+			dispatchHandler(loop, chain, handler, w, r)
+		})
+	}
+
+	// TLS bits
+	var tlsConfig *tls.Config
+	if isTLS {
+		certVal := optsObj.Get("cert")
+		keyVal := optsObj.Get("key")
+		if certVal == nil || keyVal == nil || goja.IsUndefined(certVal) || goja.IsUndefined(keyVal) {
+			panic(vm.NewTypeError("server.https.listen: `cert` and `key` are required"))
+		}
+		cert, err := loadCert(certVal.String(), keyVal.String())
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("server.https.listen: %w", err)))
+		}
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}
+	}
+
+	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	srv := &http.Server{
+		Addr:      addr,
+		Handler:   mux,
+		TLSConfig: tlsConfig,
+	}
+
+	// Bind synchronously so the script learns about port-in-use errors immediately.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		panic(vm.NewGoError(fmt.Errorf("server.listen %s: %w", addr, err)))
+	}
+	if isTLS {
+		ln = tls.NewListener(ln, tlsConfig)
+	}
+
+	// Hold the loop alive until close.
+	release := eng.HoldRun(fmt.Sprintf("server.http listen %s", addr))
+
+	stoppedPromise, stoppedResolve, _ := vm.NewPromise()
+	var serveErr atomic.Value // error
+	closed := atomic.Bool{}
+
+	go func() {
+		err := srv.Serve(ln)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr.Store(err)
+		}
+		// Schedule the Promise resolution on the loop.
+		loop.RunOnLoop(func(vm *goja.Runtime) {
+			if v := serveErr.Load(); v != nil {
+				e, _ := v.(error)
+				_ = stoppedResolve(vm.NewGoError(e))
+			} else {
+				_ = stoppedResolve(goja.Undefined())
+			}
+			release()
+		})
+	}()
+
+	// Server handle object.
+	handle := vm.NewObject()
+	_ = handle.Set("address", vm.ToValue(fmt.Sprintf("tcp/%s", ln.Addr().String())))
+	_ = handle.Set("stopped", stoppedPromise)
+	_ = handle.Set("close", func(call goja.FunctionCall) goja.Value {
+		if closed.Swap(true) {
+			return vm.ToValue(stoppedPromise) // already closing
+		}
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		go func() {
+			defer cancel()
+			_ = srv.Shutdown(shutdownCtx)
+			// stoppedResolve fires from the Serve goroutine above.
+		}()
+		return vm.ToValue(stoppedPromise)
+	})
+
+	return handle
+}
+
+// loadCert reads cert/key from disk OR from inline PEM strings (detected
+// by the presence of "-----BEGIN").
+func loadCert(certSrc, keySrc string) (tls.Certificate, error) {
+	if strings.HasPrefix(certSrc, "-----BEGIN") {
+		return tls.X509KeyPair([]byte(certSrc), []byte(keySrc))
+	}
+	return tls.LoadX509KeyPair(certSrc, keySrc)
+}
+
+// compileRoute turns a route value (bare function OR {use, handler} object)
+// into a LoopCallable + per-route middleware slice.
+func compileRoute(vm *goja.Runtime, loop *eventloop.EventLoop, val goja.Value) (*scriptengine.LoopCallable, []*scriptengine.LoopCallable, error) {
+	// Bare function form: (req, res) => …
+	if fn, ok := goja.AssertFunction(val); ok {
+		return scriptengine.NewLoopCallable(loop, fn), nil, nil
+	}
+	// Object form: { use: [...], handler: fn }
+	obj := val.ToObject(vm)
+	handlerVal := obj.Get("handler")
+	handlerFn, ok := goja.AssertFunction(handlerVal)
+	if !ok {
+		return nil, nil, errors.New("route value must be a function or {use, handler} object")
+	}
+	var mw []*scriptengine.LoopCallable
+	if useVal := obj.Get("use"); useVal != nil && !goja.IsUndefined(useVal) && !goja.IsNull(useVal) {
+		arr := useVal.ToObject(vm)
+		n := int(arr.Get("length").ToInteger())
+		for i := 0; i < n; i++ {
+			fn, ok := goja.AssertFunction(arr.Get(fmt.Sprintf("%d", i)))
+			if !ok {
+				return nil, nil, fmt.Errorf("route use[%d] is not a function", i)
+			}
+			mw = append(mw, scriptengine.NewLoopCallable(loop, fn))
+		}
+	}
+	return scriptengine.NewLoopCallable(loop, handlerFn), mw, nil
+}
+
+// responseState holds the in-flight HTTP response. Mutated by JS-side
+// res.* terminal methods; read by the goroutine after notify closes.
+type responseState struct {
+	mu        sync.Mutex
+	status    int
+	headers   http.Header
+	cookies   []*http.Cookie
+	body      []byte
+	contentTy string // content type to set if not already in headers
+	finalized bool
+	errored   bool
+	jsError   string // captured handler-thrown error
+	notify    chan struct{}
+
+	// upgrade is set by upgradeWebSocket; signals the writer goroutine
+	// to NOT write a regular response (the websocket library owns the
+	// connection after Hijack). Wired by Task 4.
+	upgrade bool
+}
+
+func newResponseState() *responseState {
+	return &responseState{
+		status:  200,
+		headers: http.Header{},
+		notify:  make(chan struct{}),
+	}
+}
+
+// markFinal flips finalized and closes notify. Idempotent — second call
+// is a no-op so JS terminal-twice produces a clean TypeError elsewhere.
+func (rs *responseState) markFinal() {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.finalized {
+		return
+	}
+	rs.finalized = true
+	close(rs.notify)
+}
+
+// isFinalized returns whether the response has been finalized. Takes the
+// lock so callers don't race against markFinal/markError. Cheaper than
+// holding the lock for a whole compound check.
+func (rs *responseState) isFinalized() bool {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	return rs.finalized
+}
+
+// markError records a handler-thrown error and finalizes.
+func (rs *responseState) markError(msg string) {
+	rs.mu.Lock()
+	if !rs.finalized {
+		rs.errored = true
+		rs.jsError = msg
+		rs.finalized = true
+		close(rs.notify)
+	}
+	rs.mu.Unlock()
+}
+
+// dispatchHandler is invoked from net/http's per-request goroutine. It
+// schedules a loop callback that builds req/res, invokes the middleware
+// chain + handler, and waits on res.notify for finalization (either via
+// a terminal call or via the handler-Promise's settlement).
+func dispatchHandler(loop *eventloop.EventLoop, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request) {
+	// Read body up front; small price for the simpler script API.
+	bodyBytes, _ := io.ReadAll(r.Body)
+	_ = r.Body.Close()
+
+	state := newResponseState()
+
+	// Compose middleware chain into a single LoopCallable-equivalent.
+	// At dispatch time we invoke from a single Schedule call: the loop
+	// callback builds req/res, then walks the chain by recursively
+	// invoking each middleware with a `next` function.
+	_, err := loopSchedule(loop, func(vm *goja.Runtime) (goja.Value, error) {
+		req := buildRequestObject(vm, r, bodyBytes)
+		res := buildResponseObject(vm, state)
+
+		// Middleware runner. Each level returns a Promise that settles when
+		// that level's chain (and everything beneath it) has finished its
+		// work. `next` returns this Promise so `await next()` in JS waits
+		// for the inner layers to complete — necessary for the documented
+		// "post-process" middleware semantic.
+		//
+		// State finalisation still flows through bridgeHandlerResult →
+		// markFinal/markError, which closes state.notify for the dispatcher
+		// goroutine. The level Promises are independent: they let JS see
+		// "the inner work is done"; the state machinery lets the Go side
+		// see "the response is ready to write".
+		//
+		// We are already inside a loop callback (loopSchedule), so use
+		// CallOnLoop on the LoopCallables — calling Call() here would
+		// re-enqueue onto the (single-threaded) loop and deadlock.
+		var runner func(idx int) goja.Value
+		runner = func(idx int) goja.Value {
+			if idx >= len(chain) {
+				// Final layer: invoke the handler.
+				result, err := handler.CallOnLoop(vm, req, res)
+				if err != nil {
+					state.markError(err.Error())
+					return rejectedPromise(vm, err)
+				}
+				return propagateResult(vm, result, state)
+			}
+			next := func(call goja.FunctionCall) goja.Value {
+				return runner(idx + 1)
+			}
+			result, err := chain[idx].CallOnLoop(vm, req, res, vm.ToValue(next))
+			if err != nil {
+				state.markError(err.Error())
+				return rejectedPromise(vm, err)
+			}
+			return propagateResult(vm, result, state)
+		}
+		runner(0)
+		return goja.Undefined(), nil
+	})
+	if err != nil {
+		state.markError(err.Error())
+	}
+
+	<-state.notify
+	writeResponse(w, state)
+}
+
+// bridgeHandlerResult chains a JS .then(onSettle, onReject) onto a
+// handler/middleware-returned value if it's a Promise. onSettle calls
+// state.markFinal (no-op if a terminal already fired); onReject calls
+// state.markError. If the value is not a Promise (sync return), and the
+// state is not yet finalized, mark final (→ 204).
+func bridgeHandlerResult(vm *goja.Runtime, result goja.Value, state *responseState) {
+	if result == nil || goja.IsUndefined(result) || goja.IsNull(result) {
+		if !state.isFinalized() {
+			state.markFinal()
+		}
+		return
+	}
+	exported := result.Export()
+	if promise, ok := exported.(*goja.Promise); ok {
+		// Goja's Promise carries Result() + State() but we cannot
+		// synchronously await it inside this loop callback. Attach a
+		// JS-side .then via the package-level bridgeProg to bridge.
+		thenVal, err := vm.RunProgram(bridgeProg)
+		if err != nil {
+			state.markError("internal: bridge run: " + err.Error())
+			return
+		}
+		thenFn, ok := goja.AssertFunction(thenVal)
+		if !ok {
+			state.markError("internal: bridge not callable")
+			return
+		}
+		onSettle := func(call goja.FunctionCall) goja.Value {
+			if !state.isFinalized() {
+				state.markFinal()
+			}
+			return goja.Undefined()
+		}
+		onReject := func(call goja.FunctionCall) goja.Value {
+			state.markError(call.Argument(0).String())
+			return goja.Undefined()
+		}
+		_, _ = thenFn(goja.Undefined(), vm.ToValue(promise), vm.ToValue(onSettle), vm.ToValue(onReject))
+		_ = exported
+		return
+	}
+	// Sync return; if not yet finalized, mark final (→ 204).
+	if !state.isFinalized() {
+		state.markFinal()
+	}
+}
+
+// propagateResult is the middleware-aware version of bridgeHandlerResult.
+// In addition to signalling state.notify (so the dispatcher writes the
+// response), it returns a Promise that JS callers can `await` to know
+// when this layer's work has completed. For sync returns it wraps in a
+// resolved Promise; for Promise returns it returns the original Promise
+// (which bridgeHandlerResult has already chained .then onto for state
+// finalisation).
+func propagateResult(vm *goja.Runtime, result goja.Value, state *responseState) goja.Value {
+	if result != nil && !goja.IsUndefined(result) && !goja.IsNull(result) {
+		if _, ok := result.Export().(*goja.Promise); ok {
+			bridgeHandlerResult(vm, result, state)
+			return result
+		}
+	}
+	if !state.isFinalized() {
+		state.markFinal()
+	}
+	promise, resolve, _ := vm.NewPromise()
+	_ = resolve(goja.Undefined())
+	return vm.ToValue(promise)
+}
+
+// rejectedPromise returns a JS Promise that is immediately rejected with
+// the given Go error. Used by the middleware runner when a level's
+// CallOnLoop returned a synchronous throw.
+func rejectedPromise(vm *goja.Runtime, err error) goja.Value {
+	promise, _, reject := vm.NewPromise()
+	_ = reject(vm.NewGoError(err))
+	return vm.ToValue(promise)
+}
+
+// loopSchedule runs fn on the loop and waits for it to complete. Mirrors
+// the LoopCallable.Call pattern but without a captured callable — caller
+// supplies the work directly.
+func loopSchedule(loop *eventloop.EventLoop, fn func(vm *goja.Runtime) (goja.Value, error)) (goja.Value, error) {
+	type result struct {
+		val goja.Value
+		err error
+	}
+	done := make(chan result, 1)
+	loop.RunOnLoop(func(vm *goja.Runtime) {
+		defer func() {
+			if r := recover(); r != nil {
+				done <- result{nil, fmt.Errorf("loopSchedule panic: %v", r)}
+			}
+		}()
+		v, err := fn(vm)
+		done <- result{v, err}
+	})
+	r := <-done
+	return r.val, r.err
+}
+
+// writeResponse copies state into the http.ResponseWriter and writes the body.
+func writeResponse(w http.ResponseWriter, state *responseState) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.upgrade {
+		// WebSocket already took over the connection; nothing to write here.
+		return
+	}
+	if state.errored {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprintln(w, "Internal Server Error")
+		return
+	}
+	// Apply queued cookies as Set-Cookie headers.
+	for _, c := range state.cookies {
+		http.SetCookie(w, c)
+	}
+	for k, vs := range state.headers {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+	if state.contentTy != "" && w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", state.contentTy)
+	}
+	status := state.status
+	if !state.finalized && status == 200 {
+		status = http.StatusNoContent
+	}
+	w.WriteHeader(status)
+	if len(state.body) > 0 {
+		_, _ = w.Write(state.body)
+	}
+}
+
+// buildRequestObject constructs the JS `req` from an http.Request. Field
+// names match the spec's Request type verbatim.
+func buildRequestObject(vm *goja.Runtime, r *http.Request, bodyBytes []byte) goja.Value {
+	req := vm.NewObject()
+	_ = req.Set("method", r.Method)
+	_ = req.Set("url", r.URL.String())
+	_ = req.Set("path", r.URL.Path)
+	_ = req.Set("remote", r.RemoteAddr)
+	// Query: Record<string, string[]>
+	query := vm.NewObject()
+	for k, vs := range r.URL.Query() {
+		_ = query.Set(k, vs)
+	}
+	_ = req.Set("query", query)
+	// Headers: lowercase keys, Record<string, string[]>
+	headers := vm.NewObject()
+	for k, vs := range r.Header {
+		_ = headers.Set(strings.ToLower(k), vs)
+	}
+	_ = req.Set("headers", headers)
+	// Params: stdlib http.ServeMux exposes path values via r.PathValue("name")
+	// but doesn't enumerate the pattern's named segments. For v0.10.0,
+	// populate params as an empty object; future enhancement may capture
+	// pattern names at compile time.
+	params := vm.NewObject()
+	_ = req.Set("params", params)
+	// Body
+	_ = req.Set("body", string(bodyBytes))
+	_ = req.Set("bodyBytes", vm.ToValue(bodyBytes))
+	// Cookies
+	cookies := vm.NewObject()
+	for _, c := range r.Cookies() {
+		_ = cookies.Set(c.Name, c.Value)
+	}
+	_ = req.Set("cookies", cookies)
+	return req
+}
+
+// buildResponseObject constructs the JS `res` builder. Methods mutate
+// the responseState; terminals call markFinal.
+func buildResponseObject(vm *goja.Runtime, state *responseState) *goja.Object {
+	res := vm.NewObject()
+	// Re-add `res` to its own methods so chaining returns the same object.
+	self := vm.ToValue(res)
+
+	// Each res.* method acquires state.mu exactly once: check finalized
+	// and mutate inside the same locked region (no TOCTOU window between
+	// the check and the write). Terminals unlock BEFORE calling
+	// state.markFinal — markFinal re-acquires the mutex itself, so calling
+	// it while still locked would deadlock.
+
+	_ = res.Set("status", func(call goja.FunctionCall) goja.Value {
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.status: response already finalized"))
+		}
+		state.status = int(call.Argument(0).ToInteger())
+		state.mu.Unlock()
+		return self
+	})
+	_ = res.Set("header", func(call goja.FunctionCall) goja.Value {
+		k := call.Argument(0).String()
+		v := call.Argument(1).String()
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.header: response already finalized"))
+		}
+		state.headers.Add(k, v)
+		state.mu.Unlock()
+		return self
+	})
+	_ = res.Set("cookie", func(call goja.FunctionCall) goja.Value {
+		c := buildCookie(vm, call)
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.cookie: response already finalized"))
+		}
+		state.cookies = append(state.cookies, c)
+		state.mu.Unlock()
+		return self
+	})
+
+	// Terminals.
+	_ = res.Set("json", func(call goja.FunctionCall) goja.Value {
+		raw, err := json.Marshal(call.Argument(0).Export())
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("res.json: %w", err)))
+		}
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.json: response already finalized"))
+		}
+		state.body = raw
+		state.contentTy = "application/json"
+		state.mu.Unlock()
+		state.markFinal()
+		return self
+	})
+	_ = res.Set("text", func(call goja.FunctionCall) goja.Value {
+		s := call.Argument(0).String()
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.text: response already finalized"))
+		}
+		state.body = []byte(s)
+		state.contentTy = "text/plain; charset=utf-8"
+		state.mu.Unlock()
+		state.markFinal()
+		return self
+	})
+	_ = res.Set("html", func(call goja.FunctionCall) goja.Value {
+		s := call.Argument(0).String()
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.html: response already finalized"))
+		}
+		state.body = []byte(s)
+		state.contentTy = "text/html; charset=utf-8"
+		state.mu.Unlock()
+		state.markFinal()
+		return self
+	})
+	_ = res.Set("bytes", func(call goja.FunctionCall) goja.Value {
+		exported := call.Argument(0).Export()
+		bs, ok := exported.([]byte)
+		if !ok {
+			panic(vm.NewTypeError("res.bytes: expected Uint8Array"))
+		}
+		ct := "application/octet-stream"
+		if len(call.Arguments) > 1 {
+			ct = call.Argument(1).String()
+		}
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.bytes: response already finalized"))
+		}
+		state.body = bs
+		state.contentTy = ct
+		state.mu.Unlock()
+		state.markFinal()
+		return self
+	})
+	_ = res.Set("empty", func(call goja.FunctionCall) goja.Value {
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.empty: response already finalized"))
+		}
+		state.body = nil
+		state.mu.Unlock()
+		state.markFinal()
+		return self
+	})
+	_ = res.Set("redirect", func(call goja.FunctionCall) goja.Value {
+		loc := call.Argument(0).String()
+		code := http.StatusFound
+		if len(call.Arguments) > 1 {
+			code = int(call.Argument(1).ToInteger())
+		}
+		state.mu.Lock()
+		if state.finalized {
+			state.mu.Unlock()
+			panic(vm.NewTypeError("res.redirect: response already finalized"))
+		}
+		state.status = code
+		state.headers.Set("Location", loc)
+		state.mu.Unlock()
+		state.markFinal()
+		return self
+	})
+	return res
+}
+
+// buildCookie turns a JS call(name, value, opts?) into an http.Cookie.
+func buildCookie(vm *goja.Runtime, call goja.FunctionCall) *http.Cookie {
+	c := &http.Cookie{
+		Name:  call.Argument(0).String(),
+		Value: call.Argument(1).String(),
+	}
+	if len(call.Arguments) >= 3 {
+		opts := call.Argument(2).ToObject(vm)
+		if v := opts.Get("domain"); v != nil && !goja.IsUndefined(v) {
+			c.Domain = v.String()
+		}
+		if v := opts.Get("path"); v != nil && !goja.IsUndefined(v) {
+			c.Path = v.String()
+		}
+		if v := opts.Get("maxAge"); v != nil && !goja.IsUndefined(v) {
+			c.MaxAge = int(v.ToInteger())
+		}
+		if v := opts.Get("expires"); v != nil && !goja.IsUndefined(v) {
+			c.Expires = time.UnixMilli(v.ToInteger())
+		}
+		if v := opts.Get("secure"); v != nil && !goja.IsUndefined(v) {
+			c.Secure = v.ToBoolean()
+		}
+		if v := opts.Get("httpOnly"); v != nil && !goja.IsUndefined(v) {
+			c.HttpOnly = v.ToBoolean()
+		}
+		if v := opts.Get("sameSite"); v != nil && !goja.IsUndefined(v) {
+			switch strings.ToLower(v.String()) {
+			case "strict":
+				c.SameSite = http.SameSiteStrictMode
+			case "lax":
+				c.SameSite = http.SameSiteLaxMode
+			case "none":
+				c.SameSite = http.SameSiteNoneMode
+			}
+		}
+	}
+	return c
+}
