@@ -114,7 +114,13 @@ lint:
 	fi
 
 demo: build
-	@./$(BIN) $(DEMO_SCRIPTS)
+	@# -timeout 90s gives headroom above ai.ts's 60s inner send timeout: the
+	@# AI CLI (claude -p, …) can run slow when another session is active, and
+	@# the per-script engine timeout is the hard ceiling — at the 10s default
+	@# the run is killed before ai.ts's own timeout + try/catch can degrade
+	@# gracefully. Every other demo finishes in milliseconds, so the larger
+	@# ceiling only matters for ai.ts.
+	@./$(BIN) -timeout 90s $(DEMO_SCRIPTS)
 	@echo "All example scripts passed. (hang.ts is the timeout demo — run separately.)"
 
 types: build
