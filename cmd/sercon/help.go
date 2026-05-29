@@ -177,8 +177,8 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    a related group of bindings: runtime (logging, assertions,")
 	fmt.Fprintln(w, "    time, env, argv), crypto (hash/jwt/encrypt), text (string/")
 	fmt.Fprintln(w, "    regex/charset/jq/diff), codec (compression/barcode/checkdigit),")
-	fmt.Fprintln(w, "    fs (path/archive), net (http/probe/email/...), db (sqlite/")
-	fmt.Fprintln(w, "    redis/...), server (http/https listeners + WebSocket), services")
+	fmt.Fprintln(w, "    fs (path/archive), net (http/probe/email send + ...), db (sqlite/")
+	fmt.Fprintln(w, "    redis/...), server (http/https listeners + WebSocket + smtp), services")
 	fmt.Fprintln(w, "    (exec/git/gh/ai), tui (multi-pane UI). Each script gets a fresh")
 	fmt.Fprintln(w, "    runtime; helpers are loaded via require()/import. See MANUAL.md")
 	fmt.Fprintln(w, "    §5 for the full reference and §6 for the server surface, or")
@@ -774,10 +774,45 @@ const srv = await server.http.listen({
 });`)
 	note("Backed by coder/websocket (pure Go). esbuild lowers async generators + for-await; every Run installs Symbol.asyncIterator so the lowering and user code agree on the iteration key.")
 
+	header(42, "SMTP server + sender round-trip (server.smtp.listen + net.email.send)")
+	code(`// Inbound: bind an SMTP listener with per-stage callbacks. Each
+// handler returns true/undefined (250 accept), false (550), a string
+// (550 + reason), or throws (451 temporary). Handlers may be async.
+const srv = await server.smtp.listen({
+  port: 2525,
+  hostname: "mx.example.com",            // EHLO greeting; defaults to os.Hostname()
+  handlers: {
+    onMail: (env) => env.from.endsWith("@example.com"),
+    onRcpt: (env, rcpt) => true,
+    onData: (env, msg) => {
+      runtime.log("got mail", msg.subject, "from", env.from);
+      runtime.log(msg.body.text, "+", msg.attachments.length, "attachments");
+      return true;                       // 250 OK
+    },
+  },
+  // auth: (user, pass, env) => user === "bob" && pass === "s3cret",
+  // starttls: { cert: "./cert.pem", key: "./key.pem" },
+});
+
+// Outbound: net.email.send composes MIME in-tree and returns a
+// per-recipient outcome. One TCP connection per call.
+const r = await net.email.send({
+  to: "alice@example.com",
+  from: "noreply@example.com",
+  subject: "hello",
+  body: "plain text",
+  html: "<p>rich</p>",                   // optional multipart/alternative
+  server: { host: "127.0.0.1", port: 2525, tls: "none" },
+});
+runtime.log("accepted", r.accepted, "rejected", r.rejected);
+
+await srv.close();`)
+	note("Inbound via emersion/go-smtp + jhillyerd/enmime; outbound MIME composed in-tree. Handlers serialize on the goja loop (one at a time) — acknowledge then process in the background for slow work. `sercon serve` adds a per-stage SMTP access log on stderr. See MANUAL.md §6.7.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 41
+const exampleCount = 42

@@ -174,8 +174,10 @@ sub-spec cycle built on the existing foundation.
   `net.http`, plus `db.redis` / `db.memcached` /
   `db.ldap` / `db.dict`); the HTTP/HTTPS server (with router,
   middleware, static-file mount, and WebSocket upgrade) shipped in
-  v0.10.0; SMTP, IMAP, FTP, and POP3 servers are planned as
-  separate sub-spec cycles using the v0.10.0 foundation. Additional
+  v0.10.0 and the SMTP server (`server.smtp.listen`) plus outbound
+  sender (`net.email.send`) shipped in v0.11.0; IMAP, FTP, and POP3
+  servers are planned as separate sub-spec cycles using the v0.10.0
+  foundation. Additional
   protocols (e.g. MQTT) and broader client coverage stay rated Hard
   for the aggregate scope — promote individual protocols as they're
   actually needed.
@@ -296,10 +298,12 @@ reason resolves.
   log line. A future hook for custom rendering can be added.
   **Reason:** no design pressure yet; the per-route try/catch
   pattern covers the common case.
-- **Server-side SMTP, IMAP, FTP.** Planned as separate sub-spec
-  cycles built on the v0.10.0 `LoopCallable` + `HoldRun`
-  foundation. Each gets its own brainstorm → plan → ship cycle.
-  Promote from Deferred once the spec lands.
+- **Server-side IMAP, FTP.** Planned as separate sub-spec cycles
+  built on the v0.10.0 `LoopCallable` + `HoldRun` foundation.
+  (Server-side SMTP shipped in v0.11.0 as `server.smtp.listen`,
+  with the outbound `net.email.send` sender.) Each remaining
+  protocol gets its own brainstorm → plan → ship cycle. Promote
+  from Deferred once the spec lands.
 - **Server-side POP3.** Same foundation as the above, but
   **Reason:** no mature pure-Go POP3 server library exists today.
   Re-promote when one appears or when there's enough demand to

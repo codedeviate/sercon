@@ -8,6 +8,27 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- New binding `server.smtp.listen({…})` — inbound SMTP listener with
+  per-stage callbacks (`onMail`/`onRcpt`/`onData`, async-capable),
+  optional SASL AUTH (PLAIN + LOGIN), STARTTLS, and configurable limits.
+  Messages parsed via jhillyerd/enmime into `{from, to, subject, headers,
+  body.text/html, attachments, raw}`. See MANUAL.md §6.7.
+- New binding `net.email.send({…})` — outbound SMTP sender with in-tree
+  MIME composition (text / multipart-alternative / multipart-mixed),
+  per-recipient outcome capture, three TLS modes (`starttls`/`tls`/`none`),
+  and PLAIN auth. Returns `{accepted, rejected}`. One TCP connection per
+  call.
+- `sercon serve` now emits a per-stage SMTP access log line to stderr
+  (AUTH/MAIL/RCPT/DATA/QUIT). Vanilla `sercon` stays silent.
+- New deps: `github.com/emersion/go-smtp`, `github.com/jhillyerd/enmime`,
+  `github.com/emersion/go-sasl` (all pure-Go, MIT).
+
+### Migration
+
+No script-side migration required — additive only.
+
 ## [0.10.0] — 2026-05-29
 
 ### Added

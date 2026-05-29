@@ -98,6 +98,8 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - `cmd/sercon/api_server_http.go` — `server.http` / `server.https` listener: options parsing, route compilation (stdlib `http.ServeMux` Go 1.22+ patterns), middleware chain, request marshalling, fluent `res` builder.
 - `cmd/sercon/api_server_static.go` — `server.http.static({dir, stripPrefix, …})` returning a marker the route compiler unwraps into a stdlib `http.FileServer` mounted under `http.StripPrefix`.
 - `cmd/sercon/api_server_ws.go` — `res.upgradeWebSocket(opts?)`; per-connection goroutine + buffered channel pump; async iterator that resolves frames on the loop via `LoopCallable`. Backed by `github.com/coder/websocket`.
+- `cmd/sercon/api_server_smtp.go` — `server.smtp.listen`: go-smtp backend wrapping per-stage JS callbacks (`onMail`/`onRcpt`/`onData` + optional `auth`), enmime message parsing, custom LOGIN `sasl.Server`, STARTTLS. Backed by `github.com/emersion/go-smtp` + `github.com/jhillyerd/enmime`.
+- `cmd/sercon/api_email_send.go` — `net.email.send`: stdlib `net/smtp` transport + in-tree MIME composition (text / multipart-alternative / multipart-mixed); per-recipient outcome capture; `starttls`/`tls`/`none` modes.
 - `cmd/sercon/serve_cmd.go` — `sercon serve` subcommand: flag parsing (`--shutdown-timeout`, `--port-override`), access-log writer, READY-line writer on stdout, SIGTERM-graceful shutdown.
 - `examples/scripts/` — runnable sample scripts; `hang.ts` is the timeout demo and must stay a single `while(true){}`. The `server-*.ts` demos bind a high random port (38080–38082), self-test, and `await srv.close()`.
 - `claude-code-prompt.md` — the original spec for this build. Refer to it before redesigning anything significant.

@@ -647,7 +647,8 @@ Network clients and probes:
   failures surface as `Error` objects with details.
 - `net.netstatus.check(host)` — combined reachability summary.
 - `net.email.*` — `spf`, `dmarc`, `mtasts`, `tlsrpt`, `bimi`, and
-  `all(domain)` which runs every probe in parallel and aggregates.
+  `all(domain)` which runs every probe in parallel and aggregates; plus
+  `send({…})` — outbound SMTP sender (see §6.7).
 - `net.browser.open(url)` — launches the OS default browser.
 
 ### `db`
@@ -1097,6 +1098,209 @@ sercon examples/scripts/server-http.ts
 # Production-style supervised run:
 sercon serve examples/scripts/server-http.ts
 ```
+
+### 6.7 SMTP
+
+SMTP is a **stateful, multi-stage transaction**: a client connects,
+optionally authenticates, declares a sender (`MAIL FROM`), one or more
+recipients (`RCPT TO`), then streams the message body (`DATA`). sercon
+maps each stage to a JavaScript callback so a script can accept or reject
+the transaction incrementally — refuse an unknown sender at `MAIL`,
+refuse an unrouteable recipient at `RCPT`, or inspect the parsed message
+at `DATA`. The inbound listener is `server.smtp.listen({…})`; the
+outbound side is `net.email.send({…})` (covered at the end of this
+section).
+
+#### `server.smtp.listen({…})`
+
+Synchronously binds the listening socket (so a port already in use throws
+immediately), then serves in the background. Returns a handle once the
+loop schedules it.
+
+```ts
+const srv = await server.smtp.listen({
+  port: 2525,
+  hostname: "mx.example.com",
+  handlers: {
+    onMail: (env)       => env.from.endsWith("@example.com"),
+    onRcpt: (env, rcpt) => isLocalMailbox(rcpt),
+    onData: (env, msg)  => { store(msg); return true; },
+  },
+});
+
+// srv.address  → "tcp/0.0.0.0:2525"
+// srv.close()  → Promise<void>  (graceful, 30s drain)
+// srv.stopped  → Promise<void>  (resolves when the listener exits)
+```
+
+**Options:**
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `port` | `number` | — | **Required.** TCP port to bind. |
+| `host` | `string` | `"0.0.0.0"` | Bind address. |
+| `hostname` | `string` | `os.Hostname()` | EHLO greeting + `Received:` identity. |
+| `handlers` | `{onMail, onRcpt, onData}` | — | **Required.** All three functions; see below. |
+| `auth` | `(user, pass, env) => bool \| Promise<bool>` | — | Optional SASL verifier (PLAIN + LOGIN). |
+| `starttls` | `{cert, key}` | — | Enables STARTTLS. File paths **or** inline PEM. |
+| `allowInsecureAuth` | `boolean` | `false` | Permit AUTH on a plaintext connection (dev only). |
+| `maxMessageBytes` | `number` | `10485760` (10 MB) | DATA size cap; a non-positive value keeps the default. |
+| `maxRecipients` | `number` | `100` | Max `RCPT TO` per transaction. |
+| `sessionTimeout` | `number` | `30000` | Per-session idle timeout, milliseconds. |
+
+**Handlers.** `onMail(envelope)`, `onRcpt(envelope, recipient)`, and
+`onData(envelope, message)` are invoked at the matching protocol stage.
+All three are required. Each may be `async` — a returned Promise is
+awaited before the SMTP response is written. The return value (or a
+thrown exception) controls the SMTP reply, uniformly across all three:
+
+| Return value | SMTP response | Use case |
+|---|---|---|
+| `true` / `undefined` | `250 OK` | Accept the stage |
+| `false` | `550 Command refused` | Generic permanent reject |
+| `string` | `550 <string>` | Permanent reject with a reason |
+| `throw` | `451 Temporary failure` | Transient error (client should retry) |
+
+**Envelope** (passed to all three handlers; `recipients` grows as
+`RCPT TO` accumulates):
+
+```ts
+type Envelope = {
+  from:               string;   // "" for the null sender (DSN bounces)
+  recipients:         string[]; // accepted RCPT TO so far
+  remote:             string;   // "1.2.3.4:54321"
+  helo:               string;   // EHLO/HELO hostname the client gave
+  authenticatedUser?: string;   // set if AUTH succeeded
+  tls?:               { version: string; cipher: string }; // set under STARTTLS
+};
+```
+
+**Message** (only `onData`; parsed via `jhillyerd/enmime`, with the
+exact original bytes always available as `raw`):
+
+```ts
+type Message = {
+  from:    string;                   // From: header (may differ from envelope.from)
+  to:      string[];                 // To: header
+  cc:      string[];                 // Cc: header
+  subject: string;
+  headers: Record<string, string[]>; // lowercase keys; multi-valued
+  body: {
+    text:  string;                   // text/plain part; "" if absent
+    html:  string;                   // text/html part; "" if absent
+  };
+  attachments: Array<{
+    filename:    string;
+    contentType: string;
+    bytes:       Uint8Array;
+  }>;
+  raw: Uint8Array;                   // exact DATA bytes (post dot-unstuffing)
+};
+```
+
+Forwarders and DKIM-style signature verifiers should work from `raw`;
+everyone else uses the parsed fields. enmime is lenient with malformed
+messages, so a script needing strict RFC 5322 conformance can re-parse
+`raw` itself.
+
+**AUTH.** Supply an `auth` callback to enable SASL. Both **PLAIN** and
+**LOGIN** mechanisms are advertised; the callback receives the decoded
+`(username, password, envelope)` and returns a boolean (or a Promise of
+one). By default AUTH is refused on a plaintext connection — the client
+must complete STARTTLS first. Set `allowInsecureAuth: true` to accept
+credentials over plaintext; this is a **dev-only** escape hatch for
+trusted local networks and should never be set in production.
+
+**STARTTLS.** Pass `starttls: {cert, key}` (file paths or inline PEM,
+same convention as `server.https`) to advertise STARTTLS. The upgrade
+happens mid-session on the same connection; once active, `envelope.tls`
+is populated. The listener itself is plaintext at bind time — there is no
+implicit-TLS (SMTPS / port 465) inbound mode.
+
+**Concurrency.** Each connection runs on its own Go goroutine, but every
+handler invocation **serializes on the goja loop** — exactly one handler
+runs at a time (the same single-threaded model as the HTTP listener in
+§6.2). A slow `onData` therefore blocks other connections' handlers. For
+slow work, acknowledge the stage (`return true`) and process in the
+background (start a Promise without awaiting it).
+
+A short, self-contained round-trip (bind, send to self, assert receipt):
+
+```ts
+const port = 38095;
+let captured: { subject: string; from: string } | null = null;
+
+const srv = await server.smtp.listen({
+  port,
+  hostname: "test.local",
+  handlers: {
+    onMail: () => true,
+    onRcpt: () => true,
+    onData: (env, msg) => {
+      captured = { subject: msg.subject, from: env.from };
+      return true;
+    },
+  },
+});
+
+await net.email.send({
+  to:      "alice@test.local",
+  from:    "bob@test.local",
+  subject: "round-trip demo",
+  body:    "hello from the SMTP demo",
+  server:  { host: "127.0.0.1", port, tls: "none" },
+});
+
+runtime.assert.equal(captured!.subject, "round-trip demo", "subject");
+await srv.close();
+```
+
+#### `net.email.send({…})` — outbound
+
+The outbound counterpart lives under `net.email` (next to the `spf` /
+`dmarc` / … probes). It opens **one TCP connection per call** — no
+pooling, no queueing, no automatic retries — composes the MIME body
+in-tree, and returns a per-recipient outcome.
+
+```ts
+const result = await net.email.send({
+  to:      ["alice@example.com", "bob@example.com"],  // string OR string[]
+  from:    "noreply@my.app",
+  subject: "your verification code",
+  body:    "your code is 123456",                     // plain text
+  html:    "<p>your code is <b>123456</b></p>",       // optional HTML alternative
+  attachments: [
+    { filename: "qr.png", contentType: "image/png", bytes: qrBytes },
+  ],
+  headers: { "X-App": "myapp" },                      // optional extra headers
+  server: {
+    host: "smtp.example.com",
+    port: 587,                                        // default 587 (submission)
+    auth: { username: "u", password: "p" },           // optional PLAIN auth
+    tls:  "starttls",                                 // "starttls" (default) | "tls" | "none"
+  },
+  timeout: 30000,                                     // ms; default 30s
+});
+
+// result = { accepted: string[], rejected: Array<{ address, reason }> }
+```
+
+**MIME layout.** `text` only → `text/plain; charset=utf-8` (no
+multipart). `text` + `html` → `multipart/alternative`. Any attachments →
+`multipart/mixed` (each part base64, `Content-Disposition: attachment`).
+`Date`, `Message-ID`, and `MIME-Version` are auto-generated; `headers`
+are merged on top.
+
+**TLS modes.** `"starttls"` (default) connects plaintext then upgrades,
+refusing AUTH until TLS is active. `"tls"` is implicit TLS from connect
+(SMTPS, typically port 465). `"none"` is plaintext throughout, with AUTH
+disabled.
+
+**Outcomes.** Transport-level failures (connection refused, TLS
+handshake, AUTH, `MAIL FROM` rejected) **throw** a JS exception. The
+`rejected` array captures only individual `RCPT TO` addresses the server
+permitted us to attempt but then refused — the transaction continues for
+the rest, so a partial send still delivers to the accepted recipients.
 
 ## 7. JavaScript runtime built-ins (goja)
 

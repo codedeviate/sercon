@@ -76,8 +76,10 @@ func runServe(args []string) int {
 	}
 
 	// Install serve-mode hooks. Read by httpListen for port override + readiness;
-	// read by dispatchHandler for access logging. Cleared on return via defer
-	// so re-running runServe in the same process (e.g. tests) starts clean.
+	// read by dispatchHandler for HTTP access logging; serveSMTPLogger provides
+	// per-stage SMTP access logging (AUTH/MAIL/RCPT/DATA/QUIT) from smtpSession.
+	// Cleared on return via defer so re-running runServe in the same process
+	// (e.g. tests) starts clean.
 	servePortOverride = *portOverride
 	serveAccessLogger = stderrAccessLogger
 	serveSMTPLogger = smtpStderrLogger
