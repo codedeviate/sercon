@@ -212,6 +212,8 @@ declare const net: {
     dmarc(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file. */
     mtaSts(...args: unknown[]): Promise<Record<string, unknown>>;
+    /** Send an outbound email: net.email.send({to, from, subject, body, html?, attachments?, headers?, server: {host, port?, auth?, tls?}, timeout?}) → Promise<{accepted: string[], rejected: [{address, reason}]}>. One TCP connection per call; per-recipient outcome captured. Transport failures throw; per-RCPT rejections surface in the result. TLS modes: starttls (default), tls, none. */
+    send(...args: unknown[]): Promise<{ accepted: string[]; rejected: { address: string; reason: string }[] }>;
     /** Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy. */
     spf(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua. */
@@ -340,6 +342,10 @@ declare const server: {
     listen(...args: unknown[]): unknown;
     /** Like server.http.static; same options. */
     static(...args: unknown[]): unknown;
+  };
+  smtp: {
+    /** Bind an SMTP listener: server.smtp.listen({port, hostname?, handlers: {onMail, onRcpt, onData}, auth?, starttls?, allowInsecureAuth?, maxMessageBytes?, maxRecipients?, sessionTimeout?}) → handle with .address, .close(), .stopped Promise. Handlers receive (envelope, …) per stage; return true/undefined to accept, false to reject, a string for a 550 reason, throw for 451 temp-fail. onData receives a parsed Message with text/html bodies, attachments, and raw bytes. */
+    listen(...args: unknown[]): unknown;
   };
 };
 

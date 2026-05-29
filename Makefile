@@ -77,7 +77,8 @@ DEMO_SCRIPTS = \
 	examples/scripts/ai.ts \
 	examples/scripts/server-http.ts \
 	examples/scripts/server-static.ts \
-	examples/scripts/server-ws.ts
+	examples/scripts/server-ws.ts \
+	examples/scripts/server-smtp.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon
