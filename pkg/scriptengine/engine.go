@@ -16,6 +16,13 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 )
 
+// reservedRuntimeName is the global name the engine patches `argv` onto
+// after every Run. Hosts (the sercon CLI) typically register a `runtime`
+// namespace covering log/assert/time/env; the engine then adds `argv`.
+// If no host registered it, the engine synthesises a minimal
+// `runtime = {argv: ...}` global.
+const reservedRuntimeName = "runtime"
+
 // Options configures an Engine.
 type Options struct {
 	// Timeout is the per-script wall clock limit. Zero disables the timeout.
@@ -49,7 +56,7 @@ type Options struct {
 	// suffix or basename rather than an exact path. Returning source for a
 	// `.ts` candidate gets it transpiled just like a disk read would.
 	ModuleLoader func(candidatePath string) (source string, found bool, err error)
-	// ProgramName is argv[0] in the per-script Sercon.argv. When empty,
+	// ProgramName is argv[0] in the per-script runtime.argv. When empty,
 	// New defaults it to filepath.Base(os.Args[0]). The sercon CLI sets
 	// it to "sercon".
 	ProgramName string
@@ -290,7 +297,7 @@ func WithScriptRoot(dir string) RunOption {
 }
 
 // WithArgs sets the user argument vector exposed to the script as
-// Sercon.argv[2:]. argv[0] is Options.ProgramName and argv[1] is the
+// runtime.argv[2:]. argv[0] is Options.ProgramName and argv[1] is the
 // running script's path; these args follow. Applies only to this Run.
 func WithArgs(args []string) RunOption {
 	return func(c *runConfig) { c.args = args }
@@ -378,16 +385,33 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 			return
 		}
 
-		// Inject the Sercon runtime global. argv mirrors Node/Bun:
-		// [programName, scriptPath, ...userArgs]. `name` is the absolute
-		// script path resolved above, so argv[1] is naturally per-Run.
-		// Injected after applyRegistrations so the built-in is authoritative.
+		// Patch runtime.argv onto the registered `runtime` global. argv
+		// mirrors Node/Bun: [programName, scriptPath, ...userArgs]. If the
+		// host did not register a `runtime` namespace (e.g. a library-style
+		// caller that bypassed the CLI's registerSurface), fall back to
+		// creating a minimal one so argv is still reachable. Runs after
+		// applyRegistrations so the CLI's runtime object is the patch target.
 		argv := make([]string, 0, 2+len(cfg.args))
 		argv = append(argv, e.opts.ProgramName, name)
 		argv = append(argv, cfg.args...)
-		serconObj := vm.NewObject()
-		_ = serconObj.Set("argv", vm.ToValue(argv))
-		_ = vm.Set("Sercon", serconObj)
+		argvValue := vm.ToValue(argv)
+		if existing := vm.Get(reservedRuntimeName); existing != nil && !goja.IsUndefined(existing) && !goja.IsNull(existing) {
+			obj, ok := existing.(*goja.Object)
+			if !ok {
+				scriptErr = fmt.Errorf("scriptengine: cannot patch %s.argv: host registered %q as %T, expected *goja.Object", reservedRuntimeName, reservedRuntimeName, existing.Export())
+				return
+			}
+			_ = obj.Set("argv", argvValue)
+		} else {
+			// Fallback: no host-registered `runtime` namespace. Synthesise a
+			// minimal object holding just `argv` so library-style callers still
+			// see argv. Intentionally argv-only — if a host wants `runtime.log`,
+			// `runtime.time`, etc., they must register the namespace themselves;
+			// the engine won't grow this stub.
+			runtimeObj := vm.NewObject()
+			_ = runtimeObj.Set("argv", argvValue)
+			_ = vm.Set(reservedRuntimeName, runtimeObj)
+		}
 
 		// __resolve / __reject are called by the async IIFE wrapper to surface
 		// completion of the top-level script (including any awaited promises).

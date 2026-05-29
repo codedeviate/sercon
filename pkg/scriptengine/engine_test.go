@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -672,15 +673,10 @@ func TestWriteTypes_DocsAbsentNoBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := buf.String()
-	// The only legitimate JSDoc in the output is the built-in Sercon
-	// preamble (it ends with "};\n\n"). An undocumented binding must add no
-	// JSDoc of its own, so there must be no "/**" anywhere after the preamble.
-	if i := strings.Index(got, "};\n\n"); i >= 0 {
-		if strings.Contains(got[i+len("};\n\n"):], "/**") {
-			t.Errorf("expected no JSDoc after the Sercon preamble; got:\n%s", got)
-		}
-	} else {
-		t.Fatalf("Sercon preamble not found in output:\n%s", got)
+	// An undocumented binding must add no JSDoc of its own, so there must
+	// be no "/**" anywhere in the output.
+	if strings.Contains(got, "/**") {
+		t.Errorf("expected no JSDoc blocks for an undocumented binding; got:\n%s", got)
 	}
 	// And the declaration itself is still there, unchanged in shape.
 	if !strings.Contains(got, "declare function undocumented") {
@@ -705,14 +701,9 @@ func TestWriteTypes_DocsEmptyStringRemoves(t *testing.T) {
 	if strings.Contains(got, "Original") {
 		t.Errorf("expected doc to be cleared; got:\n%s", got)
 	}
-	// Only the built-in Sercon preamble (ending "};\n\n") may carry JSDoc;
-	// after clearing toggle's doc there must be no "/**" past the preamble.
-	if i := strings.Index(got, "};\n\n"); i >= 0 {
-		if strings.Contains(got[i+len("};\n\n"):], "/**") {
-			t.Errorf("expected no JSDoc after the Sercon preamble; got:\n%s", got)
-		}
-	} else {
-		t.Fatalf("Sercon preamble not found in output:\n%s", got)
+	// After clearing toggle's doc there must be no "/**" in the output.
+	if strings.Contains(got, "/**") {
+		t.Errorf("expected no JSDoc after clearing the doc; got:\n%s", got)
 	}
 }
 
@@ -765,55 +756,125 @@ func TestModuleLoader_ErrorAborts(t *testing.T) {
 	}
 }
 
-// Sercon.argv carries the program name (argv[0]), the running script path
-// (argv[1]), then the user args supplied via WithArgs (Node/Bun layout).
-func TestRun_SerconArgvWithArgs(t *testing.T) {
+// runtime.argv carries the program name (argv[0]), the running script path
+// (argv[1]), and any WithArgs values (argv[2:]). With no host-registered
+// `runtime` namespace, the engine creates one with just `argv`.
+func TestRun_RuntimeArgvWithArgs(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{
 		ScriptRoot:     t.TempDir(),
 		DisableConsole: true,
 		ProgramName:    "myprog",
 	})
 	_, err := eng.Run(context.Background(), "run.ts", `
-if (Sercon.argv[0] !== "myprog") throw new Error("argv[0]: " + Sercon.argv[0]);
-if (!Sercon.argv[1].endsWith("run.ts")) throw new Error("argv[1]: " + Sercon.argv[1]);
-if (Sercon.argv.length !== 4) throw new Error("length: " + Sercon.argv.length);
-if (Sercon.argv[2] !== "--port") throw new Error("argv[2]: " + Sercon.argv[2]);
-if (Sercon.argv[3] !== "8080") throw new Error("argv[3]: " + Sercon.argv[3]);
+if (runtime.argv[0] !== "myprog") throw new Error("argv[0]: " + runtime.argv[0]);
+if (!runtime.argv[1].endsWith("run.ts")) throw new Error("argv[1]: " + runtime.argv[1]);
+if (runtime.argv.length !== 4) throw new Error("length: " + runtime.argv.length);
+if (runtime.argv[2] !== "--port") throw new Error("argv[2]: " + runtime.argv[2]);
+if (runtime.argv[3] !== "8080") throw new Error("argv[3]: " + runtime.argv[3]);
 `, scriptengine.WithArgs([]string{"--port", "8080"}))
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 }
 
-// With no WithArgs, Sercon.argv is exactly [programName, scriptPath].
-func TestRun_SerconArgvDefaultsToProgramAndScript(t *testing.T) {
+// With no WithArgs, runtime.argv is exactly [programName, scriptPath].
+func TestRun_RuntimeArgvDefaultsToProgramAndScript(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	_, err := eng.Run(context.Background(), "run.ts", `
-if (Sercon.argv.length !== 2) throw new Error("expected length 2, got " + Sercon.argv.length);
-if (!Sercon.argv[1].endsWith("run.ts")) throw new Error("argv[1]: " + Sercon.argv[1]);
-if (typeof Sercon.argv[0] !== "string" || Sercon.argv[0].length === 0) throw new Error("argv[0] empty");
+if (runtime.argv.length !== 2) throw new Error("expected length 2, got " + runtime.argv.length);
+if (!runtime.argv[1].endsWith("run.ts")) throw new Error("argv[1]: " + runtime.argv[1]);
+if (typeof runtime.argv[0] !== "string" || runtime.argv[0].length === 0) throw new Error("argv[0] empty");
 `)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
 }
 
-// The Sercon runtime global is declared in every emitted .d.ts,
-// independent of the registered surface.
-func TestWriteTypes_SerconGlobalDeclared(t *testing.T) {
-	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+// TestWriteTypes_ReservedGlobalsHeader asserts the emitter writes a
+// "// Reserved globals: <names>" line listing the registered top-level
+// namespaces alphabetically. This is the on-disk replacement for the
+// pre-v0.9 Sercon preamble.
+func TestWriteTypes_ReservedGlobalsHeader(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := eng.RegisterNamespace("zeta", map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.RegisterNamespace("alpha", map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
 	var buf bytes.Buffer
 	if err := eng.WriteTypes(&buf); err != nil {
 		t.Fatal(err)
 	}
 	got := buf.String()
-	for _, want := range []string{
-		"declare const Sercon: {",
-		"argv: string[];",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("expected %q in output, got:\n%s", want, got)
+	want := "// Reserved globals: alpha, zeta.\n"
+	if !strings.Contains(got, want) {
+		t.Fatalf("expected %q in output, got:\n%s", want, got)
+	}
+	if strings.Contains(got, "declare const Sercon:") {
+		t.Errorf("Sercon preamble must not appear; got:\n%s", got)
+	}
+}
+
+// TestWriteTypes_NoStrayJSDoc asserts that JSDoc blocks appear only
+// directly above declarations — there should be no orphan `/** … */`
+// blocks elsewhere in the output. (Sets a minimal fixture so the
+// test does not depend on which CLI namespaces are registered.)
+func TestWriteTypes_NoStrayJSDoc(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := eng.RegisterNamespace("demo", map[string]any{
+		"plain": func() string { return "x" },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	// Every `/** ... */` block must be immediately followed (no blank
+	// line) by either a top-level declaration or a namespace member
+	// declaration. The emitter places JSDoc directly above what it
+	// documents, so any other adjacency means a stray comment slipped
+	// out.
+	declRE := regexp.MustCompile(`^declare \w+`)
+	memberRE := regexp.MustCompile(`^\s*\w+\s*[(:?]`)
+	lines := strings.Split(got, "\n")
+	for i, ln := range lines {
+		if !strings.Contains(ln, "/**") {
+			continue
 		}
+		// Walk forward to the line containing `*/` (might be the same
+		// line for single-line `/** … */`).
+		j := i
+		for j < len(lines) && !strings.Contains(lines[j], "*/") {
+			j++
+		}
+		if j+1 >= len(lines) {
+			t.Fatalf("JSDoc at line %d has no following line; output:\n%s", i+1, got)
+		}
+		next := lines[j+1]
+		if !declRE.MatchString(next) && !memberRE.MatchString(strings.TrimLeft(next, " \t")) {
+			t.Fatalf("JSDoc at lines %d-%d not followed by a declaration; next line: %q\nfull output:\n%s", i+1, j+1, next, got)
+		}
+	}
+}
+
+// TestRun_RuntimeArgvHostConflict asserts the engine refuses to patch
+// runtime.argv when the host registered `runtime` as something other
+// than an object. Silent overwrite would either drop argv or stomp
+// the host's value; both are surprising, so we error instead.
+func TestRun_RuntimeArgvHostConflict(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true, ProgramName: "p"})
+	if err := eng.Register("runtime", "i-am-not-an-object"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "run.ts", `1+1;`)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot patch") || !strings.Contains(err.Error(), "runtime") {
+		t.Fatalf("expected runtime-conflict error, got: %v", err)
 	}
 }
 
