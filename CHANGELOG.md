@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-29
+
 ### Added
 
 - New top-level global `server` with HTTP/HTTPS listeners, stdlib
@@ -36,11 +38,6 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   Symbol.for("@@asyncIterator")` so esbuild's `__forAwait` helper
   and user code that does `obj[Symbol.asyncIterator] = ...` agree
   on the same key.
-
-### Changed
-
-- `PromisifyAsync` now delegates to `LoopCallable` internally
-  (non-breaking refactor — script-visible behaviour is unchanged).
 
 ### Migration
 
