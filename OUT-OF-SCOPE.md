@@ -37,14 +37,14 @@ the situation changes.
 ### Tooling / developer experience
 
 - **Editor autocomplete wiring (VSCode / Zed / any tsserver editor).**
-  The pieces already exist: `sercon -emit-dts` emits the top-level globals
-  (`runtime`, `fs`, `http`, `net`, `db`, `crypto`, `text`, `codec`,
-  `services`, `tui`, …) as ambient `declare const` blocks with JSDoc on
-  every member, so any TypeScript
-  language-server-backed editor (VSCode, Zed, Neovim+coc, Sublime LSP,
-  …) gives completion + hover docs once the `.d.ts` is in its program.
-  No per-editor plugin needed. The gap is the *glue* that makes editors
-  pick it up without manual setup:
+  The pieces already exist: `sercon -emit-dts` emits the nine reserved
+  top-level globals (`codec`, `crypto`, `db`, `fs`, `net`, `runtime`,
+  `services`, `text`, `tui`) as ambient `declare const` blocks with
+  JSDoc on every member, so any TypeScript language-server-backed
+  editor (VSCode, Zed, Neovim+coc, Sublime LSP, …) gives completion +
+  hover docs once the `.d.ts` is in its program. No per-editor plugin
+  needed. The gap is the *glue* that makes editors pick it up without
+  manual setup:
   - ship a `jsconfig.json` (or `tsconfig.json`) in `examples/scripts/`
     that includes `api.d.ts` — one file covers every tsserver editor;
   - document a `sercon -emit-dts api.d.ts` + tiny jsconfig recipe for
@@ -52,6 +52,7 @@ the situation changes.
   - optionally an `sercon init <dir>` helper that drops both in.
   Per-file `/// <reference path="./api.d.ts" />` is the no-config
   fallback. **Library:** stdlib only (file emit already exists).
+
 ### Databases
 
 `db.sqlite` already proves the pattern: `database/sql` + a pure-Go
@@ -89,7 +90,8 @@ barcode decode + quiet-zone, `net.http.request`, the
 `db.ldap` / `db.dict`, `services.ai`, the `--watch` CLI
 flag with module-graph invalidation, the `Options.ModuleLoader`
 hook, and robust import parsing — all originally shipped under flat
-paths and re-bucketed under v0.8.0's 9-category surface). The
+paths, re-bucketed under v0.8.0's 9-category surface, and promoted
+to top-level globals (dropping the `api.` prefix) in v0.9.0). The
 remaining open items:
 
 ### Encoding / decoding / barcodes
