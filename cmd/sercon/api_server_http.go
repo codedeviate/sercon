@@ -20,6 +20,16 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
+// Serve-mode hooks: populated by runServe before the script runs;
+// vanilla `sercon` leaves them nil. The HTTP listener consults them
+// for port override (replaces the script's port), the access logger
+// (called per request), and the readiness writer (one line per listener).
+var (
+	servePortOverride int
+	serveAccessLogger func(remote, method, path string, status int, dur time.Duration)
+	serveReadyWriter  io.Writer
+)
+
 // bridgeProg is the compiled JS bridge used by bridgeHandlerResult to
 // chain .then() onto a handler-returned Promise. *goja.Program is safe
 // to share across runtimes (per goja docs), so we compile once at
@@ -53,6 +63,9 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	port := int(optsObj.Get("port").ToInteger())
 	if port == 0 {
 		panic(vm.NewTypeError("server.http.listen: `port` is required"))
+	}
+	if servePortOverride != 0 {
+		port = servePortOverride
 	}
 	host := "0.0.0.0"
 	if v := optsObj.Get("host"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
@@ -133,6 +146,9 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	}
 	if isTLS {
 		ln = tls.NewListener(ln, tlsConfig)
+	}
+	if serveReadyWriter != nil {
+		fmt.Fprintf(serveReadyWriter, "READY listening on tcp/%s\n", ln.Addr().String())
 	}
 
 	// Hold the loop alive until close.
@@ -296,6 +312,7 @@ func (rs *responseState) markError(msg string) {
 // chain + handler, and waits on res.notify for finalization (either via
 // a terminal call or via the handler-Promise's settlement).
 func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
 	// Read body up front; small price for the simpler script API.
 	bodyBytes, _ := io.ReadAll(r.Body)
 	_ = r.Body.Close()
@@ -355,6 +372,9 @@ func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain 
 
 	<-state.notify
 	writeResponse(w, state)
+	if serveAccessLogger != nil {
+		serveAccessLogger(r.RemoteAddr, r.Method, r.URL.Path, state.status, time.Since(startTime))
+	}
 }
 
 // bridgeHandlerResult chains a JS .then(onSettle, onReject) onto a

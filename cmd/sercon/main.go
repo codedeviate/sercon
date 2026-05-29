@@ -30,6 +30,9 @@ const (
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "serve" {
+		os.Exit(runServe(os.Args[2:]))
+	}
 	os.Exit(run(os.Args[1:]))
 }
 

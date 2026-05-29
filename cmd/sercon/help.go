@@ -184,6 +184,12 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    --examples for a guided tour. The generated api.d.ts (see")
 	fmt.Fprintln(w, "    -emit-dts) is the machine-readable spec.")
 	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "    Long-running scripts (HTTP servers, WebSocket handlers) keep the")
+	fmt.Fprintln(w, "    engine alive while listeners are bound. Use `sercon serve")
+	fmt.Fprintln(w, "    script.ts` to add production niceties: structured access log to")
+	fmt.Fprintln(w, "    stderr, --shutdown-timeout (default 30s), --port-override, and a")
+	fmt.Fprintln(w, "    `READY listening on tcp/…` line on stdout per listener.")
+	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("FLAGS"))
 	flagLine := func(name, args, desc string) {
