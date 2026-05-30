@@ -61,27 +61,19 @@ open items:
 
 ### Networking — clients & raw sockets
 
-Today's `net.probe.*` family is **connect-probe** oriented, not
-a general socket surface (see `cmd/sercon/probe.go`). The gap is
-read/write client sockets exposed to scripts.
+Read/write client sockets shipped in v0.22.0: `net.tcp.connect`,
+`net.udp.open` (connected + bound), and `net.icmp.open` (raw ICMP,
+needs root / CAP_NET_RAW) — all with a push/callback read model
+(`onData`/`onMessage` + `onClose`/`onError`), on the shared
+`socket_common.go` scaffold. The remaining gaps:
 
-- **TCP client sockets.** `net.probe.tcp` only reports
-  reachability / latency; a real client would expose a connection
-  handle with `write` / `read` (or a data callback) and `close`.
-  **Library:** stdlib `net`. Moderate for the usual reason — a
-  stateful handle with lifetime and event-loop concerns, not the
-  dial itself.
-- **UDP client sockets.** No binding today. **Library:** stdlib
-  `net` (`net.DialUDP` / `ListenUDP` for the reply socket).
-- **ICMP client.** `net.probe.ping` already does an ICMP echo
-  round trip; a general send/receive ICMP surface (other message
-  types, custom payloads) is the extension. **Library:**
-  `golang.org/x/net/icmp` (pure Go), but raw ICMP sockets need
-  elevated privileges on most platforms — worth noting in the API.
-- **General Go `net` access.** Direct dial / lookup / interface
-  enumeration primitives beyond the curated probes. Mostly already
-  covered piecemeal by `net.*`; promote only if a script needs
-  raw access the probe family doesn't expose.
+- **ICMP arbitrary message bodies.** `net.icmp.open`'s `send` builds an
+  Echo-shaped body (id/seq/payload) with a customizable type/code —
+  enough for echo/timestamp-style probing. Hand-built non-Echo bodies
+  (e.g. a crafted destination-unreachable) aren't modelled yet.
+- **Interface / route enumeration.** Listing local interfaces, addresses,
+  and routes (`net.Interfaces`, `net.InterfaceAddrs`) is not exposed.
+  **Library:** stdlib `net`. Promote on demand.
 
 
 ## Hard
