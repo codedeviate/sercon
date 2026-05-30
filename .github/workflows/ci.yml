@@ -39,6 +39,7 @@ jobs:
       - name: smoke examples
         run: |
           ./sercon examples/scripts/smoke.ts \
+            examples/scripts/console.ts \
             examples/scripts/hash.ts \
             examples/scripts/strings.ts \
             examples/scripts/path-and-time.ts \

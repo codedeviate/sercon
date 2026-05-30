@@ -19,6 +19,7 @@ Or pick individual scripts:
 | `smoke.ts` | `log` and `assert.*` |
 | `async.ts` | `http.get`, `time.sleep`, top-level `await`, `import` from a sibling helper |
 | `argv.ts` | `runtime.argv` — the per-script argument vector (program / script / user args). |
+| `console.ts` | `console.*` — browser/Node-compat shim (log/info/debug → stdout, warn/error → stderr). |
 | `tui-update.ts` | `tui.*` — multi-pane TUI with two parallel subprocesses streaming output into separate panes. Manual run only (takes over the terminal); not in `make demo`. |
 | `hash.ts` | `hash.*` — all nine algorithms |
 | `strings.ts` | `str.*` — trim/pad/reverse/strip/encode/sprintf |

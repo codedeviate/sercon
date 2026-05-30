@@ -110,10 +110,11 @@ func run(args []string) int {
 	}
 
 	engOpts := scriptengine.Options{
-		Timeout:     *timeout,
-		ScriptRoot:  scriptRoot,
-		ProgramName: "sercon",
-		WatchMode:   *watch,
+		Timeout:        *timeout,
+		ScriptRoot:     scriptRoot,
+		ProgramName:    "sercon",
+		WatchMode:      *watch,
+		DisableConsole: true, // CLI provides its own clean `console` (console.go)
 	}
 	if *verbose {
 		engOpts.Verbose = os.Stderr
@@ -223,6 +224,14 @@ func classifyErr(err error) int {
 // in docs.go; the engine patches runtime.argv onto the runtime
 // namespace at Run time.
 func registerSurface(e *scriptengine.Engine) error {
+	// `console` is a browser/Node-compat shim (see console.go). Registered
+	// alongside the ten reserved globals; the CLI disables the engine's
+	// built-in console (Options.DisableConsole) so this one is authoritative.
+	if err := e.RegisterNamespaceFactory("console", func(_ *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
+		return consoleNamespace()
+	}); err != nil {
+		return err
+	}
 	if err := e.RegisterNamespaceFactory("runtime", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
 			"log": func(call goja.FunctionCall) goja.Value {
@@ -420,6 +429,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocs("tui", tuiDocs())
 	e.SetDocs("server", "Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.")
 	e.SetMemberDocs("server", serverDocs())
+	e.SetDocs("console", "Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.")
+	e.SetMemberDocs("console", consoleDocs())
 	return nil
 }
 

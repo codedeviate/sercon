@@ -62,9 +62,10 @@ func runServe(args []string) int {
 	}
 
 	engOpts := scriptengine.Options{
-		Timeout:     *scriptTimeout,
-		ScriptRoot:  scriptRoot,
-		ProgramName: "sercon",
+		Timeout:        *scriptTimeout,
+		ScriptRoot:     scriptRoot,
+		ProgramName:    "sercon",
+		DisableConsole: true, // CLI provides its own clean `console` (console.go)
 	}
 	if *verbose {
 		engOpts.Verbose = os.Stderr

@@ -580,6 +580,23 @@ local `let`/`const`/`var` per normal JavaScript scoping — sercon does
 not intervene at runtime. `server` (added in v0.10.0) covers inbound
 listeners — see [section 6](#6-servers) for the long-form treatment.
 
+### `console` (browser/Node compatibility)
+
+Beyond the ten reserved globals, sercon provides a `console` global so
+scripts pasted from a browser or Node run unchanged:
+
+| Method | Stream |
+|---|---|
+| `console.log` / `console.info` / `console.debug` | stdout |
+| `console.warn` / `console.error` | stderr |
+
+Each stringifies its arguments and prints one space-joined line — clean
+and prefix-free (no timestamp), unlike the goja default console. The CLI
+disables the engine's built-in console so this stream-correct shim is the
+only `console` a script sees. `runtime.log` is the native equivalent of
+`console.log` (stdout). Library embedders get the goja_nodejs console by
+default instead; toggle it with `Options.DisableConsole`.
+
 ### Migration from v0.8.0
 
 | v0.8.0 | v0.9.0 |

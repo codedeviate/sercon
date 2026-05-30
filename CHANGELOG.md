@@ -8,6 +8,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`console` global (browser/Node compatibility).** `console.log` /
+  `console.info` / `console.debug` print a clean, space-joined line to
+  stdout; `console.warn` / `console.error` go to stderr. This replaces
+  the goja default console (which routed everything through Go's logger
+  — timestamped, all on stderr) with a stream-correct, prefix-free shim
+  so scripts pasted from a browser or Node run unchanged. `runtime.log`
+  remains the native stdout logger. The CLI sets `Options.DisableConsole`
+  so its `console` is authoritative; library embedders still get the
+  goja_nodejs console by default.
+
 ## [0.13.2] — 2026-05-30
 
 ### Fixed

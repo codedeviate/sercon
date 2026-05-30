@@ -186,3 +186,13 @@ func serverDocs() map[string]string {
 		"smtp.listen":  "Bind an SMTP listener: server.smtp.listen({port, hostname?, handlers: {onMail, onRcpt, onData}, auth?, starttls?, allowInsecureAuth?, maxMessageBytes?, maxRecipients?, sessionTimeout?}) → handle with .address, .close(), .stopped Promise. Handlers receive (envelope, …) per stage; return true/undefined to accept, false to reject, a string for a 550 reason, throw for 451 temp-fail. onData receives a parsed Message with text/html bodies, attachments, and raw bytes.",
 	}
 }
+
+func consoleDocs() map[string]string {
+	return map[string]string{
+		"log":   "Print a space-joined line of the stringified arguments to stdout. Browser/Node-compatible; same output as runtime.log.",
+		"info":  "Alias of console.log — stringified arguments, space-joined, to stdout.",
+		"debug": "Alias of console.log — stringified arguments, space-joined, to stdout.",
+		"warn":  "Like console.log but writes to stderr.",
+		"error": "Like console.log but writes to stderr.",
+	}
+}

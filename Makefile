@@ -43,6 +43,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
 	examples/scripts/async.ts \
 	examples/scripts/argv.ts \
+	examples/scripts/console.ts \
 	examples/scripts/hash.ts \
 	examples/scripts/strings.ts \
 	examples/scripts/path-and-time.ts \

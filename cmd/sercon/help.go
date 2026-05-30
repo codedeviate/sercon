@@ -186,6 +186,10 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    --examples for a guided tour. The generated sercon.d.ts (see")
 	fmt.Fprintln(w, "    -emit-dts) is the machine-readable spec.")
 	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "    A `console` global (log/info/debug → stdout, warn/error → stderr)")
+	fmt.Fprintln(w, "    is also provided so scripts pasted from a browser or Node run")
+	fmt.Fprintln(w, "    unchanged; runtime.log is the native equivalent.")
+	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "    Long-running scripts (HTTP servers, WebSocket handlers) keep the")
 	fmt.Fprintln(w, "    engine alive while listeners are bound. Use `sercon serve")
 	fmt.Fprintln(w, "    script.ts` to add production niceties: structured access log to")
@@ -838,10 +842,18 @@ const pl = codec.perl.dumper(true);                     // $VAR1 = bless( ... );
 runtime.assert.equal(codec.perl.parseDumper(pl), true, "perl bool");`)
 	note("Decoded objects keep stable key order (canonical-JSON / payment-hash safe). opts.classKey (default \"__class\"), opts.perlBoolClass (default \"JSON::XS::Boolean\"), opts.indent. See MANUAL.md §codec.")
 
+	header(44, "Console (browser/Node compat)")
+	code(`// A console shim so scripts pasted from a browser / Node run as-is.
+console.log("hello", 1 + 2);     // -> stdout (like runtime.log)
+console.info("fyi");             // -> stdout
+console.warn("heads up");        // -> stderr
+console.error("oops");           // -> stderr`)
+	note("log/info/debug print to stdout, warn/error to stderr — clean, space-joined, no timestamp. runtime.log is the native equivalent.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 43
+const exampleCount = 44
