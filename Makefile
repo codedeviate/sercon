@@ -158,7 +158,13 @@ version-check:
 		echo "version mismatch: code=$$const cover=$$cover footer=$$footer"; \
 		exit 1; \
 	fi; \
-	echo "version markers in sync at $$const"
+	coverdate=$$(sed -nE 's|.*<div class="date">([0-9]{4}-[0-9]{2}-[0-9]{2})</div>.*|\1|p' MANUAL.md); \
+	logdate=$$(sed -nE "s|^## \[$$const\][^0-9]*([0-9]{4}-[0-9]{2}-[0-9]{2}).*|\1|p" CHANGELOG.md | head -1); \
+	if [ -n "$$logdate" ] && [ "$$coverdate" != "$$logdate" ]; then \
+		echo "date mismatch: manual cover date $$coverdate != CHANGELOG [$$const] date $$logdate"; \
+		exit 1; \
+	fi; \
+	echo "version markers in sync at $$const ($${coverdate:-no cover date})"
 
 clean:
 	rm -f $(BIN) MANUAL.pdf
