@@ -93,3 +93,46 @@ func TestPHPVarDump_RejectsHugeCount(t *testing.T) {
 		}
 	}
 }
+
+func TestPHPVarDump_StringEscapingRoundTrip(t *testing.T) {
+	opts := withDumpDefaults(dumpOpts{})
+	// Strings/keys with embedded quotes and backslashes must round-trip.
+	cases := []*irNode{
+		nodeString(`a\b`),
+		nodeString(`he said "hi"`),
+		nodeString(`mix "q" and \ slash`),
+		{kind: dumpMap, pairs: []irPair{{`key"with`, nodeString(`v\al`)}}},
+	}
+	for _, in := range cases {
+		s, err := phpVarDumpEncode(in, opts)
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		out, err := phpVarDumpDecode(s, opts)
+		if err != nil {
+			t.Fatalf("decode %q: %v", s, err)
+		}
+		re, err := phpVarDumpEncode(out, opts)
+		if err != nil {
+			t.Fatalf("re-encode: %v", err)
+		}
+		if re != s {
+			t.Fatalf("round-trip:\n in:  %q\n out: %q", s, re)
+		}
+	}
+}
+
+func TestPHPVarDump_NewlineInStringSafe(t *testing.T) {
+	opts := withDumpDefaults(dumpOpts{})
+	s, err := phpVarDumpEncode(nodeString("a\nb"), opts)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	out, derr := phpVarDumpDecode(s, opts)
+	if derr != nil {
+		return // acceptable best-effort throw
+	}
+	if out.kind != dumpString || out.s != "a\nb" {
+		t.Fatalf("newline string neither round-tripped nor errored cleanly: kind=%d s=%q", out.kind, out.s)
+	}
+}

@@ -35,7 +35,10 @@ func phpDumpWrite(b *strings.Builder, n *irNode, depth int) error {
 	case dumpFloat:
 		fmt.Fprintf(b, "float(%s)", strconv.FormatFloat(n.f, 'G', -1, 64))
 	case dumpString:
-		fmt.Fprintf(b, "string(%d) %q", len(n.s), n.s)
+		// Emit the RAW bytes between the quotes (PHP var_dump does not escape
+		// them) so the declared byte length matches the body. Using Go's %q here
+		// would escape embedded " / \ and desync the length.
+		fmt.Fprintf(b, "string(%d) \"%s\"", len(n.s), n.s)
 	case dumpArray:
 		fmt.Fprintf(b, "array(%d) {\n", len(n.items))
 		inner := strings.Repeat("  ", depth+1)
@@ -73,7 +76,8 @@ func phpDumpWrite(b *strings.Builder, n *irNode, depth int) error {
 func phpDumpPairs(b *strings.Builder, pairs []irPair, depth int) error {
 	inner := strings.Repeat("  ", depth+1)
 	for _, p := range pairs {
-		fmt.Fprintf(b, "%s[%q]=>\n%s", inner, p.key, inner)
+		// Raw key bytes between the quotes (PHP var_dump does not escape keys).
+		fmt.Fprintf(b, "%s[\"%s\"]=>\n%s", inner, p.key, inner)
 		if err := phpDumpWrite(b, p.val, depth+1); err != nil {
 			return err
 		}
@@ -200,18 +204,22 @@ func (c *phpDumpCursor) parseFloat(body string) (*irNode, error) {
 // matches the bytes present before the closing quote. A mismatch (PHP truncates
 // long strings in some contexts) is treated as a lossy parse and thrown.
 func (c *phpDumpCursor) parseString(body string) (*irNode, error) {
-	s, err := c.decodeStringLine(body)
+	s, err := c.decodeStringValue(body)
 	if err != nil {
 		return nil, err
 	}
-	c.line++
 	return nodeString(s), nil
 }
 
-// decodeStringLine parses a `string(N) "<bytes>"` line and returns the bytes,
-// verifying the declared length. Shared by value and the visibility check is
-// done by the caller (keys are not strings here).
-func (c *phpDumpCursor) decodeStringLine(body string) (string, error) {
+// decodeStringValue parses a `string(N) "<bytes>"` value beginning at the
+// cursor and returns the raw bytes, advancing the line cursor past every line
+// it consumes. Decoding is count-based: it reads exactly the declared N bytes
+// after the opening quote, joining subsequent lines with '\n' so that a string
+// value containing embedded newlines round-trips. The byte immediately after
+// those N bytes must be the closing quote (and nothing but blank trailer may
+// follow on its line), otherwise the declared length disagrees with the body
+// (PHP truncates long strings in some contexts) and the parse is lossy.
+func (c *phpDumpCursor) decodeStringValue(body string) (string, error) {
 	rest := strings.TrimPrefix(body, "string(")
 	idx := strings.IndexByte(rest, ')')
 	if idx < 0 {
@@ -223,15 +231,50 @@ func (c *phpDumpCursor) decodeStringLine(body string) (string, error) {
 		return "", c.errf("invalid string length %q", nTok)
 	}
 	after := rest[idx+1:]
-	// Expect ` "<bytes>"`.
-	if !strings.HasPrefix(after, " \"") || !strings.HasSuffix(after, "\"") || len(after) < 3 {
+	// Expect ` "` opening the body.
+	if !strings.HasPrefix(after, " \"") {
 		return "", c.errf("malformed string body %q", body)
 	}
-	val := after[2 : len(after)-1]
-	if len(val) != declared {
-		return "", c.lossy(fmt.Sprintf("string(%d) declares %d bytes but %d present (truncated)", declared, declared, len(val)))
+	// firstLineTail is the raw text on this line after the opening quote.
+	firstLineTail := after[2:]
+
+	// Accumulate raw bytes until we have the declared count, pulling in further
+	// lines (rejoined with '\n') when the body spans multiple lines.
+	var sb strings.Builder
+	sb.Grow(declared)
+	chunk := firstLineTail
+	consumedExtraLines := 0
+	for {
+		need := declared - sb.Len()
+		// The current chunk must supply the closing quote at offset `need` once
+		// enough bytes are available. Account for the quote when checking length.
+		if len(chunk) >= need {
+			// We have all remaining declared bytes (plus, ideally, the closing
+			// quote) on this chunk.
+			val := sb.String() + chunk[:need]
+			closing := chunk[need:]
+			if !strings.HasPrefix(closing, "\"") {
+				return "", c.lossy(fmt.Sprintf("string(%d) declares %d bytes but body does not close after that count", declared, declared))
+			}
+			// Reject trailing non-blank content after the closing quote on the
+			// same line (mirrors the encoder, which emits nothing after it).
+			if strings.TrimSpace(closing[1:]) != "" {
+				return "", c.errf("trailing data after string %q", strings.TrimSpace(closing[1:]))
+			}
+			c.line += 1 + consumedExtraLines
+			return val, nil
+		}
+		// Consume the whole chunk and pull the next line, restoring the '\n'
+		// that strings.Split removed.
+		sb.WriteString(chunk)
+		sb.WriteByte('\n')
+		nextLine := c.line + 1 + consumedExtraLines
+		if nextLine >= len(c.lines) {
+			return "", c.lossy(fmt.Sprintf("string(%d) declares more bytes than present (truncated)", declared))
+		}
+		chunk = c.lines[nextLine]
+		consumedExtraLines++
 	}
-	return val, nil
 }
 
 // parseCount extracts the count from a composite header line, bounding it
@@ -405,19 +448,20 @@ func (c *phpDumpCursor) parsePropKeyLine() (string, error) {
 // dump non-reconstructible, so it is reported as a lossy parse. tok is the text
 // between the surrounding [ ].
 func (c *phpDumpCursor) decodeKeyString(tok, body string) (string, error) {
-	// Find the closing quote of the key. var_dump does not escape quotes inside
-	// keys in its canonical form, so the key ends at the next '"'.
-	endQuote := strings.IndexByte(tok[1:], '"')
-	if endQuote < 0 {
-		return "", c.errf("unterminated key string %q", body)
-	}
-	key := tok[1 : 1+endQuote]
-	trailer := tok[1+endQuote+1:] // text after the closing quote
-	if trailer != "" {
-		// e.g. `:"Point":private` or `:protected` — visibility annotation.
+	// var_dump emits raw key bytes between the quotes (no escaping), so a key
+	// may itself contain '"'. The key therefore runs from the first quote to
+	// the LAST quote on the token. A visibility annotation (`:"Cls":private` /
+	// `:protected`) leaves trailing non-quote text after that last quote, so
+	// such tokens do not end in '"' and are reported as a lossy parse.
+	if len(tok) < 2 || !strings.HasSuffix(tok, "\"") {
+		// No closing quote at the end means either an unterminated key or a
+		// visibility-annotated property. Distinguish for a clearer message.
+		if strings.IndexByte(tok[1:], '"') < 0 {
+			return "", c.errf("unterminated key string %q", body)
+		}
 		return "", c.lossy(fmt.Sprintf("visibility-annotated property %q", body))
 	}
-	return key, nil
+	return tok[1 : len(tok)-1], nil
 }
 
 // expectClose consumes a `}` line at the cursor.
