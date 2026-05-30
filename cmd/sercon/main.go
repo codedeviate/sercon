@@ -372,6 +372,9 @@ func registerSurface(e *scriptengine.Engine) error {
 			"netstatus": netstatusNamespace(vm, loop),
 			"email":     emailNamespace(vm, loop),
 			"browser":   browserNamespace(vm, loop),
+			"tcp":       tcpNamespace(vm, loop, e),
+			"udp":       udpNamespace(vm, loop, e),
+			"icmp":      icmpNamespace(vm, loop, e),
 		}
 	}); err != nil {
 		return err
