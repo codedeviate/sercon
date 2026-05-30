@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **Executable scripts via shebang.** A script may begin with a `#!`
+  shebang line; it is stripped before transpile (blanked in place so
+  transpile/syntax-error line numbers still match the source), so a
+  `.ts`/`.tsx`/`.js` file — entry or required module — can be `chmod
+  +x`'d and run directly. Previously a shebang line caused a
+  `SyntaxError`.
+- **`sercon run <script> [args...]` subcommand.** Runs exactly one
+  script and passes every token after the script path to it as
+  `runtime.argv[2:]` — no standalone `--` separator needed. This makes
+  fully argument-capable executable scripts practical via
+  `#!/usr/bin/env -S sercon run`. The default multi-script mode (every
+  positional is a separate script; args after `--`) is unchanged.
+
 ## [0.12.0] — 2026-05-30
 
 ### Added

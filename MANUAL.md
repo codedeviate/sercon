@@ -470,6 +470,52 @@ entry whose graph isn't known yet re-run unconditionally
 actually takes effect — the registry otherwise caches compiled
 bytecode across runs.
 
+### Shebang lines and executable scripts (`sercon run`)
+
+A script may begin with a `#!` shebang line. It is stripped before
+transpile (the line is blanked in place, so transpile/syntax error line
+numbers still match the source), which means a `.ts`/`.tsx`/`.js` file
+can be made directly executable:
+
+```bash
+#!/usr/bin/env sercon
+runtime.log("hello from an executable script");
+```
+
+```bash
+chmod +x hello.ts
+./hello.ts
+```
+
+The kernel launches a shebang script as `sercon <script> <args...>`,
+and in the default mode every positional is treated as a *separate
+script* — so positional arguments to a shebang script would be mistaken
+for additional script paths. For an executable script that takes
+arguments, use the **`run` subcommand** in the shebang:
+
+```
+sercon run [flags] <script.ts> [args...]
+```
+
+```bash
+#!/usr/bin/env -S sercon run
+runtime.log("args:", JSON.stringify(runtime.argv.slice(2)));
+```
+
+`sercon run` executes exactly one script and hands every token after
+the script path to it as `runtime.argv[2:]` (Node/Bun layout:
+`[program, script, ...args]`) — no standalone `--` separator is needed
+(and a shebang line can't inject one). The `env -S` form splits the
+single shebang argument so the kernel runs
+`sercon run /abs/path/script.ts arg1 arg2 …`. Flags (`-timeout`,
+`-root`, `-v`) are accepted before the script path; everything from the
+script path onward is positional and becomes script args. `env -S` is
+supported by GNU coreutils, macOS, and the BSDs.
+
+```bash
+sercon run script.ts --port 8080 alice    # argv[2:] = ["--port","8080","alice"]
+```
+
 ### `sercon serve`: long-running scripts with production niceties
 
 ```

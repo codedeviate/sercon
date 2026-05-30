@@ -30,8 +30,13 @@ const (
 )
 
 func main() {
-	if len(os.Args) >= 2 && os.Args[1] == "serve" {
-		os.Exit(runServe(os.Args[2:]))
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "serve":
+			os.Exit(runServe(os.Args[2:]))
+		case "run":
+			os.Exit(runRun(os.Args[2:]))
+		}
 	}
 	os.Exit(run(os.Args[1:]))
 }

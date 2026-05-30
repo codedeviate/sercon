@@ -169,6 +169,7 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, s.bold("SYNOPSIS"))
 	fmt.Fprintf(w, "    %s [flags] <script.ts> [script.ts ...]\n", s.cyan("sercon"))
 	fmt.Fprintf(w, "    %s [flags] -                # read entry script from stdin\n", s.cyan("sercon"))
+	fmt.Fprintf(w, "    %s run [flags] <script.ts> [args...]   # one script; args → runtime.argv\n", s.cyan("sercon"))
 	fmt.Fprintf(w, "    %s --examples | --help | --version\n\n", s.cyan("sercon"))
 
 	fmt.Fprintln(w, s.bold("DESCRIPTION"))
@@ -190,6 +191,12 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    script.ts` to add production niceties: structured access log to")
 	fmt.Fprintln(w, "    stderr, --shutdown-timeout (default 30s), --port-override, and a")
 	fmt.Fprintln(w, "    `READY listening on tcp/…` line on stdout per listener.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "    A script may begin with a `#!` shebang line (it's stripped before")
+	fmt.Fprintln(w, "    transpile), so a .ts can be made directly executable. For one that")
+	fmt.Fprintln(w, "    takes arguments, use the `run` subcommand via")
+	fmt.Fprintln(w, "    `#!/usr/bin/env -S sercon run`: `run` executes a single script and")
+	fmt.Fprintln(w, "    hands every token after it to the script as runtime.argv[2:].")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("FLAGS"))
@@ -213,7 +220,9 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    order; their results compose into the final exit code (highest wins).")
 	fmt.Fprintln(w, "    Everything after a standalone `--` is passed to the scripts as")
 	fmt.Fprintln(w, "    `runtime.argv` (Node/Bun layout: [program, script, ...args]); all")
-	fmt.Fprintln(w, "    scripts in one invocation share that argument tail.")
+	fmt.Fprintln(w, "    scripts in one invocation share that argument tail. (With `sercon")
+	fmt.Fprintln(w, "    run <script>`, no `--` is needed — tokens after the script are the")
+	fmt.Fprintln(w, "    args, which is what shebang scripts rely on.)")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("EXIT STATUS"))
@@ -235,7 +244,9 @@ func showHelp(w io.Writer) {
 	fmt.Fprintf(w, "    %s\n        One-liner from a shell pipeline (reads from stdin).\n",
 		s.cyan(`echo 'runtime.log(1+2);' | sercon -`))
 	fmt.Fprintf(w, "    %s\n        Pass arguments to a script via runtime.argv.\n",
-		s.cyan("sercon run.ts -- --port 8080"))
+		s.cyan("sercon script.ts -- --port 8080"))
+	fmt.Fprintf(w, "    %s\n        Run one script with args (no `--`); shebang-friendly.\n",
+		s.cyan("sercon run script.ts --port 8080"))
 	fmt.Fprintf(w, "    %s\n        Long-running server with graceful shutdown + access log.\n",
 		s.cyan("sercon serve server.ts"))
 	fmt.Fprintln(w, "")
