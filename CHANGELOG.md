@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-05-30
+
 ### Added
 
 - **`db.postgres`, `db.mysql`, `db.mssql` — server SQL engines.**
