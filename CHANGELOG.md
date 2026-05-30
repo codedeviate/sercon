@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-05-30
+
 ### Added
 
 - **`--help` / `--examples` are paged.** When stdout is a terminal, the
