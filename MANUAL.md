@@ -3,7 +3,7 @@
 <div class="subtitle">User Manual</div>
 <hr>
 <div class="version">Version 0.13.1</div> <!-- x-release-please-version -->
-<div class="date">2026-05-26</div>
+<div class="date">2026-05-30</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
 License · MIT

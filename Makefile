@@ -135,6 +135,7 @@ release-prep:
 	@sed -i.bak -E 's/(^const Version = ")[^"]+(")/\1$(VERSION)\2/' pkg/scriptengine/version.go
 	@sed -i.bak -E 's|(<div class="version">Version )[^<]+(</div>)|\1$(VERSION)\2|' MANUAL.md
 	@sed -i.bak -E 's/(\*This manual covers sercon v)[0-9.]+(\.)/\1$(VERSION)\2/' MANUAL.md
+	@d=$$(date +%Y-%m-%d); sed -i.bak -E "s|(<div class=\"date\">)[^<]+(</div>)|\1$$d\2|" MANUAL.md
 	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak
 	@$(MAKE) --no-print-directory version-check
 	@echo ""
