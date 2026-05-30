@@ -66,6 +66,7 @@ func run(args []string) int {
 	examples := fs.Bool("examples", false, "Show in-depth, colorized script examples of all features and exit")
 	version := fs.Bool("version", false, "Print the engine version and exit")
 	watch := fs.Bool("watch", false, "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Ctrl-C exits.")
+	noPager := fs.Bool("no-pager", false, "Don't page --help / --examples through $PAGER even on a terminal.")
 	fs.Usage = func() { showHelp(os.Stderr) }
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -73,13 +74,13 @@ func run(args []string) int {
 
 	switch {
 	case *helpShort || *helpLong:
-		showHelp(os.Stdout)
+		pageOutput(*noPager, showHelp)
 		return exitOK
 	case *version:
 		showVersion(os.Stdout)
 		return exitOK
 	case *examples:
-		showExamples(os.Stdout)
+		pageOutput(*noPager, showExamples)
 		return exitOK
 	}
 

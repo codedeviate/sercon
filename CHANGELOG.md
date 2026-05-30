@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`--help` / `--examples` are paged.** When stdout is a terminal, the
+  long help and feature-walkthrough screens now pipe through `$PAGER`
+  (falling back to `less` with `LESS=FRX`, ANSI color preserved), like
+  git. A pipe/redirect, the new `--no-pager` flag, or `PAGER=cat` renders
+  directly as before.
+
 ## [0.14.0] — 2026-05-30
 
 ### Added

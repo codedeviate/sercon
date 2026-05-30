@@ -355,6 +355,7 @@ sercon --examples | --help | --version
 | `-v` | Verbose: trace the rewritten entry-script JS and each module resolution to stderr; also print duration on failure. |
 | `-h`, `--help` | In-depth colorized help. |
 | `--examples` | In-depth colorized walkthrough of every feature. |
+| `--no-pager` | Don't page `--help` / `--examples`. By default, when stdout is a terminal they pipe through `$PAGER` (falling back to `less` with `LESS=FRX`, color preserved); a pipe/redirect, `--no-pager`, or `PAGER=cat` renders directly. |
 | `--version` | Print the engine version (plus goja/esbuild build-info versions). |
 | `--watch` | Re-run on file change under the script root. Debounced 150 ms. Ctrl-C exits. |
 
