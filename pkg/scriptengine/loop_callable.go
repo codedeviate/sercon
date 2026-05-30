@@ -75,7 +75,12 @@ func (lc *LoopCallable) Call(buildArgs func(vm *goja.Runtime) ([]goja.Value, err
 		err error
 	}
 	done := make(chan result, 1)
-	lc.loop.RunOnLoop(func(vm *goja.Runtime) {
+	// RunOnLoop returns false when the loop has been terminated (timeout /
+	// cancel watcher) — the job is NOT enqueued and would never run, so the
+	// `<-done` below would block forever, leaking the calling goroutine (and
+	// any fd it holds). Detect that and return promptly instead; every Call
+	// site treats a returned error as "stop", so the caller's goroutine exits.
+	if !lc.loop.RunOnLoop(func(vm *goja.Runtime) {
 		defer func() {
 			if r := recover(); r != nil {
 				done <- result{nil, fmt.Errorf("scriptengine: LoopCallable.Call panicked: %v", r)}
@@ -91,7 +96,14 @@ func (lc *LoopCallable) Call(buildArgs func(vm *goja.Runtime) ([]goja.Value, err
 			err = fmt.Errorf("scriptengine: LoopCallable.Call: %w", err)
 		}
 		done <- result{v, err}
-	})
+	}) {
+		return nil, errLoopTerminated
+	}
 	r := <-done
 	return r.val, r.err
 }
+
+// errLoopTerminated is returned by Call when the event loop was terminated
+// before the scheduled callback could run (so it will never run). Call sites
+// treat any error as a signal to stop and unwind their goroutine.
+var errLoopTerminated = errors.New("scriptengine: event loop terminated before call ran")

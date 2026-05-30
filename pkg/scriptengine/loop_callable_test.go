@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -238,5 +239,55 @@ test.fire();
 	}
 	if !strings.Contains(gotErr.Error(), "boom") {
 		t.Fatalf("expected original error text preserved, got %v", gotErr)
+	}
+}
+
+// TestLoopCallable_TerminatedLoopReturnsErrorNotHang guards the fix for the
+// goroutine/fd leak the net.capture review surfaced: when the watcher hard-
+// aborts a Run via loop.Terminate() (timeout / context cancel), RunOnLoop
+// returns false (the job will never run), so a reader goroutine's Call must
+// return an error rather than block forever on its done channel.
+func TestLoopCallable_TerminatedLoopReturnsErrorNotHang(t *testing.T) {
+	eng := New(Options{DisableConsole: true})
+	var (
+		captured *LoopCallable
+		theLoop  *eventloop.EventLoop
+	)
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"setHandler": func(call goja.FunctionCall) goja.Value {
+				fn, ok := goja.AssertFunction(call.Argument(0))
+				if !ok {
+					panic(vm.NewTypeError("setHandler: expected function"))
+				}
+				captured = NewLoopCallable(loop, fn)
+				theLoop = loop
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Run(context.Background(), "t.ts", `test.setHandler(x => x);`); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the cancel/timeout watcher hard-aborting the loop.
+	theLoop.Terminate()
+
+	// A reader-style Call into the terminated loop must return promptly.
+	done := make(chan error, 1)
+	go func() {
+		_, err := captured.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+			return []goja.Value{vm.ToValue(1)}, nil
+		})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected an error calling into a terminated loop, got nil")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("LoopCallable.Call hung on a terminated loop")
 	}
 }
