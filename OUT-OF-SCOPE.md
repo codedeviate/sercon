@@ -109,26 +109,29 @@ shipped in v0.10.0 alongside the first protocol family (HTTP/HTTPS).
 Per-protocol surface area remains in this list; each is its own
 sub-spec cycle built on the existing foundation.
 
-- **TCP / UDP / ICMP servers (listeners).** Accept loops that hand
-  each connection or packet to a JS callback. The HTTP listener
-  exercises the TCP path implicitly; raw TCP / UDP / ICMP server
-  surfaces are not exposed to scripts. **Library:** stdlib `net`
-  for TCP/UDP; `golang.org/x/net/icmp` for ICMP (raw sockets, so
-  elevated privileges). Listener lifecycle uses the same
-  `HoldRun` + `LoopCallable` pattern as the HTTP server.
+- **TCP / UDP servers (listeners).** *(Shipped — v0.23.0.)*
+  `server.tcp.listen({port}, conn => …)` (per-connection callback; the
+  `conn` is the same handle as `net.tcp.connect`) and
+  `server.udp.listen({port}, (msg, reply) => …)` (per-datagram callback +
+  `reply`). Built on the same `HoldRun` + `LoopCallable` accept-loop
+  pattern as the HTTP server, reusing the v0.22.0 client push-socket
+  scaffold; `server.tcp.close()` drains accepted connections.
+- **ICMP server (listener).** Still open: a raw-ICMP receive/respond
+  surface (`golang.org/x/net/icmp`, raw sockets → elevated privileges).
+  Niche; deferred when TCP/UDP listeners shipped — promote on demand.
 - **Client + server for the common internet protocols.** Umbrella
   goal: broad protocol coverage on both sides. Clients already ship
   for several (`net.probe.{dns,tls,ntp,whois,smtp,wss}`,
   `net.http`, plus `db.redis` / `db.memcached` /
   `db.ldap` / `db.dict`); the HTTP/HTTPS server (with router,
   middleware, static-file mount, and WebSocket upgrade) shipped in
-  v0.10.0 and the SMTP server (`server.smtp.listen`) plus outbound
-  sender (`net.email.send`) shipped in v0.11.0; IMAP, FTP, and POP3
-  servers are planned as separate sub-spec cycles using the v0.10.0
-  foundation. Additional
-  protocols (e.g. MQTT) and broader client coverage stay rated Hard
-  for the aggregate scope — promote individual protocols as they're
-  actually needed.
+  v0.10.0, the SMTP server (`server.smtp.listen`) plus outbound
+  sender (`net.email.send`) shipped in v0.11.0, and raw TCP/UDP
+  listeners shipped in v0.23.0; IMAP, FTP, and POP3 servers are planned
+  as separate sub-spec cycles (each an accept loop atop `server.tcp`
+  plus a protocol state machine). Additional protocols (e.g. MQTT) and
+  broader client coverage stay rated Hard for the aggregate scope —
+  promote individual protocols as they're actually needed.
 
 ### Agent-browser automation
 
