@@ -83,7 +83,10 @@ func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work fun
 				if err != nil {
 					_ = reject(vm.NewGoError(err))
 				} else {
-					_ = resolve(vm.ToValue(val))
+					// OrderedToValue builds any *Ordered result into a goja
+					// object with deterministic key order, on the loop; other
+					// result types fall through to vm.ToValue unchanged.
+					_ = resolve(OrderedToValue(vm, val))
 				}
 				loop.ClearTimeout(keepAlive)
 			})

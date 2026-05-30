@@ -356,6 +356,11 @@ func tsType(ctx *typeCtx, t reflect.Type) string {
 		return "unknown"
 	case "goja.FunctionCall":
 		return "{ This: unknown; Arguments: unknown[] }"
+	case "scriptengine.Ordered", "*scriptengine.Ordered":
+		// Ordered is an insertion-ordered map used for results with
+		// conditional/dynamic/decoded-JSON keys; its shape isn't known at
+		// compile time, so the honest TS type is an object of unknowns.
+		return "Record<string, unknown>"
 	}
 	switch t.Kind() {
 	case reflect.String:
