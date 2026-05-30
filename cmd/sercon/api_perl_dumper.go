@@ -419,7 +419,7 @@ func (c *perlCursor) parseHashKey() (string, error) {
 // parseBless handles `bless( <inner>, '<Class>' )`. The inner is one of:
 //   - the bool sentinel `do{\(my $o = 0|1)}` → dumpBool if Class ∈ bool family
 //   - a `{ … }` hash ref → dumpClass
-//   - a `[ … ]` array ref → dumpClass
+//   - a `[ … ]` array ref → error (not round-trippable; see below)
 //   - a blessed scalar ref (`\$x`) that is not a recognized bool → error
 func (c *perlCursor) parseBless() (*irNode, error) {
 	if err := c.expect("bless"); err != nil {
@@ -483,17 +483,19 @@ func (c *perlCursor) parseBless() (*irNode, error) {
 		}
 		return nodeBool(boolVal == 1), nil
 	}
-	// inner is a hash (dumpMap) or array (dumpArray): turn into a classed node.
-	out := &irNode{kind: dumpClass, class: class}
+	// inner is a hash (dumpMap) or array (dumpArray). Only the hash case is
+	// round-trippable: a JS object can carry the __class sentinel. A JS array
+	// cannot (jsToIR always treats arrays as dumpArray, dropping the class),
+	// and irToJS / the encoder only read dumpClass pairs — so a blessed array
+	// ref would silently lose its elements. Reject it, like blessed scalars.
 	switch inner.kind {
 	case dumpMap:
-		out.pairs = inner.pairs
+		return &irNode{kind: dumpClass, class: class, pairs: inner.pairs}, nil
 	case dumpArray:
-		out.items = inner.items
+		return nil, c.errf("unsupported: blessed array ref")
 	default:
 		return nil, c.errf("unsupported bless inner kind")
 	}
-	return out, nil
 }
 
 // parseBoolSentinel reads the `do{\(my $o = 0|1)}` form and returns 0 or 1.

@@ -44,6 +44,13 @@ func TestPerlDumper_BlessedScalarThrows(t *testing.T) {
 	}
 }
 
+func TestPerlDumper_BlessedArrayRefThrows(t *testing.T) {
+	opts := withDumpDefaults(dumpOpts{})
+	if _, err := perlDumperDecode(`$VAR1 = bless( [1,2], 'X' );`, opts); err == nil {
+		t.Fatal("expected unsupported blessed array ref error (not silent data loss)")
+	}
+}
+
 func TestPerlDumper_SelfRefCycleThrows(t *testing.T) {
 	opts := withDumpDefaults(dumpOpts{})
 	if _, err := perlDumperDecode("$VAR1 = {};\n$VAR1->{self} = $VAR1;", opts); err == nil {
