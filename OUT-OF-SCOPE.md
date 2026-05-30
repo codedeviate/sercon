@@ -32,6 +32,22 @@ the design space is unsettled, or it conflicts with current direction.
 Each Deferred entry names the reason so it's easy to re-promote when
 the situation changes.
 
+## Trivial
+
+### CI / build
+
+- **Bump GitHub Actions off the Node.js 20 runtime (deadline-driven).**
+  `release.yml` and `ci.yml` pin actions whose JS runtimes run on Node.js
+  20 — `actions/checkout@v4`, `actions/setup-go@v5`, and
+  `goreleaser/goreleaser-action@v6` all emit the deprecation annotation on
+  every run. GitHub forces Node.js 24 by default on **2026-06-16** and
+  removes Node.js 20 from the runners on **2026-09-16**. Bump each action
+  to a Node-24-compatible release before mid-June (or, as a stopgap, set
+  `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` on the workflow) so the
+  release/CI jobs don't break. Mechanical version-pin edit in the two
+  workflow files; verify with a CI run. (Ref:
+  github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners.)
+
 ## Easy
 
 ### Correctness / output stability
