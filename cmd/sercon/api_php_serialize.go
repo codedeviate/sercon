@@ -293,6 +293,12 @@ func (c *phpCursor) parseArray() (*irNode, error) {
 	if perr != nil || count < 0 {
 		return nil, c.errf("invalid array count %q", tok)
 	}
+	// Each element (key+value) needs >=1 byte of input, so a legitimate count
+	// can never exceed the bytes remaining. Guard before allocating to avoid a
+	// fatal OOM from an attacker-controlled count.
+	if count > len(c.s)-c.pos {
+		return nil, c.errf("array count %d exceeds remaining input", count)
+	}
 	if err := c.expect("{"); err != nil {
 		return nil, err
 	}
@@ -372,6 +378,12 @@ func (c *phpCursor) parseObject() (*irNode, error) {
 	count, perr := strconv.Atoi(cntTok)
 	if perr != nil || count < 0 {
 		return nil, c.errf("invalid property count %q", cntTok)
+	}
+	// Each property (key+value) needs >=1 byte of input, so a legitimate count
+	// can never exceed the bytes remaining. Guard before allocating to avoid a
+	// fatal OOM from an attacker-controlled count.
+	if count > len(c.s)-c.pos {
+		return nil, c.errf("object count %d exceeds remaining input", count)
 	}
 	if err := c.expect("{"); err != nil {
 		return nil, err

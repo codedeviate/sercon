@@ -94,3 +94,15 @@ func TestPHPSerialize_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestPHPSerialize_RejectsHugeCount(t *testing.T) {
+	opts := withDumpDefaults(dumpOpts{})
+	for _, bad := range []string{
+		`a:9999299999999:{`,
+		`O:1:"x":9999299999999:{`,
+	} {
+		if _, err := phpSerializeDecode(bad, opts); err == nil {
+			t.Errorf("%q: expected error, not a crash/accept", bad)
+		}
+	}
+}
