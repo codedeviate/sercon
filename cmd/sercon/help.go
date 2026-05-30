@@ -814,12 +814,12 @@ await srv.close();`)
 // object (PHP O:...); without it a plain array (a:...) is emitted.
 const order = { __class: "Order", id: 7, items: ["a", "b"], paid: true };
 const s = codec.php.serialize(order);                   // O:5:"Order":3:{...}
-runtime.assert.equal(codec.php.unserialize(s), order, "round-trip");
+runtime.log("unserialize ->", codec.php.unserialize(s));
 
 // var_export / var_dump have matching parsers (var_dump parse is
 // best-effort — it throws on lossy markers like *RECURSION*).
 const ve = codec.php.varExport(order);                  // valid PHP literal
-runtime.assert.equal(codec.php.parseVarExport(ve), order, "var_export");
+runtime.log("parseVarExport ->", codec.php.parseVarExport(ve));
 
 // Perl Data::Dumper. JS booleans use the JSON::XS::Boolean convention
 // (a blessed scalar ref), so they survive the round-trip as booleans.

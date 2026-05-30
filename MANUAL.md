@@ -666,8 +666,9 @@ encode — there is no JS value that can represent it losslessly here.
 
 **`var_dump` parse is lossy.** PHP's `var_dump` is a debug view, not a
 serialization format; `parseVarDump` is best-effort and **throws** when it
-hits a marker it cannot faithfully reconstruct: `*RECURSION*`, the
-`…` length-truncation marker, or visibility-annotated property names
+hits something it cannot faithfully reconstruct: the `*RECURSION*`
+marker, a length-truncated string (its declared byte length disagrees
+with the bytes present), or visibility-annotated property names
 (`["x":"Cls":private]`).
 
 #### `codec.perl` — Perl `Data::Dumper`
