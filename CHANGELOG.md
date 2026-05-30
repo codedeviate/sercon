@@ -8,6 +8,26 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`server.tcp.listen`, `server.udp.listen` — raw inbound listeners.**
+  The server-side counterparts to the v0.22.0 `net.tcp.connect` /
+  `net.udp.open` clients. `server.tcp.listen({ port, host?, readBuffer? },
+  conn => {…})` runs the connection handler once per accepted socket, where
+  `conn` is the **same handle shape** as `net.tcp.connect` — `onData(cb)`
+  (cb gets `{ bytes, text }`), `onClose(cb)`, `onError(cb)`, `write(data)`
+  (string or `Uint8Array`), `close()`, and `remote` / `local`.
+  `server.udp.listen({ port, host? }, (msg, reply) => {…})` runs the handler
+  once per inbound datagram, where `msg` is `{ bytes, text, address, port }`
+  (the sender) and `reply(data)` (string or `Uint8Array`) sends a datagram
+  back to that sender, returning a Promise. Both bind synchronously (throw
+  on bind error), accept `port: 0` for an OS-chosen ephemeral port, and
+  return a handle `{ address: "tcp|udp/host:port", close() }`. Like the
+  other `server.*` listeners they hold the event loop open while bound and,
+  under `sercon serve`, emit a `READY listening on tcp|udp/…` line and
+  participate in graceful shutdown. New example `server-tcp.ts` (offline
+  TCP echo server + client round-trip).
+
 ## [0.22.0] — 2026-05-30
 
 ### Added

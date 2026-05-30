@@ -1019,8 +1019,9 @@ name and the active keys.
 ## 6. Servers
 
 The `server` global (added in v0.10.0) hosts inbound listeners — scripts
-that *accept* connections rather than make them. The first sub-spec
-ships `server.http` and `server.https`; future cycles will add SMTP,
+that *accept* connections rather than make them. It ships `server.http`
+and `server.https` (§6.2), `server.smtp` (§6.7), and the raw
+`server.tcp` / `server.udp` listeners (§6.8); future cycles will add
 IMAP, FTP, and POP3 against the same engine foundation.
 
 ### 6.1 Foundation: `HoldRun` + `LoopCallable`
@@ -1550,6 +1551,76 @@ handshake, AUTH, `MAIL FROM` rejected) **throw** a JS exception. The
 `rejected` array captures only individual `RCPT TO` addresses the server
 permitted us to attempt but then refused — the transaction continues for
 the rest, so a partial send still delivers to the accepted recipients.
+
+### 6.8 Raw TCP / UDP
+
+`server.tcp.listen` and `server.udp.listen` are the inbound counterparts
+to the `net.tcp.connect` / `net.udp.open` clients (§5 `net`). They bind a
+listening socket **synchronously** — a port already in use throws
+immediately, before the returned Promise resolves — then serve in the
+background, keeping the event loop alive via the same `HoldRun` model as
+the HTTP and SMTP listeners. Passing `port: 0` binds an OS-chosen
+ephemeral port; read it back from the returned handle's `address`.
+
+Both return a server handle:
+
+```ts
+srv.address;       // "tcp/127.0.0.1:54321"  or  "udp/127.0.0.1:54321"
+srv.close();       // Promise<void> — stop accepting, drain, release HoldRun
+```
+
+#### `server.tcp.listen({…}, conn => {…})`
+
+The second argument is a **connection handler** invoked once per accepted
+socket. The `conn` it receives is the **same handle shape** as
+`net.tcp.connect` — there is no separate server-connection type to learn:
+
+```ts
+const srv = await server.tcp.listen({ port: 0 }, (conn) => {
+  conn.onData(ev => conn.write(ev.bytes));   // ev = { bytes: Uint8Array, text }
+  conn.onClose(() => runtime.log("peer disconnected"));
+  conn.onError(e => runtime.log("conn error", String(e)));
+  // conn.write(data)  — string (UTF-8) or Uint8Array
+  // conn.remote / conn.local  — peer / local "host:port"
+  // conn.close()  — half/full close this connection
+});
+
+const port = Number(srv.address.split(":").pop());   // "tcp/127.0.0.1:PORT"
+// ... net.tcp.connect("127.0.0.1", port) to talk to it ...
+await srv.close();
+```
+
+**Options:** `port` (required; `0` for ephemeral), `host` (default
+`127.0.0.1`), `readBuffer` (per-connection read chunk size, same meaning
+as `net.tcp.connect`).
+
+#### `server.udp.listen({…}, (msg, reply) => {…})`
+
+UDP is connectionless, so the handler fires **once per inbound datagram**
+rather than once per connection. `msg` describes the datagram and its
+sender; `reply` sends a datagram back to that same sender:
+
+```ts
+const srv = await server.udp.listen({ port: 0 }, (msg, reply) => {
+  // msg = { bytes: Uint8Array, text, address, port }  — the sender
+  runtime.log("got", msg.text, "from", msg.address + ":" + msg.port);
+  reply("ack:" + msg.text);     // string or Uint8Array; returns a Promise
+});
+
+const port = Number(srv.address.split(":").pop());   // "udp/127.0.0.1:PORT"
+await srv.close();
+```
+
+**Options:** `port` (required; `0` for ephemeral), `host` (default
+`127.0.0.1`).
+
+**Lifecycle.** Identical to §6.6: vanilla `sercon script.ts` keeps the
+loop alive while bound and terminates abruptly on SIGINT; `sercon serve
+script.ts` adds the access log, a `READY listening on tcp/…` (or
+`udp/…`) line on stdout per listener, and graceful shutdown. As with all
+`server.*` bindings, the connection / datagram handlers marshal back onto
+the single goja loop, so **handlers serialize** (one at a time across all
+listeners).
 
 ## 7. JavaScript runtime built-ins (goja)
 

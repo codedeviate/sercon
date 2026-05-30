@@ -81,6 +81,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/server-static.ts \
 	examples/scripts/server-ws.ts \
 	examples/scripts/server-smtp.ts \
+	examples/scripts/server-tcp.ts \
 	examples/scripts/net-sockets.ts
 
 build:

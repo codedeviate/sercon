@@ -890,10 +890,31 @@ await ic.send({ to: "127.0.0.1", id: 1, seq: 1, payload: "ping" });
 await cli.close(); await srv.close(); await t.close();`)
 	note("Inbound events carry bytes (Uint8Array) + text; UDP-bound add address/port, ICMP adds address/type/code. ICMP open() rejects without raw-socket privileges; its body is always Echo-shaped (id/seq/payload). See MANUAL.md §net.")
 
+	header(47, "Raw TCP/UDP servers (server.tcp / server.udp)")
+	code(`// Inbound counterparts to net.tcp.connect / net.udp.open. Both bind
+// synchronously (throw on bind error); port:0 picks an ephemeral port.
+// TCP: the handler runs once per accepted socket; conn is the SAME
+// handle as net.tcp.connect (onData/onClose/onError/write/close).
+const tcp = await server.tcp.listen({ port: 0 }, (conn) => {
+  conn.onData(ev => conn.write(ev.bytes));   // echo everything back
+  conn.onClose(() => runtime.log("peer gone"));
+});
+runtime.log("tcp on", tcp.address);          // "tcp/127.0.0.1:PORT"
+
+// UDP: the handler runs once per datagram; reply() answers its sender.
+const udp = await server.udp.listen({ port: 0 }, (msg, reply) => {
+  runtime.log("got", msg.text, "from", msg.address + ":" + msg.port);
+  reply("ack:" + msg.text);
+});
+runtime.log("udp on", udp.address);          // "udp/127.0.0.1:PORT"
+
+await tcp.close(); await udp.close();`)
+	note("Same connection-handle shape as the net.tcp/net.udp clients. Both keep the loop alive while bound; `sercon serve` adds a `READY listening on tcp|udp/…` line + graceful shutdown. See MANUAL.md §6.8.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 46
+const exampleCount = 47
