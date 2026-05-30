@@ -164,12 +164,14 @@ func buildICMPObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scripteng
 					if peer != nil {
 						meta["address"] = peer.String()
 					}
-					s.recv <- inbound{payload: append([]byte(nil), body...), meta: meta}
+					if !s.sendInbound(inbound{payload: append([]byte(nil), body...), meta: meta}) {
+						return
+					}
 				}
 			}
 			if err != nil {
 				if !isClosedConnErr(err) {
-					s.recv <- inbound{err: err}
+					s.sendInbound(inbound{err: err})
 				}
 				return
 			}

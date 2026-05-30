@@ -27,7 +27,8 @@ type pushSocket struct {
 	vm   *goja.Runtime
 	loop *eventloop.EventLoop
 
-	recv chan inbound // buffered; reader → dispatcher
+	recv chan inbound  // buffered; reader → dispatcher
+	done chan struct{} // closed by closeFromScript to unblock a parked reader
 
 	mu       sync.Mutex
 	onData   *scriptengine.LoopCallable
@@ -45,7 +46,7 @@ func newPushSocket(vm *goja.Runtime, loop *eventloop.EventLoop, bufSize int) *pu
 	if bufSize <= 0 {
 		bufSize = 64
 	}
-	return &pushSocket{vm: vm, loop: loop, recv: make(chan inbound, bufSize)}
+	return &pushSocket{vm: vm, loop: loop, recv: make(chan inbound, bufSize), done: make(chan struct{})}
 }
 
 // startDispatch is called once, under mu, when the first data callback is
@@ -111,6 +112,21 @@ func (s *pushSocket) fireClose() {
 	})
 }
 
+// sendInbound hands one received unit to the dispatcher. A reader MUST use
+// this rather than a bare `s.recv <- in`: if the buffer is full and no
+// consumer is draining (e.g. no data callback registered), a bare send parks
+// forever, and a later close() can't unblock it (the reader isn't in
+// conn.Read, so closing the conn doesn't help). Returns false once the socket
+// is closed, signalling the reader to exit and let `defer close(s.recv)` run.
+func (s *pushSocket) sendInbound(in inbound) bool {
+	select {
+	case s.recv <- in:
+		return true
+	case <-s.done:
+		return false
+	}
+}
+
 func (s *pushSocket) releaseOnce() {
 	s.closeOnce.Do(func() {
 		if s.release != nil {
@@ -130,6 +146,10 @@ func (s *pushSocket) closeFromScript() error {
 	if s.closed.Swap(true) {
 		return nil
 	}
+	// Signal first, then tear down: a reader parked on a full-buffer send to
+	// recv (no consumer draining) isn't sitting in conn.Read, so closing the
+	// conn alone wouldn't unblock it. Closing done lets sendInbound bail.
+	close(s.done)
 	var err error
 	if s.teardown != nil {
 		err = s.teardown()

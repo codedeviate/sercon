@@ -154,11 +154,13 @@ func buildUDPObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengi
 						meta["address"] = addr.IP.String()
 						meta["port"] = addr.Port
 					}
-					s.recv <- inbound{payload: cp, meta: meta}
+					if !s.sendInbound(inbound{payload: cp, meta: meta}) {
+						return
+					}
 				}
 				if err != nil {
 					if !isClosedConnErr(err) {
-						s.recv <- inbound{err: err}
+						s.sendInbound(inbound{err: err})
 					}
 					return
 				}
@@ -166,11 +168,13 @@ func buildUDPObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengi
 				n, err := conn.Read(buf)
 				if n > 0 {
 					cp := append([]byte(nil), buf[:n]...)
-					s.recv <- inbound{payload: cp}
+					if !s.sendInbound(inbound{payload: cp}) {
+						return
+					}
 				}
 				if err != nil {
 					if !isClosedConnErr(err) {
-						s.recv <- inbound{err: err}
+						s.sendInbound(inbound{err: err})
 					}
 					return
 				}
