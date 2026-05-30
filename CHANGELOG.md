@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-05-30
+
 ### Added
 
 - **`net.tcp.connect`, `net.udp.open`, `net.icmp.open` — raw client
