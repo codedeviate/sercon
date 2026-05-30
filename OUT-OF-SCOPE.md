@@ -37,21 +37,12 @@ the situation changes.
 ### Tooling / developer experience
 
 - **Editor autocomplete wiring (VSCode / Zed / any tsserver editor).**
-  The pieces already exist: `sercon -emit-dts` emits the ten reserved
-  top-level globals (`codec`, `crypto`, `db`, `fs`, `net`, `runtime`,
-  `server`, `services`, `text`, `tui`) as ambient `declare const` blocks with
-  JSDoc on every member, so any TypeScript language-server-backed
+  *(Shipped — v0.17.0.)* `sercon init [dir]` drops `sercon.d.ts` (the
+  reserved-global declarations, same content as `-emit-dts`) and a
+  `jsconfig.json` that includes it, so any TypeScript language-server
   editor (VSCode, Zed, Neovim+coc, Sublime LSP, …) gives completion +
-  hover docs once the `.d.ts` is in its program. No per-editor plugin
-  needed. The gap is the *glue* that makes editors pick it up without
-  manual setup:
-  - ship a `jsconfig.json` (or `tsconfig.json`) in `examples/scripts/`
-    that includes `sercon.d.ts` — one file covers every tsserver editor;
-  - document a `sercon -emit-dts sercon.d.ts` + tiny jsconfig recipe for
-    users' own script directories;
-  - optionally an `sercon init <dir>` helper that drops both in.
-  Per-file `/// <reference path="./sercon.d.ts" />` is the no-config
-  fallback. **Library:** stdlib only (file emit already exists).
+  hover docs with no per-editor plugin. The command also prints the
+  per-file `/// <reference path="./sercon.d.ts" />` no-config fallback.
 
 ### Databases
 
@@ -59,20 +50,17 @@ the situation changes.
 driver + an `open()`→handle shape (`exec` / `query` / `queryValue`,
 see `cmd/sercon/sqlite.go`). Every other SQL engine below is the
 same handle wired to a different `database/sql` driver and a DSN, so
-the marginal cost per engine is small. Open question to settle once
-(not blocking): one DSN-driven `db.open(driver, dsn)` vs. a
-sibling namespace per engine inside `db` (`db.mysql` /
-`db.postgres` / …). All drivers named are **pure Go (no cgo)**.
+the marginal cost per engine is small. The design question is settled:
+**a sibling namespace per engine** inside `db` (`db.postgres` /
+`db.mysql` / `db.mssql`, each wiring its driver + DSN onto a shared
+`database/sql` handle — `cmd/sercon/db_sql.go`), not one DSN-driven
+`db.open(driver, dsn)`. All drivers named are **pure Go (no cgo)**.
 
-- **MySQL / MariaDB.** One driver covers both (MariaDB speaks the
-  MySQL wire protocol). **Library:** `github.com/go-sql-driver/mysql`
-  (the de facto standard).
-- **PostgreSQL.** **Library:** `github.com/jackc/pgx` via its
-  `stdlib` `database/sql` adapter (modern, maintained; `lib/pq` is the
-  older alternative). CockroachDB and other Postgres-wire engines come
-  along for free.
-- **Microsoft SQL Server.** **Library:**
-  `github.com/microsoft/go-mssqldb` (pure Go).
+- **MySQL / MariaDB, PostgreSQL, Microsoft SQL Server.** *(Shipped —
+  v0.18.0.)* `db.mysql` (`github.com/go-sql-driver/mysql`),
+  `db.postgres` (`github.com/jackc/pgx/v5/stdlib`; CockroachDB and other
+  Postgres-wire engines come along for free), and `db.mssql`
+  (`github.com/microsoft/go-mssqldb`).
 - **Other easy wins (same pattern, pure-Go drivers exist).**
   ClickHouse (`github.com/ClickHouse/clickhouse-go`), Oracle
   (`github.com/sijms/go-ora` — pure Go, unlike cgo-bound godror), and
