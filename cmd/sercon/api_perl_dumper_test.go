@@ -88,3 +88,27 @@ func TestPerlDumper_DecodeErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestPerlDumper_ClassNameEscaping(t *testing.T) {
+	opts := withDumpDefaults(dumpOpts{})
+	// A class name containing a quote/backslash must round-trip (encode→decode→encode).
+	in := &irNode{kind: dumpClass, class: `Weird'Cls\X`, pairs: []irPair{{"x", nodeInt(1)}}}
+	s, err := perlDumperEncode(in, opts)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	out, err := perlDumperDecode(s, opts)
+	if err != nil {
+		t.Fatalf("decode %q: %v", s, err)
+	}
+	if out.kind != dumpClass || out.class != `Weird'Cls\X` {
+		t.Fatalf("class round-trip: kind=%d class=%q (from %q)", out.kind, out.class, s)
+	}
+	re, err := perlDumperEncode(out, opts)
+	if err != nil {
+		t.Fatalf("re-encode: %v", err)
+	}
+	if re != s {
+		t.Fatalf("round-trip:\n in:  %q\n out: %q", s, re)
+	}
+}

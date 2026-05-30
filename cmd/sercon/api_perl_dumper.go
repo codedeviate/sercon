@@ -37,7 +37,7 @@ func perlDumpWrite(b *strings.Builder, n *irNode, opts dumpOpts, unit string, de
 		if n.b {
 			v = "1"
 		}
-		fmt.Fprintf(b, "bless( do{\\(my $o = %s)}, '%s' )", v, opts.perlBoolClass)
+		fmt.Fprintf(b, "bless( do{\\(my $o = %s)}, %s )", v, perlDumpQuote(opts.perlBoolClass))
 	case dumpInt:
 		b.WriteString(strconv.FormatInt(n.i, 10))
 	case dumpFloat:
@@ -53,7 +53,7 @@ func perlDumpWrite(b *strings.Builder, n *irNode, opts dumpOpts, unit string, de
 		if err := perlDumpHash(b, n.pairs, opts, unit, depth); err != nil {
 			return err
 		}
-		fmt.Fprintf(b, ", '%s' )", n.class)
+		fmt.Fprintf(b, ", %s )", perlDumpQuote(n.class))
 	default:
 		return fmt.Errorf("perl.dumper: unsupported node kind %d", n.kind)
 	}
