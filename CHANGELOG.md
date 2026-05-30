@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-30
+
 ### Added
 
 - **Executable scripts via shebang.** A script may begin with a `#!`
