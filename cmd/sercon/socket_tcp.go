@@ -63,7 +63,7 @@ func tcpConnectFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 					_ = reject(vm.NewGoError(fmt.Errorf("net.tcp.connect: %w", err)))
 					return
 				}
-				obj := buildTCPObject(vm, loop, eng, conn, bufSize)
+				obj, _ := buildTCPObject(vm, loop, eng, conn, bufSize)
 				_ = resolve(obj)
 			})
 		}()
@@ -74,8 +74,11 @@ func tcpConnectFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 // buildTCPObject constructs the JS handle for a connected TCP socket. It
 // MUST run on the loop (it builds goja values). It starts the reader
 // goroutine, registers the HoldRun sentinel + teardown, and wires the
-// write method plus the shared onData/onClose/onError/close callbacks.
-func buildTCPObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, conn net.Conn, bufSize int) *goja.Object {
+// write method plus the shared onData/onClose/onError/close callbacks. It
+// returns both the JS handle and the underlying *pushSocket so a caller
+// (e.g. server.tcp.listen) can drive closeFromScript / onRelease for an
+// accepted connection; the client path ignores the second value.
+func buildTCPObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, conn net.Conn, bufSize int) (*goja.Object, *pushSocket) {
 	remoteAddr := conn.RemoteAddr().String()
 	s := newPushSocket(vm, loop, bufSize)
 	s.release = eng.HoldRun("tcp " + remoteAddr)
@@ -109,7 +112,7 @@ func buildTCPObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengi
 	_ = obj.Set("local", conn.LocalAddr().String())
 	_ = obj.Set("write", tcpWriteFn(vm, loop, conn, s))
 	installSocketCallbacks(obj, s, "onData")
-	return obj
+	return obj, s
 }
 
 // tcpWriteFn implements handle.write(data): a Promise that writes the

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"sync"
 	"sync/atomic"
 
 	"github.com/dop251/goja"
@@ -62,6 +63,16 @@ func tcpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 	}
 	release := eng.HoldRun("server.tcp listen " + ln.Addr().String())
 
+	// Track accepted connections so the server's close() can tear them down.
+	// Without this, an accepted-but-unclosed connection keeps its own HoldRun
+	// outstanding after the server closes, hanging the loop to timeout
+	// (asymmetric with server.http, whose Shutdown drains in-flight conns).
+	var (
+		connMu  sync.Mutex
+		conns   = map[*pushSocket]struct{}{}
+		closing bool
+	)
+
 	// Accept loop (off-loop). For each connection, build the handle + invoke
 	// the handler ON the loop via LoopCallable (buildTCPObject needs the vm
 	// and must run on the loop).
@@ -72,7 +83,26 @@ func tcpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 				return // listener closed → exit
 			}
 			_, _ = handler.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
-				return []goja.Value{buildTCPObject(vm, loop, eng, conn, bufSize)}, nil
+				obj, s := buildTCPObject(vm, loop, eng, conn, bufSize)
+				// Deregister on release (natural EOF/peer close, the handle's
+				// close(), or the server's close()) so the set can't grow
+				// unbounded over a long-lived server.
+				s.onRelease = func() {
+					connMu.Lock()
+					delete(conns, s)
+					connMu.Unlock()
+				}
+				connMu.Lock()
+				if closing {
+					// Server closed during the accept→build window: don't keep
+					// the connection; close it so its hold is released too.
+					connMu.Unlock()
+					go func() { _ = s.closeFromScript() }()
+				} else {
+					conns[s] = struct{}{}
+					connMu.Unlock()
+				}
+				return []goja.Value{obj}, nil
 			})
 		}
 	}()
@@ -83,6 +113,19 @@ func tcpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 	_ = handle.Set("close", func(goja.FunctionCall) goja.Value {
 		if !closeOnce.Swap(true) {
 			_ = ln.Close()
+			// Snapshot and close active connections through their handle's
+			// closeFromScript, which releases each per-connection HoldRun
+			// (incl. the no-dispatcher path). onRelease deregisters them.
+			connMu.Lock()
+			closing = true
+			snapshot := make([]*pushSocket, 0, len(conns))
+			for s := range conns {
+				snapshot = append(snapshot, s)
+			}
+			connMu.Unlock()
+			for _, s := range snapshot {
+				_ = s.closeFromScript()
+			}
 			release()
 		}
 		return goja.Undefined()

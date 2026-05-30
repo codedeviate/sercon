@@ -40,6 +40,7 @@ type pushSocket struct {
 	closed    atomic.Bool
 	release   func()       // HoldRun release (idempotent)
 	teardown  func() error // protocol-specific: cancel ctx, close conn
+	onRelease func()       // optional: fired once when the hold is released
 }
 
 func newPushSocket(vm *goja.Runtime, loop *eventloop.EventLoop, bufSize int) *pushSocket {
@@ -131,6 +132,12 @@ func (s *pushSocket) releaseOnce() {
 	s.closeOnce.Do(func() {
 		if s.release != nil {
 			s.release()
+		}
+		// onRelease fires exactly once, after the hold is dropped — used by
+		// server.tcp.listen to deregister a connection from its active set
+		// whether it closed naturally (peer/EOF) or via the server's close().
+		if s.onRelease != nil {
+			s.onRelease()
 		}
 	})
 }
