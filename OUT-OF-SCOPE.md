@@ -34,46 +34,21 @@ the situation changes.
 
 ## Moderate
 
-### Correctness / output stability
-
-- **Canonical (stable-key-order) JSON for object-returning bindings.**
-  *(Shipped — v0.16.0 unconditional-key structs, v0.20.0 the rest.)*
-  goja derives a JS object's property order from Go map iteration
-  (randomized per process), so a binding returning a `map[string]any`
-  shuffled `JSON.stringify` output run-to-run — breaking callers that hash
-  a canonical serialization (payment signing, webhook signatures).
-  Resolved in two passes: (1) *unconditional-key* results
-  (`net.probe.tcp`/`ping`/`smtp`/`wss`, `db.dict.*`, `services.gh.authStatus`,
-  `services.git.*`, plus the earlier `text.preg`/`text.preg2`) became
-  json-tagged structs — struct field order is deterministic and the engine
-  sets `goja.TagFieldNameMapper`; (2) the conditional / dynamic / decoded-JSON
-  keyed results moved to `scriptengine.Ordered`, an insertion-ordered map
-  built off-loop and converted to an ordered `*goja.Object` on the loop
-  inside `PromisifyAsync`'s resolve step (`OrderedToValue`), with
-  `DecodeOrderedJSON` for order-preserving decode of external JSON. This
-  preserves the conditional-presence contract (`"mx" in dnsResult`) that a
-  struct would break — goja exposes every struct field regardless of
-  `json:",omitempty"` (see `TestNetDNS_TypesFilter`). Converted:
-  `net.probe.dns`/`whois`/`tls`/`ntp`, `net.netstatus`, `net.http.request`,
-  `db.ldap`, `db.sqlite`/`postgres`/`mysql`/`mssql` query rows,
-  `crypto.jwt.view`/`validate`, `services.gh` pr-list/repo-view,
-  `server.smtp` envelope/message.
-  **Lone exception:** `text.jq` — `gojq` parses JSON into plain Go maps
-  internally, discarding key order before our code sees the result, so its
-  output order can't be recovered without patching the library. Left as-is.
-
-Every other Moderate item shipped across v0.5.0 – v0.5.30 (the
-`.d.ts` JSDoc generator, `text.preg` / `text.preg2`, the
-full `crypto.jwt` + `crypto.encrypt` crypto surfaces,
-barcode decode + quiet-zone, `net.http.request`, the
-`net.probe` family, `net.netstatus`, `net.browser`,
-`db.sqlite`, `db.redis` / `db.memcached` /
-`db.ldap` / `db.dict`, `services.ai`, the `--watch` CLI
-flag with module-graph invalidation, the `Options.ModuleLoader`
-hook, and robust import parsing — all originally shipped under flat
-paths, re-bucketed under v0.8.0's 9-category surface, and promoted
-to top-level globals (dropping the `api.` prefix) in v0.9.0). The
-remaining open items:
+Most Moderate items have shipped. The original surface — the `.d.ts`
+JSDoc generator, `text.preg` / `text.preg2`, the full `crypto.jwt` +
+`crypto.encrypt` surfaces, barcode decode + quiet-zone,
+`net.http.request`, the `net.probe` family, `net.netstatus`,
+`net.browser`, `db.sqlite`, `db.redis` / `db.memcached` / `db.ldap` /
+`db.dict`, `services.ai`, the `--watch` CLI flag with module-graph
+invalidation, the `Options.ModuleLoader` hook, and robust import
+parsing — shipped across v0.5.0 – v0.5.30 (re-bucketed under v0.8.0's
+9-category surface and promoted to top-level globals, dropping the
+`api.` prefix, in v0.9.0). Canonical (stable-key-order) JSON for
+object-returning bindings landed later, across v0.16.0 (json-tagged
+structs for fixed-shape results) and v0.20.0 (`scriptengine.Ordered`
+for conditional / dynamic / decoded-JSON keys; `text.jq` is the lone
+exception, since `gojq` discards key order internally). The remaining
+open items:
 
 ### Encoding / decoding / barcodes
 
