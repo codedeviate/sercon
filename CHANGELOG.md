@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-05-30
+
 ### Added
 
 - **`server.tcp.listen`, `server.udp.listen` — raw inbound listeners.**
