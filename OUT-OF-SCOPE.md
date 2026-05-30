@@ -24,6 +24,11 @@ buckets are:
 Library picks honour the project constraints: **pure Go, no cgo;
 stdlib first; trustworthy and maintained; no heavy frameworks**.
 
+A bucket with no remaining work is omitted rather than left empty — the
+**Trivial** and **Easy** buckets have shipped out entirely (most recently the
+editor-autocomplete tooling and the SQL engines), so only **Moderate**,
+**Hard**, and **Deferred** carry open items today.
+
 A fifth bucket, **Deferred**, lives at the bottom of this file. Items
 land there when there's a concrete reason to put the work down rather
 than rank it by effort — no trustworthy pure-Go library exists, the
@@ -75,6 +80,15 @@ needs root / CAP_NET_RAW) — all with a push/callback read model
   and routes (`net.Interfaces`, `net.InterfaceAddrs`) is not exposed.
   **Library:** stdlib `net`. Promote on demand.
 
+### Process / external tools
+
+- **`shell_stream(cmd, cb)`** — Stream a subprocess's stdout/stderr line by
+  line into a JS callback (script: `shell.rhai`); a building block for the
+  recon-fallback path. **Library:** `os/exec` (stdlib) + `bufio`. The engine
+  work is already done — v0.10.0's `scriptengine.NewLoopCallable` (repeated
+  callback marshalling) and `Engine.HoldRun` (keep the loop alive while the
+  subprocess runs) — so only the binding remains.
+
 
 ## Hard
 
@@ -100,38 +114,24 @@ needs root / CAP_NET_RAW) — all with a push/callback read model
   **Approach:** goja `Runtime.ToValue` + prototype wiring + reflect; no
   drop-in library exists for this.
 
-### Networking — servers & broad protocol coverage
+### Networking — servers
 
-The two engine primitives that earlier made server work Hard —
-`LoopCallable` (loop-bound callback marshalling for repeated
-invocations) and `Engine.HoldRun` (long-lived `Run` keep-alive) —
-shipped in v0.10.0 alongside the first protocol family (HTTP/HTTPS).
-Per-protocol surface area remains in this list; each is its own
-sub-spec cycle built on the existing foundation.
+The server foundation — `LoopCallable` (loop-bound callback marshalling)
+and `Engine.HoldRun` (long-lived `Run` keep-alive) — shipped in v0.10.0.
+Built on it: HTTP / HTTPS (router, middleware, static-file mount, WebSocket
+upgrade — v0.10.0), SMTP (`server.smtp.listen` plus the outbound
+`net.email.send` sender — v0.11.0), and raw TCP / UDP listeners
+(`server.tcp.listen` / `server.udp.listen`, each reusing the v0.22.0 client
+push-socket handle — v0.23.0). Remaining:
 
-- **TCP / UDP servers (listeners).** *(Shipped — v0.23.0.)*
-  `server.tcp.listen({port}, conn => …)` (per-connection callback; the
-  `conn` is the same handle as `net.tcp.connect`) and
-  `server.udp.listen({port}, (msg, reply) => …)` (per-datagram callback +
-  `reply`). Built on the same `HoldRun` + `LoopCallable` accept-loop
-  pattern as the HTTP server, reusing the v0.22.0 client push-socket
-  scaffold; `server.tcp.close()` drains accepted connections.
-- **ICMP server (listener).** Still open: a raw-ICMP receive/respond
-  surface (`golang.org/x/net/icmp`, raw sockets → elevated privileges).
-  Niche; deferred when TCP/UDP listeners shipped — promote on demand.
-- **Client + server for the common internet protocols.** Umbrella
-  goal: broad protocol coverage on both sides. Clients already ship
-  for several (`net.probe.{dns,tls,ntp,whois,smtp,wss}`,
-  `net.http`, plus `db.redis` / `db.memcached` /
-  `db.ldap` / `db.dict`); the HTTP/HTTPS server (with router,
-  middleware, static-file mount, and WebSocket upgrade) shipped in
-  v0.10.0, the SMTP server (`server.smtp.listen`) plus outbound
-  sender (`net.email.send`) shipped in v0.11.0, and raw TCP/UDP
-  listeners shipped in v0.23.0; IMAP, FTP, and POP3 servers are planned
-  as separate sub-spec cycles (each an accept loop atop `server.tcp`
-  plus a protocol state machine). Additional protocols (e.g. MQTT) and
-  broader client coverage stay rated Hard for the aggregate scope —
-  promote individual protocols as they're actually needed.
+- **ICMP server (listener).** A raw-ICMP receive/respond surface
+  (`golang.org/x/net/icmp`, raw sockets → elevated privileges). Niche;
+  promote on demand.
+
+Application-protocol servers (IMAP, FTP, POP3) and additional protocols
+(e.g. MQTT) are parked under **Deferred → Networking — servers** with their
+specific reasons — each its own brainstorm → plan → ship cycle atop the
+`server.tcp` accept loop.
 
 ### Agent-browser automation
 
@@ -173,21 +173,6 @@ The hard rating reflects the orchestration scope, not any single call.
   tabs / network / console (scripts: `agent-browser-options.rhai`,
   `agent-browser-cmd.rhai`). **Library:** subprocess bridge plus a
   persistent options bag held by the namespace.
-
-### External tool integrations
-
-- **`agent-browser`.** Headless-Chrome automation; see the dedicated
-  section above. Optional dependency, gated on `agentBrowser.available`.
-  **Library:** `os/exec` (stdlib) — but rated Hard because of the scope
-  of the surface area, not because any single call is difficult.
-- **`shell_stream(cmd, cb)`** — Stream stdout/stderr line by line into
-  a JS callback (script: `shell.rhai`). Needed as a building block for
-  the recon-fallback path. **Library:** `os/exec` (stdlib) + `bufio`.
-  Now Moderate rather than Hard: v0.10.0 introduced
-  `scriptengine.NewLoopCallable` (loop-bound callback marshalling
-  for repeated invocations) and `Engine.HoldRun` (keeps the loop
-  alive while the subprocess is in flight) — the engine work is done
-  and only the binding remains.
 
 ## Deferred
 
