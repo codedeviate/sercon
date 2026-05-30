@@ -109,7 +109,10 @@ func (e *Engine) newSourceLoader() require.SourceLoader {
 			}
 			return []byte(res.JS), nil
 		default:
-			return raw, nil
+			// Plain JS (.js/.cjs/.mjs) bypasses transpile, so strip a leading
+			// shebang here too — keeps required modules consistent with entry
+			// scripts (a no-op for JSON, which never starts with "#!").
+			return []byte(stripShebang(string(raw))), nil
 		}
 	}
 }

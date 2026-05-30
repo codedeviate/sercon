@@ -63,6 +63,83 @@ try {
 	}
 }
 
+// A leading "#!" shebang line is stripped so a .ts can be made directly
+// executable (chmod +x with `#!/usr/bin/env sercon`). The body must still run.
+func TestRun_ShebangLineStripped(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	ran := false
+	if err := eng.Register("recordRan", func() { ran = true }); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "sb.ts", "#!/usr/bin/env sercon\nrecordRan();\n")
+	if err != nil {
+		t.Fatalf("run with shebang: %v", err)
+	}
+	if !ran {
+		t.Fatal("script body did not run after the shebang line")
+	}
+}
+
+// A shebang in a required module is also tolerated (stripped on transpile).
+func TestRun_ShebangInRequiredModule(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "lib.ts"),
+		[]byte("#!/usr/bin/env sercon\nexport const v = 42;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	if err := eng.Register("recordVal", func(n int64) {
+		if n != 42 {
+			t.Errorf("required module value = %d, want 42", n)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"),
+		`import { v } from "./lib"; recordVal(v);`)
+	if err != nil {
+		t.Fatalf("run requiring shebang module: %v", err)
+	}
+}
+
+// Blanking (not deleting) the shebang line keeps transpile-error line numbers
+// aligned with the source: a syntax error on source line 3 still reports :3.
+func TestRun_ShebangPreservesTranspileErrorLine(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	// line 1: shebang, line 2: ok, line 3: syntax error.
+	src := "#!/usr/bin/env sercon\nconst a = 1;\nconst b = ;\n"
+	_, err := eng.Run(context.Background(), "sb.ts", src)
+	if err == nil {
+		t.Fatal("expected a transpile error")
+	}
+	if !strings.Contains(err.Error(), ":3:") {
+		t.Fatalf("error should point at source line 3 (shebang blanked, not removed), got: %v", err)
+	}
+}
+
+// A required plain-JS module (which bypasses transpile) also has its shebang
+// stripped by the source loader.
+func TestRun_ShebangInRequiredJSModule(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "lib.js"),
+		[]byte("#!/usr/bin/env node\nmodule.exports = { v: 7 };\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	if err := eng.Register("recordVal", func(n int64) {
+		if n != 7 {
+			t.Errorf("required .js module value = %d, want 7", n)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"),
+		`const lib = require("./lib"); recordVal(lib.v);`)
+	if err != nil {
+		t.Fatalf("require shebang .js module: %v", err)
+	}
+}
+
 // 3. Promise from Go resolves and the script sees the resolved value via await.
 func TestRun_PromiseResolveAwait(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})

@@ -30,10 +30,30 @@ var gojaUnsupported = map[string]bool{
 	"async-generator": false,
 }
 
+// stripShebang blanks a leading "#!" line so a TS/JS source can be made
+// directly executable (`chmod +x` with a `#!/usr/bin/env sercon` first line).
+// A shebang is only meaningful as the very first bytes of the file; esbuild
+// preserves it into its output, where goja would reject it as an illegal
+// token. We blank the line *in place* — dropping the shebang text but keeping
+// the terminating newline — rather than removing the line, so transpile
+// (syntax) error line numbers stay aligned with the original source (and any
+// future source-mapped runtime errors would too). Sources that don't begin
+// with "#!" are returned unchanged.
+func stripShebang(source string) string {
+	if !strings.HasPrefix(source, "#!") {
+		return source
+	}
+	if nl := strings.IndexByte(source, '\n'); nl >= 0 {
+		return source[nl:] // keep the newline (and any preceding CR); drop the shebang text
+	}
+	return "" // shebang-only source, no body
+}
+
 // transpileTS converts TypeScript source into CommonJS-compatible JavaScript
 // using esbuild. The sourceFile parameter is used for diagnostic messages and
 // for resolving the sourcefile name esbuild embeds in errors.
 func transpileTS(source, sourceFile string) (transpileResult, error) {
+	source = stripShebang(source)
 	loader := esbuild.LoaderTS
 	switch strings.ToLower(filepath.Ext(sourceFile)) {
 	case ".js", ".mjs", ".cjs":
@@ -67,6 +87,7 @@ func transpileTS(source, sourceFile string) (transpileResult, error) {
 // The wrapper invokes __resolve / __reject on completion, which the engine
 // captures.
 func transpileEntry(source, sourceFile string) (transpileResult, error) {
+	source = stripShebang(source)
 	result := esbuild.Transform(source, esbuild.TransformOptions{
 		Loader:     esbuild.LoaderTS,
 		Format:     esbuild.FormatESModule,
