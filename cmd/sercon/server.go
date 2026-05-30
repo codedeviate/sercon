@@ -19,5 +19,6 @@ func serverNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scripteng
 		"http":  httpServerMembers(vm, loop, eng, false),
 		"https": httpServerMembers(vm, loop, eng, true),
 		"smtp":  smtpServerMembers(vm, loop, eng),
+		"tcp":   tcpServerMembers(vm, loop, eng),
 	}
 }
