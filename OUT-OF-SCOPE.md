@@ -32,46 +32,6 @@ the design space is unsettled, or it conflicts with current direction.
 Each Deferred entry names the reason so it's easy to re-promote when
 the situation changes.
 
-## Easy
-
-### Tooling / developer experience
-
-- **Editor autocomplete wiring (VSCode / Zed / any tsserver editor).**
-  *(Shipped — v0.17.0.)* `sercon init [dir]` drops `sercon.d.ts` (the
-  reserved-global declarations, same content as `-emit-dts`) and a
-  `jsconfig.json` that includes it, so any TypeScript language-server
-  editor (VSCode, Zed, Neovim+coc, Sublime LSP, …) gives completion +
-  hover docs with no per-editor plugin. The command also prints the
-  per-file `/// <reference path="./sercon.d.ts" />` no-config fallback.
-
-### Databases
-
-`db.sqlite` already proves the pattern: `database/sql` + a pure-Go
-driver + an `open()`→handle shape (`exec` / `query` / `queryValue`,
-see `cmd/sercon/sqlite.go`). Every other SQL engine below is the
-same handle wired to a different `database/sql` driver and a DSN, so
-the marginal cost per engine is small. The design question is settled:
-**a sibling namespace per engine** inside `db` (`db.postgres` /
-`db.mysql` / `db.mssql`, each wiring its driver + DSN onto a shared
-`database/sql` handle — `cmd/sercon/db_sql.go`), not one DSN-driven
-`db.open(driver, dsn)`. All drivers named are **pure Go (no cgo)**.
-
-- **MySQL / MariaDB, PostgreSQL, Microsoft SQL Server.** *(Shipped —
-  v0.18.0.)* `db.mysql` (`github.com/go-sql-driver/mysql`),
-  `db.postgres` (`github.com/jackc/pgx/v5/stdlib`; CockroachDB and other
-  Postgres-wire engines come along for free), and `db.mssql`
-  (`github.com/microsoft/go-mssqldb`).
-- **ClickHouse, Oracle.** *(Shipped — v0.21.0.)* `db.clickhouse`
-  (`github.com/ClickHouse/clickhouse-go/v2`) and `db.oracle`
-  (`github.com/sijms/go-ora/v2` — pure Go, unlike cgo-bound godror).
-- **Snowflake — held back deliberately.** Same shared-handle pattern, but
-  `github.com/snowflakedb/gosnowflake` drags in large AWS/Azure/GCS cloud
-  SDKs, which conflicts with the project's "no heavy frameworks" rule.
-  Re-promote if someone actually needs Snowflake and accepts the
-  dependency weight. Other pure-Go `database/sql` drivers (e.g. a
-  different warehouse) can be added the same way on demand.
-
-
 ## Moderate
 
 ### Correctness / output stability
@@ -280,6 +240,19 @@ reason resolves.
 
 ### Databases
 
+The native pure-Go SQL engines have all shipped — `db.sqlite`,
+`db.postgres`, `db.mysql`, `db.mssql`, `db.clickhouse`, `db.oracle`
+(plus the non-SQL `db.redis` / `db.memcached` / `db.ldap` / `db.dict`).
+Adding another `database/sql` engine is now a known, mechanical step
+(driver import + DSN builder onto the shared handle in
+`cmd/sercon/db_sql.go`), so new engines are promoted on demand rather
+than tracked here. The two parked below have a concrete reason to wait.
+
+- **Snowflake.** Fits the same shared-handle pattern, but its driver
+  `github.com/snowflakedb/gosnowflake` drags in large AWS/Azure/GCS
+  cloud SDKs, which conflicts with the project's "no heavy frameworks"
+  rule. **Reason:** dependency weight, no demand signal. Re-promote if
+  someone needs Snowflake and accepts the transitive-dependency cost.
 - **ODBC connectivity.** A generic ODBC bridge would reach any engine
   with a system DSN, but the only real Go option,
   `github.com/alexbrainman/odbc`, links the platform ODBC driver
@@ -287,10 +260,8 @@ reason resolves.
   manager plus a per-engine ODBC driver installed at runtime. That
   conflicts with the no-cgo constraint on the platforms that matter
   most here. **Reason:** no pure-Go ODBC implementation exists.
-  Re-promote if one appears, or skip ODBC entirely once the native
-  pure-Go drivers (MySQL / Postgres / MSSQL / Oracle / …, see the
-  Databases group under Easy) cover the engines people actually ask
-  for — which they largely do.
+  Re-promote if one appears, or skip ODBC entirely — the native
+  pure-Go drivers already cover the engines people actually ask for.
 
 ### Networking — servers
 

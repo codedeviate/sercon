@@ -82,3 +82,23 @@ sercon init ./scripts # …or a target dir
 `jsconfig.json` that points the editor's language server at them — no plugin
 needed. To just emit the declarations (e.g. for your own config), use
 `./sercon -emit-dts sercon.d.ts`.
+
+## Database engines — test status
+
+`sercon` ships SQL clients (`db.sqlite`, `db.postgres`, `db.mysql`,
+`db.mssql`, `db.clickhouse`, `db.oracle`) and a few non-SQL stores
+(`db.redis`, `db.memcached`, `db.ldap`, `db.dict`). They share one
+proven handle shape, but not all are exercised against a real server in CI:
+
+- **Verified end-to-end:** `db.sqlite` (in-memory), `db.redis` (miniredis),
+  `db.memcached` and `db.dict` (in-process stub servers).
+- **Not yet verified against a live server — use at your own risk:**
+  `db.postgres`, `db.mysql`, `db.mssql`, `db.clickhouse`, `db.oracle`
+  (DSN assembly and connection wiring are unit-tested, but there's no
+  functional round-trip against the real engine), plus `db.ldap`
+  (error paths only). They follow the same pattern as the verified
+  engines and *should* work, but haven't been confirmed against the real
+  servers — treat them as provisional.
+
+This list is updated as engines are manually verified; feedback on any of
+the provisional ones is welcome.
