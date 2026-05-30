@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-05-30
+
 ### Added
 
 - **`console` global (browser/Node compatibility).** `console.log` /
