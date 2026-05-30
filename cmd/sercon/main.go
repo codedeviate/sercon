@@ -319,6 +319,8 @@ func registerSurface(e *scriptengine.Engine) error {
 			"compression": compressionNamespace(vm, loop),
 			"barcode":     barcodeNamespace(vm, loop),
 			"checkdigit":  checkdigitNamespace(vm),
+			"php":         phpNamespace(vm),
+			"perl":        perlNamespace(vm),
 		}
 	}); err != nil {
 		return err
