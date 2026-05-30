@@ -32,6 +32,31 @@ the design space is unsettled, or it conflicts with current direction.
 Each Deferred entry names the reason so it's easy to re-promote when
 the situation changes.
 
+## Trivial
+
+### Correctness / API hygiene
+
+- **`runtime.assert.equal` does reference equality, not deep equality.**
+  Its JSDoc (`cmd/sercon/docs.go`) claims "deep equality on objects", but
+  `valuesEqual` (`cmd/sercon/main.go`) is just goja `StrictEquals`, so two
+  distinct objects with identical contents never compare equal. Surfaced
+  while writing the dump-codec example (v0.12.0), which had to work around
+  it with a `JSON.stringify` projection. Either implement structural deep
+  equality (recursive over arrays/objects, the more useful fix) or correct
+  the JSDoc to say reference equality. Pick a direction and align doc +
+  impl. **Library:** stdlib / goja only.
+
+### Script ergonomics
+
+- **`console` object pretty-printing.** The `console` shim (v0.14.0) and
+  `runtime.log` stringify each argument via goja `.String()`, so
+  `console.log({a:1})` prints `[object Object]` rather than the
+  browser-style expansion. Optionally pretty-print non-primitive args
+  (JSON, or a shallow inspect) for the browser/Node-porting use case —
+  while keeping primitives byte-identical and guarding against circular
+  refs. Decide whether `runtime.log` follows suit or only `console.*`.
+  **Library:** stdlib / goja only.
+
 ## Easy
 
 ### Correctness / output stability
