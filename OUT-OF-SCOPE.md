@@ -61,10 +61,15 @@ the marginal cost per engine is small. The design question is settled:
   `db.postgres` (`github.com/jackc/pgx/v5/stdlib`; CockroachDB and other
   Postgres-wire engines come along for free), and `db.mssql`
   (`github.com/microsoft/go-mssqldb`).
-- **Other easy wins (same pattern, pure-Go drivers exist).**
-  ClickHouse (`github.com/ClickHouse/clickhouse-go`), Oracle
-  (`github.com/sijms/go-ora` — pure Go, unlike cgo-bound godror), and
-  Snowflake (`github.com/snowflakedb/gosnowflake`). Add on demand.
+- **ClickHouse, Oracle.** *(Shipped — v0.21.0.)* `db.clickhouse`
+  (`github.com/ClickHouse/clickhouse-go/v2`) and `db.oracle`
+  (`github.com/sijms/go-ora/v2` — pure Go, unlike cgo-bound godror).
+- **Snowflake — held back deliberately.** Same shared-handle pattern, but
+  `github.com/snowflakedb/gosnowflake` drags in large AWS/Azure/GCS cloud
+  SDKs, which conflicts with the project's "no heavy frameworks" rule.
+  Re-promote if someone actually needs Snowflake and accepts the
+  dependency weight. Other pure-Go `database/sql` drivers (e.g. a
+  different warehouse) can be added the same way on demand.
 
 
 ## Moderate
