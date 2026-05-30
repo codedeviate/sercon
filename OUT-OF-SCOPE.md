@@ -34,6 +34,26 @@ the situation changes.
 
 ## Easy
 
+### Correctness / output stability
+
+- **Canonical (stable-key-order) JSON for all object-returning bindings.**
+  goja derives a JS object's property enumeration order from Go map
+  iteration, which Go randomizes per process — so any binding that
+  returns a `map[string]any` produces a different `JSON.stringify` key
+  order on every run. That breaks callers who hash a canonical
+  serialization (payment-request signing, webhook signature
+  verification). `text.preg` / `text.preg2` were fixed in v0.11.2 by
+  building the result as an insertion-ordered `*goja.Object` via the
+  shared `newMatchObject` helper (`cmd/sercon/api_preg.go`), but every
+  other map-returning binding still shuffles: at least `net.probe.*`,
+  `net.email.send`, `crypto.jwt.view`, `services.git.*`, and the
+  `server.smtp` `envelope` / `message` objects. The work is an audit +
+  mechanical conversion (replace `map[string]any` returns with ordered
+  `vm.NewObject()` + `.Set()` in a fixed field order, following the
+  `newMatchObject` precedent) plus a key-order regression test per
+  binding. Consider extracting a small ordered-object builder so each
+  site declares its field order once. **Library:** stdlib / goja only.
+
 ### Tooling / developer experience
 
 - **Editor autocomplete wiring (VSCode / Zed / any tsserver editor).**
