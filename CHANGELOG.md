@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`sercon init [dir]` — one-command editor autocomplete.** Drops
+  `sercon.d.ts` (the binding declarations) plus a `jsconfig.json` into a
+  directory, so any TypeScript-language-server editor (VSCode, Zed,
+  Neovim+coc, Sublime LSP, …) gives completion + hover docs for the
+  reserved globals with no plugin or manual config. Existing files are
+  left untouched unless `--force`. The bundled `examples/scripts/` now
+  ships a `jsconfig.json` so the demos autocomplete out of the box.
+
 ## [0.16.0] — 2026-05-30
 
 ### Changed

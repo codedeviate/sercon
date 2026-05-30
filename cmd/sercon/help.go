@@ -170,6 +170,7 @@ func showHelp(w io.Writer) {
 	fmt.Fprintf(w, "    %s [flags] <script.ts> [script.ts ...]\n", s.cyan("sercon"))
 	fmt.Fprintf(w, "    %s [flags] -                # read entry script from stdin\n", s.cyan("sercon"))
 	fmt.Fprintf(w, "    %s run [flags] <script.ts> [args...]   # one script; args → runtime.argv\n", s.cyan("sercon"))
+	fmt.Fprintf(w, "    %s init [dir]                # drop sercon.d.ts + jsconfig for editor autocomplete\n", s.cyan("sercon"))
 	fmt.Fprintf(w, "    %s --examples | --help | --version\n\n", s.cyan("sercon"))
 
 	fmt.Fprintln(w, s.bold("DESCRIPTION"))
@@ -184,7 +185,9 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    runtime; helpers are loaded via require()/import. See MANUAL.md")
 	fmt.Fprintln(w, "    §5 for the full reference and §6 for the server surface, or")
 	fmt.Fprintln(w, "    --examples for a guided tour. The generated sercon.d.ts (see")
-	fmt.Fprintln(w, "    -emit-dts) is the machine-readable spec.")
+	fmt.Fprintln(w, "    -emit-dts) is the machine-readable spec. Run `sercon init` in a")
+	fmt.Fprintln(w, "    script directory to drop sercon.d.ts + a jsconfig.json so any")
+	fmt.Fprintln(w, "    TypeScript-aware editor gives autocomplete + hover with no setup.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "    A `console` global (log/info/debug → stdout, warn/error → stderr)")
 	fmt.Fprintln(w, "    is also provided so scripts pasted from a browser or Node run")

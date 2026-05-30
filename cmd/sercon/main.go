@@ -36,6 +36,8 @@ func main() {
 			os.Exit(runServe(os.Args[2:]))
 		case "run":
 			os.Exit(runRun(os.Args[2:]))
+		case "init":
+			os.Exit(runInit(os.Args[2:]))
 		}
 	}
 	os.Exit(run(os.Args[1:]))

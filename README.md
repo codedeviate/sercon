@@ -70,8 +70,15 @@ eng.RegisterFactory("httpGet", func(vm *goja.Runtime, loop *eventloop.EventLoop)
 })
 ```
 
-Generate a `.d.ts` for editor autocomplete:
+Set up editor autocomplete + hover docs (any TypeScript-aware editor — VSCode,
+Zed, Neovim, …) in a script directory with one command:
 
 ```
-./sercon -emit-dts sercon.d.ts
+sercon init           # drops sercon.d.ts + jsconfig.json into the current dir
+sercon init ./scripts # …or a target dir
 ```
+
+`sercon init` writes the binding declarations (`sercon.d.ts`) plus a
+`jsconfig.json` that points the editor's language server at them — no plugin
+needed. To just emit the declarations (e.g. for your own config), use
+`./sercon -emit-dts sercon.d.ts`.

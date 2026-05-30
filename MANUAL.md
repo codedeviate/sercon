@@ -471,6 +471,32 @@ entry whose graph isn't known yet re-run unconditionally
 actually takes effect — the registry otherwise caches compiled
 bytecode across runs.
 
+### Editor autocomplete (`sercon init`)
+
+```
+sercon init [dir]
+```
+
+Drops two files into `dir` (default the current directory) so any editor
+backed by the TypeScript language server (VSCode, Zed, Neovim+coc,
+Sublime LSP, …) gives completion and hover docs for the reserved globals
+with no plugin or manual config:
+
+- **`sercon.d.ts`** — the binding declarations (same content as
+  `sercon -emit-dts`): ambient `declare const` blocks for `runtime`,
+  `crypto`, `text`, `codec`, `fs`, `net`, `db`, `server`, `services`,
+  `tui`, and `console`, each with JSDoc.
+- **`jsconfig.json`** — points the language server at `sercon.d.ts` and
+  sets `moduleResolution: "Bundler"` (so the extensionless relative
+  imports sercon scripts use resolve) and `types: []` (sercon isn't
+  Node, so no stray `@types/*`).
+
+Existing files are left untouched unless `--force` is given. The
+`examples/scripts/` directory ships with both files already, so the
+bundled demos autocomplete out of the box. For a single file without a
+config, the no-setup fallback is a leading
+`/// <reference path="./sercon.d.ts" />`.
+
 ### Shebang lines and executable scripts (`sercon run`)
 
 A script may begin with a `#!` shebang line. It is stripped before
