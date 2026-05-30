@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-05-30
+
 ### Added
 
 - `codec.php.*` (serialize/unserialize, varExport/parseVarExport,
