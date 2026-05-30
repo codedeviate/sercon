@@ -833,6 +833,8 @@ Network clients and probes:
 - `net.tcp.connect(host, port, opts?)` — open a TCP client socket.
 - `net.udp.open(opts)` — open a UDP socket (connected or bound).
 - `net.icmp.open(opts?)` — open a raw ICMP socket (needs privileges).
+- `net.capture.{interfaces, open, openFile, toFile}` — packet capture
+  (live + pcap file I/O), pure-Go gopacket.
 
 **Raw sockets (`net.tcp` / `net.udp` / `net.icmp`)** are long-lived,
 bidirectional client sockets with a *push / callback* read model — unlike
@@ -879,6 +881,65 @@ internal `HoldRun` refcount), so a script that only listens won't exit
 until it `close()`s. `sercon` scripts can't *bind* a listening TCP/UDP
 server socket yet — these are client sockets — so a TCP example needs a
 peer to dial; a UDP loopback pair is fully self-contained.
+
+#### Packet capture (`net.capture`)
+
+Packet capture and pcap file I/O, powered by **pure-Go gopacket** (no
+`libpcap`, no cgo). Four bindings:
+
+- `net.capture.interfaces()` — **synchronous**; returns an array of
+  `{ name, addresses: string[], up, loopback }` for the host's network
+  interfaces. Pure-Go (`net.Interfaces`); no privileges, all platforms.
+- `net.capture.open({ iface, promisc?, snaplen? }, pkt => {…})` — start a
+  **live** capture on `iface`. Resolves to a handle `{ iface, link,
+  close() }`; the per-frame handler receives a decoded packet object (see
+  below). `promisc` defaults `true`; `snaplen` defaults `262144`.
+  **Linux + macOS only** — Linux uses `AF_PACKET`, macOS uses BPF
+  (`/dev/bpf`); **Windows is unsupported** and `open()` rejects there.
+  Requires **root / `CAP_NET_RAW` (Linux)** or **`/dev/bpf` read access
+  (macOS)**; without the privilege `open()` rejects naming the
+  requirement. `close()` returns `Promise<void>`.
+- `net.capture.openFile(path, pkt => {…})` — read a `.pcap` / `.pcapng`
+  file (format auto-detected from the magic bytes), calling the handler
+  once per decoded packet. Returns a `Promise` that resolves at EOF.
+  Offline; no privileges.
+- `net.capture.toFile(path, { linkType?, snaplen? })` — open/create a
+  `.pcap` file and return `{ write(bytes, { ts? }), close() }`. `write`
+  appends a raw frame (a `Uint8Array`); `opts.ts` (ms) overrides the
+  per-frame timestamp (defaults to now). `close()` flushes and returns
+  `Promise<void>`. `linkType` defaults to Ethernet, `snaplen` to `262144`.
+  Offline; no privileges.
+
+The **decoded packet object** passed to the `open` / `openFile` handlers:
+
+```ts
+{
+  ts, length, captureLength, link,     // always present
+  eth?:  { src, dst, type },
+  ip?:   { version, src, dst, protocol, ttl },
+  tcp?:  { srcPort, dstPort, seq, ack,
+           flags: { syn, ack, fin, rst, psh, urg } },
+  udp?:  { srcPort, dstPort, length },
+  icmp?: { type, code },
+  payload?: Uint8Array,                // application-layer bytes, if any
+  bytes:    Uint8Array,                // the full raw frame (always present)
+}
+```
+
+Layer keys (`eth` / `ip` / `tcp` / `udp` / `icmp` / `payload`) are present
+**only when that layer decodes** — a truncated or unrecognised frame still
+yields the always-present `ts` / `length` / `captureLength` / `link` /
+`bytes`.
+
+**Limitations.** No live capture on Windows. **No BPF-expression filters**
+(`"tcp port 80"`) — filter inside the callback on the decoded fields.
+Common-layer decode only (Ethernet / IPv4 / IPv6 / TCP / UDP / ICMP);
+exotic protocols surface only as raw `bytes`. At high packet rates frames
+backpressure and drop at the kernel, exactly like `tcpdump`.
+
+The pcap file API round-trips: write raw frames with `toFile`, read them
+back decoded with `openFile`, no privileges required (see
+`examples/scripts/capture-file.ts`).
 
 ### `db`
 

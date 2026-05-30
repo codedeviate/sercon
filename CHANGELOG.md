@@ -8,6 +8,32 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`net.capture` — packet capture + pcap file I/O.** Powered by pure-Go
+  gopacket (no `libpcap`, no cgo). Four bindings:
+  `net.capture.interfaces()` returns the host's network interfaces
+  (`{ name, addresses, up, loopback }`) synchronously — pure-Go, no
+  privileges, all platforms. `net.capture.open({ iface, promisc?, snaplen?
+  }, pkt => {…})` starts a **live** capture (resolving to `{ iface, link,
+  close() }`) — **Linux + macOS only** (Linux `AF_PACKET`, macOS BPF;
+  Windows rejects) and requires **root / `CAP_NET_RAW` (Linux)** or
+  **`/dev/bpf` access (macOS)**. `net.capture.openFile(path, pkt => {…})`
+  reads a `.pcap` / `.pcapng` file (auto-detected) and resolves at EOF.
+  `net.capture.toFile(path, { linkType?, snaplen? })` returns `{
+  write(bytes, { ts? }), close() }` to write raw frames. The handlers
+  receive a decoded packet `{ ts, length, captureLength, link, eth?, ip?,
+  tcp?, udp?, icmp?, payload?, bytes }` (layer keys present only when that
+  layer decodes). No BPF-expression filters — filter in the callback;
+  common-layer decode only. New offline example `capture-file.ts`
+  (interfaces() + a `toFile`/`openFile` round-trip on a hand-built frame).
+
+### Fixed
+
+- **`LoopCallable.Call` no longer hangs (leaking a goroutine/fd) when the
+  event loop is terminated mid-call** — affects `net.capture` and all
+  socket/listener dispatchers.
+
 ## [0.23.0] — 2026-05-30
 
 ### Added

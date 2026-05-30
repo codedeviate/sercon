@@ -911,10 +911,33 @@ runtime.log("udp on", udp.address);          // "udp/127.0.0.1:PORT"
 await tcp.close(); await udp.close();`)
 	note("Same connection-handle shape as the net.tcp/net.udp clients. Both keep the loop alive while bound; `sercon serve` adds a `READY listening on tcp|udp/…` line + graceful shutdown. See MANUAL.md §6.8.")
 
+	header(48, "Packet capture (net.capture)")
+	code(`// pure-Go gopacket (no libpcap/cgo). interfaces() + the pcap file
+// round-trip are fully offline; live capture is privileged.
+const ifaces = net.capture.interfaces();   // [{ name, addresses, up, loopback }]
+
+// Offline file round-trip: write a raw frame, read it back decoded.
+const w = net.capture.toFile("/tmp/x.pcap", { snaplen: 65536 });
+w.write(rawEthernetFrame, { ts: Date.now() });   // rawEthernetFrame: Uint8Array
+await w.close();
+await net.capture.openFile("/tmp/x.pcap", (pkt) => {
+  runtime.log(pkt.link, pkt.ip?.src, "->", pkt.ip?.dst, pkt.udp?.dstPort);
+});
+
+// Live capture — Linux + macOS only, needs root / CAP_NET_RAW (Linux) or
+// /dev/bpf (macOS); Windows rejects. Filter INSIDE the callback (no BPF
+// expressions). Decoded pkt: { ts, length, captureLength, link, eth?, ip?,
+// tcp?, udp?, icmp?, payload?, bytes }.
+// const cap = await net.capture.open({ iface: "en0" }, (pkt) => {
+//   if (pkt.tcp?.dstPort === 80) runtime.log(pkt.ip?.src, "->", pkt.ip?.dst);
+// });
+// await cap.close();`)
+	note("Live open() is Linux/macOS-only and needs raw-socket privileges (Windows rejects); interfaces/openFile/toFile are offline and unprivileged. No BPF-expression filters — filter in the callback; common-layer decode only (exotic protocols surface as bytes). See MANUAL.md §net.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 47
+const exampleCount = 48

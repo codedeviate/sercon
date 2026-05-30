@@ -237,6 +237,16 @@ declare const net: {
     /** Open a stateful HTTP session: { setUserAgent, setHeader, get, post, cookies }. Cookie jar + default headers persist across requests (like a browser). */
     open(...args: unknown[]): Promise<Record<string, unknown>>;
   };
+  capture: {
+    /** List the host's network interfaces synchronously: net.capture.interfaces() → array of { name, addresses: string[], up, loopback }. Pure-Go (no privileges, all platforms). */
+    interfaces(...args: unknown[]): unknown;
+    /** Live packet capture: net.capture.open({ iface, promisc?, snaplen? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }. No BPF-expression filters — filter inside the callback. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo). */
+    open(...args: unknown[]): unknown;
+    /** Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}) → Promise<void>. Calls the handler once per decoded packet (same shape as capture.open) and resolves at EOF. Offline; no privileges. */
+    openFile(...args: unknown[]): unknown;
+    /** Write raw frames to a .pcap file: net.capture.toFile(path, { linkType?, snaplen? }) → { write(bytes, { ts? }), close() }. write appends a raw frame (Uint8Array); ts (ms) overrides the timestamp. close() flushes and returns Promise<void>. Offline; no privileges. */
+    toFile(...args: unknown[]): unknown;
+  };
   email: {
     /** Run all five email probes in parallel — five-way handshake aggregate. */
     all(...args: unknown[]): Promise<Record<string, unknown>>;
