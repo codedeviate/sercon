@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.19.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.20.0</div> <!-- x-release-please-version -->
 <div class="date">2026-05-30</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -1851,7 +1851,7 @@ deferred ideas.
 
 ---
 
-*This manual covers sercon v0.19.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.20.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
