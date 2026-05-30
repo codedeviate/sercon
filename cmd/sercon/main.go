@@ -378,6 +378,9 @@ func registerSurface(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("db", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
 			"sqlite":    sqliteNamespace(vm, loop),
+			"postgres":  postgresNamespace(vm, loop),
+			"mysql":     mysqlNamespace(vm, loop),
+			"mssql":     mssqlNamespace(vm, loop),
 			"redis":     redisNamespace(vm, loop),
 			"memcached": memcachedNamespace(vm, loop),
 			"ldap":      ldapNamespace(vm, loop),
@@ -424,7 +427,7 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocs("fs", fsDocs())
 	e.SetDocs("net", "Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions.")
 	e.SetMemberDocs("net", netDocs())
-	e.SetDocs("db", "Database / KV / directory clients: SQLite, Redis, memcached, LDAP, dict.")
+	e.SetDocs("db", "Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict.")
 	e.SetMemberDocs("db", dbDocs())
 	e.SetDocs("services", "Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers.")
 	e.SetMemberDocs("services", servicesDocs())

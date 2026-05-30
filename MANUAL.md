@@ -822,10 +822,28 @@ Network clients and probes:
 Database / KV / directory clients:
 
 - `db.sqlite.open(path)` — embedded SQLite (cgo-free driver).
+- `db.postgres.open(dsn | opts)` — PostgreSQL via pure-Go `pgx`.
+- `db.mysql.open(dsn | opts)` — MySQL / MariaDB via pure-Go `go-sql-driver`.
+- `db.mssql.open(dsn | opts)` — Microsoft SQL Server via pure-Go `go-mssqldb`.
 - `db.redis.open(addr, opts?)` — Redis client.
 - `db.memcached.open(addr)` — Memcached client.
 - `db.ldap.open(url, opts?)` — LDAP client (search, bind).
 - `db.dict.{define, match}` — local dictionary lookup / fuzzy match.
+
+**SQL engines (`sqlite` / `postgres` / `mysql` / `mssql`)** share one
+handle: `open()` resolves to `{ exec, query, queryValue, begin,
+prepare, close }` (transactions via `begin()` → `{ exec, query,
+queryValue, commit, rollback }`; prepared statements via `prepare(sql)`
+→ `{ exec, query, queryValue, close }`). The server engines accept
+either a driver **DSN string** or a connection **options object**
+(`{ host, port, user, password, database }`, plus `sslmode` for
+postgres); credentials in the assembled URL DSNs are percent-escaped.
+The connection is pinged on `open()` so a bad DSN or unreachable server
+fails there, not at the first query. Bind parameters are positional and
+passed after the SQL string — write your engine's placeholder syntax:
+`?` (sqlite, mysql), `$1` (postgres), `@p1` (mssql). All four drivers are
+pure Go (no cgo). Scripts must `close()` the handle (and commit/rollback
+transactions, close prepared statements) — there is no GC finalizer.
 
 ### `services`
 

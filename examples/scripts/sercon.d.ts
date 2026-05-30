@@ -285,7 +285,7 @@ declare const net: {
   };
 };
 
-/** Database / KV / directory clients: SQLite, Redis, memcached, LDAP, dict. */
+/** Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict. */
 declare const db: {
   dict: {
     /** RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error). */
@@ -301,12 +301,24 @@ declare const db: {
     /** Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?). */
     open(...args: unknown[]): Promise<Record<string, unknown>>;
   };
+  mssql: {
+    /** Connect to Microsoft SQL Server via the pure-Go go-mssqldb driver. Arg is a sqlserver:// URL DSN string or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses @p1,@p2,… placeholders. Pings on open. */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
+  mysql: {
+    /** Connect to MySQL/MariaDB via the pure-Go go-sql-driver. Arg is a go-sql-driver DSN string (user:pass@tcp(host:port)/db) or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses ? placeholders. Pings on open. */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
+  postgres: {
+    /** Connect to PostgreSQL via the pure-Go pgx driver. Arg is a libpq DSN/URL string or an options object { host, port, user, password, database, sslmode }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses $1,$2,… placeholders. Pings on open. */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   redis: {
     /** Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses. */
     open(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   sqlite: {
-    /** Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, close }. Connection is Ping-ed before resolving. */
+    /** Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, begin, prepare, close }. Connection is Ping-ed before resolving. */
     open(...args: unknown[]): Promise<Record<string, unknown>>;
   };
 };

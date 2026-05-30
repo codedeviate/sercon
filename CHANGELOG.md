@@ -8,6 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`db.postgres`, `db.mysql`, `db.mssql` — server SQL engines.**
+  PostgreSQL (pure-Go `jackc/pgx`), MySQL/MariaDB (`go-sql-driver/mysql`),
+  and Microsoft SQL Server (`microsoft/go-mssqldb`) join `db.sqlite` on a
+  shared `database/sql` handle: `open()` (a driver DSN string or a
+  `{ host, port, user, password, database, sslmode? }` options object)
+  resolves to `{ exec, query, queryValue, begin, prepare, close }`, with
+  transactions and prepared statements. The connection is pinged on open;
+  bind parameters are positional (write your engine's placeholder syntax —
+  `?` / `$1` / `@p1`). All drivers are pure Go (no cgo). The sqlite handle
+  was refactored into this shared layer (no behavior change).
+
 ## [0.17.0] — 2026-05-30
 
 ### Added
