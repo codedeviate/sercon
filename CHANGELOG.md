@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-05-30
+
+### Changed
+
+- **Dropped the legacy `api` naming.** The v0.9.0 rewrite replaced the
+  single `api` global with ten top-level globals; this removes the
+  leftover `api_` prefix from every `cmd/sercon/*.go` file and renames
+  the bundled declaration file `examples/scripts/api.d.ts` →
+  `sercon.d.ts`. Regenerate your own with `sercon -emit-dts sercon.d.ts`
+  and update any `/// <reference path="./api.d.ts" />` accordingly. No
+  script-facing behavior change.
+- **CI:** bumped GitHub Actions off the deprecated Node.js 20 runtime
+  (`actions/checkout@v5`, `actions/setup-go@v6`,
+  `goreleaser/goreleaser-action@v7`).
+
 ## [0.13.0] — 2026-05-30
 
 ### Added
