@@ -25,11 +25,11 @@ func TestParsePRListJSON_FlattensAuthor(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("len: %d", len(out))
 	}
-	if out[0]["author"].(string) != "alice" {
-		t.Errorf("author 0: %v", out[0]["author"])
+	if out[0].ToMap()["author"].(string) != "alice" {
+		t.Errorf("author 0: %v", out[0].ToMap()["author"])
 	}
-	if out[1]["author"].(string) != "bob" {
-		t.Errorf("author 1: %v", out[1]["author"])
+	if out[1].ToMap()["author"].(string) != "bob" {
+		t.Errorf("author 1: %v", out[1].ToMap()["author"])
 	}
 }
 
@@ -45,8 +45,8 @@ func TestParsePRListJSON_NullAuthorPreserved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if out[0]["author"] != nil {
-		t.Errorf("author should stay nil, got %T %v", out[0]["author"], out[0]["author"])
+	if out[0].ToMap()["author"] != nil {
+		t.Errorf("author should stay nil, got %T %v", out[0].ToMap()["author"], out[0].ToMap()["author"])
 	}
 }
 
@@ -63,13 +63,14 @@ func TestParseRepoViewJSON_FlattensOwnerAndDefaultBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if out["owner"].(string) != "codedeviate" {
-		t.Errorf("owner: %v", out["owner"])
+	m := out.ToMap()
+	if m["owner"].(string) != "codedeviate" {
+		t.Errorf("owner: %v", m["owner"])
 	}
-	if out["defaultBranch"].(string) != "master" {
-		t.Errorf("defaultBranch: %v", out["defaultBranch"])
+	if m["defaultBranch"].(string) != "master" {
+		t.Errorf("defaultBranch: %v", m["defaultBranch"])
 	}
-	if _, leftover := out["defaultBranchRef"]; leftover {
+	if _, leftover := out.Get("defaultBranchRef"); leftover {
 		t.Error("defaultBranchRef should have been removed after flattening")
 	}
 }
@@ -85,8 +86,8 @@ func TestParseRepoViewJSON_EmptyRepoNullDefaultBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if out["defaultBranch"].(string) != "" {
-		t.Errorf("defaultBranch should be empty string, got %v", out["defaultBranch"])
+	if out.ToMap()["defaultBranch"].(string) != "" {
+		t.Errorf("defaultBranch should be empty string, got %v", out.ToMap()["defaultBranch"])
 	}
 }
 

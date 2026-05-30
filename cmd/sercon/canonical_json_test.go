@@ -80,3 +80,35 @@ func TestNetProbeTCP_KeyOrder(t *testing.T) {
 		t.Fatalf("net.probe.tcp key order:\n got: %s\nwant: %s", got, want)
 	}
 }
+
+// TestSQLRows_StableColumnOrder proves a db.sqlite query row (built via the
+// shared Ordered-backed scanRows) keeps the result-set column order — the
+// dynamic-key half of the canonical-JSON sweep. Uses an in-memory DB (no
+// network), so it's deterministic.
+func TestSQLRows_StableColumnOrder(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err := eng.Register("__rec", func(call goja.FunctionCall) goja.Value {
+		got = call.Argument(0).String()
+		return goja.Undefined()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "rows.ts", `
+		const d = await db.sqlite.open(":memory:");
+		await d.exec("CREATE TABLE t (zebra TEXT, alpha INTEGER, mid TEXT)");
+		await d.exec("INSERT INTO t VALUES ('z', 1, 'm')");
+		const rows = await d.query("SELECT zebra, alpha, mid FROM t");
+		await d.close();
+		__rec(JSON.stringify(rows[0]));
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if want := `{"zebra":"z","alpha":1,"mid":"m"}`; got != want {
+		t.Fatalf("sqlite row key order:\n got: %s\nwant: %s", got, want)
+	}
+}

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 	"github.com/dop251/goja"
 )
 
@@ -27,7 +29,7 @@ import (
 // `status` / `ok`. Transport errors (DNS, connection refused, TLS) and
 // context deadline throw. Retries (opts.retry) re-attempt only on
 // transport errors and 5xx — never on 4xx, which are deterministic.
-func httpRequestCall(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 	method := strings.ToUpper(strings.TrimSpace(call.Argument(0).String()))
 	if method == "" {
 		return nil, errors.New("http.request: method required")
@@ -78,7 +80,7 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (map[string]an
 			}
 		}
 
-		result, retryable, err := httpRequestOnce(ctx, client, method, url, body, headers, authUser, authPass)
+		result, status, retryable, err := httpRequestOnce(ctx, client, method, url, body, headers, authUser, authPass)
 		if err != nil {
 			lastErr = err
 			if retryable && attempt < retries {
@@ -87,7 +89,7 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (map[string]an
 			return nil, fmt.Errorf("http.request: %w", err)
 		}
 		// A 5xx is retryable; 4xx and 2xx/3xx are final.
-		if status, _ := result["status"].(int); status >= 500 && attempt < retries {
+		if status >= 500 && attempt < retries {
 			lastErr = fmt.Errorf("server returned %d", status)
 			continue
 		}
@@ -99,7 +101,7 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (map[string]an
 // httpRequestOnce performs a single attempt. The bool return is
 // "retryable" — true for transport errors (worth retrying), used by
 // the caller's retry loop.
-func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body string, headers map[string]string, user, pass string) (map[string]any, bool, error) {
+func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body string, headers map[string]string, user, pass string) (*scriptengine.Ordered, int, bool, error) {
 	var reqBody io.Reader
 	if body != "" {
 		reqBody = strings.NewReader(body)
@@ -107,7 +109,7 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		// A malformed method/URL is a programmer error, not retryable.
-		return nil, false, err
+		return nil, 0, false, err
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -119,19 +121,28 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body
 	resp, err := client.Do(req)
 	if err != nil {
 		// Transport-level failures are the retryable class.
-		return nil, true, err
+		return nil, 0, true, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, true, fmt.Errorf("read body: %w", err)
+		return nil, 0, true, fmt.Errorf("read body: %w", err)
 	}
 
-	respHeaders := make(map[string]string, len(resp.Header))
-	for k, v := range resp.Header {
+	// Build the headers sub-object with a stable, canonical key order:
+	// lower-cased name → last value, names sorted alphabetically. Go's
+	// http.Header is a map, so we sort to avoid run-to-run shuffle.
+	names := make([]string, 0, len(resp.Header))
+	for k := range resp.Header {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	respHeaders := scriptengine.NewOrdered()
+	for _, k := range names {
+		v := resp.Header[k]
 		if len(v) > 0 {
-			respHeaders[strings.ToLower(k)] = v[len(v)-1]
+			respHeaders.Set(strings.ToLower(k), v[len(v)-1])
 		}
 	}
 
@@ -140,11 +151,12 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body
 		finalURL = resp.Request.URL.String()
 	}
 
-	return map[string]any{
-		"status":  resp.StatusCode,
-		"ok":      resp.StatusCode >= 200 && resp.StatusCode < 400,
-		"headers": respHeaders,
-		"body":    string(respBody),
-		"url":     finalURL,
-	}, false, nil
+	result := scriptengine.NewOrdered().
+		Set("status", resp.StatusCode).
+		Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 400).
+		Set("headers", respHeaders).
+		Set("body", string(respBody)).
+		Set("url", finalURL)
+
+	return result, resp.StatusCode, false, nil
 }

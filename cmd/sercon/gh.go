@@ -16,6 +16,150 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
+// decodeOrderedObject walks a JSON object from a *json.Decoder, preserving key
+// order, and lets the caller rewrite each entry as it is emitted. This is the
+// `gh.go` analogue of scriptengine.DecodeOrderedJSON, but with a per-key hook
+// so the post-processing the legacy code did via in-place map mutation
+// (flattening `author`/`owner` login wrappers, renaming `defaultBranchRef`)
+// can be applied while still producing a stable, source-ordered
+// *scriptengine.Ordered. goja takes a JS object's key order from Go map
+// iteration (randomized per process), so returning a map here would shuffle
+// JSON.stringify output run-to-run; an Ordered fixes the order.
+//
+// `rewrite` is consulted for each key, in source order. It receives the key
+// and a `consume` interface exposing two mutually-exclusive ways to read the
+// value:
+//
+//   - consume.Ordered() decodes it as a stable *Ordered (the normal path,
+//     preserving nested key order);
+//   - consume.Plain() decodes it as a throwaway plain value via json.Decode
+//     (objects → map[string]any) — used for wrapper fields we only peek a
+//     scalar out of, whose own key order is irrelevant since we discard them.
+//
+// Exactly one must be called per key; the hook then returns the key→value pair
+// to emit plus an `emit` flag (emit=false drops the entry). If the hook calls
+// neither, the value is drained with the ordered decoder to keep the token
+// stream balanced. A nil rewrite emits every key with its ordered value
+// unchanged. The decoder must be positioned just past the opening `{`.
+func decodeOrderedObject(dec *json.Decoder, rewrite func(key string, c *valueConsumer) (string, any, bool, error)) (*scriptengine.Ordered, error) {
+	o := scriptengine.NewOrdered()
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, _ := keyTok.(string)
+
+		if rewrite == nil {
+			val, err := decodeOrderedAny(dec)
+			if err != nil {
+				return nil, err
+			}
+			o.Set(key, val)
+			continue
+		}
+
+		c := &valueConsumer{dec: dec}
+		outKey, outVal, emit, err := rewrite(key, c)
+		if err != nil {
+			return nil, err
+		}
+		if cErr := c.drain(); cErr != nil {
+			return nil, cErr
+		}
+		if !emit {
+			continue
+		}
+		o.Set(outKey, outVal)
+	}
+	if _, err := dec.Token(); err != nil { // consume '}'
+		return nil, err
+	}
+	return o, nil
+}
+
+// valueConsumer reads the value following a JSON object key exactly once,
+// either as a stable *Ordered or as a throwaway plain value. It tracks whether
+// it was used so decodeOrderedObject can drain an unconsumed value and keep the
+// token stream balanced.
+type valueConsumer struct {
+	dec  *json.Decoder
+	used bool
+}
+
+// Ordered consumes the value preserving nested object key order.
+func (c *valueConsumer) Ordered() (any, error) {
+	c.used = true
+	return decodeOrderedAny(c.dec)
+}
+
+// Plain consumes the value as a plain Go value (objects → map[string]any).
+// Use it for wrappers whose internal order is irrelevant because the wrapper
+// is discarded after peeking one field.
+func (c *valueConsumer) Plain() (any, error) {
+	c.used = true
+	var v any
+	if err := c.dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// drain reads-and-discards the value if the hook consumed neither way.
+func (c *valueConsumer) drain() error {
+	if c.used {
+		return nil
+	}
+	_, err := decodeOrderedAny(c.dec)
+	return err
+}
+
+// decodeOrderedAny decodes the next JSON value, preserving object key order
+// (objects → *scriptengine.Ordered, arrays → []any, primitives as-is). It is a
+// local mirror of scriptengine's unexported decoder, needed because that
+// package exposes only the top-level DecodeOrderedJSON entry point and we want
+// to drive the token stream ourselves (to intercept keys).
+func decodeOrderedAny(dec *json.Decoder) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delim, ok := tok.(json.Delim); ok {
+		switch delim {
+		case '{':
+			return decodeOrderedObject(dec, nil)
+		case '[':
+			arr := []any{}
+			for dec.More() {
+				v, err := decodeOrderedAny(dec)
+				if err != nil {
+					return nil, err
+				}
+				arr = append(arr, v)
+			}
+			if _, err := dec.Token(); err != nil { // consume ']'
+				return nil, err
+			}
+			return arr, nil
+		}
+	}
+	return tok, nil
+}
+
+// loginOf extracts the `login` string from a wrapper value that was decoded as
+// a plain map[string]any (gh wraps every user-shaped field this way). It
+// returns ("", false) for a non-object or a missing/non-string login. The
+// wrapper is discarded after this peek, so decoding it as an unordered map is
+// fine.
+func loginOf(val any) (string, bool) {
+	m, ok := val.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	login, ok := m["login"].(string)
+	return login, ok
+}
+
 // ghNamespace wires `services.gh.*` — a thin wrapper around the GitHub CLI
 // (`gh`). Everything goes through `gh --json` so we get structured
 // output instead of parsing human-readable text. The wrapper respects
@@ -119,7 +263,7 @@ const prListFields = "number,title,state,author,headRefName,baseRefName,url,crea
 // ghPrList returns recent pull requests on the repo identified by the
 // process's working directory (or `opts.cwd`). `gh` does the auth and
 // repo-detection; we just shape the JSON.
-func ghPrList(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+func ghPrList(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 	opts := optAt(call, 0)
 	cwd := optString(opts, "cwd", "")
 	state := optString(opts, "state", "open")
@@ -153,16 +297,41 @@ func ghPrList(ctx context.Context, call goja.FunctionCall) ([]map[string]any, er
 	return parsePRListJSON([]byte(stdout))
 }
 
-// parsePRListJSON unmarshals the `--json` blob and flattens the
-// `author: { login, ... }` wrapper into a bare login string. Pulled out
-// of ghPrList so it's testable without spawning gh.
-func parsePRListJSON(raw []byte) ([]map[string]any, error) {
-	var out []map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
+// parsePRListJSON decodes the `--json` blob preserving each PR object's key
+// order (so JSON.stringify output is stable run-to-run) and flattens the
+// `author: { login, ... }` wrapper into a bare login string. Pulled out of
+// ghPrList so it's testable without spawning gh.
+//
+// The top level is a JSON array of PR objects; each object's keys appear in
+// the order `gh` emitted them (which follows prListFields). We rewrite only
+// the `author` key (flattened to its login scalar, kept in place); every other
+// key passes through unchanged in source order.
+func parsePRListJSON(raw []byte) ([]*scriptengine.Ordered, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil {
 		return nil, fmt.Errorf("gh.prList: parse JSON: %w", err)
 	}
-	for _, pr := range out {
-		flattenLogin(pr, "author")
+	if d, ok := tok.(json.Delim); !ok || d != '[' {
+		return nil, fmt.Errorf("gh.prList: parse JSON: expected array, got %v", tok)
+	}
+	out := []*scriptengine.Ordered{}
+	for dec.More() {
+		objTok, err := dec.Token()
+		if err != nil {
+			return nil, fmt.Errorf("gh.prList: parse JSON: %w", err)
+		}
+		if d, ok := objTok.(json.Delim); !ok || d != '{' {
+			return nil, fmt.Errorf("gh.prList: parse JSON: expected object, got %v", objTok)
+		}
+		pr, err := decodeOrderedObject(dec, flattenLoginRewrite("author"))
+		if err != nil {
+			return nil, fmt.Errorf("gh.prList: parse JSON: %w", err)
+		}
+		out = append(out, pr)
+	}
+	if _, err := dec.Token(); err != nil { // consume ']'
+		return nil, fmt.Errorf("gh.prList: parse JSON: %w", err)
 	}
 	return out, nil
 }
@@ -175,7 +344,7 @@ const repoViewFields = "name,owner,description,url,defaultBranchRef,visibility"
 // ghRepoView returns metadata about a repo. With no argument it asks
 // gh about the cwd's repo (so it works from inside a checkout); pass a
 // "owner/name" string to look up any repo `gh` has access to.
-func ghRepoView(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func ghRepoView(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 	var repo string
 	var opts map[string]any
 	if len(call.Arguments) > 0 {
@@ -213,45 +382,114 @@ func ghRepoView(ctx context.Context, call goja.FunctionCall) (map[string]any, er
 	return parseRepoViewJSON([]byte(stdout))
 }
 
-// parseRepoViewJSON unmarshals `gh repo view --json` output and
-// flattens the two object-wrapper fields scripts almost always want
-// scalar versions of: `owner.login` → `owner`, and `defaultBranchRef.name`
-// → `defaultBranch`. Pulled out for testability.
-func parseRepoViewJSON(raw []byte) (map[string]any, error) {
-	var data map[string]any
-	if err := json.Unmarshal(raw, &data); err != nil {
+// parseRepoViewJSON decodes `gh repo view --json` output preserving key order
+// (so JSON.stringify is stable run-to-run) and flattens the two object-wrapper
+// fields scripts almost always want scalar versions of: `owner.login` →
+// `owner` (kept in place), and `defaultBranchRef.name` → `defaultBranch`. The
+// rename keeps `defaultBranch` in the position `defaultBranchRef` occupied;
+// `defaultBranch` is always emitted (callers don't undefined-check), defaulting
+// to "" if the ref is absent, null, or nameless — mirroring the legacy map
+// logic. Pulled out for testability.
+func parseRepoViewJSON(raw []byte) (*scriptengine.Ordered, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil {
 		return nil, fmt.Errorf("gh.repoView: parse JSON: %w", err)
 	}
-	flattenLogin(data, "owner")
-
-	// defaultBranchRef may be present-and-populated, present-as-null
-	// (empty repo), or absent. Always set `defaultBranch` so callers
-	// don't have to undefined-check.
-	if v, ok := data["defaultBranchRef"]; ok {
-		if m, ok := v.(map[string]any); ok {
-			if name, ok := m["name"].(string); ok {
-				data["defaultBranch"] = name
-			}
-		}
-		delete(data, "defaultBranchRef")
+	if d, ok := tok.(json.Delim); !ok || d != '{' {
+		return nil, fmt.Errorf("gh.repoView: parse JSON: expected object, got %v", tok)
 	}
-	if _, ok := data["defaultBranch"]; !ok {
-		data["defaultBranch"] = ""
+
+	sawDefaultBranch := false
+	data, err := decodeOrderedObject(dec, func(key string, c *valueConsumer) (string, any, bool, error) {
+		switch key {
+		case "owner":
+			val, err := c.Plain()
+			if err != nil {
+				return "", nil, false, err
+			}
+			if login, ok := loginOf(val); ok {
+				return "owner", login, true, nil
+			}
+			// Not a recognizable login wrapper: keep the original value.
+			// (Mirrors flattenLogin leaving non-wrapper values untouched.)
+			return "owner", normalizePlain(val), true, nil
+		case "defaultBranchRef":
+			// present-and-populated, present-as-null, or nameless: in all
+			// cases emit `defaultBranch` here; "" unless we find a name.
+			val, err := c.Plain()
+			if err != nil {
+				return "", nil, false, err
+			}
+			sawDefaultBranch = true
+			branch := ""
+			if m, ok := val.(map[string]any); ok {
+				if name, ok := m["name"].(string); ok {
+					branch = name
+				}
+			}
+			return "defaultBranch", branch, true, nil
+		default:
+			val, err := c.Ordered()
+			if err != nil {
+				return "", nil, false, err
+			}
+			return key, val, true, nil
+		}
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gh.repoView: parse JSON: %w", err)
+	}
+	if !sawDefaultBranch {
+		data.Set("defaultBranch", "")
 	}
 	return data, nil
 }
 
-// flattenLogin rewrites `m[key] = { login, … }` to `m[key] = "<login>"`.
-// gh wraps every user-shaped field this way; scripts almost always want
-// just the login.
-func flattenLogin(m map[string]any, key string) {
-	v, ok := m[key].(map[string]any)
-	if !ok {
-		return
+// flattenLoginRewrite returns a rewrite hook for decodeOrderedObject that
+// flattens `key: { login, … }` to `key: "<login>"`, keeping the key in place;
+// gh wraps every user-shaped field this way and scripts almost always want
+// just the login. Any non-wrapper value passes through unchanged (decoded as a
+// stable *Ordered so nested order is preserved). All other keys pass through
+// in source order with their ordered value.
+func flattenLoginRewrite(loginKey string) func(string, *valueConsumer) (string, any, bool, error) {
+	return func(key string, c *valueConsumer) (string, any, bool, error) {
+		if key == loginKey {
+			val, err := c.Plain()
+			if err != nil {
+				return "", nil, false, err
+			}
+			if login, ok := loginOf(val); ok {
+				return key, login, true, nil
+			}
+			return key, normalizePlain(val), true, nil
+		}
+		val, err := c.Ordered()
+		if err != nil {
+			return "", nil, false, err
+		}
+		return key, val, true, nil
 	}
-	login, ok := v["login"].(string)
-	if !ok {
-		return
+}
+
+// normalizePlain converts a value decoded via valueConsumer.Plain (which uses
+// encoding/json and therefore yields map[string]any for objects) into the
+// ordered representation the rest of the result uses. It only matters on the
+// rare path where a `login`-wrapper field isn't actually a recognizable login
+// wrapper, so we re-encode and decode it through the ordered path to keep
+// nested key order stable. Primitives and arrays-of-primitives pass through.
+func normalizePlain(v any) any {
+	switch v.(type) {
+	case map[string]any, []any:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return v
+		}
+		if ord, err := scriptengine.DecodeOrderedJSON(b); err == nil {
+			return ord
+		}
+		return v
+	default:
+		return v
 	}
-	m[key] = login
 }

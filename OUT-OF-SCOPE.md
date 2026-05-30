@@ -83,34 +83,31 @@ sibling namespace per engine inside `db` (`db.mysql` /
 
 ### Correctness / output stability
 
-- **Canonical (stable-key-order) JSON for the remaining object-returning
-  bindings.** goja derives a JS object's property order from Go map
-  iteration (randomized per process), so a binding returning a
-  `map[string]any` shuffles `JSON.stringify` output run-to-run — breaking
-  callers that hash a canonical serialization (payment signing, webhook
-  signatures). **Done so far:** `text.preg`/`text.preg2` (v0.11.2,
-  ordered `*goja.Object`) and the *unconditional-key* results
-  `net.probe.tcp`/`ping`/`smtp`/`wss`, `db.dict.*`, `services.gh.authStatus`,
-  `services.git.*` (converted to json-tagged structs — struct field order is
-  deterministic and the engine already sets `goja.TagFieldNameMapper`).
-  **Why the rest is Moderate, not Easy:** structs only work when *every*
-  key is always present. goja exposes **every** struct field as a JS
-  property regardless of `json:",omitempty"` (omitempty affects only
-  `JSON.stringify`, not `"key" in obj` or `obj.key`), so a struct breaks
-  the conditional-presence contract (e.g. `if ("mx" in dnsResult)`) — see
-  `TestNetDNS_TypesFilter`. The remaining bindings have conditional,
-  dynamic, or decoded-JSON keys and need **ordered on-loop object
-  construction** (`vm.NewObject()` + `.Set()` only the present keys), which
-  for the async ones means threading an ordered structure through
-  `PromisifyAsync` (it currently resolves with `vm.ToValue`, off-loop-built):
-  - conditional presence: `net.probe.dns`/`whois`, `net.netstatus`,
-    `server.smtp` envelope optionals;
-  - dynamic keys: `db.ldap` entries (attribute names), `db.sqlite` query
-    rows (column names), `server.smtp` message `headers`;
-  - decoded external JSON (needs order-preserving decode): `crypto.jwt.view`
-    header/payload, `text.jq`, `services.gh` pr-list/repo-view,
-    HTTP JSON response bodies.
-  **Library:** stdlib / goja only.
+- **Canonical (stable-key-order) JSON for object-returning bindings.**
+  *(Shipped — v0.16.0 unconditional-key structs, v0.20.0 the rest.)*
+  goja derives a JS object's property order from Go map iteration
+  (randomized per process), so a binding returning a `map[string]any`
+  shuffled `JSON.stringify` output run-to-run — breaking callers that hash
+  a canonical serialization (payment signing, webhook signatures).
+  Resolved in two passes: (1) *unconditional-key* results
+  (`net.probe.tcp`/`ping`/`smtp`/`wss`, `db.dict.*`, `services.gh.authStatus`,
+  `services.git.*`, plus the earlier `text.preg`/`text.preg2`) became
+  json-tagged structs — struct field order is deterministic and the engine
+  sets `goja.TagFieldNameMapper`; (2) the conditional / dynamic / decoded-JSON
+  keyed results moved to `scriptengine.Ordered`, an insertion-ordered map
+  built off-loop and converted to an ordered `*goja.Object` on the loop
+  inside `PromisifyAsync`'s resolve step (`OrderedToValue`), with
+  `DecodeOrderedJSON` for order-preserving decode of external JSON. This
+  preserves the conditional-presence contract (`"mx" in dnsResult`) that a
+  struct would break — goja exposes every struct field regardless of
+  `json:",omitempty"` (see `TestNetDNS_TypesFilter`). Converted:
+  `net.probe.dns`/`whois`/`tls`/`ntp`, `net.netstatus`, `net.http.request`,
+  `db.ldap`, `db.sqlite`/`postgres`/`mysql`/`mssql` query rows,
+  `crypto.jwt.view`/`validate`, `services.gh` pr-list/repo-view,
+  `server.smtp` envelope/message.
+  **Lone exception:** `text.jq` — `gojq` parses JSON into plain Go maps
+  internally, discarding key order before our code sees the result, so its
+  output order can't be recovered without patching the library. Left as-is.
 
 Every other Moderate item shipped across v0.5.0 – v0.5.30 (the
 `.d.ts` JSDoc generator, `text.preg` / `text.preg2`, the

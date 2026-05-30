@@ -45,7 +45,7 @@ func netstatusNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]
 // rather than failing the whole call — the point is a status
 // snapshot, so individual failures are data. Only a missing host
 // argument throws.
-func netstatusCheck(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func netstatusCheck(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 	host := call.Argument(0).String()
 	if host == "" {
 		return nil, errors.New("netstatus.check: host required")
@@ -60,87 +60,110 @@ func netstatusCheck(ctx context.Context, call goja.FunctionCall) (map[string]any
 	start := time.Now()
 	var (
 		wg              sync.WaitGroup
-		dnsRes, tcpRes  map[string]any
-		tlsRes, httpRes map[string]any
+		dnsRes, tcpRes  *scriptengine.Ordered
+		tlsRes, httpRes *scriptengine.Ordered
+		dnsOK, tcpOK    bool
 	)
 
 	wg.Add(4)
-	go func() { defer wg.Done(); dnsRes = nsDNS(probeCtx, host) }()
-	go func() { defer wg.Done(); tcpRes = nsTCP(probeCtx, host, port) }()
+	go func() { defer wg.Done(); dnsRes, dnsOK = nsDNS(probeCtx, host) }()
+	go func() { defer wg.Done(); tcpRes, tcpOK = nsTCP(probeCtx, host, port) }()
 	go func() { defer wg.Done(); tlsRes = nsTLS(probeCtx, host, port) }()
 	go func() { defer wg.Done(); httpRes = nsHTTP(probeCtx, host) }()
 	wg.Wait()
 
-	dnsOK, _ := dnsRes["ok"].(bool)
-	tcpOK, _ := tcpRes["ok"].(bool)
 	reachable := dnsOK && tcpOK
-	return map[string]any{
-		"host":      host,
-		"port":      port,
-		"elapsedMs": float64(time.Since(start)) / float64(time.Millisecond),
-		"reachable": reachable,
-		"dns":       dnsRes,
-		"tcp":       tcpRes,
-		"tls":       tlsRes,
-		"http":      httpRes,
-	}, nil
+	return scriptengine.NewOrdered().
+		Set("host", host).
+		Set("port", port).
+		Set("elapsedMs", float64(time.Since(start))/float64(time.Millisecond)).
+		Set("reachable", reachable).
+		Set("dns", dnsRes).
+		Set("tcp", tcpRes).
+		Set("tls", tlsRes).
+		Set("http", httpRes), nil
 }
 
-func nsDNS(ctx context.Context, host string) map[string]any {
+func nsDNS(ctx context.Context, host string) (*scriptengine.Ordered, bool) {
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return map[string]any{"ok": false, "ips": []string{}, "error": err.Error()}
+		return scriptengine.NewOrdered().
+			Set("ok", false).
+			Set("ips", []string{}).
+			Set("error", err.Error()), false
 	}
 	out := make([]string, 0, len(ips))
 	for _, ip := range ips {
 		out = append(out, ip.IP.String())
 	}
-	return map[string]any{"ok": true, "ips": out}
+	return scriptengine.NewOrdered().
+		Set("ok", true).
+		Set("ips", out), true
 }
 
-func nsTCP(ctx context.Context, host, port string) map[string]any {
+func nsTCP(ctx context.Context, host, port string) (*scriptengine.Ordered, bool) {
 	dialer := net.Dialer{}
 	start := time.Now()
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		return map[string]any{"ok": false, "latencyMs": 0.0, "error": err.Error()}
+		return scriptengine.NewOrdered().
+			Set("ok", false).
+			Set("latencyMs", 0.0).
+			Set("error", err.Error()), false
 	}
 	_ = conn.Close()
-	return map[string]any{"ok": true, "latencyMs": float64(time.Since(start)) / float64(time.Millisecond)}
+	return scriptengine.NewOrdered().
+		Set("ok", true).
+		Set("latencyMs", float64(time.Since(start))/float64(time.Millisecond)), true
 }
 
-func nsTLS(ctx context.Context, host, port string) map[string]any {
+func nsTLS(ctx context.Context, host, port string) *scriptengine.Ordered {
 	dialer := tls.Dialer{Config: &tls.Config{ServerName: host}} //nolint:gosec // verified handshake; ServerName set
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		return map[string]any{"ok": false, "daysRemaining": 0, "error": err.Error()}
+		return scriptengine.NewOrdered().
+			Set("ok", false).
+			Set("daysRemaining", 0).
+			Set("error", err.Error())
 	}
 	defer func() { _ = conn.Close() }()
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {
-		return map[string]any{"ok": false, "daysRemaining": 0, "error": "not a TLS connection"}
+		return scriptengine.NewOrdered().
+			Set("ok", false).
+			Set("daysRemaining", 0).
+			Set("error", "not a TLS connection")
 	}
 	certs := tlsConn.ConnectionState().PeerCertificates
 	if len(certs) == 0 {
-		return map[string]any{"ok": true, "daysRemaining": 0}
+		return scriptengine.NewOrdered().
+			Set("ok", true).
+			Set("daysRemaining", 0)
 	}
 	days := int(time.Until(certs[0].NotAfter).Hours() / 24)
-	return map[string]any{"ok": true, "daysRemaining": days}
+	return scriptengine.NewOrdered().
+		Set("ok", true).
+		Set("daysRemaining", days)
 }
 
-func nsHTTP(ctx context.Context, host string) map[string]any {
+func nsHTTP(ctx context.Context, host string) *scriptengine.Ordered {
 	url := "https://" + host
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
-		return map[string]any{"ok": false, "status": 0, "error": err.Error()}
+		return scriptengine.NewOrdered().
+			Set("ok", false).
+			Set("status", 0).
+			Set("error", err.Error())
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return map[string]any{"ok": false, "status": 0, "error": err.Error()}
+		return scriptengine.NewOrdered().
+			Set("ok", false).
+			Set("status", 0).
+			Set("error", err.Error())
 	}
 	_ = resp.Body.Close()
-	return map[string]any{
-		"ok":     resp.StatusCode >= 200 && resp.StatusCode < 500,
-		"status": resp.StatusCode,
-	}
+	return scriptengine.NewOrdered().
+		Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 500).
+		Set("status", resp.StatusCode)
 }

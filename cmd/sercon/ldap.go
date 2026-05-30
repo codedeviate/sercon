@@ -52,7 +52,7 @@ func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCal
 		// rootDSE() reads the server's Root DSE — the anonymous
 		// metadata entry that advertises naming contexts, supported
 		// controls, vendor, etc.
-		"rootDSE": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"rootDSE": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 			req := ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases,
 				0, 0, false, "(objectClass=*)", []string{"*", "+"}, nil)
 			res, err := conn.Search(req)
@@ -60,12 +60,12 @@ func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCal
 				return nil, fmt.Errorf("ldap.rootDSE: %w", err)
 			}
 			if len(res.Entries) == 0 {
-				return map[string]any{}, nil
+				return scriptengine.NewOrdered(), nil
 			}
 			return ldapEntryToMap(res.Entries[0]), nil
 		}).Func,
 		// search(baseDN, filter, attrs?) — a generic subtree search.
-		"search": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+		"search": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 			baseDN := call.Argument(0).String()
 			filter := call.Argument(1).String()
 			if filter == "" {
@@ -81,7 +81,7 @@ func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCal
 			if err != nil {
 				return nil, fmt.Errorf("ldap.search: %w", err)
 			}
-			out := make([]map[string]any, 0, len(res.Entries))
+			out := make([]*scriptengine.Ordered, 0, len(res.Entries))
 			for _, e := range res.Entries {
 				out = append(out, ldapEntryToMap(e))
 			}
@@ -98,11 +98,17 @@ func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCal
 
 // ldapEntryToMap flattens an LDAP entry into `{ dn, <attr>: [values] }`.
 // Multi-valued attributes (the common case in LDAP) stay as arrays so
-// the shape is uniform regardless of cardinality.
-func ldapEntryToMap(e *ldap.Entry) map[string]any {
-	out := map[string]any{"dn": e.DN}
+// the shape is uniform regardless of cardinality. Keys emit in stable
+// order: `dn` first, then each attribute in e.Attributes order, so
+// JSON.stringify output is reproducible for canonical-hash callers.
+func ldapEntryToMap(e *ldap.Entry) *scriptengine.Ordered {
+	out := scriptengine.NewOrdered().Set("dn", e.DN)
 	for _, attr := range e.Attributes {
-		out[attr.Name] = attr.Values
+		vals := make([]any, len(attr.Values))
+		for i, v := range attr.Values {
+			vals[i] = v
+		}
+		out.Set(attr.Name, vals)
 	}
 	return out
 }

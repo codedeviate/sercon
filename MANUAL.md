@@ -607,6 +607,14 @@ local `let`/`const`/`var` per normal JavaScript scoping — sercon does
 not intervene at runtime. `server` (added in v0.10.0) covers inbound
 listeners — see [section 6](#6-servers) for the long-form treatment.
 
+**Deterministic key order.** Objects returned from bindings enumerate
+their keys in a stable order (declaration order for fixed-shape results;
+source / column / insertion order for dynamic ones), so
+`JSON.stringify(result)` is byte-stable run-to-run — safe to hash for
+canonical serialization (payment signing, webhook signatures). The lone
+exception is `text.jq`, whose underlying engine discards key order
+internally.
+
 ### `console` (browser/Node compatibility)
 
 Beyond the ten reserved globals, sercon provides a `console` global so

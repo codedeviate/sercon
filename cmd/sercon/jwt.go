@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 	"github.com/dop251/goja"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v2/jwk"
@@ -265,17 +266,36 @@ func jwtView(vm *goja.Runtime, token string) goja.Value {
 	if err != nil {
 		panic(vm.NewGoError(fmt.Errorf("jwt.view: payload %w", err)))
 	}
-	return vm.ToValue(map[string]any{
-		"header":    header,
-		"payload":   payload,
-		"signature": parts[2],
-	})
+	top := scriptengine.NewOrdered().
+		Set("header", header).
+		Set("payload", payload).
+		Set("signature", parts[2])
+	return scriptengine.OrderedToValue(vm, top)
 }
 
 // decodeJWTSegment base64url-decodes a JWT segment and JSON-parses
-// the result. Accepts both `RawURLEncoding` (no padding, per spec)
-// and the rarer padded form.
-func decodeJWTSegment(seg string) (map[string]any, error) {
+// the result, preserving object key order via DecodeOrderedJSON so a
+// re-serialized header/payload keeps the source key order (canonical
+// hashing). Accepts both `RawURLEncoding` (no padding, per spec) and
+// the rarer padded form. The returned `any` is an *scriptengine.Ordered
+// for objects, []any for arrays, or a primitive — ready to hand back
+// through OrderedToValue.
+func decodeJWTSegment(seg string) (any, error) {
+	raw, err := decodeJWTSegmentBytes(seg)
+	if err != nil {
+		return nil, err
+	}
+	out, err := scriptengine.DecodeOrderedJSON(raw)
+	if err != nil {
+		return nil, fmt.Errorf("json parse: %w", err)
+	}
+	return out, nil
+}
+
+// decodeJWTSegmentBytes base64url-decodes a JWT segment to its raw
+// JSON bytes. Accepts both `RawURLEncoding` (no padding, per spec) and
+// the rarer padded form.
+func decodeJWTSegmentBytes(seg string) ([]byte, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(seg)
 	if err != nil {
 		var err2 error
@@ -284,11 +304,26 @@ func decodeJWTSegment(seg string) (map[string]any, error) {
 			return nil, fmt.Errorf("base64url decode: %w", err)
 		}
 	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("json parse: %w", err)
+	return raw, nil
+}
+
+// jwtHeaderAlg cheaply reads the `alg` field from a JWT header
+// segment, ignoring all errors. Used only by jwtValidate's
+// secret-vs-algorithm pre-check, which is best-effort: a header that
+// fails to decode simply leaves the pre-check algorithm unset and the
+// keyfunc handles it.
+func jwtHeaderAlg(seg string) string {
+	raw, err := decodeJWTSegmentBytes(seg)
+	if err != nil {
+		return ""
 	}
-	return out, nil
+	var hdr struct {
+		Alg string `json:"alg"`
+	}
+	if err := json.Unmarshal(raw, &hdr); err != nil {
+		return ""
+	}
+	return hdr.Alg
 }
 
 // jwtValidate verifies a token using `secret` and the algorithm
@@ -336,11 +371,7 @@ func jwtValidate(vm *goja.Runtime, token, secret string, opts goja.Value) goja.V
 	// with cryptographic verification failures.
 	preCheckAlg := expectedAlg
 	if preCheckAlg == "" {
-		if hdr, err := decodeJWTSegment(parts[0]); err == nil {
-			if a, ok := hdr["alg"].(string); ok {
-				preCheckAlg = a
-			}
-		}
+		preCheckAlg = jwtHeaderAlg(parts[0])
 	}
 	if preCheckAlg != "" && jwtSigningMethod(preCheckAlg) != nil {
 		if _, err := parsePublicKeyForAlg(secret, preCheckAlg); err != nil {
@@ -367,22 +398,29 @@ func jwtValidate(vm *goja.Runtime, token, secret string, opts goja.Value) goja.V
 		return parsePublicKeyForAlg(secret, actualAlg)
 	}, parserOpts...)
 	if err != nil {
-		return vm.ToValue(map[string]any{
-			"valid":  false,
-			"reason": err.Error(),
-		})
+		return scriptengine.OrderedToValue(vm, scriptengine.NewOrdered().
+			Set("valid", false).
+			Set("reason", err.Error()))
 	}
-	claims, ok := parsed.Claims.(jwt.MapClaims)
-	if !ok {
-		return vm.ToValue(map[string]any{
-			"valid":  false,
-			"reason": "claims have unexpected shape",
-		})
+	if _, ok := parsed.Claims.(jwt.MapClaims); !ok {
+		return scriptengine.OrderedToValue(vm, scriptengine.NewOrdered().
+			Set("valid", false).
+			Set("reason", "claims have unexpected shape"))
 	}
-	return vm.ToValue(map[string]any{
-		"valid":  true,
-		"claims": map[string]any(claims),
-	})
+	// Re-decode the payload segment with order preservation so the
+	// returned `claims` object keeps the token's source key order.
+	// jwt-go's MapClaims is a Go map and loses order; the signature is
+	// already verified by jwt.Parse above, so decoding the payload
+	// segment directly is safe and authoritative.
+	claims, err := decodeJWTSegment(parts[1])
+	if err != nil {
+		return scriptengine.OrderedToValue(vm, scriptengine.NewOrdered().
+			Set("valid", false).
+			Set("reason", fmt.Sprintf("decode claims: %v", err)))
+	}
+	return scriptengine.OrderedToValue(vm, scriptengine.NewOrdered().
+		Set("valid", true).
+		Set("claims", claims))
 }
 
 // optAlgorithm reads an optional `algorithm` field from opts,

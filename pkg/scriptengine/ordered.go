@@ -39,6 +39,50 @@ func (o *Ordered) Set(key string, val any) *Ordered {
 // Len reports the number of entries.
 func (o *Ordered) Len() int { return len(o.keys) }
 
+// Get returns the value for key and whether it was present. Last write wins
+// on duplicate keys.
+func (o *Ordered) Get(key string) (any, bool) {
+	for i := len(o.keys) - 1; i >= 0; i-- {
+		if o.keys[i] == key {
+			return o.vals[i], true
+		}
+	}
+	return nil, false
+}
+
+// ToMap converts the Ordered into a plain map[string]any, recursively
+// (nested *Ordered and []*Ordered become maps / []map[string]any), discarding
+// order. The live JS object preserves insertion order; ToMap is for Go-side
+// inspection and tests that assert values rather than order.
+func (o *Ordered) ToMap() map[string]any {
+	m := make(map[string]any, len(o.keys))
+	for i, k := range o.keys {
+		m[k] = orderedToPlain(o.vals[i])
+	}
+	return m
+}
+
+func orderedToPlain(v any) any {
+	switch x := v.(type) {
+	case *Ordered:
+		return x.ToMap()
+	case []*Ordered:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = e.ToMap()
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = orderedToPlain(e)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
 // OrderedToValue converts a result into a goja.Value, building any *Ordered
 // (including nested ones and slices of them) into ordered goja objects.
 // Anything that isn't Ordered-shaped falls through to vm.ToValue, so existing

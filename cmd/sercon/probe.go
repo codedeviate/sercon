@@ -131,7 +131,7 @@ func tcpProbe(ctx context.Context, call goja.FunctionCall) (tcpProbeResult, erro
 // here — the surface is small and each lookup is fast. Empty result sets are
 // omitted from the returned object so scripts can check membership with
 // `if ("mx" in result)`.
-func dnsLookup(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func dnsLookup(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 	host := call.Argument(0).String()
 	opts := optsAsMap(call)
 
@@ -154,7 +154,7 @@ func dnsLookup(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 	}
 
 	r := &net.Resolver{}
-	out := map[string]any{}
+	out := scriptengine.NewOrdered()
 
 	if want("a") || want("aaaa") {
 		ips, err := r.LookupIPAddr(ctx, host)
@@ -168,36 +168,35 @@ func dnsLookup(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 				}
 			}
 			if want("a") && len(a4) > 0 {
-				out["a"] = a4
+				out.Set("a", a4)
 			}
 			if want("aaaa") && len(a6) > 0 {
-				out["aaaa"] = a6
+				out.Set("aaaa", a6)
 			}
 		}
 	}
 
 	if want("mx") {
 		if mxs, err := r.LookupMX(ctx, host); err == nil && len(mxs) > 0 {
-			entries := make([]map[string]any, 0, len(mxs))
+			entries := make([]*scriptengine.Ordered, 0, len(mxs))
 			for _, m := range mxs {
-				entries = append(entries, map[string]any{
-					"preference": int(m.Pref),
-					"host":       m.Host,
-				})
+				entries = append(entries, scriptengine.NewOrdered().
+					Set("preference", int(m.Pref)).
+					Set("host", m.Host))
 			}
-			out["mx"] = entries
+			out.Set("mx", entries)
 		}
 	}
 
 	if want("txt") {
 		if txts, err := r.LookupTXT(ctx, host); err == nil && len(txts) > 0 {
-			out["txt"] = txts
+			out.Set("txt", txts)
 		}
 	}
 
 	if want("cname") {
 		if cname, err := r.LookupCNAME(ctx, host); err == nil && cname != "" && cname != host+"." {
-			out["cname"] = cname
+			out.Set("cname", cname)
 		}
 	}
 
@@ -207,7 +206,7 @@ func dnsLookup(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 			for _, ns := range nses {
 				names = append(names, ns.Host)
 			}
-			out["ns"] = names
+			out.Set("ns", names)
 		}
 	}
 
@@ -219,7 +218,7 @@ func dnsLookup(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 // the certificate, not for proving it's valid. Hosts that care about that
 // should re-validate themselves with crypto/x509.Verify or
 // scripts can call net.probe.tls and decide based on the returned fields.
-func tlsProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func tlsProbe(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 	target := call.Argument(0).String()
 	opts := optsAsMap(call)
 	timeout := optMillis(opts, "timeout", 5*time.Second)
@@ -260,23 +259,22 @@ func tlsProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, erro
 	now := time.Now()
 	daysRemaining := int(leaf.NotAfter.Sub(now).Hours() / 24)
 
-	return map[string]any{
-		"cn":                leaf.Subject.CommonName,
-		"issuer":            leaf.Issuer.CommonName,
-		"notBefore":         leaf.NotBefore.UTC().Format(time.RFC3339),
-		"notAfter":          leaf.NotAfter.UTC().Format(time.RFC3339),
-		"daysRemaining":     daysRemaining,
-		"dnsNames":          leaf.DNSNames,
-		"serialNumber":      leaf.SerialNumber.String(),
-		"fingerprintSha256": hex.EncodeToString(fp[:]),
-	}, nil
+	return scriptengine.NewOrdered().
+		Set("cn", leaf.Subject.CommonName).
+		Set("issuer", leaf.Issuer.CommonName).
+		Set("notBefore", leaf.NotBefore.UTC().Format(time.RFC3339)).
+		Set("notAfter", leaf.NotAfter.UTC().Format(time.RFC3339)).
+		Set("daysRemaining", daysRemaining).
+		Set("dnsNames", leaf.DNSNames).
+		Set("serialNumber", leaf.SerialNumber.String()).
+		Set("fingerprintSha256", hex.EncodeToString(fp[:])), nil
 }
 
 // ntpQuery hits an NTP server (UDP 123 by default) and returns clock-skew
 // data. Uses beevik/ntp which speaks NTPv4 and packages the response into
 // a struct we flatten for JS. Durations are reported in milliseconds with
 // sub-millisecond precision so the values are easy to compare.
-func ntpQuery(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+func ntpQuery(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 	host := call.Argument(0).String()
 	opts := optsAsMap(call)
 	timeout := optMillis(opts, "timeout", 5*time.Second)
@@ -302,15 +300,14 @@ func ntpQuery(_ context.Context, call goja.FunctionCall) (map[string]any, error)
 		return nil, err
 	}
 
-	return map[string]any{
-		"serverTime":       resp.Time.UTC().Format(time.RFC3339Nano),
-		"offsetMs":         float64(resp.ClockOffset.Microseconds()) / 1000.0,
-		"rttMs":            float64(resp.RTT.Microseconds()) / 1000.0,
-		"stratum":          int(resp.Stratum),
-		"referenceTime":    resp.ReferenceTime.UTC().Format(time.RFC3339Nano),
-		"rootDelayMs":      float64(resp.RootDelay.Microseconds()) / 1000.0,
-		"rootDispersionMs": float64(resp.RootDispersion.Microseconds()) / 1000.0,
-	}, nil
+	return scriptengine.NewOrdered().
+		Set("serverTime", resp.Time.UTC().Format(time.RFC3339Nano)).
+		Set("offsetMs", float64(resp.ClockOffset.Microseconds())/1000.0).
+		Set("rttMs", float64(resp.RTT.Microseconds())/1000.0).
+		Set("stratum", int(resp.Stratum)).
+		Set("referenceTime", resp.ReferenceTime.UTC().Format(time.RFC3339Nano)).
+		Set("rootDelayMs", float64(resp.RootDelay.Microseconds())/1000.0).
+		Set("rootDispersionMs", float64(resp.RootDispersion.Microseconds())/1000.0), nil
 }
 
 // whoisLookup performs a two-hop WHOIS query (IANA -> registrar's whois
@@ -322,7 +319,7 @@ func ntpQuery(_ context.Context, call goja.FunctionCall) (map[string]any, error)
 // likexian/whois doesn't accept a context — its timeout is a per-Client
 // setting (time.Duration). The host engine's outer timeout still kicks in
 // via vm.Interrupt; this just shapes the wire-level wait.
-func whoisLookup(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+func whoisLookup(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 	domain := call.Argument(0).String()
 	opts := optsAsMap(call)
 	timeout := optMillis(opts, "timeout", 10*time.Second)
@@ -333,28 +330,26 @@ func whoisLookup(_ context.Context, call goja.FunctionCall) (map[string]any, err
 		return nil, err
 	}
 
-	out := map[string]any{"raw": raw}
+	out := scriptengine.NewOrdered().Set("raw", raw)
 	parsed, parseErr := whoisparser.Parse(raw)
 	if parseErr == nil {
 		if parsed.Domain != nil {
 			// whois-parser puts the whois server on Domain, not on Registrar
 			// — it's the server that served the lookup, not a registrar field.
-			out["domain"] = map[string]any{
-				"name":           parsed.Domain.Name,
-				"punycode":       parsed.Domain.Punycode,
-				"whoisServer":    parsed.Domain.WhoisServer,
-				"nameServers":    parsed.Domain.NameServers,
-				"status":         parsed.Domain.Status,
-				"dnssec":         parsed.Domain.DNSSec,
-				"createdDate":    parsed.Domain.CreatedDate,
-				"updatedDate":    parsed.Domain.UpdatedDate,
-				"expirationDate": parsed.Domain.ExpirationDate,
-			}
+			out.Set("domain", scriptengine.NewOrdered().
+				Set("name", parsed.Domain.Name).
+				Set("punycode", parsed.Domain.Punycode).
+				Set("whoisServer", parsed.Domain.WhoisServer).
+				Set("nameServers", parsed.Domain.NameServers).
+				Set("status", parsed.Domain.Status).
+				Set("dnssec", parsed.Domain.DNSSec).
+				Set("createdDate", parsed.Domain.CreatedDate).
+				Set("updatedDate", parsed.Domain.UpdatedDate).
+				Set("expirationDate", parsed.Domain.ExpirationDate))
 		}
 		if parsed.Registrar != nil {
-			out["registrar"] = map[string]any{
-				"name": parsed.Registrar.Name,
-			}
+			out.Set("registrar", scriptengine.NewOrdered().
+				Set("name", parsed.Registrar.Name))
 		}
 	}
 	return out, nil

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -565,59 +566,72 @@ func verdictFromValue(val goja.Value, callErr error) smtpVerdict {
 
 // buildEnvelopeJS constructs the JS Envelope object on the loop. Must be
 // called from within a LoopCallable buildArgs closure (where vm is valid).
+//
+// Key order is stable (from, recipients, remote, helo) with the optional
+// authenticatedUser / tls keys appended only when present, so JSON.stringify
+// is deterministic for canonical-hash callers.
 func buildEnvelopeJS(vm *goja.Runtime, e smtpEnvelope) goja.Value {
-	obj := vm.NewObject()
-	_ = obj.Set("from", e.from)
-	_ = obj.Set("recipients", vm.ToValue(e.recipients))
-	_ = obj.Set("remote", e.remote)
-	_ = obj.Set("helo", e.helo)
+	o := scriptengine.NewOrdered().
+		Set("from", e.from).
+		Set("recipients", e.recipients).
+		Set("remote", e.remote).
+		Set("helo", e.helo)
 	if e.authenticatedUser != "" {
-		_ = obj.Set("authenticatedUser", e.authenticatedUser)
+		o.Set("authenticatedUser", e.authenticatedUser)
 	}
 	if e.tlsVersion != "" {
-		tlsObj := vm.NewObject()
-		_ = tlsObj.Set("version", e.tlsVersion)
-		_ = tlsObj.Set("cipher", e.tlsCipher)
-		_ = obj.Set("tls", tlsObj)
+		o.Set("tls", scriptengine.NewOrdered().
+			Set("version", e.tlsVersion).
+			Set("cipher", e.tlsCipher))
 	}
-	return obj
+	return scriptengine.OrderedToValue(vm, o)
 }
 
 // buildMessageJS constructs the JS Message object on the loop, populated
 // from the enmime-parsed envelope plus the raw DATA bytes.
+//
+// Key order is stable: from, to, cc, subject, headers, body, attachments,
+// raw. Header names (dynamic) are emitted in sorted order so the nested
+// `headers` object is deterministic — enmime exposes them via a map, which
+// has no preserved wire order, so a sort is the only stable choice.
 func buildMessageJS(vm *goja.Runtime, parsed *enmime.Envelope, raw []byte) goja.Value {
-	obj := vm.NewObject()
-	_ = obj.Set("from", parsed.GetHeader("From"))
-	_ = obj.Set("to", splitAddresses(parsed.GetHeader("To")))
-	_ = obj.Set("cc", splitAddresses(parsed.GetHeader("Cc")))
-	_ = obj.Set("subject", parsed.GetHeader("Subject"))
-
-	// enmime exposes headers via parsed.Root.Header (a textproto.MIMEHeader).
-	// Walk it for a lowercase-keyed Record<string, string[]>.
-	headers := vm.NewObject()
+	// enmime exposes headers via parsed.Root.Header (a textproto.MIMEHeader,
+	// i.e. a map). Lowercase the keys and emit in sorted order for a stable
+	// Record<string, string[]>.
+	headers := scriptengine.NewOrdered()
 	if parsed.Root != nil {
-		for k, vs := range parsed.Root.Header {
-			_ = headers.Set(strings.ToLower(k), vs)
+		keys := make([]string, 0, len(parsed.Root.Header))
+		for k := range parsed.Root.Header {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			headers.Set(strings.ToLower(k), parsed.Root.Header[k])
 		}
 	}
-	_ = obj.Set("headers", headers)
 
-	body := vm.NewObject()
-	_ = body.Set("text", parsed.Text)
-	_ = body.Set("html", parsed.HTML)
-	_ = obj.Set("body", body)
+	body := scriptengine.NewOrdered().
+		Set("text", parsed.Text).
+		Set("html", parsed.HTML)
 
-	atts := make([]any, 0, len(parsed.Attachments))
+	atts := make([]*scriptengine.Ordered, 0, len(parsed.Attachments))
 	for _, a := range parsed.Attachments {
-		att := vm.NewObject()
-		_ = att.Set("filename", a.FileName)
-		_ = att.Set("contentType", a.ContentType)
-		_ = att.Set("bytes", vm.ToValue(a.Content))
-		atts = append(atts, att)
+		atts = append(atts, scriptengine.NewOrdered().
+			Set("filename", a.FileName).
+			Set("contentType", a.ContentType).
+			Set("bytes", a.Content))
 	}
-	_ = obj.Set("attachments", vm.ToValue(atts))
-	_ = obj.Set("raw", vm.ToValue(raw))
-	return obj
+
+	o := scriptengine.NewOrdered().
+		Set("from", parsed.GetHeader("From")).
+		Set("to", splitAddresses(parsed.GetHeader("To"))).
+		Set("cc", splitAddresses(parsed.GetHeader("Cc"))).
+		Set("subject", parsed.GetHeader("Subject")).
+		Set("headers", headers).
+		Set("body", body).
+		Set("attachments", atts).
+		Set("raw", raw)
+	return scriptengine.OrderedToValue(vm, o)
 }
 
 // splitAddresses splits an address-list header value on commas, trimming

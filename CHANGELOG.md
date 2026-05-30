@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Changed
+
+- **Stable JSON key order across the remaining object-returning bindings.**
+  Bindings that returned a `map[string]any` shuffled `JSON.stringify`
+  output run-to-run (Go randomizes map iteration), breaking callers that
+  hash a canonical serialization. The conditional / dynamic / decoded-JSON
+  keyed results now build a `scriptengine.Ordered` (insertion-ordered,
+  constructed off-loop, converted to an ordered object on the loop) instead:
+  `net.probe.dns`/`whois`/`tls`/`ntp`, `net.netstatus`, `net.http.request`
+  (headers), `db.ldap`, `db.sqlite`/`postgres`/`mysql`/`mssql` query rows,
+  `crypto.jwt.view`/`validate`, `services.gh` pr-list/repo-view, and
+  `server.smtp` envelope/message objects. Key *order* is now deterministic;
+  conditional-presence (`"mx" in r`) and values are unchanged. `text.jq` is
+  the lone exception — `gojq` discards key order internally.
+
 ## [0.19.0] — 2026-05-30
 
 ### Changed

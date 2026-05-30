@@ -54,7 +54,7 @@ func sqlHandle(vm *goja.Runtime, loop *eventloop.EventLoop, db *sql.DB, engine s
 		"exec": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sqlExec(ctx, db, call, engine+".exec")
 		}).Func,
-		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 			return sqlQuery(ctx, db, call, engine+".query")
 		}).Func,
 		"queryValue": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
@@ -97,7 +97,7 @@ func sqlPrepare(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context
 			lastInsertID, _ := res.LastInsertId()
 			return map[string]any{"rowsAffected": rowsAffected, "lastInsertId": lastInsertID}, nil
 		}).Func,
-		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 			rows, err := stmt.QueryContext(ctx, sqlArgsFrom(call, 0)...)
 			if err != nil {
 				return nil, fmt.Errorf("%s.stmt.query: %w", engine, err)
@@ -134,7 +134,7 @@ func sqlBegin(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, 
 		"exec": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sqlExec(ctx, tx, call, engine+".tx.exec")
 		}).Func,
-		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 			return sqlQuery(ctx, tx, call, engine+".tx.query")
 		}).Func,
 		"queryValue": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
@@ -176,9 +176,9 @@ func sqlExec(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label 
 	}, nil
 }
 
-// sqlQuery runs a SELECT-style statement and returns one map per row, keyed by
-// column name.
-func sqlQuery(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label string) ([]map[string]any, error) {
+// sqlQuery runs a SELECT-style statement and returns one ordered object per
+// row, keyed by column name in column order.
+func sqlQuery(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label string) ([]*scriptengine.Ordered, error) {
 	if len(call.Arguments) < 1 {
 		return nil, fmt.Errorf("%s: sql argument required", label)
 	}
@@ -191,13 +191,14 @@ func sqlQuery(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label
 	return scanRows(rows, label)
 }
 
-// scanRows drains a *sql.Rows into one column-name-keyed map per row.
-func scanRows(rows *sql.Rows, label string) ([]map[string]any, error) {
+// scanRows drains a *sql.Rows into one ordered object per row, keyed by column
+// name in column order so JSON.stringify output is stable run-to-run.
+func scanRows(rows *sql.Rows, label string) ([]*scriptengine.Ordered, error) {
 	cols, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("%s: columns: %w", label, err)
 	}
-	out := []map[string]any{}
+	out := []*scriptengine.Ordered{}
 	for rows.Next() {
 		raw := make([]any, len(cols))
 		ptrs := make([]any, len(cols))
@@ -207,9 +208,9 @@ func scanRows(rows *sql.Rows, label string) ([]map[string]any, error) {
 		if err := rows.Scan(ptrs...); err != nil {
 			return nil, fmt.Errorf("%s: scan: %w", label, err)
 		}
-		row := make(map[string]any, len(cols))
+		row := scriptengine.NewOrdered()
 		for i, name := range cols {
-			row[name] = sqlScanValue(raw[i])
+			row.Set(name, sqlScanValue(raw[i]))
 		}
 		out = append(out, row)
 	}
