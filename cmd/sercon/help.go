@@ -809,10 +809,28 @@ runtime.log("accepted", r.accepted, "rejected", r.rejected);
 await srv.close();`)
 	note("Inbound via emersion/go-smtp + jhillyerd/enmime; outbound MIME composed in-tree. Handlers serialize on the goja loop (one at a time) — acknowledge then process in the background for slow work. `sercon serve` adds a per-stage SMTP access log on stderr. See MANUAL.md §6.7.")
 
+	header(43, "PHP / Perl data dumps (codec.php / codec.perl)")
+	code(`// PHP serialize/unserialize round-trip. A "__class" key marks an
+// object (PHP O:...); without it a plain array (a:...) is emitted.
+const order = { __class: "Order", id: 7, items: ["a", "b"], paid: true };
+const s = codec.php.serialize(order);                   // O:5:"Order":3:{...}
+runtime.assert.equal(codec.php.unserialize(s), order, "round-trip");
+
+// var_export / var_dump have matching parsers (var_dump parse is
+// best-effort — it throws on lossy markers like *RECURSION*).
+const ve = codec.php.varExport(order);                  // valid PHP literal
+runtime.assert.equal(codec.php.parseVarExport(ve), order, "var_export");
+
+// Perl Data::Dumper. JS booleans use the JSON::XS::Boolean convention
+// (a blessed scalar ref), so they survive the round-trip as booleans.
+const pl = codec.perl.dumper(true);                     // $VAR1 = bless( ... );
+runtime.assert.equal(codec.perl.parseDumper(pl), true, "perl bool");`)
+	note("Decoded objects keep stable key order (canonical-JSON / payment-hash safe). opts.classKey (default \"__class\"), opts.perlBoolClass (default \"JSON::XS::Boolean\"), opts.indent. See MANUAL.md §codec.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 42
+const exampleCount = 43

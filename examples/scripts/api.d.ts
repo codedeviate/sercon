@@ -179,6 +179,26 @@ declare const codec: {
     /** Decompress data previously produced by compress (same algorithm name required). */
     decompress(...args: unknown[]): Promise<Uint8Array>;
   };
+  perl: {
+    /** Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS booleans emit the JSON::XS::Boolean blessed-ref form (opts.perlBoolClass). */
+    dumper(...args: unknown[]): unknown;
+    /** Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decode to booleans; bare 1/0 stay numbers; cycles throw. */
+    parseDumper(...args: unknown[]): unknown;
+  };
+  php: {
+    /** Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, truncation, visibility-annotated props). */
+    parseVarDump(...args: unknown[]): unknown;
+    /** Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a value. */
+    parseVarExport(...args: unknown[]): unknown;
+    /** PHP serialize(): encode a value to PHP's canonical serialization string. Objects use the __class sentinel; cycles throw. */
+    serialize(...args: unknown[]): unknown;
+    /** PHP unserialize(): decode a serialize() string back to a value. r:/R: references resolve to shared objects (DAGs); cycles throw. */
+    unserialize(...args: unknown[]): unknown;
+    /** PHP var_dump(): human-readable debug output. String lengths are byte counts. */
+    varDump(...args: unknown[]): unknown;
+    /** PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-space step. */
+    varExport(...args: unknown[]): unknown;
+  };
 };
 
 /** Filesystem operations: path manipulation and archive create/extract. */

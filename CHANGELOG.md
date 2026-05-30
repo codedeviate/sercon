@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `codec.php.*` (serialize/unserialize, varExport/parseVarExport,
+  varDump/parseVarDump) and `codec.perl.*` (dumper/parseDumper): read and
+  write PHP and Perl data dumps. JSON-style array mapping, a symmetric
+  `__class` sentinel for class-bearing values, shared-reference resolution
+  with cycle detection, and the JSON::XS::Boolean convention for Perl
+  booleans. Decoded objects keep stable key order (canonical-JSON safe).
+
 ## [0.11.2] — 2026-05-30
 
 ### Fixed

@@ -626,6 +626,81 @@ Binary-format codecs (was `format` in v0.8.0). Members:
   ITF. `encode` returns PNG bytes; `decode` reads image bytes.
 - `codec.checkdigit.{algos, validate, compute, inspect}` — Luhn,
   ISBN-10/13, EAN-13/8, UPC-A.
+- `codec.php.{serialize, unserialize, varExport, parseVarExport,
+  varDump, parseVarDump}` — read and write PHP data dumps.
+- `codec.perl.{dumper, parseDumper}` — read and write Perl
+  `Data::Dumper` output.
+
+#### `codec.php` — PHP dump formats
+
+Three PHP textual formats, each with an encoder and a matching parser:
+
+- `codec.php.serialize(value, opts?): string` — PHP `serialize()`. Emits
+  the canonical wire form (`s:`, `i:`, `d:`, `b:`, `N;`, `a:`, `O:`).
+- `codec.php.unserialize(text, opts?): value` — inverse of `serialize`.
+- `codec.php.varExport(value, opts?): string` — PHP `var_export()`: valid
+  PHP source (`array ( … )`, `\Cls::__set_state( … )`).
+- `codec.php.parseVarExport(text, opts?): value` — read a `var_export`
+  literal back to a value.
+- `codec.php.varDump(value, opts?): string` — PHP `var_dump()`:
+  human-readable debug output with type/length annotations.
+- `codec.php.parseVarDump(text, opts?): value` — **best-effort** read of
+  `var_dump` output.
+
+**Array heuristic.** A JS array, or a JS object whose keys are exactly the
+contiguous integer sequence `0..n-1`, maps to a PHP list array. Any other
+object maps to a PHP associative array (string/int keys preserved).
+
+**The `__class` sentinel.** An object carrying a `__class` string key
+(configurable via `opts.classKey`, default `"__class"`) round-trips as a
+PHP *object* — `serialize` emits `O:…`, `var_export` emits
+`\Cls::__set_state(…)`, `var_dump` emits `object(Cls)#…`. The remaining
+keys become the object's properties. Decoding restores the `__class` key.
+Without the sentinel a value is treated as an array.
+
+**Shared references and cycles.** `serialize`/`unserialize` model PHP's
+`r:` / `R:` reference markers: when the same object appears more than once,
+the decoder resolves both occurrences to the *same* JS object (a DAG is
+preserved). A true cycle (an object reachable from itself) **throws** on
+encode — there is no JS value that can represent it losslessly here.
+
+**`var_dump` parse is lossy.** PHP's `var_dump` is a debug view, not a
+serialization format; `parseVarDump` is best-effort and **throws** when it
+hits a marker it cannot faithfully reconstruct: `*RECURSION*`, the
+`…` length-truncation marker, or visibility-annotated property names
+(`["x":"Cls":private]`).
+
+#### `codec.perl` — Perl `Data::Dumper`
+
+- `codec.perl.dumper(value, opts?): string` — emit a `Data::Dumper`-style
+  dump (`$VAR1 = … ;`) with normalized indentation.
+- `codec.perl.parseDumper(text, opts?): value` — read `Data::Dumper`
+  output back to a value.
+
+**The JSON bool convention.** Perl has no native boolean, so JSON modules
+represent one as a blessed scalar reference (e.g.
+`bless( do{\(my $o = 1)}, 'JSON::XS::Boolean' )`). `dumper` emits JS
+booleans in this form, and `parseDumper` decodes a blessed scalar ref in
+the JSON-bool family (`JSON::XS::Boolean`, `JSON::PP::Boolean`, …) back to
+a JS boolean. A bare `1` / `0` stays a number. The class used on encode is
+`opts.perlBoolClass` (default `"JSON::XS::Boolean"`). Blessed hashes carry
+the `__class` sentinel, mirroring the PHP side. Cycles **throw**.
+
+#### `opts` and shared caveats
+
+All `codec.php.*` / `codec.perl.*` functions accept an optional `opts` bag:
+
+- `classKey` (default `"__class"`) — the key used as the class sentinel.
+- `perlBoolClass` (default `"JSON::XS::Boolean"`) — class for Perl booleans.
+- `indent` — override the default 2-space indentation step (`varExport`,
+  `dumper`).
+
+Caveats shared with JSON: strings are UTF-8 and lengths are reported in
+**bytes** (multibyte chars count as more than one); JS has a single number
+type, so `int` and `float` collapse the same way `JSON.stringify` does
+(e.g. `1.0` may re-emit as `1`). Decoded objects preserve a stable key
+order, so re-encoding is byte-stable — safe for canonical-JSON / payment
+hashing.
 
 ### `fs`
 

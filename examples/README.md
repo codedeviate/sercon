@@ -33,6 +33,7 @@ Or pick individual scripts:
 | `barcode.ts` | `barcode.encode` over all 10 supported symbologies. |
 | `charset.ts` | `text.detect/encode/decode` — 5-charset round-trip + Latin-1 detection. |
 | `checkdigit.ts` | `checkdigit.validate/compute/inspect` over Luhn, ISBN-10/13, EAN-13/8, UPC-A. |
+| `dump-codec.ts` | `codec.php.*` / `codec.perl.*` — round-trip a value through PHP serialize / var_export / var_dump and Perl Data::Dumper. |
 | `archive.ts` | `archive.create/extract` round-trip over zip / tar / tar.gz. |
 | `diff.ts` | `diff.compare` — unified diff of two text inputs. |
 | `jq.ts` | `jq.query/queryAll` — jq filters over JS data structures. |
