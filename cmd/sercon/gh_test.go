@@ -109,15 +109,15 @@ func TestGhAuthStatus_NoGhResolvesFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if out["authenticated"].(bool) {
+	if out.Authenticated {
 		t.Error("authenticated: true on a PATH without gh")
 	}
-	if out["raw"].(string) != "gh not on PATH" {
-		t.Errorf("raw: %q", out["raw"])
+	if out.Raw != "gh not on PATH" {
+		t.Errorf("raw: %q", out.Raw)
 	}
 }
 
-func authStatusViaGoja(t *testing.T) (map[string]any, error) {
+func authStatusViaGoja(t *testing.T) (ghAuthStatusResult, error) {
 	t.Helper()
 	vm := goja.New()
 	return ghAuthStatus(context.Background(), goja.FunctionCall{
@@ -139,10 +139,10 @@ func TestGhAuthStatus_AgreesWithGhAuthStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if got := out["authenticated"].(bool); got != wantAuthed {
-		t.Errorf("authenticated: %v (want %v); raw=%q", got, wantAuthed, out["raw"])
+	if got := out.Authenticated; got != wantAuthed {
+		t.Errorf("authenticated: %v (want %v); raw=%q", got, wantAuthed, out.Raw)
 	}
-	if wantAuthed && strings.TrimSpace(out["user"].(string)) == "" {
+	if wantAuthed && strings.TrimSpace(out.User) == "" {
 		t.Error("user should be non-empty when authenticated")
 	}
 }

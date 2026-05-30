@@ -31,10 +31,27 @@ import (
 // A host that's completely unreachable resolves with received:0 and
 // lossPercent:100 rather than throwing — "down" is a normal probe
 // outcome. DNS-resolution failure and bad arguments throw.
-func pingProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// pingProbeResult is the resolved value of net.probe.ping (both tcp and icmp
+// modes). It's a json-tagged struct rather than a map[string]any so the JS
+// object's key order is stable (goja enumerates struct fields in declaration
+// order; a Go map shuffles JSON.stringify output run-to-run — same pattern as
+// tcpProbeResult in probe.go).
+type pingProbeResult struct {
+	Host        string  `json:"host"`
+	IP          string  `json:"ip"`
+	Mode        string  `json:"mode"`
+	Sent        int     `json:"sent"`
+	Received    int     `json:"received"`
+	LossPercent float64 `json:"lossPercent"`
+	MinMs       float64 `json:"minMs"`
+	AvgMs       float64 `json:"avgMs"`
+	MaxMs       float64 `json:"maxMs"`
+}
+
+func pingProbe(ctx context.Context, call goja.FunctionCall) (pingProbeResult, error) {
 	host := call.Argument(0).String()
 	if host == "" {
-		return nil, errors.New("net.ping: host required")
+		return pingProbeResult{}, errors.New("net.ping: host required")
 	}
 	opts := optsAsMap(call)
 	count := optInt(opts, "count", 4)
@@ -50,20 +67,20 @@ func pingProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 	case "icmp":
 		return icmpPing(ctx, host, count, timeout)
 	default:
-		return nil, fmt.Errorf("net.ping: mode must be 'tcp' or 'icmp', got %q", mode)
+		return pingProbeResult{}, fmt.Errorf("net.ping: mode must be 'tcp' or 'icmp', got %q", mode)
 	}
 }
 
 // tcpPing opens `count` TCP connections to host:port and records each
 // connect duration. Failed dials count as lost packets. This is the
 // portable default — no privileges, works in containers / CI.
-func tcpPing(ctx context.Context, host, port string, count int, timeout time.Duration) (map[string]any, error) {
+func tcpPing(ctx context.Context, host, port string, count int, timeout time.Duration) (pingProbeResult, error) {
 	// Resolve once up front so a bad hostname errors clearly rather
 	// than failing `count` times.
 	addr := net.JoinHostPort(host, port)
 	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return nil, fmt.Errorf("net.ping: resolve %q: %w", host, err)
+		return pingProbeResult{}, fmt.Errorf("net.ping: resolve %q: %w", host, err)
 	}
 	resolvedIP := ""
 	if len(ips) > 0 {
@@ -74,7 +91,7 @@ func tcpPing(ctx context.Context, host, port string, count int, timeout time.Dur
 	dialer := net.Dialer{Timeout: timeout}
 	for i := 0; i < count; i++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("net.ping: %w", err)
+			return pingProbeResult{}, fmt.Errorf("net.ping: %w", err)
 		}
 		start := time.Now()
 		conn, err := dialer.DialContext(ctx, "tcp", addr)
@@ -93,40 +110,40 @@ func tcpPing(ctx context.Context, host, port string, count int, timeout time.Dur
 // when net.ipv4.ping_group_range permits, which SetPrivileged(false)
 // would target — but the privileged path is the more portable
 // default for a probe binding.
-func icmpPing(ctx context.Context, host string, count int, timeout time.Duration) (map[string]any, error) {
+func icmpPing(ctx context.Context, host string, count int, timeout time.Duration) (pingProbeResult, error) {
 	pinger, err := probing.NewPinger(host)
 	if err != nil {
-		return nil, fmt.Errorf("net.ping: %w", err)
+		return pingProbeResult{}, fmt.Errorf("net.ping: %w", err)
 	}
 	pinger.Count = count
 	pinger.Timeout = timeout
 	pinger.SetPrivileged(true)
 
 	if err := pinger.RunWithContext(ctx); err != nil {
-		return nil, fmt.Errorf("net.ping: icmp run (needs raw-socket privileges?): %w", err)
+		return pingProbeResult{}, fmt.Errorf("net.ping: icmp run (needs raw-socket privileges?): %w", err)
 	}
 	st := pinger.Statistics()
 	ip := ""
 	if st.IPAddr != nil {
 		ip = st.IPAddr.String()
 	}
-	return map[string]any{
-		"host":        host,
-		"ip":          ip,
-		"mode":        "icmp",
-		"sent":        st.PacketsSent,
-		"received":    st.PacketsRecv,
-		"lossPercent": st.PacketLoss,
-		"minMs":       float64(st.MinRtt) / float64(time.Millisecond),
-		"avgMs":       float64(st.AvgRtt) / float64(time.Millisecond),
-		"maxMs":       float64(st.MaxRtt) / float64(time.Millisecond),
+	return pingProbeResult{
+		Host:        host,
+		IP:          ip,
+		Mode:        "icmp",
+		Sent:        st.PacketsSent,
+		Received:    st.PacketsRecv,
+		LossPercent: st.PacketLoss,
+		MinMs:       float64(st.MinRtt) / float64(time.Millisecond),
+		AvgMs:       float64(st.AvgRtt) / float64(time.Millisecond),
+		MaxMs:       float64(st.MaxRtt) / float64(time.Millisecond),
 	}, nil
 }
 
 // pingStats computes the result map from a slice of successful RTTs.
 // Shared shape between the TCP and ICMP paths (ICMP builds its own
 // from pro-bing's Statistics, but the field names match).
-func pingStats(host, ip, mode string, sent int, rtts []time.Duration) map[string]any {
+func pingStats(host, ip, mode string, sent int, rtts []time.Duration) pingProbeResult {
 	received := len(rtts)
 	loss := 100.0
 	if sent > 0 {
@@ -147,15 +164,15 @@ func pingStats(host, ip, mode string, sent int, rtts []time.Duration) map[string
 		avg = sum / time.Duration(received)
 	}
 	ms := func(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
-	return map[string]any{
-		"host":        host,
-		"ip":          ip,
-		"mode":        mode,
-		"sent":        sent,
-		"received":    received,
-		"lossPercent": loss,
-		"minMs":       ms(minRtt),
-		"avgMs":       ms(avg),
-		"maxMs":       ms(maxRtt),
+	return pingProbeResult{
+		Host:        host,
+		IP:          ip,
+		Mode:        mode,
+		Sent:        sent,
+		Received:    received,
+		LossPercent: loss,
+		MinMs:       ms(minRtt),
+		AvgMs:       ms(avg),
+		MaxMs:       ms(maxRtt),
 	}
 }

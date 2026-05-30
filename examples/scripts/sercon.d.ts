@@ -271,9 +271,9 @@ declare const net: {
     /** Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / dispersion. */
     ntp(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw. */
-    ping(...args: unknown[]): Promise<Record<string, unknown>>;
+    ping(...args: unknown[]): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>;
     /** SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw. */
-    smtp(...args: unknown[]): Promise<Record<string, unknown>>;
+    smtp(...args: unknown[]): Promise<{ host: string; port: string; banner: string; ehloDomain: string; extensions: string[]; starttls: boolean; authMechanisms: string[]; sizeLimit: number }>;
     /** Dial a TCP target and report latency + resolved IP. Default timeout 5s. */
     tcp(...args: unknown[]): Promise<{ host: string; port: number; ip: string; latencyMs: number }>;
     /** Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary. */
@@ -281,7 +281,7 @@ declare const net: {
     /** Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text. */
     whois(...args: unknown[]): Promise<Record<string, unknown>>;
     /** WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws. */
-    wss(...args: unknown[]): Promise<Record<string, unknown>>;
+    wss(...args: unknown[]): Promise<{ url: string; connected: boolean; subprotocol: string; status: number; handshakeMs: number; pingMs: number }>;
   };
 };
 
@@ -289,9 +289,9 @@ declare const net: {
 declare const db: {
   dict: {
     /** RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error). */
-    define(...args: unknown[]): Promise<Record<string, unknown>>;
+    define(...args: unknown[]): Promise<{ word: string; found: boolean; definitions: { db: string; dbName: string; text: string }[] }>;
     /** RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database, opts.port (default 2628). */
-    match(...args: unknown[]): Promise<Record<string, unknown>>;
+    match(...args: unknown[]): Promise<{ word: string; matches: { db: string; word: string }[] }>;
   };
   ldap: {
     /** Dial LDAP (ldap://host:port), anonymous bind (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata. */
@@ -327,7 +327,7 @@ declare const services: {
   };
   gh: {
     /** Probe gh's auth state. Missing gh / unauthenticated resolve with { authenticated: false, … } — only context cancellation throws. */
-    authStatus(...args: unknown[]): Promise<Record<string, unknown>>;
+    authStatus(...args: unknown[]): Promise<{ authenticated: boolean; user: string; raw: string }>;
     /** List pull requests on the cwd's repo (or opts.cwd). Defaults: open state, limit 30. Filters: state / limit / author. */
     prList(...args: unknown[]): Promise<Record<string, unknown>[]>;
     /** Repo metadata. With no arg uses cwd's repo; pass 'owner/name' for any repo gh can see. owner + defaultBranch are pre-flattened. */
@@ -335,23 +335,23 @@ declare const services: {
   };
   git: {
     /** Stage one path (string) or several (string[]). */
-    add(...args: unknown[]): Promise<Record<string, unknown>>;
+    add(...args: unknown[]): Promise<{ paths: string[] }>;
     /** Current branch (empty when HEAD is detached) plus the list of local branches. */
-    branch(...args: unknown[]): Promise<Record<string, unknown>>;
+    branch(...args: unknown[]): Promise<{ current: string; detached: boolean; all: string[] }>;
     /** Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --allow-empty. */
-    commit(...args: unknown[]): Promise<Record<string, unknown>>;
+    commit(...args: unknown[]): Promise<{ sha: string }>;
     /** Aggregate { files, insertions, deletions } from `git diff --shortstat`. Default revRange HEAD~1..HEAD. */
-    diffStat(...args: unknown[]): Promise<Record<string, unknown>>;
+    diffStat(...args: unknown[]): Promise<{ files: number; insertions: number; deletions: number }>;
     /** True iff `git status --porcelain` is empty. */
     isClean(...args: unknown[]): Promise<boolean>;
     /** Recent commits as { sha, shortSha, author, email, timestamp, subject }. opts.limit / opts.revRange. */
-    log(...args: unknown[]): Promise<Record<string, unknown>[]>;
+    log(...args: unknown[]): Promise<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }[]>;
     /** Full 40-char SHA for the given rev. Invalid refs throw. */
     revParse(...args: unknown[]): Promise<string>;
     /** Escape hatch: run any `git <args>`, get { stdout, stderr, exitCode } — exitCode is data, not a throw. */
-    runText(...args: unknown[]): Promise<Record<string, unknown>>;
+    runText(...args: unknown[]): Promise<{ stdout: string; stderr: string; exitCode: number }>;
     /** Parsed `git status --porcelain` entries: { path, indexStatus, workingStatus }. */
-    status(...args: unknown[]): Promise<Record<string, unknown>[]>;
+    status(...args: unknown[]): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>;
   };
 };
 

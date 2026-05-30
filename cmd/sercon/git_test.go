@@ -69,13 +69,13 @@ func TestGitBranchAndIsClean_FreshRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("branch: %v", err)
 	}
-	if b["current"].(string) != "main" {
-		t.Errorf("current branch: %q", b["current"])
+	if b.Current != "main" {
+		t.Errorf("current branch: %q", b.Current)
 	}
-	if b["detached"].(bool) {
+	if b.Detached {
 		t.Errorf("detached: true on fresh repo")
 	}
-	if all := b["all"].([]string); len(all) != 1 || all[0] != "main" {
+	if all := b.All; len(all) != 1 || all[0] != "main" {
 		t.Errorf("all branches: %v", all)
 	}
 
@@ -128,14 +128,14 @@ func TestGitStatus_DirtyTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	paths := map[string]map[string]any{}
+	paths := map[string]gitStatusEntry{}
 	for _, e := range entries {
-		paths[e["path"].(string)] = e
+		paths[e.Path] = e
 	}
-	if mod := paths["tracked.txt"]; mod == nil || mod["workingStatus"].(string) != "M" {
+	if mod, ok := paths["tracked.txt"]; !ok || mod.WorkingStatus != "M" {
 		t.Errorf("tracked modified entry: %v", mod)
 	}
-	if neu := paths["new.txt"]; neu == nil {
+	if _, ok := paths["new.txt"]; !ok {
 		t.Error("missing new.txt in status")
 	}
 }
@@ -153,7 +153,7 @@ func TestGitAddAndCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
-	sha := out["sha"].(string)
+	sha := out.SHA
 	if len(sha) != 40 {
 		t.Errorf("returned sha: %q", sha)
 	}
@@ -197,16 +197,16 @@ func TestGitLog(t *testing.T) {
 		t.Fatalf("log len: %d (want 2)", len(out))
 	}
 	// newest is "third"
-	if out[0]["subject"].(string) != "third" {
-		t.Errorf("first subject: %q", out[0]["subject"])
+	if out[0].Subject != "third" {
+		t.Errorf("first subject: %q", out[0].Subject)
 	}
-	if out[1]["subject"].(string) != "second" {
-		t.Errorf("second subject: %q", out[1]["subject"])
+	if out[1].Subject != "second" {
+		t.Errorf("second subject: %q", out[1].Subject)
 	}
-	if a := out[0]["author"].(string); a != "Sercon Test" {
+	if a := out[0].Author; a != "Sercon Test" {
 		t.Errorf("author: %q", a)
 	}
-	if ts := out[0]["timestamp"].(int64); ts <= 0 {
+	if ts := out[0].Timestamp; ts <= 0 {
 		t.Errorf("timestamp: %d", ts)
 	}
 }
@@ -226,13 +226,13 @@ func TestGitDiffStat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("diffStat: %v", err)
 	}
-	if files := out["files"].(int); files != 1 {
+	if files := out.Files; files != 1 {
 		t.Errorf("files: %d", files)
 	}
-	if ins := out["insertions"].(int); ins != 2 {
+	if ins := out.Insertions; ins != 2 {
 		t.Errorf("insertions: %d (want 2)", ins)
 	}
-	if del := out["deletions"].(int); del != 0 {
+	if del := out.Deletions; del != 0 {
 		t.Errorf("deletions: %d", del)
 	}
 }
@@ -245,10 +245,10 @@ func TestGitRunText_NonZeroDoesNotThrow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runText: %v", err)
 	}
-	if code := out["exitCode"].(int); code == 0 {
+	if code := out.ExitCode; code == 0 {
 		t.Errorf("expected non-zero exit, got %d", code)
 	}
-	if strings.TrimSpace(out["stderr"].(string)) == "" {
+	if strings.TrimSpace(out.Stderr) == "" {
 		t.Error("expected stderr to be non-empty")
 	}
 }
@@ -285,11 +285,11 @@ func TestGitBranch_DetachedHEAD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("branch: %v", err)
 	}
-	if !b["detached"].(bool) {
+	if !b.Detached {
 		t.Error("detached: false on detached HEAD")
 	}
-	if b["current"].(string) != "" {
-		t.Errorf("current: %q (want empty)", b["current"])
+	if b.Current != "" {
+		t.Errorf("current: %q (want empty)", b.Current)
 	}
 }
 

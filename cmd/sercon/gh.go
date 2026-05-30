@@ -56,6 +56,18 @@ func ghRun(ctx context.Context, cwd string, args ...string) (string, string, int
 	return stdoutBuf.String(), stderrBuf.String(), 0, nil
 }
 
+// ghAuthStatusResult is the resolved value of services.gh.authStatus. It's a
+// json-tagged struct (not a map[string]any) so the JS object's key order is
+// stable — goja enumerates struct fields in declaration order, whereas a Go
+// map shuffles JSON.stringify output run-to-run. See tcpProbeResult in
+// probe.go for the rationale. Note `authenticated` deliberately omits
+// `omitempty`: a false value must still appear in the object.
+type ghAuthStatusResult struct {
+	Authenticated bool   `json:"authenticated"`
+	User          string `json:"user"`
+	Raw           string `json:"raw"`
+}
+
 // ghAuthStatus probes whether `gh` is installed *and* authenticated.
 // We exercise `gh api user --jq .login` rather than `gh auth status`
 // because the former emits a machine-friendly result (just the login on
@@ -66,36 +78,36 @@ func ghRun(ctx context.Context, cwd string, args ...string) (string, string, int
 // unauthenticated session both resolve to `{ authenticated: false, …}`
 // so scripts can branch without try/catch. Context cancellation still
 // throws.
-func ghAuthStatus(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func ghAuthStatus(ctx context.Context, call goja.FunctionCall) (ghAuthStatusResult, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
-		return map[string]any{
-			"authenticated": false,
-			"user":          "",
-			"raw":           "gh not on PATH",
+		return ghAuthStatusResult{
+			Authenticated: false,
+			User:          "",
+			Raw:           "gh not on PATH",
 		}, nil
 	}
 	stdout, stderr, code, err := ghRun(ctx, "", "api", "user", "--jq", ".login")
 	if err != nil {
 		// Only context cancellation reaches here; exec.ExitError was
 		// already absorbed into `code` by ghRun.
-		return nil, err
+		return ghAuthStatusResult{}, err
 	}
 	login := strings.TrimSpace(stdout)
 	if code == 0 && login != "" {
-		return map[string]any{
-			"authenticated": true,
-			"user":          login,
-			"raw":           login,
+		return ghAuthStatusResult{
+			Authenticated: true,
+			User:          login,
+			Raw:           login,
 		}, nil
 	}
 	raw := strings.TrimSpace(stderr)
 	if raw == "" {
 		raw = strings.TrimSpace(stdout)
 	}
-	return map[string]any{
-		"authenticated": false,
-		"user":          "",
-		"raw":           raw,
+	return ghAuthStatusResult{
+		Authenticated: false,
+		User:          "",
+		Raw:           raw,
 	}, nil
 }
 

@@ -28,6 +28,23 @@ func dictNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	}
 }
 
+// dictDefinition is one entry in a dictDefineResult. It's a json-tagged
+// struct (not a map) so the JS object's key order is stable — see
+// tcpProbeResult in probe.go for the rationale.
+type dictDefinition struct {
+	DB     string `json:"db"`
+	DBName string `json:"dbName"`
+	Text   string `json:"text"`
+}
+
+// dictDefineResult is the resolved value of db.dict.define; json-tagged
+// struct for stable key order (see tcpProbeResult).
+type dictDefineResult struct {
+	Word        string           `json:"word"`
+	Found       bool             `json:"found"`
+	Definitions []dictDefinition `json:"definitions"`
+}
+
 // dictDefine looks up `word` and returns its definitions:
 //
 //	{ word, found, definitions: [{ db, dbName, text }] }
@@ -35,11 +52,11 @@ func dictNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 // `opts.database` selects a specific dictionary (default `*` = all).
 // A word with no definitions resolves with `found: false` and an
 // empty list — "not in the dictionary" is data, not an error.
-func dictDefine(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func dictDefine(ctx context.Context, call goja.FunctionCall) (dictDefineResult, error) {
 	host := call.Argument(0).String()
 	word := call.Argument(1).String()
 	if host == "" || word == "" {
-		return nil, errors.New("dict.define: host and word required")
+		return dictDefineResult{}, errors.New("dict.define: host and word required")
 	}
 	opts := optAt(call, 2)
 	db := optString(opts, "database", "*")
@@ -47,42 +64,42 @@ func dictDefine(ctx context.Context, call goja.FunctionCall) (map[string]any, er
 
 	tp, conn, err := dictConnect(ctx, host, opts, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("dict.define: %w", err)
+		return dictDefineResult{}, fmt.Errorf("dict.define: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
 	defer dictQuit(tp)
 
 	id, err := tp.Cmd("DEFINE %s %s", db, dictQuote(word))
 	if err != nil {
-		return nil, fmt.Errorf("dict.define: send: %w", err)
+		return dictDefineResult{}, fmt.Errorf("dict.define: send: %w", err)
 	}
 	tp.StartResponse(id)
 	defer tp.EndResponse(id)
 	code, msg, err := tp.ReadResponse(0)
 	if err != nil {
-		return nil, fmt.Errorf("dict.define: %w", err)
+		return dictDefineResult{}, fmt.Errorf("dict.define: %w", err)
 	}
 	// 552 = no match (a normal "not found"); 550 = invalid database.
 	if code == 552 {
-		return map[string]any{"word": word, "found": false, "definitions": []map[string]any{}}, nil
+		return dictDefineResult{Word: word, Found: false, Definitions: []dictDefinition{}}, nil
 	}
 	if code != 150 {
-		return nil, fmt.Errorf("dict.define: server %d: %s", code, msg)
+		return dictDefineResult{}, fmt.Errorf("dict.define: server %d: %s", code, msg)
 	}
 
-	defs := []map[string]any{}
+	defs := []dictDefinition{}
 	for {
 		// Each definition: 151 "<word>" <db> "<name>" then text lines
 		// terminated by a lone ".", then 250 at the end.
 		dcode, dmsg, err := tp.ReadResponse(0)
 		if err != nil {
-			return nil, fmt.Errorf("dict.define: read def header: %w", err)
+			return dictDefineResult{}, fmt.Errorf("dict.define: read def header: %w", err)
 		}
 		if dcode == 250 {
 			break
 		}
 		if dcode != 151 {
-			return nil, fmt.Errorf("dict.define: unexpected %d: %s", dcode, dmsg)
+			return dictDefineResult{}, fmt.Errorf("dict.define: unexpected %d: %s", dcode, dmsg)
 		}
 		fields := dictFields(dmsg)
 		dbName := ""
@@ -91,28 +108,42 @@ func dictDefine(ctx context.Context, call goja.FunctionCall) (map[string]any, er
 		}
 		text, err := tp.ReadDotLines()
 		if err != nil {
-			return nil, fmt.Errorf("dict.define: read def body: %w", err)
+			return dictDefineResult{}, fmt.Errorf("dict.define: read def body: %w", err)
 		}
 		dbCode := ""
 		if len(fields) >= 2 {
 			dbCode = fields[1]
 		}
-		defs = append(defs, map[string]any{
-			"db":     dbCode,
-			"dbName": dbName,
-			"text":   strings.Join(text, "\n"),
+		defs = append(defs, dictDefinition{
+			DB:     dbCode,
+			DBName: dbName,
+			Text:   strings.Join(text, "\n"),
 		})
 	}
-	return map[string]any{"word": word, "found": len(defs) > 0, "definitions": defs}, nil
+	return dictDefineResult{Word: word, Found: len(defs) > 0, Definitions: defs}, nil
+}
+
+// dictMatchEntry is one entry in a dictMatchResult; json-tagged struct
+// for stable key order (see tcpProbeResult).
+type dictMatchEntry struct {
+	DB   string `json:"db"`
+	Word string `json:"word"`
+}
+
+// dictMatchResult is the resolved value of db.dict.match; json-tagged
+// struct for stable key order (see tcpProbeResult).
+type dictMatchResult struct {
+	Word    string           `json:"word"`
+	Matches []dictMatchEntry `json:"matches"`
 }
 
 // dictMatch returns the words that match `word` under a strategy
 // (default `prefix`). Result: { word, matches: [{ db, word }] }.
-func dictMatch(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func dictMatch(ctx context.Context, call goja.FunctionCall) (dictMatchResult, error) {
 	host := call.Argument(0).String()
 	word := call.Argument(1).String()
 	if host == "" || word == "" {
-		return nil, errors.New("dict.match: host and word required")
+		return dictMatchResult{}, errors.New("dict.match: host and word required")
 	}
 	opts := optAt(call, 2)
 	db := optString(opts, "database", "*")
@@ -121,41 +152,41 @@ func dictMatch(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 
 	tp, conn, err := dictConnect(ctx, host, opts, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("dict.match: %w", err)
+		return dictMatchResult{}, fmt.Errorf("dict.match: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
 	defer dictQuit(tp)
 
 	id, err := tp.Cmd("MATCH %s %s %s", db, strategy, dictQuote(word))
 	if err != nil {
-		return nil, fmt.Errorf("dict.match: send: %w", err)
+		return dictMatchResult{}, fmt.Errorf("dict.match: send: %w", err)
 	}
 	tp.StartResponse(id)
 	defer tp.EndResponse(id)
 	code, msg, err := tp.ReadResponse(0)
 	if err != nil {
-		return nil, fmt.Errorf("dict.match: %w", err)
+		return dictMatchResult{}, fmt.Errorf("dict.match: %w", err)
 	}
 	if code == 552 {
-		return map[string]any{"word": word, "matches": []map[string]any{}}, nil
+		return dictMatchResult{Word: word, Matches: []dictMatchEntry{}}, nil
 	}
 	if code != 152 {
-		return nil, fmt.Errorf("dict.match: server %d: %s", code, msg)
+		return dictMatchResult{}, fmt.Errorf("dict.match: server %d: %s", code, msg)
 	}
 	lines, err := tp.ReadDotLines()
 	if err != nil {
-		return nil, fmt.Errorf("dict.match: read matches: %w", err)
+		return dictMatchResult{}, fmt.Errorf("dict.match: read matches: %w", err)
 	}
-	matches := []map[string]any{}
+	matches := []dictMatchEntry{}
 	for _, line := range lines {
 		fields := dictFields(line)
 		if len(fields) >= 2 {
-			matches = append(matches, map[string]any{"db": fields[0], "word": fields[1]})
+			matches = append(matches, dictMatchEntry{DB: fields[0], Word: fields[1]})
 		}
 	}
 	// Trailing 250.
 	_, _, _ = tp.ReadResponse(0)
-	return map[string]any{"word": word, "matches": matches}, nil
+	return dictMatchResult{Word: word, Matches: matches}, nil
 }
 
 // dictConnect dials the DICT server, reads the 220 banner, and sends

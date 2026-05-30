@@ -120,16 +120,26 @@ func optAt(call goja.FunctionCall, idx int) map[string]any {
 	return nil
 }
 
+// gitBranchResult is a json-tagged struct (not map[string]any) so the JS
+// object's key order is stable — see tcpProbeResult in probe.go for the
+// rationale. Note: `detached` deliberately has no omitempty since a false
+// value must still surface to scripts.
+type gitBranchResult struct {
+	Current  string   `json:"current"`
+	Detached bool     `json:"detached"`
+	All      []string `json:"all"`
+}
+
 // gitBranch reports the current branch (or "" when HEAD is detached)
 // plus every local branch name.
-func gitBranch(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func gitBranch(ctx context.Context, call goja.FunctionCall) (gitBranchResult, error) {
 	cwd := readCwdOpt(call, 0)
 
 	current := ""
 	detached := false
 	stdout, _, code, err := gitRun(ctx, cwd, "symbolic-ref", "--short", "HEAD")
 	if err != nil {
-		return nil, err
+		return gitBranchResult{}, err
 	}
 	if code == 0 {
 		current = strings.TrimSpace(stdout)
@@ -139,7 +149,7 @@ func gitBranch(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 
 	out, err := gitRunChecked(ctx, cwd, "for-each-ref", "--format=%(refname:short)", "refs/heads")
 	if err != nil {
-		return nil, err
+		return gitBranchResult{}, err
 	}
 	all := []string{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
@@ -148,10 +158,10 @@ func gitBranch(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 		}
 	}
 
-	return map[string]any{
-		"current":  current,
-		"detached": detached,
-		"all":      all,
+	return gitBranchResult{
+		Current:  current,
+		Detached: detached,
+		All:      all,
 	}, nil
 }
 
@@ -181,52 +191,72 @@ func gitRevParse(ctx context.Context, call goja.FunctionCall) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// gitStatusEntry is a json-tagged struct (not map[string]any) so each JS
+// status object has stable key order — see tcpProbeResult in probe.go.
+type gitStatusEntry struct {
+	Path          string `json:"path"`
+	IndexStatus   string `json:"indexStatus"`
+	WorkingStatus string `json:"workingStatus"`
+}
+
 // gitStatus parses `git status --porcelain` v1 output into a structured
 // list: `XY <path>` where X is the index status and Y the working-tree
 // status. Returns an empty array on a clean tree.
-func gitStatus(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+func gitStatus(ctx context.Context, call goja.FunctionCall) ([]gitStatusEntry, error) {
 	cwd := readCwdOpt(call, 0)
 	out, err := gitRunChecked(ctx, cwd, "status", "--porcelain")
 	if err != nil {
 		return nil, err
 	}
-	entries := []map[string]any{}
+	entries := []gitStatusEntry{}
 	for _, line := range strings.Split(out, "\n") {
 		if len(line) < 3 {
 			continue
 		}
-		entries = append(entries, map[string]any{
-			"path":          strings.TrimSpace(line[3:]),
-			"indexStatus":   string(line[0]),
-			"workingStatus": string(line[1]),
+		entries = append(entries, gitStatusEntry{
+			Path:          strings.TrimSpace(line[3:]),
+			IndexStatus:   string(line[0]),
+			WorkingStatus: string(line[1]),
 		})
 	}
 	return entries, nil
 }
 
+// gitAddResult is a json-tagged struct (not map[string]any) for stable JS
+// key order — see tcpProbeResult in probe.go.
+type gitAddResult struct {
+	Paths []string `json:"paths"`
+}
+
 // gitAdd stages one path or a list of paths. The `--` separator is
 // inserted so paths that look like flags (`-foo`) work too.
-func gitAdd(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+func gitAdd(ctx context.Context, call goja.FunctionCall) (gitAddResult, error) {
 	paths, err := pathsArg(call.Argument(0), "git.add")
 	if err != nil {
-		return nil, err
+		return gitAddResult{}, err
 	}
 	cwd := readCwdOpt(call, 1)
 	args := append([]string{"add", "--"}, paths...)
 	if _, err := gitRunChecked(ctx, cwd, args...); err != nil {
-		return nil, err
+		return gitAddResult{}, err
 	}
-	return map[string]any{"paths": paths}, nil
+	return gitAddResult{Paths: paths}, nil
 }
 
 // gitCommit creates a new commit with the given message. The current
 // HEAD SHA is returned so callers can chain. `allowEmpty:true` toggles
 // `--allow-empty` for the rare case where an empty commit is the point
 // (release markers, force-pushes after squash-rebases).
-func gitCommit(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// gitCommitResult is a json-tagged struct (not map[string]any) for stable
+// JS key order — see tcpProbeResult in probe.go.
+type gitCommitResult struct {
+	SHA string `json:"sha"`
+}
+
+func gitCommit(ctx context.Context, call goja.FunctionCall) (gitCommitResult, error) {
 	msg := call.Argument(0).String()
 	if strings.TrimSpace(msg) == "" {
-		return nil, errors.New("git.commit: message required")
+		return gitCommitResult{}, errors.New("git.commit: message required")
 	}
 	opts := optAt(call, 1)
 	cwd := optString(opts, "cwd", "")
@@ -237,13 +267,13 @@ func gitCommit(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 		args = append(args, "--allow-empty")
 	}
 	if _, err := gitRunChecked(ctx, cwd, args...); err != nil {
-		return nil, err
+		return gitCommitResult{}, err
 	}
 	out, err := gitRunChecked(ctx, cwd, "rev-parse", "HEAD")
 	if err != nil {
-		return nil, err
+		return gitCommitResult{}, err
 	}
-	return map[string]any{"sha": strings.TrimSpace(out)}, nil
+	return gitCommitResult{SHA: strings.TrimSpace(out)}, nil
 }
 
 // gitLog emits the most recent commits in the given rev range. The
@@ -251,7 +281,18 @@ func gitCommit(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 // we ask for can legitimately contain a tab — subject lines have
 // newlines stripped by git already, and SHAs / timestamps are
 // hex / digits.
-func gitLog(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+// gitLogEntry is a json-tagged struct (not map[string]any) so each JS log
+// entry has stable key order — see tcpProbeResult in probe.go.
+type gitLogEntry struct {
+	SHA       string `json:"sha"`
+	ShortSHA  string `json:"shortSha"`
+	Author    string `json:"author"`
+	Email     string `json:"email"`
+	Timestamp int64  `json:"timestamp"`
+	Subject   string `json:"subject"`
+}
+
+func gitLog(ctx context.Context, call goja.FunctionCall) ([]gitLogEntry, error) {
 	opts := optAt(call, 0)
 	cwd := optString(opts, "cwd", "")
 	limit := optInt(opts, "limit", 50)
@@ -270,7 +311,7 @@ func gitLog(ctx context.Context, call goja.FunctionCall) ([]map[string]any, erro
 	if err != nil {
 		return nil, err
 	}
-	entries := []map[string]any{}
+	entries := []gitLogEntry{}
 	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		if line == "" {
 			continue
@@ -280,13 +321,13 @@ func gitLog(ctx context.Context, call goja.FunctionCall) ([]map[string]any, erro
 			continue
 		}
 		ts, _ := strconv.ParseInt(parts[4], 10, 64)
-		entries = append(entries, map[string]any{
-			"sha":       parts[0],
-			"shortSha":  parts[1],
-			"author":    parts[2],
-			"email":     parts[3],
-			"timestamp": ts,
-			"subject":   parts[5],
+		entries = append(entries, gitLogEntry{
+			SHA:       parts[0],
+			ShortSHA:  parts[1],
+			Author:    parts[2],
+			Email:     parts[3],
+			Timestamp: ts,
+			Subject:   parts[5],
 		})
 	}
 	return entries, nil
@@ -302,14 +343,22 @@ var diffStatRe = regexp.MustCompile(`(\d+) (file|insertion|deletion)`)
 // gitDiffStat aggregates `git diff --shortstat`'s counters. Default
 // revRange is `HEAD~1..HEAD` (the last commit). An empty diff returns
 // zero across the board rather than throwing.
-func gitDiffStat(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// gitDiffStatResult is a json-tagged struct (not map[string]any) for stable
+// JS key order — see tcpProbeResult in probe.go.
+type gitDiffStatResult struct {
+	Files      int `json:"files"`
+	Insertions int `json:"insertions"`
+	Deletions  int `json:"deletions"`
+}
+
+func gitDiffStat(ctx context.Context, call goja.FunctionCall) (gitDiffStatResult, error) {
 	opts := optAt(call, 0)
 	cwd := optString(opts, "cwd", "")
 	revRange := optString(opts, "revRange", "HEAD~1..HEAD")
 
 	out, err := gitRunChecked(ctx, cwd, "diff", "--shortstat", revRange)
 	if err != nil {
-		return nil, err
+		return gitDiffStatResult{}, err
 	}
 
 	files, ins, del := 0, 0, 0
@@ -324,10 +373,10 @@ func gitDiffStat(ctx context.Context, call goja.FunctionCall) (map[string]any, e
 			del = n
 		}
 	}
-	return map[string]any{
-		"files":      files,
-		"insertions": ins,
-		"deletions":  del,
+	return gitDiffStatResult{
+		Files:      files,
+		Insertions: ins,
+		Deletions:  del,
 	}, nil
 }
 
@@ -336,23 +385,31 @@ func gitDiffStat(ctx context.Context, call goja.FunctionCall) (map[string]any, e
 // NOT throw, since the whole point is to give callers a structured way
 // to react to git's various exit codes. Spawn failures and context
 // cancellation still throw.
-func gitRunText(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// gitRunTextResult is a json-tagged struct (not map[string]any) for stable
+// JS key order — see tcpProbeResult in probe.go.
+type gitRunTextResult struct {
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exitCode"`
+}
+
+func gitRunText(ctx context.Context, call goja.FunctionCall) (gitRunTextResult, error) {
 	args, err := pathsArg(call.Argument(0), "git.runText")
 	if err != nil {
-		return nil, err
+		return gitRunTextResult{}, err
 	}
 	if len(args) == 0 {
-		return nil, errors.New("git.runText: args array is empty")
+		return gitRunTextResult{}, errors.New("git.runText: args array is empty")
 	}
 	cwd := readCwdOpt(call, 1)
 	stdout, stderr, exitCode, err := gitRun(ctx, cwd, args...)
 	if err != nil {
-		return nil, err
+		return gitRunTextResult{}, err
 	}
-	return map[string]any{
-		"stdout":   stdout,
-		"stderr":   stderr,
-		"exitCode": exitCode,
+	return gitRunTextResult{
+		Stdout:   stdout,
+		Stderr:   stderr,
+		ExitCode: exitCode,
 	}, nil
 }
 

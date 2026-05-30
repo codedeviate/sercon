@@ -25,10 +25,23 @@ import (
 // skipped / failed. Handshake failure (non-101, refused, bad URL)
 // throws — unlike the TCP/SMTP probes there's no useful "partial"
 // result for a failed WebSocket upgrade.
-func wssProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// wssProbeResult is the resolved value of net.probe.wss. It's a json-tagged
+// struct rather than a map[string]any so the JS object's key order is stable
+// (goja enumerates struct fields in declaration order; a Go map would shuffle
+// JSON.stringify output run-to-run — same pattern as tcpProbeResult).
+type wssProbeResult struct {
+	URL         string  `json:"url"`
+	Connected   bool    `json:"connected"`
+	Subprotocol string  `json:"subprotocol"`
+	Status      int     `json:"status"`
+	HandshakeMs float64 `json:"handshakeMs"`
+	PingMs      float64 `json:"pingMs"`
+}
+
+func wssProbe(ctx context.Context, call goja.FunctionCall) (wssProbeResult, error) {
 	url := call.Argument(0).String()
 	if url == "" {
-		return nil, errors.New("net.wss: url required")
+		return wssProbeResult{}, errors.New("net.wss: url required")
 	}
 	opts := optsAsMap(call)
 	timeout := optMillis(opts, "timeout", 10*time.Second)
@@ -40,7 +53,7 @@ func wssProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, erro
 	start := time.Now()
 	conn, resp, err := websocket.Dial(dialCtx, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("net.wss: handshake: %w", err)
+		return wssProbeResult{}, fmt.Errorf("net.wss: handshake: %w", err)
 	}
 	handshakeMs := float64(time.Since(start)) / float64(time.Millisecond)
 	// CloseNow on the way out — we're a probe, a graceful close
@@ -72,12 +85,12 @@ func wssProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, erro
 		// worth surfacing rather than failing the whole probe.
 	}
 
-	return map[string]any{
-		"url":         url,
-		"connected":   true,
-		"subprotocol": subprotocol,
-		"status":      status,
-		"handshakeMs": handshakeMs,
-		"pingMs":      pingMs,
+	return wssProbeResult{
+		URL:         url,
+		Connected:   true,
+		Subprotocol: subprotocol,
+		Status:      status,
+		HandshakeMs: handshakeMs,
+		PingMs:      pingMs,
 	}, nil
 }
