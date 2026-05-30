@@ -64,9 +64,10 @@ runnable on their own.
 
 ## Adding a new binding
 
-Bindings are wired in `cmd/sercon/main.go` inside `registerExampleAPI`. The
-example surface is a single namespace (`api`) registered via
-`RegisterNamespaceFactory` so each `Run` gets its own VM + event loop in
+Bindings are wired in `cmd/sercon/main.go` inside `registerSurface`. The
+surface is a set of top-level globals (`runtime`, `crypto`, `text`, `codec`,
+`fs`, `net`, `db`, `server`, `services`, `tui`), each registered via
+`RegisterNamespaceFactory` so every `Run` gets its own VM + event loop in
 scope when constructing the bindings.
 
 To add a synchronous binding, add an entry to the members map:
@@ -86,12 +87,12 @@ goroutine and the resolution is scheduled back onto the event loop:
     }),
 ```
 
-## Regenerating `api.d.ts`
+## Regenerating `sercon.d.ts`
 
 After changing bindings, emit a fresh declaration file:
 
 ```
-go run ./cmd/sercon -emit-dts examples/scripts/api.d.ts
+go run ./cmd/sercon -emit-dts examples/scripts/sercon.d.ts
 ```
 
 Editors that pick up sibling `.d.ts` files (VS Code with the TS plugin, for

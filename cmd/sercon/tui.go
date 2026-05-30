@@ -16,7 +16,7 @@ import (
 )
 
 // tuiOutputForTest, when non-nil, replaces os.Stdout for the tui
-// fallback writer. Only set by api_tui_test.go's withTestStdout helper.
+// fallback writer. Only set by tui_test.go's withTestStdout helper.
 // In production this stays nil and the fallback writes to os.Stdout.
 var (
 	tuiOutputForTest   io.Writer

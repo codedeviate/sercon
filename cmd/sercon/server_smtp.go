@@ -25,7 +25,7 @@ import (
 // serveSMTPLogger is the serve-mode hook for per-stage SMTP access logging.
 // Populated by runServe (cmd/sercon/serve_cmd.go) before the script runs;
 // vanilla `sercon` leaves it nil so no logging fires. Mirrors the
-// serveAccessLogger pattern from cmd/sercon/api_server_http.go.
+// serveAccessLogger pattern from cmd/sercon/server_http.go.
 var serveSMTPLogger func(remote, stage, detail string, accepted bool, dur time.Duration)
 
 // smtpAwaitBridge attaches .then() to a handler-returned Promise so the

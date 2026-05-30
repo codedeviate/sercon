@@ -83,7 +83,7 @@ demo and intentionally exits non-zero).
 Generate a declaration file for editor autocomplete:
 
 ```bash
-sercon --emit-dts api.d.ts
+sercon --emit-dts sercon.d.ts
 ```
 
 Embed in your own Go program:
@@ -571,7 +571,7 @@ sercon serve --shutdown-timeout 10s server.ts
 
 sercon scripts get ten reserved top-level globals. Use them directly —
 there is no enclosing namespace. The full per-binding reference is the
-generated `examples/scripts/api.d.ts`; this section is the at-a-glance
+generated `examples/scripts/sercon.d.ts`; this section is the at-a-glance
 prose.
 
 **Reserved names:** `runtime`, `crypto`, `text`, `codec`, `fs`, `net`,
@@ -1709,7 +1709,7 @@ TypeScript declaration file. The mapping table (abbreviated):
 | self-referential types | `unknown` (cycle detection bails after depth 4) |
 
 ```bash
-sercon --emit-dts api.d.ts
+sercon --emit-dts sercon.d.ts
 ```
 
 In your editor, place the resulting `.d.ts` next to your scripts (or
@@ -1743,9 +1743,9 @@ declare const crypto: {
 ```
 
 The CLI's reserved-global surface ships with a curated doc map; see
-`cmd/sercon/api_docs.go` for the source of truth and add new
+`cmd/sercon/docs.go` for the source of truth and add new
 entries there when adding new bindings (the lockstep rule keeps
-`--examples` / MANUAL / `api.d.ts` in sync, and the doc map is now
+`--examples` / MANUAL / `sercon.d.ts` in sync, and the doc map is now
 the seventh artifact in that chain).
 
 ## 15. Limitations and gotchas

@@ -15,14 +15,14 @@
 troubleshooting, and testing. Write a short `.ts` file, hand it to `sercon`,
 and probe a service, inspect an endpoint, reproduce a bug, or script a quick
 check — without spinning up a Node project or pulling in a dependency tree.
-A small built-in `api` surface gives scripts HTTP, shell exec, logging, and
+A small set of built-in globals gives scripts HTTP, shell exec, logging, and
 more, and the whole thing ships as a single static binary. Pure Go (no cgo),
 no Node.
 
 Under the hood it's a TypeScript script engine in Go:
 
 - CLI: `cmd/sercon` — **the supported product.** Runs `.ts` files against
-  the built-in `api` surface. Reach for it when you need a repeatable,
+  the built-in global surface. Reach for it when you need a repeatable,
   scriptable alternative to a pile of ad-hoc `curl`/`jq`/shell one-liners
   for recon, debugging, and test checks. Available via the `codedeviate/cli`
   Homebrew tap: `brew install codedeviate/cli/sercon`.
@@ -73,5 +73,5 @@ eng.RegisterFactory("httpGet", func(vm *goja.Runtime, loop *eventloop.EventLoop)
 Generate a `.d.ts` for editor autocomplete:
 
 ```
-./sercon -emit-dts api.d.ts
+./sercon -emit-dts sercon.d.ts
 ```

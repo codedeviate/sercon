@@ -677,7 +677,7 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 	})
 	// upgradeWebSocket — hijack the connection and return a JS object
 	// that's both an AsyncIterable<WSMessage> and has .send / .close.
-	// See api_server_ws.go for the implementation.
+	// See server_ws.go for the implementation.
 	_ = res.Set("upgradeWebSocket", func(call goja.FunctionCall) goja.Value {
 		var opts goja.Value
 		if len(call.Arguments) > 0 {

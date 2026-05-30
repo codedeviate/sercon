@@ -12,7 +12,7 @@ make test                                  # go test ./...
 make vet                                   # go vet ./...
 make lint                                  # golangci-lint v2 against .golangci.yml (one-shot via go run if not installed)
 make demo                                  # run every success-path script under examples/scripts/ (excludes hang.ts)
-make types                                 # regenerate examples/scripts/api.d.ts from the current CLI bindings
+make types                                 # regenerate examples/scripts/sercon.d.ts from the current CLI bindings
 make release-prep VERSION=x.y.z            # bump version markers + print the next-step checklist (CHANGELOG still manual)
 make version-check                         # verify pkg/scriptengine/version.go and MANUAL.md cover/footer agree
 make clean                                 # rm -f sercon MANUAL.pdf
@@ -21,7 +21,7 @@ CGO_ENABLED=0 go build ./...               # whole repo (must stay cgo-free)
 go test ./pkg/scriptengine -run TestRun_PromiseResolveAwait   # single test
 go test ./pkg/scriptengine -run TestWriteTypes_Golden -update # refresh golden .d.ts
 ./sercon examples/scripts/smoke.ts examples/scripts/async.ts  # smoke + async demo
-./sercon -emit-dts /tmp/api.d.ts           # emit declaration file for the CLI's reserved-global surface
+./sercon -emit-dts /tmp/sercon.d.ts           # emit declaration file for the CLI's reserved-global surface
 ./sercon -timeout 200ms examples/scripts/hang.ts              # timeout demo (exits non-zero ~213ms)
 ./sercon --help | --examples | --version   # in-depth colourised help / feature tour / version
 ```
@@ -94,12 +94,12 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 - `pkg/scriptengine/hold_run.go` — `Engine.HoldRun(reason)` + sentinel-timer bookkeeping; keeps `loop.Run` alive while long-lived bindings (HTTP listeners, etc.) hold a refcount. Drained on Run end as a safety net.
 - `pkg/scriptengine/polyfill.go` — per-Run `Symbol.asyncIterator = Symbol.for("@@asyncIterator")` install so esbuild's `__forAwait` lowering and user code agree on the same iteration key.
 - `cmd/sercon/main.go` — CLI plus the ten reserved top-level globals (`runtime`, `crypto`, `text`, `codec`, `fs`, `net`, `db`, `server`, `services`, `tui`), each registered as a namespace factory by `registerSurface`.
-- `cmd/sercon/api_server.go` — top-level `server` namespace factory; thin dispatcher to per-protocol sub-factories.
-- `cmd/sercon/api_server_http.go` — `server.http` / `server.https` listener: options parsing, route compilation (stdlib `http.ServeMux` Go 1.22+ patterns), middleware chain, request marshalling, fluent `res` builder.
-- `cmd/sercon/api_server_static.go` — `server.http.static({dir, stripPrefix, …})` returning a marker the route compiler unwraps into a stdlib `http.FileServer` mounted under `http.StripPrefix`.
-- `cmd/sercon/api_server_ws.go` — `res.upgradeWebSocket(opts?)`; per-connection goroutine + buffered channel pump; async iterator that resolves frames on the loop via `LoopCallable`. Backed by `github.com/coder/websocket`.
-- `cmd/sercon/api_server_smtp.go` — `server.smtp.listen`: go-smtp backend wrapping per-stage JS callbacks (`onMail`/`onRcpt`/`onData` + optional `auth`), enmime message parsing, custom LOGIN `sasl.Server`, STARTTLS. Backed by `github.com/emersion/go-smtp` + `github.com/jhillyerd/enmime`.
-- `cmd/sercon/api_email_send.go` — `net.email.send`: stdlib `net/smtp` transport + in-tree MIME composition (text / multipart-alternative / multipart-mixed); per-recipient outcome capture; `starttls`/`tls`/`none` modes.
+- `cmd/sercon/server.go` — top-level `server` namespace factory; thin dispatcher to per-protocol sub-factories.
+- `cmd/sercon/server_http.go` — `server.http` / `server.https` listener: options parsing, route compilation (stdlib `http.ServeMux` Go 1.22+ patterns), middleware chain, request marshalling, fluent `res` builder.
+- `cmd/sercon/server_static.go` — `server.http.static({dir, stripPrefix, …})` returning a marker the route compiler unwraps into a stdlib `http.FileServer` mounted under `http.StripPrefix`.
+- `cmd/sercon/server_ws.go` — `res.upgradeWebSocket(opts?)`; per-connection goroutine + buffered channel pump; async iterator that resolves frames on the loop via `LoopCallable`. Backed by `github.com/coder/websocket`.
+- `cmd/sercon/server_smtp.go` — `server.smtp.listen`: go-smtp backend wrapping per-stage JS callbacks (`onMail`/`onRcpt`/`onData` + optional `auth`), enmime message parsing, custom LOGIN `sasl.Server`, STARTTLS. Backed by `github.com/emersion/go-smtp` + `github.com/jhillyerd/enmime`.
+- `cmd/sercon/email_send.go` — `net.email.send`: stdlib `net/smtp` transport + in-tree MIME composition (text / multipart-alternative / multipart-mixed); per-recipient outcome capture; `starttls`/`tls`/`none` modes.
 - `cmd/sercon/serve_cmd.go` — `sercon serve` subcommand: flag parsing (`--shutdown-timeout`, `--port-override`), access-log writer, READY-line writer on stdout, SIGTERM-graceful shutdown.
 - `examples/scripts/` — runnable sample scripts; `hang.ts` is the timeout demo and must stay a single `while(true){}`. The `server-*.ts` demos bind a high random port (38080–38082), self-test, and `await srv.close()`.
 - `claude-code-prompt.md` — the original spec for this build. Refer to it before redesigning anything significant.
@@ -122,10 +122,10 @@ Seven artifacts must stay aligned whenever the script/binding/feature surface ch
 - `cmd/sercon/help.go::showHelp` — the `--help` / `-h` screen. Flags table must mirror the actual flags defined in `main.go`.
 - `cmd/sercon/help.go::showExamples` — the `--examples` walkthrough. The `exampleCount` constant must equal the number of `header(N, …)` calls.
 - `examples/scripts/` — runnable `.ts` (or `.tsx`) demo files. **Any change to a user-visible binding, flag, or script-facing behaviour requires updating or adding the relevant example here.** Verify with `make demo`, which runs every success-path script (and skips `hang.ts`, the intentional timeout demo). New example files must also be added to `DEMO_SCRIPTS` in the `Makefile` and the table in `examples/README.md`.
-- `examples/scripts/api.d.ts` — auto-generated TypeScript declaration file mirroring the CLI's reserved-global surface (`runtime`, `crypto`, `text`, `codec`, `fs`, `net`, `db`, `services`, `tui`). Regenerate via `make types` whenever the CLI binding set or the d.ts emitter changes. Tracked in git so editor autocomplete and PR reviewers see the surface without running the binary.
+- `examples/scripts/sercon.d.ts` — auto-generated TypeScript declaration file mirroring the CLI's reserved-global surface (`runtime`, `crypto`, `text`, `codec`, `fs`, `net`, `db`, `services`, `tui`). Regenerate via `make types` whenever the CLI binding set or the d.ts emitter changes. Tracked in git so editor autocomplete and PR reviewers see the surface without running the binary.
 - `CHANGELOG.md` — every user-visible change lands here under `## [Unreleased]` (or the active version section) per Keep a Changelog.
 
-Whenever you add a flag: update the flag block in `main.go`, the `FLAGS` section in `showHelp`, mention it in `MANUAL.md § CLI`, add a CHANGELOG entry. Whenever you add a script-side binding: update `showExamples` (and bump `exampleCount`), add the signature to `MANUAL.md § Reserved globals`, add a one-line JSDoc summary to `cmd/sercon/api_docs.go` so the emitted `api.d.ts` grows readable editor hover, run `make types` to refresh `examples/scripts/api.d.ts` (and the golden if it touches `TestWriteTypes_Golden`), add or update an example file under `examples/scripts/`, run `make demo` to confirm it passes, add a CHANGELOG entry.
+Whenever you add a flag: update the flag block in `main.go`, the `FLAGS` section in `showHelp`, mention it in `MANUAL.md § CLI`, add a CHANGELOG entry. Whenever you add a script-side binding: update `showExamples` (and bump `exampleCount`), add the signature to `MANUAL.md § Reserved globals`, add a one-line JSDoc summary to `cmd/sercon/docs.go` so the emitted `sercon.d.ts` grows readable editor hover, run `make types` to refresh `examples/scripts/sercon.d.ts` (and the golden if it touches `TestWriteTypes_Golden`), add or update an example file under `examples/scripts/`, run `make demo` to confirm it passes, add a CHANGELOG entry.
 
 Pure library-side changes (e.g. `WithScriptRoot`, `Engine.Reset()`) only need `MANUAL.md` + `CHANGELOG.md`; they aren't reachable from a `.ts` script, so the example scripts don't need to grow for them.
 

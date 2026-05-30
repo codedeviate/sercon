@@ -14,7 +14,7 @@
 #   demo     Run every success-path example under examples/scripts/ so the
 #            user-facing surface is exercised end-to-end. Excludes hang.ts
 #            (intentional timeout that exits non-zero — verify separately).
-#   types    Regenerate examples/scripts/api.d.ts from the current CLI
+#   types    Regenerate examples/scripts/sercon.d.ts from the current CLI
 #            binding surface (the on-disk file is the source of truth for
 #            editor autocomplete and the public api shape).
 #   release-prep VERSION=x.y.z
@@ -125,7 +125,7 @@ demo: build
 	@echo "All example scripts passed. (hang.ts is the timeout demo — run separately.)"
 
 types: build
-	./$(BIN) --emit-dts examples/scripts/api.d.ts
+	./$(BIN) --emit-dts examples/scripts/sercon.d.ts
 
 release-prep:
 	@if [ -z "$(VERSION)" ]; then \

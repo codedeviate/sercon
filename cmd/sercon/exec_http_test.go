@@ -16,7 +16,7 @@ import (
 )
 
 // runHTTP drives execHTTP through its real (method, url, opts) signature
-// without a goja runtime. Mirrors runShell in api_exec_test.go.
+// without a goja runtime. Mirrors runShell in exec_test.go.
 type httpCall struct {
 	method string
 	url    string

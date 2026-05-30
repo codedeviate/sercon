@@ -25,7 +25,7 @@ import (
 
 // runJwtScript wires `jwt` into a fresh engine + a `__capture` side
 // channel and returns whatever the script writes via `__capture`.
-// Mirrors the harness from api_preg_test.go (same reason: Engine.Run
+// Mirrors the harness from preg_test.go (same reason: Engine.Run
 // always resolves to undefined today; the trailing-expression
 // capture is on the backlog).
 func runJwtScript(t *testing.T, body string) any {

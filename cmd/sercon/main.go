@@ -220,7 +220,7 @@ func classifyErr(err error) int {
 // Each is registered via RegisterNamespaceFactory so per-Run
 // constructions that need the loop (Promise-returning bindings, TUI
 // controller, server listeners) get fresh state every run. JSDoc lives
-// in api_docs.go; the engine patches runtime.argv onto the runtime
+// in docs.go; the engine patches runtime.argv onto the runtime
 // namespace at Run time.
 func registerSurface(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("runtime", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
@@ -398,7 +398,7 @@ func registerSurface(e *scriptengine.Engine) error {
 		return err
 	}
 	// Decorate the registered surface with JSDoc strings so the emitted
-	// .d.ts grows useful editor hover. Docs are gathered in api_docs.go
+	// .d.ts grows useful editor hover. Docs are gathered in docs.go
 	// (centralised so lockstep updates touch one file).
 	e.SetDocs("runtime", "Script-host scaffolding: logging, assertions, time, environment, runtime.argv.")
 	e.SetMemberDocs("runtime", runtimeDocs())

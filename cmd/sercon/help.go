@@ -183,7 +183,7 @@ func showHelp(w io.Writer) {
 	fmt.Fprintln(w, "    (exec/git/gh/ai), tui (multi-pane UI). Each script gets a fresh")
 	fmt.Fprintln(w, "    runtime; helpers are loaded via require()/import. See MANUAL.md")
 	fmt.Fprintln(w, "    §5 for the full reference and §6 for the server surface, or")
-	fmt.Fprintln(w, "    --examples for a guided tour. The generated api.d.ts (see")
+	fmt.Fprintln(w, "    --examples for a guided tour. The generated sercon.d.ts (see")
 	fmt.Fprintln(w, "    -emit-dts) is the machine-readable spec.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "    Long-running scripts (HTTP servers, WebSocket handlers) keep the")
@@ -240,7 +240,7 @@ func showHelp(w io.Writer) {
 	fmt.Fprintf(w, "    %s\n        Show the rich, colourised feature walkthrough.\n",
 		s.cyan("sercon --examples"))
 	fmt.Fprintf(w, "    %s\n        Emit a declaration file for editor autocomplete.\n",
-		s.cyan("sercon --emit-dts api.d.ts"))
+		s.cyan("sercon --emit-dts sercon.d.ts"))
 	fmt.Fprintf(w, "    %s\n        One-liner from a shell pipeline (reads from stdin).\n",
 		s.cyan(`echo 'runtime.log(1+2);' | sercon -`))
 	fmt.Fprintf(w, "    %s\n        Pass arguments to a script via runtime.argv.\n",

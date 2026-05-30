@@ -16,7 +16,7 @@ import (
 // TestServerSMTP_ListenAndClose exercises the basic listener lifecycle:
 // bind a port, immediately close, verify Run returns cleanly. The
 // round-trip test that actually delivers a message lives in
-// api_server_smtp_roundtrip_test.go (Task 2, after net.email.send exists).
+// server_smtp_roundtrip_test.go (Task 2, after net.email.send exists).
 func TestServerSMTP_ListenAndClose(t *testing.T) {
 	port := freePort(t)
 	eng := scriptengine.New(scriptengine.Options{

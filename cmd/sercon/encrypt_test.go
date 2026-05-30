@@ -14,7 +14,7 @@ import (
 
 // runEncryptScript wires the encrypt namespace + a __capture side
 // channel and returns whatever the script writes via __capture.
-// Mirrors the harness from api_preg_test.go.
+// Mirrors the harness from preg_test.go.
 func runEncryptScript(t *testing.T, body string) any {
 	t.Helper()
 	var captured any

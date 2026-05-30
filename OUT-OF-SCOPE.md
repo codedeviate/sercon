@@ -44,7 +44,7 @@ the situation changes.
   serialization (payment-request signing, webhook signature
   verification). `text.preg` / `text.preg2` were fixed in v0.11.2 by
   building the result as an insertion-ordered `*goja.Object` via the
-  shared `newMatchObject` helper (`cmd/sercon/api_preg.go`), but every
+  shared `newMatchObject` helper (`cmd/sercon/preg.go`), but every
   other map-returning binding still shuffles: at least `net.probe.*`,
   `net.email.send`, `crypto.jwt.view`, `services.git.*`, and the
   `server.smtp` `envelope` / `message` objects. The work is an audit +
@@ -66,18 +66,18 @@ the situation changes.
   needed. The gap is the *glue* that makes editors pick it up without
   manual setup:
   - ship a `jsconfig.json` (or `tsconfig.json`) in `examples/scripts/`
-    that includes `api.d.ts` — one file covers every tsserver editor;
-  - document a `sercon -emit-dts api.d.ts` + tiny jsconfig recipe for
+    that includes `sercon.d.ts` — one file covers every tsserver editor;
+  - document a `sercon -emit-dts sercon.d.ts` + tiny jsconfig recipe for
     users' own script directories;
   - optionally an `sercon init <dir>` helper that drops both in.
-  Per-file `/// <reference path="./api.d.ts" />` is the no-config
+  Per-file `/// <reference path="./sercon.d.ts" />` is the no-config
   fallback. **Library:** stdlib only (file emit already exists).
 
 ### Databases
 
 `db.sqlite` already proves the pattern: `database/sql` + a pure-Go
 driver + an `open()`→handle shape (`exec` / `query` / `queryValue`,
-see `cmd/sercon/api_sqlite.go`). Every other SQL engine below is the
+see `cmd/sercon/sqlite.go`). Every other SQL engine below is the
 same handle wired to a different `database/sql` driver and a DSN, so
 the marginal cost per engine is small. Open question to settle once
 (not blocking): one DSN-driven `db.open(driver, dsn)` vs. a
@@ -126,7 +126,7 @@ remaining open items:
 ### Networking — clients & raw sockets
 
 Today's `net.probe.*` family is **connect-probe** oriented, not
-a general socket surface (see `cmd/sercon/api_probe.go`). The gap is
+a general socket surface (see `cmd/sercon/probe.go`). The gap is
 read/write client sockets exposed to scripts.
 
 - **TCP client sockets.** `net.probe.tcp` only reports

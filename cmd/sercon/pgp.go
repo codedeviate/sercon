@@ -13,7 +13,7 @@ import (
 // PGP support for crypto.encrypt.*. The age path stays the default;
 // these functions are reached only when detectBackend classifies a
 // recipient / identity / ciphertext as PGP. The dispatch lives in
-// api_encrypt.go (encryptEncrypt / encryptDecrypt); this file holds
+// encrypt.go (encryptEncrypt / encryptDecrypt); this file holds
 // the openpgp mechanics so the age code stays uncluttered.
 //
 // Library: github.com/ProtonMail/go-crypto/openpgp — the maintained
