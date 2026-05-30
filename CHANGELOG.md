@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-05-30
+
 ### Changed
 
 - **`runtime.assert.equal` is now deep.** It compared by reference (goja
