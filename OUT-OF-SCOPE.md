@@ -89,6 +89,27 @@ needs root / CAP_NET_RAW) — all with a push/callback read model
   callback marshalling) and `Engine.HoldRun` (keep the loop alive while the
   subprocess runs) — so only the binding remains.
 
+### Documentation
+
+- **Complete the MANUAL's binding reference — every package, every
+  function, with parameters.** Today MANUAL.md §5/§6 describe each global
+  in prose and *mention* functions at best; the parameters, their types,
+  optional-vs-required, the returned object shape, and the errors thrown
+  are largely undocumented. This is crucial and must be improved even if
+  the manual grows substantially: each binding needs a full signature
+  (name, every parameter with type + meaning + default, return shape,
+  thrown errors, a short example). **Approach to settle:** the data
+  already exists in two places — the one-line JSDoc summaries in
+  `cmd/sercon/docs.go` and the generated `examples/scripts/sercon.d.ts`
+  (which carries the TypeScript signatures). Rather than hand-write and
+  drift, prefer enriching the per-member docs (param-level JSDoc in
+  `docs.go`) and **generating** the MANUAL's reference section from the
+  binding metadata + d.ts, so the long-form reference stays in lockstep
+  with the surface automatically. Moderate because the generator + the
+  param-level doc model is a design choice, not just typing; the volume
+  is large but mechanical once the pipeline exists. Until then, every new
+  binding should at least document its parameters inline.
+
 
 ## Hard
 
