@@ -219,6 +219,13 @@ func (c *phpDumpCursor) parseString(body string) (*irNode, error) {
 // those N bytes must be the closing quote (and nothing but blank trailer may
 // follow on its line), otherwise the declared length disagrees with the body
 // (PHP truncates long strings in some contexts) and the parse is lossy.
+//
+// Before growing any buffer, the declared length is bounded against the bytes
+// that could possibly belong to this string (this line's tail plus each later
+// line's bytes and the rejoined '\n'). An attacker-controlled N larger than
+// that is rejected eagerly as truncated, so it can neither trigger a giant
+// allocation nor a makeslice panic. The in-loop truncation check remains as a
+// backstop.
 func (c *phpDumpCursor) decodeStringValue(body string) (string, error) {
 	rest := strings.TrimPrefix(body, "string(")
 	idx := strings.IndexByte(rest, ')')
@@ -238,10 +245,22 @@ func (c *phpDumpCursor) decodeStringValue(body string) (string, error) {
 	// firstLineTail is the raw text on this line after the opening quote.
 	firstLineTail := after[2:]
 
+	// Bound the declared length against the bytes actually available before
+	// growing, so an attacker-controlled N can't trigger a giant allocation or
+	// a makeslice panic. Each later line contributes its bytes plus the '\n'
+	// that strings.Split removed.
+	remaining := len(firstLineTail)
+	for i := c.line + 1; i < len(c.lines); i++ {
+		remaining += 1 + len(c.lines[i])
+	}
+	if declared > remaining {
+		return "", c.lossy(fmt.Sprintf("string(%d) declares more bytes than present (truncated)", declared))
+	}
+
 	// Accumulate raw bytes until we have the declared count, pulling in further
 	// lines (rejoined with '\n') when the body spans multiple lines.
 	var sb strings.Builder
-	sb.Grow(declared)
+	sb.Grow(declared) // now bounded by actual input size
 	chunk := firstLineTail
 	consumedExtraLines := 0
 	for {

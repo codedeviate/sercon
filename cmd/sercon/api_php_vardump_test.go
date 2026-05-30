@@ -136,3 +136,16 @@ func TestPHPVarDump_NewlineInStringSafe(t *testing.T) {
 		t.Fatalf("newline string neither round-tripped nor errored cleanly: kind=%d s=%q", out.kind, out.s)
 	}
 }
+
+func TestPHPVarDump_RejectsHugeStringLength(t *testing.T) {
+	opts := withDumpDefaults(dumpOpts{})
+	for _, in := range []string{
+		`string(9000000000000000000) "x"`, // would panic on makeslice
+		`string(2000000000) "x"`,           // would force a ~2GB alloc
+	} {
+		_, err := phpVarDumpDecode(in, opts)
+		if err == nil {
+			t.Errorf("%q: expected lossy/truncated error, not a panic/alloc/accept", in)
+		}
+	}
+}
