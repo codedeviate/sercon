@@ -99,6 +99,54 @@ func TestJSToIR_UnsupportedThrows(t *testing.T) {
 	}
 }
 
+func TestJSToIR_RejectsExoticObjects(t *testing.T) {
+	vm := newVM()
+	opts := withDumpDefaults(dumpOpts{})
+	for _, src := range []string{
+		`new Date(0)`,
+		`/abc/g`,
+		`new Map([["a",1]])`,
+		`new Set([1,2])`,
+	} {
+		if _, err := jsToIR(vm, mustEval(t, vm, src), opts); err == nil {
+			t.Errorf("%s: expected unsupported-type error", src)
+		}
+	}
+}
+
+func TestJSToIR_EmptyContainers(t *testing.T) {
+	vm := newVM()
+	opts := withDumpDefaults(dumpOpts{})
+
+	arr, err := jsToIR(vm, mustEval(t, vm, `[]`), opts)
+	if err != nil {
+		t.Fatalf("empty array: %v", err)
+	}
+	if arr.kind != dumpArray || len(arr.items) != 0 {
+		t.Fatalf("empty array: kind=%d len=%d", arr.kind, len(arr.items))
+	}
+
+	obj, err := jsToIR(vm, mustEval(t, vm, `({})`), opts)
+	if err != nil {
+		t.Fatalf("empty object: %v", err)
+	}
+	if obj.kind != dumpMap || len(obj.pairs) != 0 {
+		t.Fatalf("empty object: kind=%d pairs=%d", obj.kind, len(obj.pairs))
+	}
+}
+
+func TestJSToIR_AcceptsClassInstance(t *testing.T) {
+	vm := newVM()
+	opts := withDumpDefaults(dumpOpts{})
+	n, err := jsToIR(vm, mustEval(t, vm, `(function(){class Foo{}; var f=new Foo(); f.a=1; return f;})()`), opts)
+	if err != nil {
+		t.Fatalf("class instance: %v", err)
+	}
+	if n.kind != dumpMap || len(n.pairs) != 1 || n.pairs[0].key != "a" {
+		t.Fatalf("class instance: kind=%d pairs=%v", n.kind, n.pairs)
+	}
+}
+
 func TestIRToJS_RoundTripStableOrder(t *testing.T) {
 	vm := newVM()
 	opts := withDumpDefaults(dumpOpts{})

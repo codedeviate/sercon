@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strings"
 
 	"github.com/dop251/goja"
 )
@@ -136,11 +137,27 @@ func (w *jsWalker) walk(v goja.Value) (*irNode, error) {
 	w.path[obj] = true
 	defer delete(w.path, obj)
 
+	// Discriminate on the ECMAScript builtin tag, not ClassName(): this goja
+	// version reports ClassName()=="Object" for Map/Set, so a ClassName gate
+	// would let them collapse to an empty dumpMap and silently destroy data.
+	// Object.prototype.toString is the reliable discriminator. Only Array and
+	// plain Object (incl. class instances and Object.create(null), both
+	// tagged "Object") are representable; Date/RegExp/Map/Set/etc. throw,
+	// matching the fail-loud stance for BigInt/function/Symbol above.
+	tag, err := builtinTag(w.vm, obj)
+	if err != nil {
+		return nil, err
+	}
+
 	var n *irNode
-	if obj.ClassName() == "Array" {
+	switch tag {
+	case "Array":
 		n = &irNode{kind: dumpArray}
 		length := int(obj.Get("length").ToInteger())
 		n.items = make([]*irNode, 0, length)
+		// Only the integer-indexed slots 0..length-1 are walked: non-index
+		// array properties are intentionally dropped and holes flatten to
+		// null, matching JSON.stringify.
 		for i := 0; i < length; i++ {
 			child, err := w.walk(obj.Get(fmt.Sprintf("%d", i)))
 			if err != nil {
@@ -148,7 +165,7 @@ func (w *jsWalker) walk(v goja.Value) (*irNode, error) {
 			}
 			n.items = append(n.items, child)
 		}
-	} else {
+	case "Object":
 		keys := obj.Keys()
 		class := ""
 		if cv := obj.Get(w.opts.classKey); cv != nil && !goja.IsUndefined(cv) {
@@ -169,9 +186,30 @@ func (w *jsWalker) walk(v goja.Value) (*irNode, error) {
 			}
 			n.pairs = append(n.pairs, irPair{key: k, val: child})
 		}
+	default:
+		return nil, fmt.Errorf("codec dump: unsupported type %s", tag)
 	}
 	w.done[obj] = n
 	return n, nil
+}
+
+// builtinTag returns the ECMAScript builtin tag of obj, e.g. "Object",
+// "Array", "Map", "Date" — via Object.prototype.toString, which is the
+// only reliable discriminator (goja reports ClassName()=="Object" for
+// Map/Set in this version).
+func builtinTag(vm *goja.Runtime, obj *goja.Object) (string, error) {
+	op := vm.Get("Object").ToObject(vm).Get("prototype").ToObject(vm)
+	toStr, ok := goja.AssertFunction(op.Get("toString"))
+	if !ok {
+		return "", errors.New("codec dump: Object.prototype.toString unavailable")
+	}
+	v, err := toStr(obj) // `this` = obj
+	if err != nil {
+		return "", err
+	}
+	s := v.String() // "[object Xxx]"
+	s = strings.TrimSuffix(strings.TrimPrefix(s, "[object "), "]")
+	return s, nil
 }
 
 // irToJS builds goja values from an IR DAG. Maps and classed nodes become
@@ -203,6 +241,8 @@ func (b *irBuilder) build(n *irNode) goja.Value {
 	if v, ok := b.memo[n]; ok {
 		return v
 	}
+	// Set on a freshly-built, extensible NewArray/NewObject cannot fail, so
+	// the ignored errors below are intentional — irToJS has no error return.
 	switch n.kind {
 	case dumpArray:
 		arr := b.vm.NewArray()
