@@ -78,7 +78,18 @@ func optString(opts map[string]any, key, fallback string) string {
 	return fallback
 }
 
-func tcpProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// tcpProbeResult is the resolved value of net.probe.tcp. It's a json-tagged
+// struct rather than a map[string]any so the JS object's key order is stable
+// (goja enumerates struct fields in declaration order; a Go map would shuffle
+// JSON.stringify output run-to-run — see TestStructResult_StableKeyOrder).
+type tcpProbeResult struct {
+	Host      string  `json:"host"`
+	Port      int     `json:"port"`
+	IP        string  `json:"ip"`
+	LatencyMs float64 `json:"latencyMs"`
+}
+
+func tcpProbe(ctx context.Context, call goja.FunctionCall) (tcpProbeResult, error) {
 	target := call.Argument(0).String()
 	opts := optsAsMap(call)
 	timeout := optMillis(opts, "timeout", 5*time.Second)
@@ -97,7 +108,7 @@ func tcpProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, erro
 	d := &net.Dialer{}
 	conn, err := d.DialContext(dialCtx, "tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		return nil, err
+		return tcpProbeResult{}, err
 	}
 	latency := time.Since(start)
 	defer func() { _ = conn.Close() }()
@@ -108,11 +119,11 @@ func tcpProbe(ctx context.Context, call goja.FunctionCall) (map[string]any, erro
 	}
 
 	portInt, _ := strconv.Atoi(port)
-	return map[string]any{
-		"host":      host,
-		"port":      portInt,
-		"ip":        remoteIP,
-		"latencyMs": float64(latency.Microseconds()) / 1000.0,
+	return tcpProbeResult{
+		Host:      host,
+		Port:      portInt,
+		IP:        remoteIP,
+		LatencyMs: float64(latency.Microseconds()) / 1000.0,
 	}, nil
 }
 

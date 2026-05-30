@@ -275,7 +275,7 @@ declare const net: {
     /** SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw. */
     smtp(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Dial a TCP target and report latency + resolved IP. Default timeout 5s. */
-    tcp(...args: unknown[]): Promise<Record<string, unknown>>;
+    tcp(...args: unknown[]): Promise<{ host: string; port: number; ip: string; latencyMs: number }>;
     /** Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary. */
     tls(...args: unknown[]): Promise<Record<string, unknown>>;
     /** Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text. */
