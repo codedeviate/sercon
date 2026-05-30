@@ -255,3 +255,26 @@ than tracked here. The two parked below have a concrete reason to wait.
   **Reason:** no mature pure-Go POP3 server library exists today.
   Re-promote when one appears or when there's enough demand to
   justify writing one in tree.
+
+### Packet capture
+
+Sniffing shipped in v0.24.0 as `net.capture` — live capture
+(`net.capture.open`, promiscuous mode), pcap/pcapng read (`openFile`) +
+write (`toFile`), interface enumeration (`interfaces`), and full
+layer decode (eth/ip/tcp/udp/icmp + payload) — all pure-Go via the
+`gopacket` subset (`layers`/`pcapgo`/`bsdbpf`/`pcapgo.EthernetHandle`),
+never the cgo `gopacket/pcap`. Live capture is Linux (AF_PACKET) + macOS
+(BPF) only and needs root / CAP_NET_RAW / `/dev/bpf`. The parked pieces,
+all blocked on the no-cgo rule or missing pure-Go prior art:
+
+- **Windows live capture.** Needs Npcap → **cgo**. **Reason:** breaks the
+  `CGO_ENABLED=0` build + static-binary releases. File read/write + decode
+  already work on Windows; only live sniffing is stubbed out there.
+- **BPF filter expressions** (tcpdump-style `"tcp port 80"`). Compiling a
+  filter expression to a BPF program is a libpcap (**cgo**) capability;
+  no mature pure-Go compiler exists. **Reason:** filter inside the
+  `onPacket` callback for now (the packet is fully decoded). A pure-Go
+  hand-assembled `x/net/bpf` program attached at the socket is a possible
+  future enhancement for high-pps drops.
+- **Deeper / exotic decode.** Only common layers map to fields today;
+  other protocols surface as `bytes`. Extend `decodePacket` on demand.
