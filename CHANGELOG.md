@@ -8,6 +8,25 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`net.tcp.connect`, `net.udp.open`, `net.icmp.open` — raw client
+  sockets.** Long-lived, bidirectional client sockets with a *push /
+  callback* read model (distinct from the one-shot `net.probe.*`
+  helpers). Each constructor resolves a handle sharing `onData(cb)` (TCP)
+  / `onMessage(cb)` (UDP, ICMP), `onClose(cb)`, `onError(cb)`, and
+  `close()`; inbound events carry `bytes` (`Uint8Array`) + `text`.
+  `net.tcp.connect(host, port, opts?)` adds `write(data)` and `remote` /
+  `local`. `net.udp.open(opts)` has connected mode (`{ host, port }` →
+  `send(data)`) and bound mode (`{ bind }` → `sendTo(data, host, port)`,
+  events tagged with `address` / `port`), plus `local`.
+  `net.icmp.open(opts?)` requires root / `CAP_NET_RAW` (open rejects
+  otherwise); `send({ to, type?, code?, id?, seq?, payload? })` builds an
+  Echo-shaped body — `type` / `code` are customizable but non-Echo bodies
+  are not modelled; events carry `address` / `type` / `code`. Sockets hold
+  the event loop open while connected. New example `net-sockets.ts`
+  (offline UDP loopback self-test).
+
 ## [0.21.0] — 2026-05-30
 
 ### Added

@@ -261,6 +261,10 @@ declare const net: {
     /** Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx. */
     request(...args: unknown[]): Promise<Record<string, unknown>>;
   };
+  icmp: {
+    /** Open a raw ICMP socket: net.icmp.open(opts?) → Promise<handle>. Requires root / CAP_NET_RAW (open rejects otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. handle.send({ to, type?, code?, id?, seq?, payload? }) builds an Echo-shaped body (non-Echo bodies not modelled); push/callback model — onMessage(cb) events carry { address, type, code }; onClose(cb)/onError(cb); handle.network/local; handle.close(). */
+    open(...args: unknown[]): unknown;
+  };
   netstatus: {
     /** Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws. */
     check(...args: unknown[]): Promise<Record<string, unknown>>;
@@ -282,6 +286,14 @@ declare const net: {
     whois(...args: unknown[]): Promise<Record<string, unknown>>;
     /** WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws. */
     wss(...args: unknown[]): Promise<{ url: string; connected: boolean; subprotocol: string; status: number; handshakeMs: number; pingMs: number }>;
+  };
+  tcp: {
+    /** Open a TCP client socket: net.tcp.connect(host, port, opts?) → Promise<handle>. Push/callback read model — handle.onData(cb)/onClose(cb)/onError(cb) register listeners; handle.write(data) sends (string→UTF-8 / Uint8Array); handle.remote/local are the peer/local addresses; handle.close() shuts down. opts { timeout?, readBuffer? }. */
+    connect(...args: unknown[]): unknown;
+  };
+  udp: {
+    /** Open a UDP socket: net.udp.open(opts) → Promise<handle>. Connected mode { host, port } exposes send(data); bound mode { bind: ':9999' } exposes sendTo(data, host, port) and tags inbound events with { address, port }. Push/callback model — onMessage(cb)/onClose(cb)/onError(cb); handle.local is the bound address; handle.close() shuts down. opts also takes readBuffer?. */
+    open(...args: unknown[]): unknown;
   };
 };
 

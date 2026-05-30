@@ -866,10 +866,34 @@ await pg.close();
 // db.oracle.open("oracle://user:pass@host:1521/service")  — placeholders: :1`)
 	note("All six SQL engines (sqlite/postgres/mysql/mssql/clickhouse/oracle) share { exec, query, queryValue, begin, prepare, close }; pure-Go drivers, pinged on open. Write your engine's placeholder syntax.")
 
+	header(46, "Raw sockets (net.tcp / net.udp / net.icmp)")
+	code(`// Long-lived client sockets with a push/callback read model (unlike
+// the one-shot net.probe.* helpers). Each open() returns a handle:
+// onData/onMessage(cb), onClose(cb), onError(cb), close().
+const t = await net.tcp.connect("example.com", "80");
+t.onData(ev => runtime.log("recv", ev.bytes.length, "bytes:", ev.text));
+await t.write("GET / HTTP/1.0\r\n\r\n");
+runtime.log("remote", t.remote, "local", t.local);
+
+// UDP — connected { host, port } has send(); a loopback pair self-tests:
+const srv = await net.udp.open({ bind: "127.0.0.1:0" });   // srv.local -> 127.0.0.1:PORT
+const port = Number(srv.local.split(":").pop());
+srv.onMessage(ev => runtime.log("got", ev.text, "from", ev.address, ev.port));
+const cli = await net.udp.open({ host: "127.0.0.1", port });
+await cli.send("hello-sockets");
+
+// ICMP — raw socket, needs root / CAP_NET_RAW (open rejects otherwise).
+// send() builds an Echo-shaped body; type/code customizable.
+const ic = await net.icmp.open({ network: "ip4" });
+await ic.send({ to: "127.0.0.1", id: 1, seq: 1, payload: "ping" });
+
+await cli.close(); await srv.close(); await t.close();`)
+	note("Inbound events carry bytes (Uint8Array) + text; UDP-bound add address/port, ICMP adds address/type/code. ICMP open() rejects without raw-socket privileges; its body is always Echo-shaped (id/seq/payload). See MANUAL.md §net.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 45
+const exampleCount = 46

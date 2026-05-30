@@ -830,6 +830,55 @@ Network clients and probes:
   `all(domain)` which runs every probe in parallel and aggregates; plus
   `send({…})` — outbound SMTP sender (see §6.7).
 - `net.browser.open(url)` — launches the OS default browser.
+- `net.tcp.connect(host, port, opts?)` — open a TCP client socket.
+- `net.udp.open(opts)` — open a UDP socket (connected or bound).
+- `net.icmp.open(opts?)` — open a raw ICMP socket (needs privileges).
+
+**Raw sockets (`net.tcp` / `net.udp` / `net.icmp`)** are long-lived,
+bidirectional client sockets with a *push / callback* read model — unlike
+the one-shot `net.probe.*` helpers, they stay open and deliver inbound
+data through callbacks until you `close()` them. Each constructor returns
+a `Promise` for a handle object:
+
+- `net.tcp.connect(host, port, opts?)` — dial a TCP peer. opts
+  `{ timeout? (ms, default 10000), readBuffer? (inbound channel capacity,
+  default 64) }`. The handle has `write(data)` (string → UTF-8 bytes,
+  `Uint8Array` → raw bytes; returns a `Promise`), the `remote` / `local`
+  address strings, plus the shared callbacks below. Inbound chunks arrive
+  via `onData`.
+- `net.udp.open(opts)` — two modes selected by opts. **Connected**
+  `{ host, port, readBuffer? }` resolves the peer up front and exposes
+  `send(data)`. **Bound** `{ bind: "127.0.0.1:0", readBuffer? }` listens on
+  a local address and exposes `sendTo(data, host, port)`; its inbound
+  events also carry `address` / `port` of the sender. Either way the handle
+  has `local` (the bound address — read the chosen port back from it when
+  you bind to `:0`) and delivers datagrams via `onMessage`.
+- `net.icmp.open(opts?)` — open a raw ICMP socket. **Requires root /
+  `CAP_NET_RAW`**; without the privilege `open()` rejects with an error
+  naming that requirement. opts `{ network?: "ip4" | "ip6" (default
+  "ip4"), readBuffer? }`. `send({ to, type?, code?, id?, seq?, payload? })`
+  builds and writes a message; `type` defaults to the network's echo
+  request. **The body is always Echo-shaped** (`id` / `seq` / `payload`) —
+  only the `type` / `code` are customizable, non-Echo bodies are not
+  modelled. The handle has `network` / `local`; inbound events carry
+  `address` / `type` / `code` and arrive via `onMessage`.
+
+All three handles share the same callback surface and lifecycle:
+
+- `onData(cb)` (TCP) / `onMessage(cb)` (UDP, ICMP) — register a listener
+  for inbound data. The event object carries `bytes` (a `Uint8Array`) and
+  `text` (the bytes decoded as UTF-8); UDP-bound / ICMP events add the
+  sender metadata noted above.
+- `onClose(cb)` — fires once when the socket closes (locally or remotely).
+- `onError(cb)` — fires on a read / connection error (benign teardown
+  closes are reported through `onClose`, not `onError`).
+- `close()` — shut the socket down; returns a `Promise`.
+
+The socket keeps the engine's event loop alive while open (via the
+internal `HoldRun` refcount), so a script that only listens won't exit
+until it `close()`s. `sercon` scripts can't *bind* a listening TCP/UDP
+server socket yet — these are client sockets — so a TCP example needs a
+peer to dial; a UDP loopback pair is fully self-contained.
 
 ### `db`
 
