@@ -854,15 +854,17 @@ console.warn("heads up");        // -> stderr
 console.error("oops");           // -> stderr`)
 	note("log/info/debug print to stdout, warn/error to stderr — clean, space-joined, no timestamp. runtime.log is the native equivalent.")
 
-	header(45, "SQL servers (db.postgres / db.mysql / db.mssql)")
+	header(45, "SQL servers (postgres / mysql / mssql / clickhouse / oracle)")
 	code(`// Same handle as db.sqlite, different engine. DSN string or opts object.
 const pg = await db.postgres.open("postgres://user:pass@host:5432/app?sslmode=require");
 // …or: db.postgres.open({ host, port, user, password, database, sslmode })
 const rows = await pg.query("SELECT id, name FROM users WHERE active = $1", true);
 await pg.close();
 // db.mysql.open("user:pass@tcp(host:3306)/db")  — placeholders: ?
-// db.mssql.open("sqlserver://user:pass@host:1433?database=db")  — placeholders: @p1`)
-	note("All four SQL engines (sqlite/postgres/mysql/mssql) share { exec, query, queryValue, begin, prepare, close }; pure-Go drivers, pinged on open. Write your engine's placeholder syntax.")
+// db.mssql.open("sqlserver://user:pass@host:1433?database=db")  — placeholders: @p1
+// db.clickhouse.open({ host, database, secure: true })  — placeholders: ?
+// db.oracle.open("oracle://user:pass@host:1521/service")  — placeholders: :1`)
+	note("All six SQL engines (sqlite/postgres/mysql/mssql/clickhouse/oracle) share { exec, query, queryValue, begin, prepare, close }; pure-Go drivers, pinged on open. Write your engine's placeholder syntax.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

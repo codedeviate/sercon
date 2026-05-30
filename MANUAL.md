@@ -839,6 +839,8 @@ Database / KV / directory clients:
 - `db.postgres.open(dsn | opts)` — PostgreSQL via pure-Go `pgx`.
 - `db.mysql.open(dsn | opts)` — MySQL / MariaDB via pure-Go `go-sql-driver`.
 - `db.mssql.open(dsn | opts)` — Microsoft SQL Server via pure-Go `go-mssqldb`.
+- `db.clickhouse.open(dsn | opts)` — ClickHouse via pure-Go `clickhouse-go` v2 (`opts.secure` for TLS).
+- `db.oracle.open(dsn | opts)` — Oracle via pure-Go `go-ora` (`opts.database` is the service name).
 - `db.redis.open(addr, opts?)` — Redis client.
 - `db.memcached.open(addr)` — Memcached client.
 - `db.ldap.open(url, opts?)` — LDAP client (search, bind).

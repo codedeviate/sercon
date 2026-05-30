@@ -287,6 +287,10 @@ declare const net: {
 
 /** Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict. */
 declare const db: {
+  clickhouse: {
+    /** Connect to ClickHouse via the pure-Go clickhouse-go v2 driver. Arg is a clickhouse:// URL DSN string or an options object { host, port, user, password, database, secure }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses ? placeholders; default native port 9000 (set secure:true for TLS). Pings on open. */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
   dict: {
     /** RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error). */
     define(...args: unknown[]): Promise<{ word: string; found: boolean; definitions: { db: string; dbName: string; text: string }[] }>;
@@ -307,6 +311,10 @@ declare const db: {
   };
   mysql: {
     /** Connect to MySQL/MariaDB via the pure-Go go-sql-driver. Arg is a go-sql-driver DSN string (user:pass@tcp(host:port)/db) or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses ? placeholders. Pings on open. */
+    open(...args: unknown[]): Promise<Record<string, unknown>>;
+  };
+  oracle: {
+    /** Connect to Oracle via the pure-Go go-ora driver (no cgo). Arg is an oracle:// URL DSN string or an options object { host, port, user, password, database } where database is the service name. Returns the shared SQL handle. Uses :1,:2,… bind placeholders; default port 1521. Pings on open. */
     open(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   postgres: {

@@ -27,6 +27,24 @@ func TestEngineDSNBuilders(t *testing.T) {
 	if got, want := mssqlDSN(opts), "sqlserver://alice:s3cret@db.example.com:5433?database=app"; got != want {
 		t.Errorf("mssqlDSN:\n got: %s\nwant: %s", got, want)
 	}
+	if got, want := clickhouseDSN(opts), "clickhouse://alice:s3cret@db.example.com:5433/app"; got != want {
+		t.Errorf("clickhouseDSN:\n got: %s\nwant: %s", got, want)
+	}
+	if got, want := oracleDSN(opts), "oracle://alice:s3cret@db.example.com:5433/app"; got != want {
+		t.Errorf("oracleDSN:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// ClickHouse's optional `secure` flag adds the TLS query parameter; nothing
+// else does (the other engines have no such option).
+func TestClickhouseDSN_Secure(t *testing.T) {
+	opts := map[string]any{"host": "ch.example.com", "database": "app", "secure": true}
+	if got, want := clickhouseDSN(opts), "clickhouse://ch.example.com:9000/app?secure=true"; got != want {
+		t.Errorf("clickhouseDSN secure:\n got: %s\nwant: %s", got, want)
+	}
+	if got := clickhouseDSN(map[string]any{"host": "ch", "database": "app"}); contains(got, "secure") {
+		t.Errorf("clickhouseDSN should omit secure when unset: %s", got)
+	}
 }
 
 // Defaults: host localhost and the engine's standard port when omitted.
@@ -41,6 +59,12 @@ func TestEngineDSNDefaults(t *testing.T) {
 	if got, want := mssqlDSN(empty), "sqlserver://localhost:1433"; got != want {
 		t.Errorf("mssql default DSN: %s (want %s)", got, want)
 	}
+	if got, want := clickhouseDSN(empty), "clickhouse://localhost:9000/"; got != want {
+		t.Errorf("clickhouse default DSN: %s (want %s)", got, want)
+	}
+	if got, want := oracleDSN(empty), "oracle://localhost:1521/"; got != want {
+		t.Errorf("oracle default DSN: %s (want %s)", got, want)
+	}
 }
 
 // Credentials with URL-special characters are percent-escaped in the URL-form
@@ -52,6 +76,12 @@ func TestEngineDSN_EscapesCredentials(t *testing.T) {
 	}
 	if got := mssqlDSN(opts); !contains(got, "p%40ss%2Fword") {
 		t.Errorf("mssqlDSN should percent-escape password: %s", got)
+	}
+	if got := clickhouseDSN(opts); !contains(got, "p%40ss%2Fword") {
+		t.Errorf("clickhouseDSN should percent-escape password: %s", got)
+	}
+	if got := oracleDSN(opts); !contains(got, "p%40ss%2Fword") {
+		t.Errorf("oracleDSN should percent-escape password: %s", got)
 	}
 }
 

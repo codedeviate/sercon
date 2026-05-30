@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`db.clickhouse`, `db.oracle` — two more SQL engines.** ClickHouse
+  (pure-Go `clickhouse-go` v2, `?` placeholders, `opts.secure` for TLS)
+  and Oracle (pure-Go `go-ora`, no cgo, `:1`/`:2` binds, `opts.database`
+  is the service name). Both reuse the shared `database/sql` handle
+  (`exec`/`query`/`queryValue`/`begin`/`prepare`/`close`), pinged on open,
+  the same per-engine-namespace pattern as `db.postgres`/`mysql`/`mssql`.
+
 ## [0.20.0] — 2026-05-30
 
 ### Changed

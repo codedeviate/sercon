@@ -378,14 +378,16 @@ func registerSurface(e *scriptengine.Engine) error {
 	}
 	if err := e.RegisterNamespaceFactory("db", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
-			"sqlite":    sqliteNamespace(vm, loop),
-			"postgres":  postgresNamespace(vm, loop),
-			"mysql":     mysqlNamespace(vm, loop),
-			"mssql":     mssqlNamespace(vm, loop),
-			"redis":     redisNamespace(vm, loop),
-			"memcached": memcachedNamespace(vm, loop),
-			"ldap":      ldapNamespace(vm, loop),
-			"dict":      dictNamespace(vm, loop),
+			"sqlite":     sqliteNamespace(vm, loop),
+			"postgres":   postgresNamespace(vm, loop),
+			"mysql":      mysqlNamespace(vm, loop),
+			"mssql":      mssqlNamespace(vm, loop),
+			"clickhouse": clickhouseNamespace(vm, loop),
+			"oracle":     oracleNamespace(vm, loop),
+			"redis":      redisNamespace(vm, loop),
+			"memcached":  memcachedNamespace(vm, loop),
+			"ldap":       ldapNamespace(vm, loop),
+			"dict":       dictNamespace(vm, loop),
 		}
 	}); err != nil {
 		return err
