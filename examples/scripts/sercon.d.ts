@@ -9,7 +9,7 @@ declare const console: {
   error(...args: unknown[]): unknown;
   /** Alias of console.log — stringified arguments, space-joined, to stdout. */
   info(...args: unknown[]): unknown;
-  /** Print a space-joined line of the stringified arguments to stdout. Browser/Node-compatible; same output as runtime.log. */
+  /** Print a space-joined line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON. Browser/Node-compatible; same output as runtime.log. */
   log(...args: unknown[]): unknown;
   /** Like console.log but writes to stderr. */
   warn(...args: unknown[]): unknown;
@@ -29,7 +29,7 @@ declare const runtime: {
     /** Read an environment variable. Returns undefined when unset (not empty string). */
     get(...args: unknown[]): unknown;
   };
-  /** Stringify each argument and print one space-separated line to stdout. The script-side equivalent of console.log without buffering. */
+  /** Print one space-separated line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON (circular refs fall back to [object Object]). The script-side equivalent of console.log. */
   log(...args: unknown[]): unknown;
   time: {
     /** Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Europe/Stockholm'); default is the host's local zone. */

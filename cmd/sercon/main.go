@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -230,8 +231,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	// `console` is a browser/Node-compat shim (see console.go). Registered
 	// alongside the ten reserved globals; the CLI disables the engine's
 	// built-in console (Options.DisableConsole) so this one is authoritative.
-	if err := e.RegisterNamespaceFactory("console", func(_ *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
-		return consoleNamespace()
+	if err := e.RegisterNamespaceFactory("console", func(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
+		return consoleNamespace(vm)
 	}); err != nil {
 		return err
 	}
@@ -240,7 +241,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"log": func(call goja.FunctionCall) goja.Value {
 				parts := make([]string, 0, len(call.Arguments))
 				for _, a := range call.Arguments {
-					parts = append(parts, a.String())
+					parts = append(parts, formatValue(vm, a))
 				}
 				fmt.Println(strings.Join(parts, " "))
 				return goja.Undefined()
@@ -543,5 +544,12 @@ func valuesEqual(a, b goja.Value) bool {
 	if goja.IsNull(a) || goja.IsNull(b) {
 		return goja.IsNull(a) && goja.IsNull(b)
 	}
-	return a.StrictEquals(b)
+	if a.StrictEquals(b) {
+		return true
+	}
+	// Deep structural equality for objects/arrays — StrictEquals is reference
+	// equality, so two distinct objects with identical contents need this.
+	// Export() turns goja objects into Go map[string]any / []any, which
+	// reflect.DeepEqual compares recursively (map key order is irrelevant).
+	return reflect.DeepEqual(a.Export(), b.Export())
 }

@@ -617,12 +617,15 @@ scripts pasted from a browser or Node run unchanged:
 | `console.log` / `console.info` / `console.debug` | stdout |
 | `console.warn` / `console.error` | stderr |
 
-Each stringifies its arguments and prints one space-joined line — clean
-and prefix-free (no timestamp), unlike the goja default console. The CLI
-disables the engine's built-in console so this stream-correct shim is the
-only `console` a script sees. `runtime.log` is the native equivalent of
-`console.log` (stdout). Library embedders get the goja_nodejs console by
-default instead; toggle it with `Options.DisableConsole`.
+Each prints one space-joined line — clean and prefix-free (no
+timestamp), unlike the goja default console. Primitives print raw;
+objects and arrays render as JSON (`console.log({a:1})` → `{"a":1}`),
+with circular references falling back to `[object Object]` rather than
+throwing. The CLI disables the engine's built-in console so this
+stream-correct shim is the only `console` a script sees. `runtime.log`
+is the native equivalent of `console.log` (stdout) and formats the same
+way. Library embedders get the goja_nodejs console by default instead;
+toggle it with `Options.DisableConsole`.
 
 ### Migration from v0.8.0
 
@@ -651,9 +654,12 @@ for a sketch.
 
 Script-host scaffolding. Members:
 
-- `runtime.log(...args)` — stringify each argument and println the result.
+- `runtime.log(...args)` — print a space-joined line (primitives raw,
+  objects/arrays as JSON).
 - `runtime.assert.equal(actual, expected, msg?)` /
   `runtime.assert.ok(cond, msg?)` — throw on mismatch / falsy.
+  `assert.equal` is **deep**: distinct objects/arrays with identical
+  contents compare equal (structural, recursive — key order irrelevant).
 - `runtime.time.nowMs()` — current wall-clock in milliseconds.
 - `runtime.time.sleep(ms)` — Promise that resolves after `ms` on the
   event loop.

@@ -11,7 +11,7 @@ package main
 
 func runtimeDocs() map[string]string {
 	return map[string]string{
-		"log":          "Stringify each argument and print one space-separated line to stdout. The script-side equivalent of console.log without buffering.",
+		"log":          "Print one space-separated line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON (circular refs fall back to [object Object]). The script-side equivalent of console.log.",
 		"assert.equal": "Throw when actual != expected (strict equality on primitives, deep equality on objects). Optional msg appears in the error.",
 		"assert.ok":    "Throw when cond is falsy. Optional msg appears in the error.",
 		"time.nowMs":   "Wall-clock milliseconds since the Unix epoch.",
@@ -192,7 +192,7 @@ func serverDocs() map[string]string {
 
 func consoleDocs() map[string]string {
 	return map[string]string{
-		"log":   "Print a space-joined line of the stringified arguments to stdout. Browser/Node-compatible; same output as runtime.log.",
+		"log":   "Print a space-joined line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON. Browser/Node-compatible; same output as runtime.log.",
 		"info":  "Alias of console.log — stringified arguments, space-joined, to stdout.",
 		"debug": "Alias of console.log — stringified arguments, space-joined, to stdout.",
 		"warn":  "Like console.log but writes to stderr.",

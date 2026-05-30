@@ -25,11 +25,11 @@ var (
 // and all on stderr): the CLI disables the engine console via
 // Options.DisableConsole so this stream-correct, prefix-free one is the only
 // `console` a script sees.
-func consoleNamespace() map[string]any {
+func consoleNamespace(vm *goja.Runtime) map[string]any {
 	line := func(call goja.FunctionCall) string {
 		parts := make([]string, 0, len(call.Arguments))
 		for _, a := range call.Arguments {
-			parts = append(parts, a.String())
+			parts = append(parts, formatValue(vm, a))
 		}
 		return strings.Join(parts, " ")
 	}
@@ -48,4 +48,28 @@ func consoleNamespace() map[string]any {
 		"warn":  toStderr,
 		"error": toStderr,
 	}
+}
+
+// formatValue renders a value for console.* / runtime.log. Primitives
+// (including strings) print raw via String(); objects and arrays print as JSON
+// (browser/Node-style expansion) via the runtime's JSON.stringify, falling
+// back to String() for values JSON can't represent — functions (stringify
+// yields undefined) and circular references (stringify throws). So
+// console.log({a:1}) shows `{"a":1}` instead of `[object Object]`, while a
+// cycle degrades to `[object Object]` rather than crashing.
+func formatValue(vm *goja.Runtime, v goja.Value) string {
+	if v == nil {
+		return "undefined"
+	}
+	if _, isObj := v.(*goja.Object); !isObj {
+		return v.String() // string / number / bool / null / undefined
+	}
+	if jsonObj := vm.Get("JSON"); jsonObj != nil {
+		if fn, ok := goja.AssertFunction(jsonObj.ToObject(vm).Get("stringify")); ok {
+			if res, err := fn(goja.Undefined(), v); err == nil && res != nil && !goja.IsUndefined(res) {
+				return res.String()
+			}
+		}
+	}
+	return v.String()
 }

@@ -8,6 +8,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Changed
+
+- **`runtime.assert.equal` is now deep.** It compared by reference (goja
+  StrictEquals) despite its docs promising "deep equality on objects",
+  so two distinct objects/arrays with identical contents never matched.
+  It now does recursive structural comparison (key order irrelevant);
+  primitive comparison is unchanged.
+- **`console.*` and `runtime.log` render objects as JSON.** Object/array
+  arguments now print as JSON (`console.log({a:1})` → `{"a":1}`) instead
+  of `[object Object]`; primitives still print raw, and a circular value
+  falls back to `[object Object]` rather than throwing.
+
 ## [0.18.0] — 2026-05-30
 
 ### Added
