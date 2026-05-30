@@ -8,6 +8,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.13.2] — 2026-05-30
+
+### Fixed
+
+- **MANUAL cover date no longer goes stale.** The `<div class="date">`
+  line on the cover had no release marker, so `make release-prep` bumped
+  the version but left the date frozen at an old cut date. release-prep
+  now stamps the date with the cut date too, and `make version-check`
+  cross-checks the cover date against the CHANGELOG entry for the current
+  version — a stale date now fails the pre-release check.
+
 ## [0.13.1] — 2026-05-30
 
 ### Changed
