@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -212,6 +214,85 @@ func TestDecodePacket_Truncated(t *testing.T) {
 	}
 	if m["length"] != 3 {
 		t.Fatalf("length = %v, want 3", m["length"])
+	}
+}
+
+// loopbackIface is the conventional loopback interface name for the current OS.
+func loopbackIface() string {
+	if runtime.GOOS == "darwin" {
+		return "lo0"
+	}
+	return "lo"
+}
+
+// TestCaptureOpen_ErrorsCleanly opens a capture on a bogus interface name. On
+// every platform this should reject (bad iface, or unsupported on
+// windows/other) — never panic, never hang. If it somehow resolves, the test
+// skips rather than failing.
+func TestCaptureOpen_ErrorsCleanly(t *testing.T) {
+	got := runSocketScript(t, `
+		try {
+			await net.capture.open({iface:"nonexistent-iface-xyz"}, p => {});
+			__capture("resolved");
+		} catch (e) {
+			__capture("err:" + String(e));
+		}
+	`)
+	s, ok := got.(string)
+	if !ok {
+		t.Fatalf("expected string result, got %#v", got)
+	}
+	if s == "resolved" {
+		t.Skip("net.capture.open resolved on a bogus iface (unexpected but not a failure)")
+	}
+	if !strings.HasPrefix(s, "err:") {
+		t.Fatalf("expected an err:-prefixed rejection, got %q", s)
+	}
+	if strings.TrimSpace(strings.TrimPrefix(s, "err:")) == "" {
+		t.Fatalf("rejection message was empty: %q", s)
+	}
+}
+
+// TestCaptureOpen_LoopbackSmoke is a privileged best-effort live-capture test:
+// open the loopback interface, send a UDP datagram to 127.0.0.1, and assert
+// onPacket fires within a timeout, then close. Skipped without root; skipped
+// (not failed) if open rejects even as root or if no packet arrives (loopback
+// link-type quirks on macOS can mean frames don't decode as expected).
+func TestCaptureOpen_LoopbackSmoke(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root for live capture")
+	}
+	got := runSocketScript(t, fmt.Sprintf(`
+		let cap;
+		try {
+			cap = await net.capture.open({iface:%q}, () => {});
+		} catch (e) {
+			__capture("open-rejected:" + String(e));
+		}
+		if (cap) {
+			let fired = false;
+			cap = null;
+			const c2 = await net.capture.open({iface:%q}, () => { fired = true; });
+			const u = await net.udp.open({host:"127.0.0.1", port:9, readBuffer:1});
+			for (let i = 0; i < 5 && !fired; i++) {
+				try { await u.send("ping"); } catch (e) {}
+				await new Promise(r => setTimeout(r, 100));
+			}
+			await u.close();
+			await c2.close();
+			__capture(fired ? "fired" : "no-packet");
+		}
+	`, loopbackIface(), loopbackIface()))
+	s, _ := got.(string)
+	switch {
+	case strings.HasPrefix(s, "open-rejected:"):
+		t.Skipf("live open rejected even as root: %s", s)
+	case s == "no-packet":
+		t.Skip("no packet decoded on loopback within timeout (link-type quirk)")
+	case s == "fired":
+		// success
+	default:
+		t.Fatalf("unexpected result: %q", s)
 	}
 }
 

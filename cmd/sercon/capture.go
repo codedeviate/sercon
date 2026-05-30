@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -27,8 +28,139 @@ import (
 func captureNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) map[string]any {
 	return map[string]any{
 		"interfaces": captureInterfacesFn(vm),
+		"open":       captureOpenFn(vm, loop, eng),
 		"openFile":   captureOpenFileFn(vm, loop, eng),
 		"toFile":     captureToFileFn(vm, loop, eng),
+	}
+}
+
+// liveSource is a platform-specific live packet reader. The per-OS backends
+// (capture_linux.go / capture_darwin.go / capture_other.go) define
+// openLiveCapture which returns a value satisfying this interface.
+type liveSource interface {
+	ReadPacketData() ([]byte, gopacket.CaptureInfo, error)
+	LinkType() layers.LinkType
+	Close() error
+}
+
+// openLiveCapture opens a live capture handle on iface in promiscuous mode (if
+// promisc) with the given snaplen. It is implemented per-OS via build tags:
+// capture_linux.go (AF_PACKET), capture_darwin.go (BPF), and capture_other.go
+// (the !linux && !darwin stub that returns an "unsupported" error). Permission
+// failures are wrapped with a platform-specific privilege hint by the backend.
+
+// captureOpenFn implements net.capture.open({iface, promisc?, snaplen?},
+// onPacket). It returns a Promise that resolves to a live-capture handle
+// { iface, link, close() }. The privileged open() happens OFF the loop in a
+// goroutine (it may block / needs root); on success the handle is built back
+// ON the loop and a reader goroutine starts dispatching decoded packets to
+// onPacket via a LoopCallable. Mirrors socket_tcp.go's hand-rolled promise +
+// dial-time HoldRun handoff: a dial-time hold keeps the loop alive across the
+// open, handed off to the capture's own hold on success.
+//
+// opts: { iface (required), promisc? (default true), snaplen? (default
+// 262144) }.
+func captureOpenFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		// Parse opts on the loop (goja values aren't safe off-loop).
+		iface := ""
+		promisc := true
+		snaplen := 262144
+		if opts := call.Argument(0); opts != nil && !goja.IsUndefined(opts) && !goja.IsNull(opts) {
+			if m, ok := opts.Export().(map[string]any); ok {
+				iface = optString(m, "iface", "")
+				promisc = optBool(m, "promisc", promisc)
+				snaplen = optInt(m, "snaplen", snaplen)
+			}
+		}
+
+		fn, ok := goja.AssertFunction(call.Argument(1))
+		if !ok {
+			panic(vm.NewTypeError("net.capture.open: second argument must be a function"))
+		}
+		handler := scriptengine.NewLoopCallable(loop, fn)
+
+		promise, resolve, reject := vm.NewPromise()
+		if iface == "" {
+			// Reject asynchronously so the returned value is always a Promise.
+			_ = reject(vm.NewGoError(errors.New("net.capture.open: opts.iface is required")))
+			return vm.ToValue(promise)
+		}
+
+		// Hold the loop alive across the off-loop open: vm.NewPromise() + a
+		// goroutine does not bump the loop's jobCount, so without this the loop
+		// could exit before the open resolves. Handed off to the capture's own
+		// hold on success; released on the loop on failure.
+		dialHold := eng.HoldRun("capture open " + iface)
+
+		go func() {
+			src, err := openLiveCapture(iface, promisc, snaplen)
+			if err != nil {
+				loop.RunOnLoop(func(vm *goja.Runtime) {
+					dialHold()
+					_ = reject(vm.NewGoError(err))
+				})
+				return
+			}
+			loop.RunOnLoop(func(vm *goja.Runtime) {
+				// Take the capture's own hold, then release the dial hold.
+				captureHold := eng.HoldRun("capture " + iface)
+				dialHold()
+
+				link := src.LinkType()
+				var holdReleased atomic.Bool
+				releaseHold := func() {
+					if !holdReleased.Swap(true) {
+						captureHold()
+					}
+				}
+
+				// Reader goroutine: read + decode off-loop, dispatch on-loop.
+				// A closed source makes ReadPacketData return an error, which
+				// ends the loop; release the capture hold exactly once on exit.
+				go func() {
+					defer releaseHold()
+					for {
+						data, ci, rerr := src.ReadPacketData()
+						if rerr != nil {
+							return
+						}
+						o := decodePacket(data, link, ci)
+						if _, cerr := handler.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+							return []goja.Value{scriptengine.OrderedToValue(vm, o)}, nil
+						}); cerr != nil {
+							return
+						}
+					}
+				}()
+
+				var closed atomic.Bool
+				obj := vm.NewObject()
+				_ = obj.Set("iface", iface)
+				_ = obj.Set("link", link.String())
+				_ = obj.Set("close", func(goja.FunctionCall) goja.Value {
+					promise, resolve, reject := vm.NewPromise()
+					if closed.Swap(true) {
+						_ = resolve(goja.Undefined())
+						return vm.ToValue(promise)
+					}
+					// Close unblocks ReadPacketData so the reader exits and
+					// releases its hold; also release here in case the reader
+					// already exited on an error.
+					cerr := src.Close()
+					releaseHold()
+					if cerr != nil {
+						_ = reject(vm.NewGoError(fmt.Errorf("net.capture.open.close: %w", cerr)))
+					} else {
+						_ = resolve(goja.Undefined())
+					}
+					return vm.ToValue(promise)
+				})
+				_ = resolve(obj)
+			})
+		}()
+
+		return vm.ToValue(promise)
 	}
 }
 
