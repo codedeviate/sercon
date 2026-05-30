@@ -1556,10 +1556,12 @@ the rest, so a partial send still delivers to the accepted recipients.
 
 `server.tcp.listen` and `server.udp.listen` are the inbound counterparts
 to the `net.tcp.connect` / `net.udp.open` clients (§5 `net`). They bind a
-listening socket **synchronously** — a port already in use throws
-immediately, before the returned Promise resolves — then serve in the
-background, keeping the event loop alive via the same `HoldRun` model as
-the HTTP and SMTP listeners. Passing `port: 0` binds an OS-chosen
+listening socket **synchronously** and return the server handle directly —
+a port already in use throws immediately — then serve in the background,
+keeping the event loop alive via the same `HoldRun` model as the HTTP and
+SMTP listeners. `srv.close()` returns a `Promise<void>` (resolving once the
+listener is closed and accepted connections are drained), matching the rest
+of the `server.*` family. Passing `port: 0` binds an OS-chosen
 ephemeral port; read it back from the returned handle's `address`.
 
 Both return a server handle:

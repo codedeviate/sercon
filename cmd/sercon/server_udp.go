@@ -108,12 +108,15 @@ func udpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 	handle := vm.NewObject()
 	_ = handle.Set("address", fmt.Sprintf("udp/%s", conn.LocalAddr().String()))
 	closeOnce := atomic.Bool{}
+	// close() returns Promise<void> for parity with the rest of server.*.
 	_ = handle.Set("close", func(goja.FunctionCall) goja.Value {
+		promise, resolve, _ := vm.NewPromise()
 		if !closeOnce.Swap(true) {
 			_ = conn.Close()
 			release()
 		}
-		return goja.Undefined()
+		_ = resolve(goja.Undefined())
+		return vm.ToValue(promise)
 	})
 	return handle
 }
