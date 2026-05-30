@@ -8,6 +8,8 @@
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-scriptengine-007d9c?logo=go)](https://pkg.go.dev/github.com/codedeviate/sercon/pkg/scriptengine)
 [![Homebrew](https://img.shields.io/badge/homebrew-codedeviate%2Fcli%2Fsercon-fbb040?logo=homebrew)](https://github.com/codedeviate/homebrew-cli)
 
+***Sercon – Reconnaissance, shaped by code***
+
 
 `sercon` is a CLI tool for running TypeScript scripts for reconnaissance,
 troubleshooting, and testing. Write a short `.ts` file, hand it to `sercon`,
