@@ -8,6 +8,25 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-05-30
+
+### Changed
+
+- **Stable JSON key order for several binding results.** `net.probe.tcp`/
+  `ping`/`smtp`/`wss`, `db.dict.define`/`match`, `services.gh.authStatus`,
+  and `services.git.*` (branch/status/add/commit/log/diffStat/runText) now
+  return json-tagged structs instead of `map[string]any`. goja takes a JS
+  object's property order from Go map iteration, which Go randomizes per
+  process — so `JSON.stringify` of these results previously shuffled keys
+  run-to-run, breaking canonical-serialization hashing (payment signing,
+  webhook signatures). Struct field order is deterministic, so the output
+  is now byte-stable; the emitted `sercon.d.ts` types also sharpen from
+  `Record<string, unknown>` to precise object shapes. Result keys, values,
+  and order are otherwise unchanged. (Bindings with conditionally-present
+  or dynamic keys are tracked separately — see OUT-OF-SCOPE.md; a struct
+  can't represent them because goja exposes every field regardless of
+  `omitempty`.)
+
 ## [0.15.0] — 2026-05-30
 
 ### Added
