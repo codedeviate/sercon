@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"sync/atomic"
 	"time"
@@ -25,8 +26,37 @@ import (
 // long-lived openFile read keeps the loop alive via HoldRun.
 func captureNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) map[string]any {
 	return map[string]any{
-		"openFile": captureOpenFileFn(vm, loop, eng),
-		"toFile":   captureToFileFn(vm, loop, eng),
+		"interfaces": captureInterfacesFn(vm),
+		"openFile":   captureOpenFileFn(vm, loop, eng),
+		"toFile":     captureToFileFn(vm, loop, eng),
+	}
+}
+
+// captureInterfacesFn implements net.capture.interfaces(): a synchronous list
+// of the host's network interfaces, each { name, addresses, up, loopback }.
+// Pure-Go (net.Interfaces); built on the loop so the ordered objects convert
+// directly. Throws on enumeration failure.
+func captureInterfacesFn(vm *goja.Runtime) func(goja.FunctionCall) goja.Value {
+	return func(goja.FunctionCall) goja.Value {
+		ifaces, err := net.Interfaces()
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("net.capture.interfaces: %w", err)))
+		}
+		out := make([]*scriptengine.Ordered, 0, len(ifaces))
+		for _, iface := range ifaces {
+			addrs := []any{}
+			if as, err := iface.Addrs(); err == nil {
+				for _, a := range as {
+					addrs = append(addrs, a.String())
+				}
+			}
+			out = append(out, scriptengine.NewOrdered().
+				Set("name", iface.Name).
+				Set("addresses", addrs).
+				Set("up", iface.Flags&net.FlagUp != 0).
+				Set("loopback", iface.Flags&net.FlagLoopback != 0))
+		}
+		return scriptengine.OrderedToValue(vm, out)
 	}
 }
 

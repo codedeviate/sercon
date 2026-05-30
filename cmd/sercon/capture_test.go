@@ -214,3 +214,15 @@ func TestDecodePacket_Truncated(t *testing.T) {
 		t.Fatalf("length = %v, want 3", m["length"])
 	}
 }
+
+func TestCaptureInterfaces_ListsLoopback(t *testing.T) {
+	got := runSocketScript(t, `
+		const ifs = net.capture.interfaces();
+		if (!Array.isArray(ifs) || ifs.length === 0) throw new Error("no interfaces");
+		const lo = ifs.find(i => i.loopback);
+		__capture(lo ? "lo:" + (typeof lo.name) + ":" + Array.isArray(lo.addresses) : "none");
+	`)
+	if got != "lo:string:true" {
+		t.Fatalf("interfaces(): expected a loopback iface with name+addresses; got %q", got)
+	}
+}
