@@ -8,6 +8,25 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **`net.capture` `filter` option — tcpdump-syntax packet filtering.**
+  Both `net.capture.open({ iface, …, filter? }, pkt => {…})` and
+  `net.capture.openFile(path, pkt => {…}, { filter? })` (the `filter` lives
+  in a **new trailing opts argument** on `openFile`; the two-argument form
+  still works) now accept an optional tcpdump-like expression string.
+  Supported subset: protocols `tcp` / `udp` / `icmp` / `ip` / `ip6`;
+  `host X` / `src host X` / `dst host X` (IPv4 or IPv6); `port N` /
+  `src port N` / `dst port N`; `and` / `or` / `not` and parentheses; and
+  implicit-and between juxtaposed primaries (`tcp port 80` ==
+  `tcp and port 80`). The filter is evaluated **post-decode in userspace**
+  — it is **not** compiled to a kernel BPF program, so it saves the
+  JS-callback dispatch and object-conversion cost for non-matching packets
+  but does **not** avoid the kernel→userspace copy. `net X/Y` (CIDR) and
+  `portrange` are not supported yet; a malformed expression makes
+  `open` / `openFile` reject. The `capture-file.ts` example now also does a
+  filtered read.
+
 ## [0.24.0] — 2026-05-31
 
 ### Added

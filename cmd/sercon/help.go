@@ -924,15 +924,19 @@ await net.capture.openFile("/tmp/x.pcap", (pkt) => {
   runtime.log(pkt.link, pkt.ip?.src, "->", pkt.ip?.dst, pkt.udp?.dstPort);
 });
 
+// Optional tcpdump-like filter (post-decode, userspace — not kernel BPF).
+// Trailing opts arg on openFile; the 2-arg form still works.
+await net.capture.openFile("/tmp/x.pcap", (pkt) => {
+  runtime.log("tcp/443:", pkt.ip?.src, "->", pkt.ip?.dst);
+}, { filter: "tcp port 443" });
+
 // Live capture — Linux + macOS only, needs root / CAP_NET_RAW (Linux) or
-// /dev/bpf (macOS); Windows rejects. Filter INSIDE the callback (no BPF
-// expressions). Decoded pkt: { ts, length, captureLength, link, eth?, ip?,
-// tcp?, udp?, icmp?, payload?, bytes }.
-// const cap = await net.capture.open({ iface: "en0" }, (pkt) => {
-//   if (pkt.tcp?.dstPort === 80) runtime.log(pkt.ip?.src, "->", pkt.ip?.dst);
-// });
+// /dev/bpf (macOS); Windows rejects. Decoded pkt: { ts, length,
+// captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }.
+// const cap = await net.capture.open({ iface: "en0", filter: "tcp and port 80" },
+//   (pkt) => runtime.log(pkt.ip?.src, "->", pkt.ip?.dst));
 // await cap.close();`)
-	note("Live open() is Linux/macOS-only and needs raw-socket privileges (Windows rejects); interfaces/openFile/toFile are offline and unprivileged. No BPF-expression filters — filter in the callback; common-layer decode only (exotic protocols surface as bytes). See MANUAL.md §net.")
+	note("Live open() is Linux/macOS-only and needs raw-socket privileges (Windows rejects); interfaces/openFile/toFile are offline and unprivileged. Optional filter is a tcpdump-like subset (tcp/udp/icmp/ip/ip6, host/port, and/or/not) evaluated post-decode in userspace — not a kernel BPF program; no CIDR/portrange yet; malformed throws. Common-layer decode only (exotic protocols surface as bytes). See MANUAL.md §net.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

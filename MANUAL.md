@@ -890,19 +890,22 @@ Packet capture and pcap file I/O, powered by **pure-Go gopacket** (no
 - `net.capture.interfaces()` — **synchronous**; returns an array of
   `{ name, addresses: string[], up, loopback }` for the host's network
   interfaces. Pure-Go (`net.Interfaces`); no privileges, all platforms.
-- `net.capture.open({ iface, promisc?, snaplen? }, pkt => {…})` — start a
-  **live** capture on `iface`. Resolves to a handle `{ iface, link,
+- `net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…})` —
+  start a **live** capture on `iface`. Resolves to a handle `{ iface, link,
   close() }`; the per-frame handler receives a decoded packet object (see
-  below). `promisc` defaults `true`; `snaplen` defaults `262144`.
+  below). `promisc` defaults `true`; `snaplen` defaults `262144`. `filter`
+  is an optional tcpdump-like expression string (see **Filtering** below).
   **Linux + macOS only** — Linux uses `AF_PACKET`, macOS uses BPF
   (`/dev/bpf`); **Windows is unsupported** and `open()` rejects there.
   Requires **root / `CAP_NET_RAW` (Linux)** or **`/dev/bpf` read access
   (macOS)**; without the privilege `open()` rejects naming the
   requirement. `close()` returns `Promise<void>`.
-- `net.capture.openFile(path, pkt => {…})` — read a `.pcap` / `.pcapng`
-  file (format auto-detected from the magic bytes), calling the handler
-  once per decoded packet. Returns a `Promise` that resolves at EOF.
-  Offline; no privileges.
+- `net.capture.openFile(path, pkt => {…}, opts?)` — read a `.pcap` /
+  `.pcapng` file (format auto-detected from the magic bytes), calling the
+  handler once per decoded packet. Returns a `Promise` that resolves at
+  EOF. Offline; no privileges. `opts` is an optional trailing argument
+  `{ filter? }` (the two-argument form still works); `filter` is the same
+  tcpdump-like expression string as `open` (see **Filtering** below).
 - `net.capture.toFile(path, { linkType?, snaplen? })` — open/create a
   `.pcap` file and return `{ write(bytes, { ts? }), close() }`. `write`
   appends a raw frame (a `Uint8Array`); `opts.ts` (ms) overrides the
@@ -931,11 +934,34 @@ Layer keys (`eth` / `ip` / `tcp` / `udp` / `icmp` / `payload`) are present
 yields the always-present `ts` / `length` / `captureLength` / `link` /
 `bytes`.
 
-**Limitations.** No live capture on Windows. **No BPF-expression filters**
-(`"tcp port 80"`) — filter inside the callback on the decoded fields.
-Common-layer decode only (Ethernet / IPv4 / IPv6 / TCP / UDP / ICMP);
-exotic protocols surface only as raw `bytes`. At high packet rates frames
-backpressure and drop at the kernel, exactly like `tcpdump`.
+**Filtering.** Both `open` and `openFile` accept an optional `filter`
+string — a **subset of tcpdump syntax**. Supported grammar:
+
+- protocols: `tcp`, `udp`, `icmp`, `ip`, `ip6`;
+- hosts: `host X`, `src host X`, `dst host X` (IPv4 or IPv6 address);
+- ports: `port N`, `src port N`, `dst port N`;
+- boolean composition: `and`, `or`, `not`, and parentheses;
+- **implicit-and** between juxtaposed primaries — `tcp port 80` is exactly
+  `tcp and port 80`.
+
+Example: `net.capture.open({ iface: "en0", filter: "tcp and port 80" },
+pkt => {…})`, or `net.capture.openFile("cap.pcap", pkt => {…},
+{ filter: "udp or icmp" })`.
+
+The filter is a **userspace, post-decode** predicate — it is **not**
+compiled to a kernel BPF program. It runs on each frame *after* gopacket
+has decoded it, so it saves the JS-callback dispatch and object-conversion
+cost for non-matching packets but does **not** avoid the kernel→userspace
+copy (a real kernel filter would). `net X/Y` (CIDR) and `portrange` are
+**not supported yet**. A malformed expression makes `open` / `openFile`
+**reject**.
+
+**Limitations.** No live capture on Windows. The `filter` grammar is the
+tcpdump subset above (no CIDR / `portrange`); for anything beyond it,
+filter inside the callback on the decoded fields. Common-layer decode only
+(Ethernet / IPv4 / IPv6 / TCP / UDP / ICMP); exotic protocols surface only
+as raw `bytes`. At high packet rates frames backpressure and drop at the
+kernel, exactly like `tcpdump`.
 
 The pcap file API round-trips: write raw frames with `toFile`, read them
 back decoded with `openFile`, no privileges required (see
