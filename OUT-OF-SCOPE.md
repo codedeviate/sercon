@@ -61,12 +61,11 @@ Read/write client sockets shipped in v0.22.0: `net.tcp.connect`,
 `net.udp.open` (connected + bound), and `net.icmp.open` (raw ICMP,
 needs root / CAP_NET_RAW) — all with a push/callback read model
 (`onData`/`onMessage` + `onClose`/`onError`), on the shared
-`socket_common.go` scaffold. The remaining gaps:
+`socket_common.go` scaffold. `net.icmp` `send` gained raw (non-Echo)
+message bodies in v0.27.0 (`body` → `icmp.RawBody`, marshalled verbatim,
+for hand-built messages such as destination-unreachable). No open gaps
+remain in this subsection:
 
-- **ICMP arbitrary message bodies.** `net.icmp.open`'s `send` builds an
-  Echo-shaped body (id/seq/payload) with a customizable type/code —
-  enough for echo/timestamp-style probing. Hand-built non-Echo bodies
-  (e.g. a crafted destination-unreachable) aren't modelled yet.
 - **Interface / address enumeration shipped** as `net.capture.interfaces`
   (v0.24.0 — stdlib `net.Interfaces`, returning `{ name, addresses, up,
   loopback }` per interface). A general `net.interfaces` alias outside the

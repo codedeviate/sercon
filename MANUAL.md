@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.26.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.27.0</div> <!-- x-release-please-version -->
 <div class="date">2026-05-31</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -3606,20 +3606,22 @@ const r = await net.http.request("POST", "https://api.example.com", { headers: {
 open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): void
 ```
 
-Open a raw ICMP socket: net.icmp.open(opts?) → Promise<handle>. Requires root / CAP_NET_RAW (open rejects otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. handle.send({ to, type?, code?, id?, seq?, payload? }) builds an Echo-shaped body (non-Echo bodies not modelled); push/callback model — onMessage(cb) events carry { address, type, code }; onClose(cb)/onError(cb); handle.network/local; handle.close().
+Open a raw ICMP socket: net.icmp.open(opts?) → Promise<handle>. Requires root / CAP_NET_RAW (open rejects otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. handle.send(opts) writes a message in one of two modes: Echo mode { to, type?, code?, id?, seq?, payload? } (type defaults to the network's echo request), or raw mode { to, type, code?, body } where body (Uint8Array|string) is marshalled verbatim (icmp.RawBody) for hand-built non-Echo messages such as destination-unreachable — in raw mode type is required and body is mutually exclusive with id/seq/payload. push/callback model — onMessage(cb) events carry { address, type, code }; onClose(cb)/onError(cb); handle.network/local; handle.close().
 
 **Parameters**
 
 - `opts` *({ network?: "ip4" | "ip6", readBuffer?: number }, optional)* — network selects the IP version (default 'ip4'); readBuffer is the inbound channel capacity (default 64).
 
-**Returns:** Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose, onError, close(): void }> — a raw-ICMP handle. send builds an ICMP message (Echo-shaped body; type defaults to the network's echo request, to is the destination address). onMessage fires per received packet with the marshalled body plus { address, type, code } meta.
+**Returns:** Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array, body?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose, onError, close(): void }> — a raw-ICMP handle. send writes an ICMP message: omit body for an Echo-shaped body (type defaults to the network's echo request, id/seq/payload optional); provide body for a verbatim raw body (type required, mutually exclusive with id/seq/payload) to hand-build non-Echo messages such as destination-unreachable. to is the destination address. onMessage fires per received packet with the marshalled body plus { address, type, code } meta.
 
-**Throws:** Rejects if the raw socket can't be opened — typically because it needs root / CAP_NET_RAW. send rejects on resolve/marshal/write errors, throws synchronously after close, and throws if opts.to is missing. Read errors surface via onError.
+**Throws:** Rejects if the raw socket can't be opened — typically because it needs root / CAP_NET_RAW. send rejects on resolve/marshal/write errors and throws synchronously: after close, if opts.to is missing, if a raw body is sent without opts.type, or if body is combined with id/seq/payload. Read errors surface via onError.
 
 ```ts
 const p = await net.icmp.open();
 p.onMessage(ev => runtime.log(ev.address, ev.type));
 await p.send({ to: "8.8.8.8", id: 1, seq: 1, payload: "ping" });
+// raw (non-Echo) body — e.g. a hand-built destination-unreachable:
+await p.send({ to: "8.8.8.8", type: 3, code: 1, body: new Uint8Array([0, 0, 0, 0]) });
 ```
 
 #### net.netstatus.check
@@ -5214,7 +5216,7 @@ p.writeln("hello");
 
 ---
 
-*This manual covers sercon v0.26.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.27.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

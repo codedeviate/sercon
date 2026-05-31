@@ -8,6 +8,20 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-05-31
+
+### Added
+
+- **`net.icmp` raw (non-Echo) message bodies.** `handle.send()` gains a
+  raw-body mode: pass `body` (`Uint8Array | string`) and the message is
+  marshalled verbatim via `icmp.RawBody` instead of being forced into an
+  Echo (`id`/`seq`/`payload`) layout, so scripts can hand-build non-Echo
+  messages such as a crafted destination-unreachable. In raw mode `type` is
+  required and `body` is mutually exclusive with `id` / `seq` / `payload`;
+  omitting `body` preserves the existing Echo behaviour exactly. Opts
+  parsing + validation is factored into the privilege-free
+  `parseICMPSendOpts` so the rules are unit-tested without a raw socket.
+
 ## [0.26.0] — 2026-05-31
 
 ### Added
