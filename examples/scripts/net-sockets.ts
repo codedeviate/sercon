@@ -17,10 +17,13 @@
 //   await t.close();
 //
 //   // ICMP (raw socket — needs root / CAP_NET_RAW; open() rejects otherwise).
-//   // send() builds an Echo-shaped body (id/seq/payload); type/code optional.
+//   // send() has two modes: Echo { to, type?, code?, id?, seq?, payload? }
+//   // and raw { to, type, code?, body } (body marshalled verbatim).
 //   const ic = await net.icmp.open({ network: "ip4" });
 //   ic.onMessage(ev => runtime.log("icmp", ev.type, ev.code, "from", ev.address));
 //   await ic.send({ to: "127.0.0.1", id: 1, seq: 1, payload: "ping" });
+//   // hand-built destination-unreachable (type 3, code 1) — raw body:
+//   await ic.send({ to: "127.0.0.1", type: 3, code: 1, body: new Uint8Array([0, 0, 0, 0]) });
 //   await ic.close();
 
 // --- UDP loopback self-test (the part that actually runs) ---

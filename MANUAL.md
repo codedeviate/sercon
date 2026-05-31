@@ -859,12 +859,15 @@ a `Promise` for a handle object:
 - `net.icmp.open(opts?)` — open a raw ICMP socket. **Requires root /
   `CAP_NET_RAW`**; without the privilege `open()` rejects with an error
   naming that requirement. opts `{ network?: "ip4" | "ip6" (default
-  "ip4"), readBuffer? }`. `send({ to, type?, code?, id?, seq?, payload? })`
-  builds and writes a message; `type` defaults to the network's echo
-  request. **The body is always Echo-shaped** (`id` / `seq` / `payload`) —
-  only the `type` / `code` are customizable, non-Echo bodies are not
-  modelled. The handle has `network` / `local`; inbound events carry
-  `address` / `type` / `code` and arrive via `onMessage`.
+  "ip4"), readBuffer? }`. `send(opts)` writes a message in one of two
+  modes: **Echo mode** `{ to, type?, code?, id?, seq?, payload? }` builds an
+  Echo-shaped body (`type` defaults to the network's echo request), or
+  **raw mode** `{ to, type, code?, body }` marshals `body`
+  (`Uint8Array | string`) verbatim — for hand-built non-Echo messages such
+  as a crafted destination-unreachable. In raw mode `type` is required and
+  `body` is mutually exclusive with `id` / `seq` / `payload`. The handle has
+  `network` / `local`; inbound events carry `address` / `type` / `code` and
+  arrive via `onMessage`.
 
 All three handles share the same callback surface and lifecycle:
 
