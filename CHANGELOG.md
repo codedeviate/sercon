@@ -8,6 +8,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.29.1] — 2026-05-31
+
+### Fixed
+
+- **Empty / comment-only entry scripts no longer fail to run.** v0.29.0
+  attached an inline source map to the entry script unconditionally; an
+  empty, whitespace-only, or comment-only script transpiles to a body with
+  no source-map segments, and goja rejects an attached map with empty
+  mappings (`mappings are empty`). The map is now skipped when there is
+  nothing to map.
+
 ## [0.29.0] — 2026-05-31
 
 ### Changed
