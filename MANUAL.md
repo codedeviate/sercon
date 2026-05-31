@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.28.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.29.0</div> <!-- x-release-please-version -->
 <div class="date">2026-05-31</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -1855,6 +1855,13 @@ JS is what executes. Practical implications:
   errors are. Run a separate `tsc --noEmit` in CI if you want type
   enforcement.
 - `tsconfig.json` is **not** consulted.
+- **Runtime errors report TypeScript positions.** Stack traces in thrown
+  errors point at the original `.ts` line/column, not the transpiled JS —
+  for both the entry script and imported `.ts`/`.tsx` modules, and for both
+  synchronous throws and async (top-level-`await`) rejections. This is done
+  with inline source maps that goja consumes natively; the entry script's
+  ESM→CJS rewrite is line-shift-aware so its frames map correctly too. If a
+  map is ever unavailable the trace falls back to transpiled-JS positions.
 
 `.tsx` and `.jsx` are supported via esbuild's `LoaderTSX` / `LoaderJSX`,
 including for required modules resolved by the engine's extension
@@ -5250,7 +5257,7 @@ p.writeln("hello");
 
 ---
 
-*This manual covers sercon v0.28.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.29.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

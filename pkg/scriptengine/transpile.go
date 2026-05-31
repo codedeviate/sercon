@@ -38,9 +38,9 @@ var gojaUnsupported = map[string]bool{
 // preserves it into its output, where goja would reject it as an illegal
 // token. We blank the line *in place* — dropping the shebang text but keeping
 // the terminating newline — rather than removing the line, so transpile
-// (syntax) error line numbers stay aligned with the original source (and any
-// future source-mapped runtime errors would too). Sources that don't begin
-// with "#!" are returned unchanged.
+// (syntax) error line numbers stay aligned with the original source (as do
+// the source-mapped runtime error positions emitted below). Sources that
+// don't begin with "#!" are returned unchanged.
 func stripShebang(source string) string {
 	if !strings.HasPrefix(source, "#!") {
 		return source

@@ -82,13 +82,6 @@ remain in this subsection:
 
 ### Engine
 
-- **Source-map-aware error mapping.** `transpile.go` claims this in its
-  package comment but esbuild's source maps are not yet wired into
-  `*goja.Exception` stack frames. Errors in `.ts` scripts currently point
-  at the transpiled JS line numbers. **Library:**
-  `github.com/go-sourcemap/sourcemap` is already in `go.sum`, but the
-  hard part is wiring it through goja's exception path and rewriting
-  every frame consistently, not parsing the map itself.
 - **Top-level export capture.** `Engine.Run` resolves with whatever
   `__resolve` receives, which is always `undefined` today. Wiring the
   entry-script body so its trailing expression flows into the resolve

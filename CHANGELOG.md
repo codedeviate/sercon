@@ -8,6 +8,22 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-05-31
+
+### Changed
+
+- **Source-mapped error positions.** Runtime errors in `.ts` scripts now
+  report TypeScript line/column numbers instead of transpiled-JS positions —
+  for both the entry script and imported `.ts`/`.tsx` modules, and for both
+  synchronous throws and async (top-level-`await`) rejections. Implemented
+  with inline source maps that goja consumes natively; the entry script's
+  ESM→CJS rewrite is line-shift-aware. If a map is unavailable, traces fall
+  back to transpiled-JS positions (never worse).
+- Script error strings now include the **full** stack: previously async
+  rejections were message-only and synchronous throws showed only the top
+  frame. `errors.As(err, **goja.Exception)` still works (the wrapper unwraps
+  to the underlying `*goja.Exception`).
+
 ## [0.28.0] — 2026-05-31
 
 ### Added
