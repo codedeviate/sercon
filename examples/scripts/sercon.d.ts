@@ -3,41 +3,96 @@
 
 /** Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent. */
 declare const console: {
-  /** Alias of console.log — stringified arguments, space-joined, to stdout. */
-  debug(...args: unknown[]): unknown;
-  /** Like console.log but writes to stderr. */
-  error(...args: unknown[]): unknown;
-  /** Alias of console.log — stringified arguments, space-joined, to stdout. */
-  info(...args: unknown[]): unknown;
-  /** Print a space-joined line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON. Browser/Node-compatible; same output as runtime.log. */
-  log(...args: unknown[]): unknown;
-  /** Like console.log but writes to stderr. */
-  warn(...args: unknown[]): unknown;
+  /**
+   * Alias of console.log — stringified arguments, space-joined, to stdout.
+   * @param args Values to print; identical formatting and stdout destination as console.log.
+   * @returns void — output is written to stdout as a side effect.
+   */
+  debug(args: ...unknown[]): void;
+  /**
+   * Like console.log but writes to stderr.
+   * @param args Values to print; same space-joined / JSON formatting as console.log but routed to stderr.
+   * @returns void — output is written to stderr as a side effect.
+   */
+  error(args: ...unknown[]): void;
+  /**
+   * Alias of console.log — stringified arguments, space-joined, to stdout.
+   * @param args Values to print; identical formatting and stdout destination as console.log.
+   * @returns void — output is written to stdout as a side effect.
+   */
+  info(args: ...unknown[]): void;
+  /**
+   * Print a space-joined line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON. Browser/Node-compatible; same output as runtime.log.
+   * @param args Values to print, joined by single spaces and terminated with a newline. Primitives (string/number/boolean/null/undefined) print raw; objects and arrays render as JSON via JSON.stringify, falling back to String() for functions and circular references.
+   * @returns void — output is written to stdout as a side effect.
+   */
+  log(args: ...unknown[]): void;
+  /**
+   * Like console.log but writes to stderr.
+   * @param args Values to print; same space-joined / JSON formatting as console.log but routed to stderr.
+   * @returns void — output is written to stderr as a side effect.
+   */
+  warn(args: ...unknown[]): void;
 };
 
 /** Script-host scaffolding: logging, assertions, time, environment, runtime.argv. */
 declare const runtime: {
-  /** Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is the program name (sercon), argv[1] is the running script path, and any args after `--` on the command line start at argv[2]. */
+  /**
+   * Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is the program name (sercon), argv[1] is the running script path, and any args after `--` on the command line start at argv[2].
+   * @returns string[] — the per-run argument vector. argv[0] is the program name ("sercon"), argv[1] is the running script's path, and entries from index 2 onward are the user arguments passed after `--` on the command line. This is a value (property), not a function.
+   */
   argv: string[];
   assert: {
-    /** Throw when actual != expected (strict equality on primitives, deep equality on objects). Optional msg appears in the error. */
-    equal(arg0: unknown, arg1: unknown, arg2: unknown[]): void;
-    /** Throw when cond is falsy. Optional msg appears in the error. */
-    ok(arg0: unknown, arg1: unknown[]): void;
+    /**
+     * Throw when actual != expected (strict equality on primitives, deep equality on objects). Optional msg appears in the error.
+     * @param actual The value produced by the code under test.
+     * @param expected The value to compare against. Primitives use strict equality; objects/arrays use deep structural equality (key order ignored).
+     * @param msg Optional message prefixed onto the thrown error; defaults to "assert.equal failed".
+     * @returns void — returns nothing when the values match.
+     */
+    equal(actual: unknown, expected: unknown, msg?: string): void;
+    /**
+     * Throw when cond is falsy. Optional msg appears in the error.
+     * @param cond A value tested for truthiness (JS coercion: 0, "", null, undefined, NaN and false are falsy).
+     * @param msg Optional message used as the thrown error text; defaults to "assert.ok failed".
+     * @returns void — returns nothing when cond is truthy.
+     */
+    ok(cond: unknown, msg?: string): void;
   };
   env: {
-    /** Read an environment variable. Returns undefined when unset (not empty string). */
-    get(...args: unknown[]): unknown;
+    /**
+     * Read an environment variable. Returns undefined when unset (not empty string).
+     * @param name Environment variable name to look up.
+     * @returns string — the variable's value, or undefined when the variable is not set. A variable set to the empty string returns "", which is distinct from undefined.
+     */
+    get(name: string): string | undefined;
   };
-  /** Print one space-separated line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON (circular refs fall back to [object Object]). The script-side equivalent of console.log. */
-  log(...args: unknown[]): unknown;
+  /**
+   * Print one space-separated line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON (circular refs fall back to [object Object]). The script-side equivalent of console.log.
+   * @param args Zero or more values to print. They are joined with single spaces; primitives stringify directly, objects/arrays are JSON-encoded.
+   * @returns void — writes a single newline-terminated line to stdout.
+   */
+  log(args: unknown[]): void;
   time: {
-    /** Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Europe/Stockholm'); default is the host's local zone. */
-    format(...args: unknown[]): unknown;
-    /** Wall-clock milliseconds since the Unix epoch. */
+    /**
+     * Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Europe/Stockholm'); default is the host's local zone.
+     * @param ms Milliseconds since the Unix epoch (e.g. from time.nowMs). Coerced to an integer.
+     * @param layout strftime-style layout. Supported tokens: %Y %y %m %d %H %M %S %T %F %j %A %a %B %b %z %Z and %% (literal percent). Unknown %X tokens pass through verbatim.
+     * @param tz IANA timezone name (e.g. "Europe/Stockholm", "UTC"). Defaults to the host's local zone when omitted/null/undefined.
+     * @returns string — the timestamp rendered in tz with the given layout.
+     */
+    format(ms: number, layout: string, tz?: string): string;
+    /**
+     * Wall-clock milliseconds since the Unix epoch.
+     * @returns number — integer milliseconds since 1970-01-01T00:00:00Z (host wall clock).
+     */
     nowMs(): number;
-    /** Resolve after `ms` milliseconds. Cancellable via the engine timeout. */
-    sleep(...args: unknown[]): Promise<unknown>;
+    /**
+     * Resolve after `ms` milliseconds. Cancellable via the engine timeout.
+     * @param ms Delay in milliseconds. Coerced to an integer; non-positive values resolve effectively immediately.
+     * @returns Promise<void> — resolves once the delay elapses.
+     */
+    sleep(ms: number): Promise<unknown>;
   };
 };
 
@@ -247,68 +302,176 @@ declare const text: {
 /** Binary-format codecs: compression, barcodes, check digits. */
 declare const codec: {
   barcode: {
-    /** Available decode formats (qr / datamatrix / aztec / code128 / code39 / code93 / codabar / ean13 / ean8 / upca / upce / itf). PDF417 is encode-only. */
+    /**
+     * Available decode formats (qr / datamatrix / aztec / code128 / code39 / code93 / codabar / ean13 / ean8 / upca / upce / itf). PDF417 is encode-only.
+     * @returns string[] — the twelve symbology names barcode.decode can recognise. PDF417 is absent (gozxing has no PDF417 decoder).
+     */
     decodableFormats(): string[];
-    /** Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hint skips the auto-detect walk. EAN/UPC need a quiet zone in the input. */
-    decode(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Render data into a PNG of the chosen format. opts.width / opts.height default to 256x256 (2D) or 400x120 (1D). opts.quietZone (true or px count) pads a white margin — required for EAN/UPC to decode. */
-    encode(...args: unknown[]): Promise<Uint8Array>;
-    /** Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca). */
+    /**
+     * Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hint skips the auto-detect walk. EAN/UPC need a quiet zone in the input. Async.
+     * @param data Image bytes (PNG / JPEG / WebP). A string is treated as its raw UTF-8 bytes.
+     * @param format Symbology hint (case-insensitive) from decodableFormats. When given, only that reader runs; otherwise every decoder is tried in priority order and the first hit wins.
+     * @returns Promise<{ format: string, text: string }> — the detected symbology name and the decoded payload.
+     */
+    decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<Record<string, unknown>>;
+    /**
+     * Render data into a PNG of the chosen format. opts.width / opts.height default to 256x256 (2D) or 400x120 (1D). opts.quietZone (true or px count) pads a white margin — required for EAN/UPC to decode. Async.
+     * @param format Symbology (case-insensitive): qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca.
+     * @param data Payload to encode. EAN/UPC require the exact digit count for the variant; the encoder validates content per symbology.
+     * @param opts width / height set the output pixel dimensions (default 256x256 for 2D qr/datamatrix/aztec, 400x120 otherwise). quietZone pads a white margin: true uses 10% of width (min 10px), a number uses that many pixels per side, false/0/absent adds none. EAN/UPC need a quiet zone to be decodable.
+     * @returns Promise<Uint8Array> — PNG image bytes.
+     */
+    encode(format: string, data: string, opts?: { width?: number, height?: number, quietZone?: boolean | number }): Promise<Uint8Array>;
+    /**
+     * Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca).
+     * @returns string[] — the ten symbology names accepted by barcode.encode.
+     */
     formats(): string[];
   };
   checkdigit: {
-    /** Supported algorithms (luhn / isbn10 / isbn13 / ean13 / ean8 / upca). */
+    /**
+     * Supported algorithms (luhn / isbn10 / isbn13 / ean13 / ean8 / upca).
+     * @returns string[] — the six supported algorithm names. isbn13 is an alias for ean13 (same check-digit math).
+     */
     algos(): string[];
-    /** Compute the missing trailing check digit for a partial input. */
-    compute(arg0: string, arg1: string): string;
-    /** Diagnostic combining validate + compute: { valid, given, computed, … }. */
-    inspect(arg0: string, arg1: string): Record<string, unknown>;
-    /** Return whether the input passes the named algorithm's check digit. */
-    validate(arg0: string, arg1: string): boolean;
+    /**
+     * Compute the missing trailing check digit for a partial input.
+     * @param algo Algorithm name (case-insensitive, trimmed): luhn / isbn10 / isbn13 / ean13 / ean8 / upca.
+     * @param partial The number WITHOUT its check digit (whitespace trimmed). Fixed-length algorithms expect exactly length-1 digits (e.g. 12 for ean13, 9 for isbn10).
+     * @returns string — the single check digit ('0'–'9', or 'X' for isbn10 when the value is 10).
+     */
+    compute(algo: string, partial: string): string;
+    /**
+     * Diagnostic combining validate + compute: { valid, given, computed, … }.
+     * @param algo Algorithm name (case-insensitive, trimmed): luhn / isbn10 / isbn13 / ean13 / ean8 / upca.
+     * @param input The full number including its trailing check digit (whitespace trimmed).
+     * @returns { algo, input, valid, given, computed } — algo/input echo the normalised arguments; given is the input's last character; computed is the recalculated check digit (empty when the input is too short or malformed to split); valid is true when given equals computed (case-insensitive).
+     */
+    inspect(algo: string, input: string): { algo: string, input: string, valid: boolean, given: string, computed: string };
+    /**
+     * Return whether the input passes the named algorithm's check digit.
+     * @param algo Algorithm name (case-insensitive, trimmed): luhn / isbn10 / isbn13 / ean13 / ean8 / upca.
+     * @param input The full number including its trailing check digit (whitespace trimmed). ISBN-10 may end in 'X'.
+     * @returns boolean — true when the input's check digit is valid for the algorithm. Returns false (does not throw) for wrong length, non-digit characters, or an unknown algorithm.
+     */
+    validate(algo: string, input: string): boolean;
   };
   compression: {
-    /** Available compression algorithm names (gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy). */
+    /**
+     * Available compression algorithm names (gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy).
+     * @returns string[] — the nine supported algorithm names, lowercase, in registration order.
+     */
     algos(): string[];
-    /** Compress data with the named algorithm. Returns Uint8Array. */
-    compress(...args: unknown[]): Promise<Uint8Array>;
-    /** Decompress data previously produced by compress (same algorithm name required). */
-    decompress(...args: unknown[]): Promise<Uint8Array>;
+    /**
+     * Compress data with the named algorithm. Returns Uint8Array. Async.
+     * @param algo Algorithm name (case-insensitive): gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy.
+     * @param data Input bytes. Strings are interpreted as their UTF-8 byte sequence.
+     * @returns Promise<Uint8Array> — the compressed bytes.
+     */
+    compress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>;
+    /**
+     * Decompress data previously produced by compress (same algorithm name required). Returns Uint8Array. Async.
+     * @param algo Algorithm name (case-insensitive), matching the one used to compress: gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy.
+     * @param data Compressed input bytes.
+     * @returns Promise<Uint8Array> — the original decompressed bytes.
+     */
+    decompress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>;
   };
   perl: {
-    /** Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS booleans emit the JSON::XS::Boolean blessed-ref form (opts.perlBoolClass). */
-    dumper(...args: unknown[]): unknown;
-    /** Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decode to booleans; bare 1/0 stay numbers; cycles throw. */
-    parseDumper(...args: unknown[]): unknown;
+    /**
+     * Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS booleans emit the JSON::XS::Boolean blessed-ref form (opts.perlBoolClass).
+     * @param value Any JSON-like value (see php.serialize). Arrays/objects emit as Perl array/hash refs; class-key objects emit as blessed refs.
+     * @param opts perlBoolClass names the blessed class emitted for JS booleans (default "JSON::XS::Boolean"). indent overrides the indentation step. classKey overrides the class-name sentinel (default "__class").
+     * @returns string — a Data::Dumper-style dump ($VAR1 = ... ;) with normalized indentation.
+     */
+    dumper(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string;
+    /**
+     * Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decode to booleans; bare 1/0 stay numbers; cycles throw.
+     * @param input Data::Dumper output to parse back (a $VARn = ... ; assignment or a bare value).
+     * @param opts classKey sets the sentinel property used to tag decoded blessed refs (default "__class"). The JSON bool family (JSON::XS::Boolean, JSON::PP::Boolean, Types::Serialiser::Boolean) decodes to JS booleans regardless.
+     * @returns unknown — the decoded value. Blessed scalar refs in the JSON-bool family become JS booleans; bare 1/0 stay numbers; other blessed refs carry the classKey sentinel.
+     */
+    parseDumper(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown;
   };
   php: {
-    /** Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, truncation, visibility-annotated props). */
-    parseVarDump(...args: unknown[]): unknown;
-    /** Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a value. */
-    parseVarExport(...args: unknown[]): unknown;
-    /** PHP serialize(): encode a value to PHP's canonical serialization string. Objects use the __class sentinel; cycles throw. */
-    serialize(...args: unknown[]): unknown;
-    /** PHP unserialize(): decode a serialize() string back to a value. r:/R: references resolve to shared objects (DAGs); cycles throw. */
-    unserialize(...args: unknown[]): unknown;
-    /** PHP var_dump(): human-readable debug output. String lengths are byte counts. */
-    varDump(...args: unknown[]): unknown;
-    /** PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-space step. */
-    varExport(...args: unknown[]): unknown;
+    /**
+     * Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, truncation, visibility-annotated props).
+     * @param input PHP var_dump() output to parse back.
+     * @param opts classKey sets the sentinel property used to tag decoded objects (default "__class").
+     * @returns unknown — the reconstructed value (best-effort; var_dump is a lossy format).
+     */
+    parseVarDump(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown;
+    /**
+     * Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a value.
+     * @param input A PHP var_export() literal: array(...), scalars, NULL, or \Cls::__set_state(array(...)).
+     * @param opts classKey sets the sentinel property used to tag decoded __set_state objects (default "__class").
+     * @returns unknown — the decoded value; \Cls::__set_state objects become plain objects carrying the classKey sentinel.
+     */
+    parseVarExport(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown;
+    /**
+     * PHP serialize(): encode a value to PHP's canonical serialization string. Objects use the __class sentinel; cycles throw.
+     * @param value Any JSON-like value: null, boolean, number, string, array, or plain object. An object carrying the class-key sentinel (opts.classKey, default "__class") encodes as a PHP object (O:).
+     * @param opts classKey overrides the class-name sentinel property (default "__class"). indent / perlBoolClass are unused by serialize.
+     * @returns string — the PHP serialize() string (e.g. a:1:{...}).
+     */
+    serialize(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string;
+    /**
+     * PHP unserialize(): decode a serialize() string back to a value. r:/R: references resolve to shared objects (DAGs); cycles throw.
+     * @param input A PHP serialize() string.
+     * @param opts classKey sets the sentinel property used to tag decoded PHP objects (default "__class").
+     * @returns unknown — the decoded value. PHP objects become plain objects carrying the classKey sentinel; r:/R: references rebuild as shared object identities (DAGs).
+     */
+    unserialize(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown;
+    /**
+     * PHP var_dump(): human-readable debug output. String lengths are byte counts.
+     * @param value Any JSON-like value (see php.serialize).
+     * @param opts indent overrides the default indentation step. classKey overrides the class-name sentinel (default "__class").
+     * @returns string — var_dump()-style output. String lengths in the output are byte counts, matching PHP.
+     */
+    varDump(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string;
+    /**
+     * PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-space step.
+     * @param value Any JSON-like value (see php.serialize). Objects with the class-key sentinel emit as \Cls::__set_state(...).
+     * @param opts indent overrides the default 2-space indentation step. classKey overrides the class-name sentinel (default "__class").
+     * @returns string — valid PHP source, the kind var_export() prints.
+     */
+    varExport(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string;
   };
 };
 
 /** Filesystem operations: path manipulation and archive create/extract. */
 declare const fs: {
   archive: {
-    /** Create a zip / tar / tar.gz at destPath from a list of paths. Format inferred from extension. */
-    create(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour. */
-    extract(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Create a zip / tar / tar.gz at destPath from a list of paths. Format inferred from extension.
+     * @param destPath Output archive path. Format is inferred from the extension: .zip, .tar, .tar.gz, or .tgz.
+     * @param sources Non-empty array of inputs. A bare string uses the disk path as-is and its basename inside the archive; an object overrides the in-archive name via name. Directory sources are recursed (the directory's basename becomes the archive subdir). Archive paths always use forward slashes.
+     * @returns Promise<{ path: string, format: string, entries: string[], bytes?: number }> — path is destPath, format is the inferred format ("zip" | "tar" | "tar.gz"), entries lists the file paths written (directories excluded), and bytes is the final archive size when stat succeeds.
+     */
+    create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<Record<string, unknown>>;
+    /**
+     * Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour.
+     * @param archivePath Path to the archive. Format is inferred from its extension (.zip, .tar, .tar.gz, .tgz).
+     * @param destDir Destination directory; created (recursively) if absent. All entries are confined to this directory via zip-slip / tar-slip protection.
+     * @param opts overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL).
+     * @returns Promise<{ path: string, format: string, dest: string, entries: string[] }> — path is archivePath, format is the inferred format, dest is destDir, and entries lists the extracted entry names (regular files only).
+     */
+    extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<Record<string, unknown>>;
   };
   path: {
-    /** Final segment of a path; optional suffix is stripped if it matches. */
-    basename(...args: unknown[]): unknown;
-    /** Directory portion of a path. POSIX-style; trailing slashes are stripped. */
-    dirname(...args: unknown[]): unknown;
+    /**
+     * Final segment of a path; optional suffix is stripped if it matches.
+     * @param path A forward-slash path. Trailing slashes are stripped before taking the last segment.
+     * @param suffix Trailing suffix to remove from the result (e.g. an extension). Only stripped when it matches and is not the entire segment; a non-matching or empty suffix is ignored.
+     * @returns string — the last path segment, with suffix removed when it applies.
+     */
+    basename(path: string, suffix?: string): string;
+    /**
+     * Directory portion of a path. POSIX-style; trailing slashes are stripped.
+     * @param path A forward-slash path. On Windows, normalise separators yourself first.
+     * @returns string — everything up to (not including) the final slash; "." when the path has no directory component, "/" for a rooted single segment.
+     */
+    dirname(path: string): string;
   };
 };
 
@@ -437,44 +600,114 @@ declare const db: {
 /** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers. */
 declare const services: {
   ai: {
-    /** Which of claude / codex / copilot / gemini are on PATH, in preference order. */
+    /**
+     * Which of claude / codex / copilot / gemini are on PATH, in preference order.
+     * @returns string[] — the subset of supported AI CLIs found on PATH, in preference order (claude, codex, copilot, gemini); an empty array when none are installed. Synchronous (not a Promise).
+     */
     providers(): string[];
-    /** Run a one-shot prompt through a provider. opts { prompt (required), provider?, system?, context?, timeout? }. Returns { provider, output, exitCode }. Non-zero exit is data; no provider throws. */
-    send(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Run a one-shot prompt through a provider. opts { prompt (required), provider?, system?, context?, timeout? }. Returns { provider, output, exitCode }. Non-zero exit is data; no provider throws.
+     * @param opts prompt is required. provider names the CLI to use; when omitted, the first provider on PATH (in preference order) is chosen. system and context are prepended to the prompt as "System: …" / "Context: …" blocks (a portable substitute for each CLI's own flags). timeout in ms (default 120000).
+     * @returns Promise<{ provider: string, output: string, exitCode: number }> — provider is the CLI that ran; output is its trimmed stdout (or stderr when stdout is empty on a non-zero exit); exitCode is 0 on success.
+     */
+    send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<Record<string, unknown>>;
   };
   exec: {
-    /** HTTP via recon (preferred) or curl (fallback). 4xx / 5xx resolve as status; transport errors and timeouts throw. opts.backend = 'auto' | 'recon' | 'curl'. */
-    http(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Run a subprocess. String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv. Non-zero exits resolve; spawn failures and timeouts throw. */
-    shell(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Make an HTTP request by shelling out to recon (preferred) or curl (fallback). 4xx/5xx resolve as status; transport errors and timeouts throw. opts.backend = 'auto' | 'recon' | 'curl'.
+     * @param method HTTP verb (GET, POST, PUT, DELETE, PATCH, HEAD); lower-case input is uppercased before forwarding.
+     * @param url Target URL; must be fully qualified (the backend requires a scheme + host).
+     * @param opts headers emits one -H "Name: Value" per entry. body is written to a temp file and sent via --data-binary so CR/LF stay intact. timeout in ms (default 30000). follow toggles -L to follow 3xx redirects. insecure toggles -k to skip TLS verification. backend picks the tool: 'auto' (default) prefers recon then curl; 'recon' or 'curl' require that specific binary on PATH.
+     * @returns Promise<{ status: number, headers: Record<string, string>, body: string, durationMs: number, backend: "recon" | "curl" }> — status is the final HTTP status code; headers have lower-cased names (last response block on a redirect chain); body is the UTF-8 decoded response body; backend is whichever tool ran.
+     */
+    http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<Record<string, unknown>>;
+    /**
+     * Run a subprocess and wait for it to exit. String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Non-zero exits resolve normally; spawn failures and timeouts throw.
+     * @param cmd A string is passed verbatim to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell, so use this form when arguments contain whitespace or shell metacharacters you don't want re-interpreted.
+     * @param opts timeout in ms (default 30000); on expiry the process tree is killed and the call throws. cwd sets the working directory. stdin is fed to the process's standard input. env entries are merged on top of the inherited environment (they do not replace it). pane (a tui.pane name or Pane handle) streams stdout+stderr live into a TUI pane — in that mode the result's stdout/stderr strings stay empty.
+     * @returns Promise<{ stdout: string, stderr: string, exitCode: number, success: boolean, durationMs: number }> — stdout/stderr are captured (empty when streamed to a pane); exitCode is 0 on success; success is exitCode === 0; durationMs is wall-clock spawn-to-exit time.
+     */
+    shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane }): Promise<Record<string, unknown>>;
   };
   gh: {
-    /** Probe gh's auth state. Missing gh / unauthenticated resolve with { authenticated: false, … } — only context cancellation throws. */
+    /**
+     * Probe gh's auth state. Missing gh / unauthenticated resolve with { authenticated: false, … } — only context cancellation throws.
+     * @returns Promise<{ authenticated: boolean, user: string, raw: string }> — authenticated is true only when `gh api user` succeeds; user is the resolved login ("" when not authenticated); raw is the login on success or the underlying gh error / "gh not on PATH" otherwise.
+     */
     authStatus(...args: unknown[]): Promise<{ authenticated: boolean; user: string; raw: string }>;
-    /** List pull requests on the cwd's repo (or opts.cwd). Defaults: open state, limit 30. Filters: state / limit / author. */
-    prList(...args: unknown[]): Promise<Record<string, unknown>[]>;
-    /** Repo metadata. With no arg uses cwd's repo; pass 'owner/name' for any repo gh can see. owner + defaultBranch are pre-flattened. */
-    repoView(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * List pull requests on the cwd's repo (or opts.cwd). Defaults: open state, limit 30. Filters: state / limit / author.
+     * @param opts cwd selects the repo (defaults to the engine's working directory, which gh uses to detect the repo). state filters by PR state ("open" default, "closed", "merged", "all"). limit caps results (default 30; must be positive). author filters to PRs opened by that login.
+     * @returns Promise<Array<{ number: number, title: string, state: string, author: string, headRefName: string, baseRefName: string, url: string, createdAt: string, updatedAt: string }>> — one object per PR; author is flattened from gh's { login } wrapper to the bare login string; createdAt/updatedAt are ISO 8601 timestamps.
+     */
+    prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Record<string, unknown>[]>;
+    /**
+     * Repo metadata. With no arg uses cwd's repo; pass 'owner/name' for any repo gh can see. owner + defaultBranch are pre-flattened.
+     * @param repo "owner/name" of any repo gh can access. Omit (or pass opts as the first arg) to view the repo detected from cwd.
+     * @param opts cwd selects the checkout gh uses to detect the current repo when repo is omitted.
+     * @returns Promise<{ name: string, owner: string, description: string, url: string, defaultBranch: string, visibility: string }> — owner is flattened from gh's { login } wrapper to the bare login; defaultBranch is flattened from defaultBranchRef.name ("" if absent); key order matches gh's output.
+     */
+    repoView(repo?: string, opts?: { cwd?: string }): Promise<Record<string, unknown>>;
   };
   git: {
-    /** Stage one path (string) or several (string[]). */
-    add(...args: unknown[]): Promise<{ paths: string[] }>;
-    /** Current branch (empty when HEAD is detached) plus the list of local branches. */
-    branch(...args: unknown[]): Promise<{ current: string; detached: boolean; all: string[] }>;
-    /** Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --allow-empty. */
-    commit(...args: unknown[]): Promise<{ sha: string }>;
-    /** Aggregate { files, insertions, deletions } from `git diff --shortstat`. Default revRange HEAD~1..HEAD. */
-    diffStat(...args: unknown[]): Promise<{ files: number; insertions: number; deletions: number }>;
-    /** True iff `git status --porcelain` is empty. */
-    isClean(...args: unknown[]): Promise<boolean>;
-    /** Recent commits as { sha, shortSha, author, email, timestamp, subject }. opts.limit / opts.revRange. */
-    log(...args: unknown[]): Promise<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }[]>;
-    /** Full 40-char SHA for the given rev. Invalid refs throw. */
-    revParse(...args: unknown[]): Promise<string>;
-    /** Escape hatch: run any `git <args>`, get { stdout, stderr, exitCode } — exitCode is data, not a throw. */
-    runText(...args: unknown[]): Promise<{ stdout: string; stderr: string; exitCode: number }>;
-    /** Parsed `git status --porcelain` entries: { path, indexStatus, workingStatus }. */
-    status(...args: unknown[]): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>;
+    /**
+     * Stage one path (string) or several (string[]).
+     * @param paths Path or paths to stage. Passed after a `--` separator so paths that look like flags (-foo) are handled literally.
+     * @param opts cwd selects the checkout; defaults to the engine's working directory.
+     * @returns Promise<{ paths: string[] }> — the list of paths that were staged.
+     */
+    add(paths: string | string[], opts?: { cwd?: string }): Promise<{ paths: string[] }>;
+    /**
+     * Current branch (empty when HEAD is detached) plus the list of local branches.
+     * @param opts cwd selects the checkout to inspect; defaults to the engine's working directory.
+     * @returns Promise<{ current: string, detached: boolean, all: string[] }> — current is the checked-out branch name ("" when detached); detached is true on a detached HEAD; all lists every local branch (refs/heads) by short name.
+     */
+    branch(opts?: { cwd?: string }): Promise<{ current: string; detached: boolean; all: string[] }>;
+    /**
+     * Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --allow-empty.
+     * @param message Commit message (passed as a single -m argument).
+     * @param opts cwd selects the checkout. allowEmpty adds --allow-empty so a commit succeeds with no staged changes (release markers, etc.); defaults to false.
+     * @returns Promise<{ sha: string }> — sha is the full SHA of the newly created HEAD commit.
+     */
+    commit(message: string, opts?: { cwd?: string, allowEmpty?: boolean }): Promise<{ sha: string }>;
+    /**
+     * Aggregate { files, insertions, deletions } from `git diff --shortstat`. Default revRange HEAD~1..HEAD.
+     * @param opts cwd selects the checkout. revRange is the diff range (default "HEAD~1..HEAD", the last commit).
+     * @returns Promise<{ files: number, insertions: number, deletions: number }> — counters parsed from git diff --shortstat. An empty diff returns all zeros.
+     */
+    diffStat(opts?: { cwd?: string, revRange?: string }): Promise<{ files: number; insertions: number; deletions: number }>;
+    /**
+     * True iff `git status --porcelain` is empty.
+     * @param opts cwd selects the checkout; defaults to the engine's working directory.
+     * @returns Promise<boolean> — true when the working tree has no staged, unstaged, or untracked changes.
+     */
+    isClean(opts?: { cwd?: string }): Promise<boolean>;
+    /**
+     * Recent commits as { sha, shortSha, author, email, timestamp, subject }. opts.limit / opts.revRange.
+     * @param opts cwd selects the checkout. limit caps the number of commits (default 50; must be positive). revRange selects the range/ref to walk (default "HEAD").
+     * @returns Promise<Array<{ sha: string, shortSha: string, author: string, email: string, timestamp: number, subject: string }>> — newest first; timestamp is the author Unix epoch seconds; subject is the commit's first line.
+     */
+    log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }[]>;
+    /**
+     * Full 40-char SHA for the given rev. Invalid refs throw.
+     * @param rev Any revision git understands (branch, tag, HEAD, short SHA, HEAD~2, etc.).
+     * @param opts cwd selects the checkout; defaults to the engine's working directory.
+     * @returns Promise<string> — the full 40-character commit SHA the rev resolves to.
+     */
+    revParse(rev: string, opts?: { cwd?: string }): Promise<string>;
+    /**
+     * Escape hatch: run any `git <args>`, get { stdout, stderr, exitCode } — exitCode is data, not a throw.
+     * @param args git arguments (without the leading "git"), e.g. ["tag", "--list"]. A bare string is treated as a single argument.
+     * @param opts cwd selects the checkout; defaults to the engine's working directory.
+     * @returns Promise<{ stdout: string, stderr: string, exitCode: number }> — captured streams plus git's exit code, so callers can react to any exit status without try/catch.
+     */
+    runText(args: string | string[], opts?: { cwd?: string }): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+    /**
+     * Parsed `git status --porcelain` entries: { path, indexStatus, workingStatus }.
+     * @param opts cwd selects the checkout; defaults to the engine's working directory.
+     * @returns Promise<Array<{ path: string, indexStatus: string, workingStatus: string }>> — one entry per changed path; indexStatus / workingStatus are the porcelain v1 X / Y status characters (e.g. "M", "A", "?"). An empty array means a clean tree.
+     */
+    status(opts?: { cwd?: string }): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>;
   };
 };
 

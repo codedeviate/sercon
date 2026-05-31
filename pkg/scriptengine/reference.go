@@ -171,19 +171,24 @@ func sigForMember(name string, v any, doc MemberDoc) string {
 		}
 		return name + "(...args: unknown[]): " + ret
 	}
-	if len(doc.Params) > 0 || doc.ReturnType != "" {
-		ret := doc.ReturnType
-		if ret == "" {
-			ret = "void"
-		}
-		return name + sigFromParams(doc.Params, ret)
-	}
 	t := reflect.TypeOf(v)
-	if t != nil && t.Kind() == reflect.Func {
+	isFunc := t != nil && t.Kind() == reflect.Func
+	if isFunc {
+		// Callable member: a documented signature (Params and/or ReturnType)
+		// or the reflected `(...args)` fallback.
+		if len(doc.Params) > 0 || doc.ReturnType != "" {
+			ret := doc.ReturnType
+			if ret == "" {
+				ret = "void"
+			}
+			return name + sigFromParams(doc.Params, ret)
+		}
 		return name + "(...args: unknown[])"
 	}
-	if _, ok := v.(map[string]any); ok {
-		return name
+	// Non-callable value (e.g. runtime.argv): render as a property, matching
+	// the d.ts (`argv: string[]`), not a call.
+	if doc.ReturnType != "" {
+		return name + ": " + doc.ReturnType
 	}
 	return name
 }

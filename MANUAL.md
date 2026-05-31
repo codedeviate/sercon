@@ -2080,154 +2080,384 @@ Binary-format codecs: compression, barcodes, check digits.
 #### codec.barcode.decodableFormats
 
 ```
-decodableFormats(...args: unknown[])
+decodableFormats(): string[]
 ```
 
 Available decode formats (qr / datamatrix / aztec / code128 / code39 / code93 / codabar / ean13 / ean8 / upca / upce / itf). PDF417 is encode-only.
 
+**Returns:** string[] — the twelve symbology names barcode.decode can recognise. PDF417 is absent (gozxing has no PDF417 decoder).
+
+**Throws:** Never throws.
+
+```ts
+const fmts = codec.barcode.decodableFormats();
+```
+
 #### codec.barcode.decode
 
 ```
-decode(...args: unknown[]): Promise<Record<string, unknown>>
+decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<Record<string, unknown>>
 ```
 
-Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hint skips the auto-detect walk. EAN/UPC need a quiet zone in the input.
+Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hint skips the auto-detect walk. EAN/UPC need a quiet zone in the input. Async.
+
+**Parameters**
+
+- `data` *(string | Uint8Array | ArrayBuffer)* — Image bytes (PNG / JPEG / WebP). A string is treated as its raw UTF-8 bytes.
+- `format` *(string, optional)* — Symbology hint (case-insensitive) from decodableFormats. When given, only that reader runs; otherwise every decoder is tried in priority order and the first hit wins.
+
+**Returns:** Promise<{ format: string, text: string }> — the detected symbology name and the decoded payload.
+
+**Throws:** Throws if data is missing/empty or not a string/ArrayBuffer/Uint8Array, the image cannot be decoded, the format hint is unsupported, or no barcode is recognised.
+
+```ts
+const { format, text } = await codec.barcode.decode(png);
+```
 
 #### codec.barcode.encode
 
 ```
-encode(...args: unknown[]): Promise<Uint8Array>
+encode(format: string, data: string, opts?: { width?: number, height?: number, quietZone?: boolean | number }): Promise<Uint8Array>
 ```
 
-Render data into a PNG of the chosen format. opts.width / opts.height default to 256x256 (2D) or 400x120 (1D). opts.quietZone (true or px count) pads a white margin — required for EAN/UPC to decode.
+Render data into a PNG of the chosen format. opts.width / opts.height default to 256x256 (2D) or 400x120 (1D). opts.quietZone (true or px count) pads a white margin — required for EAN/UPC to decode. Async.
+
+**Parameters**
+
+- `format` *(string)* — Symbology (case-insensitive): qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca.
+- `data` *(string)* — Payload to encode. EAN/UPC require the exact digit count for the variant; the encoder validates content per symbology.
+- `opts` *({ width?: number, height?: number, quietZone?: boolean | number }, optional)* — width / height set the output pixel dimensions (default 256x256 for 2D qr/datamatrix/aztec, 400x120 otherwise). quietZone pads a white margin: true uses 10% of width (min 10px), a number uses that many pixels per side, false/0/absent adds none. EAN/UPC need a quiet zone to be decodable.
+
+**Returns:** Promise<Uint8Array> — PNG image bytes.
+
+**Throws:** Throws if the format is unknown, the data is invalid for that symbology, or scaling / PNG encoding fails.
+
+```ts
+const png = await codec.barcode.encode("qr", "https://example.com", { width: 320, height: 320 });
+```
 
 #### codec.barcode.formats
 
 ```
-formats(...args: unknown[])
+formats(): string[]
 ```
 
 Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca).
 
+**Returns:** string[] — the ten symbology names accepted by barcode.encode.
+
+**Throws:** Never throws.
+
+```ts
+const fmts = codec.barcode.formats(); // ["qr", "datamatrix", ...]
+```
+
 #### codec.checkdigit.algos
 
 ```
-algos(...args: unknown[])
+algos(): string[]
 ```
 
 Supported algorithms (luhn / isbn10 / isbn13 / ean13 / ean8 / upca).
 
+**Returns:** string[] — the six supported algorithm names. isbn13 is an alias for ean13 (same check-digit math).
+
+**Throws:** Never throws.
+
+```ts
+const algos = codec.checkdigit.algos();
+```
+
 #### codec.checkdigit.compute
 
 ```
-compute(...args: unknown[])
+compute(algo: string, partial: string): string
 ```
 
 Compute the missing trailing check digit for a partial input.
 
+**Parameters**
+
+- `algo` *(string)* — Algorithm name (case-insensitive, trimmed): luhn / isbn10 / isbn13 / ean13 / ean8 / upca.
+- `partial` *(string)* — The number WITHOUT its check digit (whitespace trimmed). Fixed-length algorithms expect exactly length-1 digits (e.g. 12 for ean13, 9 for isbn10).
+
+**Returns:** string — the single check digit ('0'–'9', or 'X' for isbn10 when the value is 10).
+
+**Throws:** Throws if the algorithm is unknown, the input is empty / the wrong length, or contains a non-digit.
+
+```ts
+const cd = codec.checkdigit.compute("ean13", "123456789012"); // "8"
+```
+
 #### codec.checkdigit.inspect
 
 ```
-inspect(...args: unknown[])
+inspect(algo: string, input: string): { algo: string, input: string, valid: boolean, given: string, computed: string }
 ```
 
 Diagnostic combining validate + compute: { valid, given, computed, … }.
 
+**Parameters**
+
+- `algo` *(string)* — Algorithm name (case-insensitive, trimmed): luhn / isbn10 / isbn13 / ean13 / ean8 / upca.
+- `input` *(string)* — The full number including its trailing check digit (whitespace trimmed).
+
+**Returns:** { algo, input, valid, given, computed } — algo/input echo the normalised arguments; given is the input's last character; computed is the recalculated check digit (empty when the input is too short or malformed to split); valid is true when given equals computed (case-insensitive).
+
+**Throws:** Never throws; malformed input yields valid:false with an empty computed.
+
+```ts
+const r = codec.checkdigit.inspect("ean13", "1234567890128");
+// { algo: "ean13", input: "...", valid: true, given: "8", computed: "8" }
+```
+
 #### codec.checkdigit.validate
 
 ```
-validate(...args: unknown[])
+validate(algo: string, input: string): boolean
 ```
 
 Return whether the input passes the named algorithm's check digit.
 
+**Parameters**
+
+- `algo` *(string)* — Algorithm name (case-insensitive, trimmed): luhn / isbn10 / isbn13 / ean13 / ean8 / upca.
+- `input` *(string)* — The full number including its trailing check digit (whitespace trimmed). ISBN-10 may end in 'X'.
+
+**Returns:** boolean — true when the input's check digit is valid for the algorithm. Returns false (does not throw) for wrong length, non-digit characters, or an unknown algorithm.
+
+**Throws:** Never throws; any failure (unknown algorithm included) returns false.
+
+```ts
+const ok = codec.checkdigit.validate("luhn", "4539578763621486"); // true
+```
+
 #### codec.compression.algos
 
 ```
-algos(...args: unknown[])
+algos(): string[]
 ```
 
 Available compression algorithm names (gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy).
 
+**Returns:** string[] — the nine supported algorithm names, lowercase, in registration order.
+
+**Throws:** Never throws.
+
+```ts
+const algos = codec.compression.algos(); // ["gzip", "deflate", ...]
+```
+
 #### codec.compression.compress
 
 ```
-compress(...args: unknown[]): Promise<Uint8Array>
+compress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>
 ```
 
-Compress data with the named algorithm. Returns Uint8Array.
+Compress data with the named algorithm. Returns Uint8Array. Async.
+
+**Parameters**
+
+- `algo` *(string)* — Algorithm name (case-insensitive): gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy.
+- `data` *(string | Uint8Array | ArrayBuffer)* — Input bytes. Strings are interpreted as their UTF-8 byte sequence.
+
+**Returns:** Promise<Uint8Array> — the compressed bytes.
+
+**Throws:** Throws if data is undefined/null or an unsupported type, the algorithm name is unknown, or the underlying compressor errors.
+
+```ts
+const packed = await codec.compression.compress("gzip", "hello world");
+```
 
 #### codec.compression.decompress
 
 ```
-decompress(...args: unknown[]): Promise<Uint8Array>
+decompress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>
 ```
 
-Decompress data previously produced by compress (same algorithm name required).
+Decompress data previously produced by compress (same algorithm name required). Returns Uint8Array. Async.
+
+**Parameters**
+
+- `algo` *(string)* — Algorithm name (case-insensitive), matching the one used to compress: gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy.
+- `data` *(string | Uint8Array | ArrayBuffer)* — Compressed input bytes.
+
+**Returns:** Promise<Uint8Array> — the original decompressed bytes.
+
+**Throws:** Throws if data is undefined/null or an unsupported type, the algorithm name is unknown, or the input is not valid for that algorithm.
+
+```ts
+const raw = await codec.compression.decompress("gzip", packed);
+const text = new TextDecoder().decode(raw);
+```
 
 #### codec.perl.dumper
 
 ```
-dumper(...args: unknown[])
+dumper(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
 ```
 
 Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS booleans emit the JSON::XS::Boolean blessed-ref form (opts.perlBoolClass).
 
+**Parameters**
+
+- `value` *(unknown)* — Any JSON-like value (see php.serialize). Arrays/objects emit as Perl array/hash refs; class-key objects emit as blessed refs.
+- `opts` *({ classKey?: string, perlBoolClass?: string, indent?: string }, optional)* — perlBoolClass names the blessed class emitted for JS booleans (default "JSON::XS::Boolean"). indent overrides the indentation step. classKey overrides the class-name sentinel (default "__class").
+
+**Returns:** string — a Data::Dumper-style dump ($VAR1 = ... ;) with normalized indentation.
+
+**Throws:** Throws on a circular reference or an unsupported value type.
+
+```ts
+const d = codec.perl.dumper({ ok: true });
+```
+
 #### codec.perl.parseDumper
 
 ```
-parseDumper(...args: unknown[])
+parseDumper(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
 ```
 
 Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decode to booleans; bare 1/0 stay numbers; cycles throw.
 
+**Parameters**
+
+- `input` *(string)* — Data::Dumper output to parse back (a $VARn = ... ; assignment or a bare value).
+- `opts` *({ classKey?: string, perlBoolClass?: string, indent?: string }, optional)* — classKey sets the sentinel property used to tag decoded blessed refs (default "__class"). The JSON bool family (JSON::XS::Boolean, JSON::PP::Boolean, Types::Serialiser::Boolean) decodes to JS booleans regardless.
+
+**Returns:** unknown — the decoded value. Blessed scalar refs in the JSON-bool family become JS booleans; bare 1/0 stay numbers; other blessed refs carry the classKey sentinel.
+
+**Throws:** Throws on malformed input or a reference that would close a cycle.
+
+```ts
+const v = codec.perl.parseDumper("$VAR1 = [1, 2];"); // [1, 2]
+```
+
 #### codec.php.parseVarDump
 
 ```
-parseVarDump(...args: unknown[])
+parseVarDump(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
 ```
 
 Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, truncation, visibility-annotated props).
 
+**Parameters**
+
+- `input` *(string)* — PHP var_dump() output to parse back.
+- `opts` *({ classKey?: string, perlBoolClass?: string, indent?: string }, optional)* — classKey sets the sentinel property used to tag decoded objects (default "__class").
+
+**Returns:** unknown — the reconstructed value (best-effort; var_dump is a lossy format).
+
+**Throws:** Throws on lossy markers it cannot faithfully reverse: *RECURSION*, truncation, or visibility-annotated (private/protected) properties.
+
+```ts
+const v = codec.php.parseVarDump('int(42)'); // 42
+```
+
 #### codec.php.parseVarExport
 
 ```
-parseVarExport(...args: unknown[])
+parseVarExport(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
 ```
 
 Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a value.
 
+**Parameters**
+
+- `input` *(string)* — A PHP var_export() literal: array(...), scalars, NULL, or \Cls::__set_state(array(...)).
+- `opts` *({ classKey?: string, perlBoolClass?: string, indent?: string }, optional)* — classKey sets the sentinel property used to tag decoded __set_state objects (default "__class").
+
+**Returns:** unknown — the decoded value; \Cls::__set_state objects become plain objects carrying the classKey sentinel.
+
+**Throws:** Throws on input that is not a parseable var_export() literal.
+
+```ts
+const v = codec.php.parseVarExport("array (\n  0 => 1,\n)");
+```
+
 #### codec.php.serialize
 
 ```
-serialize(...args: unknown[])
+serialize(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
 ```
 
 PHP serialize(): encode a value to PHP's canonical serialization string. Objects use the __class sentinel; cycles throw.
 
+**Parameters**
+
+- `value` *(unknown)* — Any JSON-like value: null, boolean, number, string, array, or plain object. An object carrying the class-key sentinel (opts.classKey, default "__class") encodes as a PHP object (O:).
+- `opts` *({ classKey?: string, perlBoolClass?: string, indent?: string }, optional)* — classKey overrides the class-name sentinel property (default "__class"). indent / perlBoolClass are unused by serialize.
+
+**Returns:** string — the PHP serialize() string (e.g. a:1:{...}).
+
+**Throws:** Throws on a circular reference or an unsupported value type (function, Symbol, BigInt, Date, Map, Set, RegExp).
+
+```ts
+const s = codec.php.serialize({ a: 1, b: [2, 3] });
+```
+
 #### codec.php.unserialize
 
 ```
-unserialize(...args: unknown[])
+unserialize(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
 ```
 
 PHP unserialize(): decode a serialize() string back to a value. r:/R: references resolve to shared objects (DAGs); cycles throw.
 
+**Parameters**
+
+- `input` *(string)* — A PHP serialize() string.
+- `opts` *({ classKey?: string, perlBoolClass?: string, indent?: string }, optional)* — classKey sets the sentinel property used to tag decoded PHP objects (default "__class").
+
+**Returns:** unknown — the decoded value. PHP objects become plain objects carrying the classKey sentinel; r:/R: references rebuild as shared object identities (DAGs).
+
+**Throws:** Throws on malformed input or a reference that would close a cycle.
+
+```ts
+const v = codec.php.unserialize('a:2:{i:0;i:1;i:1;i:2;}'); // [1, 2]
+```
+
 #### codec.php.varDump
 
 ```
-varDump(...args: unknown[])
+varDump(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
 ```
 
 PHP var_dump(): human-readable debug output. String lengths are byte counts.
 
+**Parameters**
+
+- `value` *(unknown)* — Any JSON-like value (see php.serialize).
+- `opts` *({ classKey?: string, perlBoolClass?: string, indent?: string }, optional)* — indent overrides the default indentation step. classKey overrides the class-name sentinel (default "__class").
+
+**Returns:** string — var_dump()-style output. String lengths in the output are byte counts, matching PHP.
+
+**Throws:** Throws on a circular reference or an unsupported value type.
+
+```ts
+const dump = codec.php.varDump({ name: "ok" });
+```
+
 #### codec.php.varExport
 
 ```
-varExport(...args: unknown[])
+varExport(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
 ```
 
 PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-space step.
+
+**Parameters**
+
+- `value` *(unknown)* — Any JSON-like value (see php.serialize). Objects with the class-key sentinel emit as \Cls::__set_state(...).
+- `opts` *({ classKey?: string, perlBoolClass?: string, indent?: string }, optional)* — indent overrides the default 2-space indentation step. classKey overrides the class-name sentinel (default "__class").
+
+**Returns:** string — valid PHP source, the kind var_export() prints.
+
+**Throws:** Throws on a circular reference or an unsupported value type.
+
+```ts
+const code = codec.php.varExport({ x: 1 }, { indent: "    " });
+```
 
 ### console
 
@@ -2236,42 +2466,102 @@ Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr.
 #### console.debug
 
 ```
-debug(...args: unknown[])
+debug(args: ...unknown[]): void
 ```
 
 Alias of console.log — stringified arguments, space-joined, to stdout.
+
+**Parameters**
+
+- `args` *(...unknown[])* — Values to print; identical formatting and stdout destination as console.log.
+
+**Returns:** void — output is written to stdout as a side effect.
+
+**Throws:** Never throws; values JSON cannot serialise degrade to their String() form.
+
+```ts
+console.debug("cache hit", key);
+```
 
 #### console.error
 
 ```
-error(...args: unknown[])
+error(args: ...unknown[]): void
 ```
 
 Like console.log but writes to stderr.
+
+**Parameters**
+
+- `args` *(...unknown[])* — Values to print; same space-joined / JSON formatting as console.log but routed to stderr.
+
+**Returns:** void — output is written to stderr as a side effect.
+
+**Throws:** Never throws; values JSON cannot serialise degrade to their String() form.
+
+```ts
+console.error("request failed", { status: 500 });
+```
 
 #### console.info
 
 ```
-info(...args: unknown[])
+info(args: ...unknown[]): void
 ```
 
 Alias of console.log — stringified arguments, space-joined, to stdout.
 
+**Parameters**
+
+- `args` *(...unknown[])* — Values to print; identical formatting and stdout destination as console.log.
+
+**Returns:** void — output is written to stdout as a side effect.
+
+**Throws:** Never throws; values JSON cannot serialise degrade to their String() form.
+
+```ts
+console.info("listening on", 8080);
+```
+
 #### console.log
 
 ```
-log(...args: unknown[])
+log(args: ...unknown[]): void
 ```
 
 Print a space-joined line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON. Browser/Node-compatible; same output as runtime.log.
 
+**Parameters**
+
+- `args` *(...unknown[])* — Values to print, joined by single spaces and terminated with a newline. Primitives (string/number/boolean/null/undefined) print raw; objects and arrays render as JSON via JSON.stringify, falling back to String() for functions and circular references.
+
+**Returns:** void — output is written to stdout as a side effect.
+
+**Throws:** Never throws; values JSON cannot serialise degrade to their String() form.
+
+```ts
+console.log("user", { id: 1, name: "ada" }); // user {"id":1,"name":"ada"}
+```
+
 #### console.warn
 
 ```
-warn(...args: unknown[])
+warn(args: ...unknown[]): void
 ```
 
 Like console.log but writes to stderr.
+
+**Parameters**
+
+- `args` *(...unknown[])* — Values to print; same space-joined / JSON formatting as console.log but routed to stderr.
+
+**Returns:** void — output is written to stderr as a side effect.
+
+**Throws:** Never throws; values JSON cannot serialise degrade to their String() form.
+
+```ts
+console.warn("retrying in", 5, "seconds");
+```
 
 ### crypto
 
@@ -2744,34 +3034,88 @@ Filesystem operations: path manipulation and archive create/extract.
 #### fs.archive.create
 
 ```
-create(...args: unknown[]): Promise<Record<string, unknown>>
+create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<Record<string, unknown>>
 ```
 
 Create a zip / tar / tar.gz at destPath from a list of paths. Format inferred from extension.
 
+**Parameters**
+
+- `destPath` *(string)* — Output archive path. Format is inferred from the extension: .zip, .tar, .tar.gz, or .tgz.
+- `sources` *((string | { path: string, name?: string })[])* — Non-empty array of inputs. A bare string uses the disk path as-is and its basename inside the archive; an object overrides the in-archive name via name. Directory sources are recursed (the directory's basename becomes the archive subdir). Archive paths always use forward slashes.
+
+**Returns:** Promise<{ path: string, format: string, entries: string[], bytes?: number }> — path is destPath, format is the inferred format ("zip" | "tar" | "tar.gz"), entries lists the file paths written (directories excluded), and bytes is the final archive size when stat succeeds.
+
+**Throws:** Rejects if destPath is empty, sources is not an array / is empty / contains a bad entry (object missing 'path', unsupported element type), the format cannot be inferred from the extension, or any disk read / write fails (e.g. a source path does not exist).
+
+```ts
+const r = await fs.archive.create("out.tar.gz", ["dist", { path: "README.md", name: "docs/README.md" }]);
+runtime.log(r.format, r.entries.length);
+```
+
 #### fs.archive.extract
 
 ```
-extract(...args: unknown[]): Promise<Record<string, unknown>>
+extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<Record<string, unknown>>
 ```
 
 Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour.
 
+**Parameters**
+
+- `archivePath` *(string)* — Path to the archive. Format is inferred from its extension (.zip, .tar, .tar.gz, .tgz).
+- `destDir` *(string)* — Destination directory; created (recursively) if absent. All entries are confined to this directory via zip-slip / tar-slip protection.
+- `opts` *({ overwrite?: boolean }, optional)* — overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL).
+
+**Returns:** Promise<{ path: string, format: string, dest: string, entries: string[] }> — path is archivePath, format is the inferred format, dest is destDir, and entries lists the extracted entry names (regular files only).
+
+**Throws:** Rejects if archivePath or destDir is empty, the format cannot be inferred, destDir cannot be created, the archive cannot be opened / decoded, an entry escapes destDir (absolute path or '..' component), or (with overwrite false) an entry collides with an existing file.
+
+```ts
+const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true });
+runtime.log(r.entries.length, "files extracted");
+```
+
 #### fs.path.basename
 
 ```
-basename(...args: unknown[])
+basename(path: string, suffix?: string): string
 ```
 
 Final segment of a path; optional suffix is stripped if it matches.
 
+**Parameters**
+
+- `path` *(string)* — A forward-slash path. Trailing slashes are stripped before taking the last segment.
+- `suffix` *(string, optional)* — Trailing suffix to remove from the result (e.g. an extension). Only stripped when it matches and is not the entire segment; a non-matching or empty suffix is ignored.
+
+**Returns:** string — the last path segment, with suffix removed when it applies.
+
+**Throws:** Throws a TypeError if path is missing, null, or undefined. suffix is coerced to a string and is optional.
+
+```ts
+const b = fs.path.basename("/var/log/app.log", ".log"); // "app"
+```
+
 #### fs.path.dirname
 
 ```
-dirname(...args: unknown[])
+dirname(path: string): string
 ```
 
 Directory portion of a path. POSIX-style; trailing slashes are stripped.
+
+**Parameters**
+
+- `path` *(string)* — A forward-slash path. On Windows, normalise separators yourself first.
+
+**Returns:** string — everything up to (not including) the final slash; "." when the path has no directory component, "/" for a rooted single segment.
+
+**Throws:** Throws a TypeError if path is missing, null, or undefined.
+
+```ts
+const d = fs.path.dirname("/var/log/app.log"); // "/var/log"
+```
 
 ### net
 
@@ -3000,66 +3344,159 @@ Script-host scaffolding: logging, assertions, time, environment, runtime.argv.
 #### runtime.argv
 
 ```
-argv
+argv: string[]
 ```
 
 Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is the program name (sercon), argv[1] is the running script path, and any args after `--` on the command line start at argv[2].
 
+**Returns:** string[] — the per-run argument vector. argv[0] is the program name ("sercon"), argv[1] is the running script's path, and entries from index 2 onward are the user arguments passed after `--` on the command line. This is a value (property), not a function.
+
+**Throws:** Not callable — accessing it never throws; reading an out-of-range index yields undefined per normal array semantics.
+
+```ts
+const target = runtime.argv[2] ?? "default-host";
+```
+
 #### runtime.assert.equal
 
 ```
-equal(...args: unknown[])
+equal(actual: unknown, expected: unknown, msg?: string): void
 ```
 
 Throw when actual != expected (strict equality on primitives, deep equality on objects). Optional msg appears in the error.
 
+**Parameters**
+
+- `actual` *(unknown)* — The value produced by the code under test.
+- `expected` *(unknown)* — The value to compare against. Primitives use strict equality; objects/arrays use deep structural equality (key order ignored).
+- `msg` *(string, optional)* — Optional message prefixed onto the thrown error; defaults to "assert.equal failed".
+
+**Returns:** void — returns nothing when the values match.
+
+**Throws:** Throws an Error ("<msg>: expected <expected>, got <actual>") when the values are not equal.
+
+```ts
+runtime.assert.equal(1 + 1, 2, "math still works");
+```
+
 #### runtime.assert.ok
 
 ```
-ok(...args: unknown[])
+ok(cond: unknown, msg?: string): void
 ```
 
 Throw when cond is falsy. Optional msg appears in the error.
 
+**Parameters**
+
+- `cond` *(unknown)* — A value tested for truthiness (JS coercion: 0, "", null, undefined, NaN and false are falsy).
+- `msg` *(string, optional)* — Optional message used as the thrown error text; defaults to "assert.ok failed".
+
+**Returns:** void — returns nothing when cond is truthy.
+
+**Throws:** Throws an Error carrying msg (or "assert.ok failed") when cond is null or coerces to false.
+
+```ts
+runtime.assert.ok(user.id, "user must have an id");
+```
+
 #### runtime.env.get
 
 ```
-get(...args: unknown[])
+get(name: string): string | undefined
 ```
 
 Read an environment variable. Returns undefined when unset (not empty string).
 
+**Parameters**
+
+- `name` *(string)* — Environment variable name to look up.
+
+**Returns:** string — the variable's value, or undefined when the variable is not set. A variable set to the empty string returns "", which is distinct from undefined.
+
+**Throws:** Never throws.
+
+```ts
+const home = runtime.env.get("HOME") ?? "/tmp";
+```
+
 #### runtime.log
 
 ```
-log(...args: unknown[])
+log(args: unknown[]): void
 ```
 
 Print one space-separated line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON (circular refs fall back to [object Object]). The script-side equivalent of console.log.
 
+**Parameters**
+
+- `args` *(unknown[])* — Zero or more values to print. They are joined with single spaces; primitives stringify directly, objects/arrays are JSON-encoded.
+
+**Returns:** void — writes a single newline-terminated line to stdout.
+
+**Throws:** Never throws; unserialisable objects degrade to [object Object] rather than erroring.
+
+```ts
+runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}
+```
+
 #### runtime.time.format
 
 ```
-format(...args: unknown[])
+format(ms: number, layout: string, tz?: string): string
 ```
 
 Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Europe/Stockholm'); default is the host's local zone.
 
+**Parameters**
+
+- `ms` *(number)* — Milliseconds since the Unix epoch (e.g. from time.nowMs). Coerced to an integer.
+- `layout` *(string)* — strftime-style layout. Supported tokens: %Y %y %m %d %H %M %S %T %F %j %A %a %B %b %z %Z and %% (literal percent). Unknown %X tokens pass through verbatim.
+- `tz` *(string, optional)* — IANA timezone name (e.g. "Europe/Stockholm", "UTC"). Defaults to the host's local zone when omitted/null/undefined.
+
+**Returns:** string — the timestamp rendered in tz with the given layout.
+
+**Throws:** Throws ("time.format: ...") if tz is not a loadable IANA timezone name.
+
+```ts
+const s = runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC");
+```
+
 #### runtime.time.nowMs
 
 ```
-nowMs(...args: unknown[])
+nowMs(): number
 ```
 
 Wall-clock milliseconds since the Unix epoch.
 
+**Returns:** number — integer milliseconds since 1970-01-01T00:00:00Z (host wall clock).
+
+**Throws:** Never throws.
+
+```ts
+const t0 = runtime.time.nowMs();
+```
+
 #### runtime.time.sleep
 
 ```
-sleep(...args: unknown[]): Promise<unknown>
+sleep(ms: number): Promise<unknown>
 ```
 
 Resolve after `ms` milliseconds. Cancellable via the engine timeout.
+
+**Parameters**
+
+- `ms` *(number)* — Delay in milliseconds. Coerced to an integer; non-positive values resolve effectively immediately.
+
+**Returns:** Promise<void> — resolves once the delay elapses.
+
+**Throws:** Rejects if the run is cancelled or hits its timeout before the delay elapses (the underlying context is cancelled).
+
+```ts
+await runtime.time.sleep(250);
+```
 
 ### server
 
@@ -3128,34 +3565,84 @@ Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers.
 #### services.ai.providers
 
 ```
-providers(...args: unknown[])
+providers(): string[]
 ```
 
 Which of claude / codex / copilot / gemini are on PATH, in preference order.
 
+**Returns:** string[] — the subset of supported AI CLIs found on PATH, in preference order (claude, codex, copilot, gemini); an empty array when none are installed. Synchronous (not a Promise).
+
+**Throws:** Never throws.
+
+```ts
+const ps = services.ai.providers(); // e.g. ["claude", "gemini"]
+```
+
 #### services.ai.send
 
 ```
-send(...args: unknown[]): Promise<Record<string, unknown>>
+send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<Record<string, unknown>>
 ```
 
 Run a one-shot prompt through a provider. opts { prompt (required), provider?, system?, context?, timeout? }. Returns { provider, output, exitCode }. Non-zero exit is data; no provider throws.
 
+**Parameters**
+
+- `opts` *({ prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number })* — prompt is required. provider names the CLI to use; when omitted, the first provider on PATH (in preference order) is chosen. system and context are prepended to the prompt as "System: …" / "Context: …" blocks (a portable substitute for each CLI's own flags). timeout in ms (default 120000).
+
+**Returns:** Promise<{ provider: string, output: string, exitCode: number }> — provider is the CLI that ran; output is its trimmed stdout (or stderr when stdout is empty on a non-zero exit); exitCode is 0 on success.
+
+**Throws:** Throws if opts.prompt is missing/empty, no provider is on PATH (when provider is unset), the named provider is unknown, the CLI fails to spawn, or on timeout / context cancellation. A non-zero exit code does NOT throw — it resolves with that exitCode.
+
+```ts
+const r = await services.ai.send({ prompt: "Say hi", provider: "claude" });
+runtime.log(r.output);
+```
+
 #### services.exec.http
 
 ```
-http(...args: unknown[]): Promise<Record<string, unknown>>
+http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<Record<string, unknown>>
 ```
 
-HTTP via recon (preferred) or curl (fallback). 4xx / 5xx resolve as status; transport errors and timeouts throw. opts.backend = 'auto' | 'recon' | 'curl'.
+Make an HTTP request by shelling out to recon (preferred) or curl (fallback). 4xx/5xx resolve as status; transport errors and timeouts throw. opts.backend = 'auto' | 'recon' | 'curl'.
+
+**Parameters**
+
+- `method` *(string)* — HTTP verb (GET, POST, PUT, DELETE, PATCH, HEAD); lower-case input is uppercased before forwarding.
+- `url` *(string)* — Target URL; must be fully qualified (the backend requires a scheme + host).
+- `opts` *({ headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }, optional)* — headers emits one -H "Name: Value" per entry. body is written to a temp file and sent via --data-binary so CR/LF stay intact. timeout in ms (default 30000). follow toggles -L to follow 3xx redirects. insecure toggles -k to skip TLS verification. backend picks the tool: 'auto' (default) prefers recon then curl; 'recon' or 'curl' require that specific binary on PATH.
+
+**Returns:** Promise<{ status: number, headers: Record<string, string>, body: string, durationMs: number, backend: "recon" | "curl" }> — status is the final HTTP status code; headers have lower-cased names (last response block on a redirect chain); body is the UTF-8 decoded response body; backend is whichever tool ran.
+
+**Throws:** Throws if method or url is missing/empty; if the requested backend (or, for 'auto', neither recon nor curl) is on PATH; on transport errors (DNS failure, connection refused, TLS handshake); on timeout or context cancellation; or if the response headers can't be parsed. HTTP 4xx/5xx do NOT throw — they resolve with that status.
+
+```ts
+const r = await services.exec.http("GET", "https://example.com");
+runtime.log(r.status, r.backend);
+```
 
 #### services.exec.shell
 
 ```
-shell(...args: unknown[]): Promise<Record<string, unknown>>
+shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane }): Promise<Record<string, unknown>>
 ```
 
-Run a subprocess. String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv. Non-zero exits resolve; spawn failures and timeouts throw.
+Run a subprocess and wait for it to exit. String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Non-zero exits resolve normally; spawn failures and timeouts throw.
+
+**Parameters**
+
+- `cmd` *(string | string[])* — A string is passed verbatim to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell, so use this form when arguments contain whitespace or shell metacharacters you don't want re-interpreted.
+- `opts` *({ timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane }, optional)* — timeout in ms (default 30000); on expiry the process tree is killed and the call throws. cwd sets the working directory. stdin is fed to the process's standard input. env entries are merged on top of the inherited environment (they do not replace it). pane (a tui.pane name or Pane handle) streams stdout+stderr live into a TUI pane — in that mode the result's stdout/stderr strings stay empty.
+
+**Returns:** Promise<{ stdout: string, stderr: string, exitCode: number, success: boolean, durationMs: number }> — stdout/stderr are captured (empty when streamed to a pane); exitCode is 0 on success; success is exitCode === 0; durationMs is wall-clock spawn-to-exit time.
+
+**Throws:** Throws if cmd is missing, an empty string, an empty array, or a non-string array element; if the host binary is not on PATH or fails to start; if the timeout (or context cancellation) fires before exit; or if a named pane is referenced without a prior tui.layout. A non-zero exit code does NOT throw — it resolves with success:false.
+
+```ts
+const r = await services.exec.shell("echo hi");
+if (r.success) runtime.log(r.stdout.trim());
+```
 
 #### services.gh.authStatus
 
@@ -3165,93 +3652,246 @@ authStatus(...args: unknown[]): Promise<{ authenticated: boolean; user: string; 
 
 Probe gh's auth state. Missing gh / unauthenticated resolve with { authenticated: false, … } — only context cancellation throws.
 
+**Returns:** Promise<{ authenticated: boolean, user: string, raw: string }> — authenticated is true only when `gh api user` succeeds; user is the resolved login ("" when not authenticated); raw is the login on success or the underlying gh error / "gh not on PATH" otherwise.
+
+**Throws:** Throws only on context cancellation. A missing gh binary or an unauthenticated session resolve with authenticated:false rather than throwing.
+
+```ts
+const a = await services.gh.authStatus();
+if (a.authenticated) runtime.log("logged in as", a.user);
+```
+
 #### services.gh.prList
 
 ```
-prList(...args: unknown[]): Promise<Record<string, unknown>[]>
+prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Record<string, unknown>[]>
 ```
 
 List pull requests on the cwd's repo (or opts.cwd). Defaults: open state, limit 30. Filters: state / limit / author.
 
+**Parameters**
+
+- `opts` *({ cwd?: string, state?: string, limit?: number, author?: string }, optional)* — cwd selects the repo (defaults to the engine's working directory, which gh uses to detect the repo). state filters by PR state ("open" default, "closed", "merged", "all"). limit caps results (default 30; must be positive). author filters to PRs opened by that login.
+
+**Returns:** Promise<Array<{ number: number, title: string, state: string, author: string, headRefName: string, baseRefName: string, url: string, createdAt: string, updatedAt: string }>> — one object per PR; author is flattened from gh's { login } wrapper to the bare login string; createdAt/updatedAt are ISO 8601 timestamps.
+
+**Throws:** Throws if limit is <= 0, gh is not on PATH, gh exits non-zero (not authenticated, not a GitHub repo, etc.), the JSON can't be parsed, or on context cancellation.
+
+```ts
+const prs = await services.gh.prList({ state: "open", limit: 5 });
+for (const pr of prs) runtime.log(pr.number, pr.title);
+```
+
 #### services.gh.repoView
 
 ```
-repoView(...args: unknown[]): Promise<Record<string, unknown>>
+repoView(repo?: string, opts?: { cwd?: string }): Promise<Record<string, unknown>>
 ```
 
 Repo metadata. With no arg uses cwd's repo; pass 'owner/name' for any repo gh can see. owner + defaultBranch are pre-flattened.
 
+**Parameters**
+
+- `repo` *(string, optional)* — "owner/name" of any repo gh can access. Omit (or pass opts as the first arg) to view the repo detected from cwd.
+- `opts` *({ cwd?: string }, optional)* — cwd selects the checkout gh uses to detect the current repo when repo is omitted.
+
+**Returns:** Promise<{ name: string, owner: string, description: string, url: string, defaultBranch: string, visibility: string }> — owner is flattened from gh's { login } wrapper to the bare login; defaultBranch is flattened from defaultBranchRef.name ("" if absent); key order matches gh's output.
+
+**Throws:** Throws if gh is not on PATH, gh exits non-zero (repo not found, not authenticated, etc.), the JSON can't be parsed, or on context cancellation.
+
+```ts
+const r = await services.gh.repoView("cli/cli");
+runtime.log(r.owner, r.defaultBranch);
+```
+
 #### services.git.add
 
 ```
-add(...args: unknown[]): Promise<{ paths: string[] }>
+add(paths: string | string[], opts?: { cwd?: string }): Promise<{ paths: string[] }>
 ```
 
 Stage one path (string) or several (string[]).
 
+**Parameters**
+
+- `paths` *(string | string[])* — Path or paths to stage. Passed after a `--` separator so paths that look like flags (-foo) are handled literally.
+- `opts` *({ cwd?: string }, optional)* — cwd selects the checkout; defaults to the engine's working directory.
+
+**Returns:** Promise<{ paths: string[] }> — the list of paths that were staged.
+
+**Throws:** Throws if paths is missing, an empty string, or contains a non-string array element; if git is not on PATH; or if git add exits non-zero (e.g. a pathspec matching nothing).
+
+```ts
+await services.git.add(["src/a.ts", "src/b.ts"]);
+```
+
 #### services.git.branch
 
 ```
-branch(...args: unknown[]): Promise<{ current: string; detached: boolean; all: string[] }>
+branch(opts?: { cwd?: string }): Promise<{ current: string; detached: boolean; all: string[] }>
 ```
 
 Current branch (empty when HEAD is detached) plus the list of local branches.
 
+**Parameters**
+
+- `opts` *({ cwd?: string }, optional)* — cwd selects the checkout to inspect; defaults to the engine's working directory.
+
+**Returns:** Promise<{ current: string, detached: boolean, all: string[] }> — current is the checked-out branch name ("" when detached); detached is true on a detached HEAD; all lists every local branch (refs/heads) by short name.
+
+**Throws:** Throws if git is not on PATH, the directory is not a git repository, or the underlying git command fails. A detached HEAD is reported via detached:true, not a throw.
+
+```ts
+const b = await services.git.branch();
+runtime.log(b.detached ? "(detached)" : b.current);
+```
+
 #### services.git.commit
 
 ```
-commit(...args: unknown[]): Promise<{ sha: string }>
+commit(message: string, opts?: { cwd?: string, allowEmpty?: boolean }): Promise<{ sha: string }>
 ```
 
 Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --allow-empty.
 
+**Parameters**
+
+- `message` *(string)* — Commit message (passed as a single -m argument).
+- `opts` *({ cwd?: string, allowEmpty?: boolean }, optional)* — cwd selects the checkout. allowEmpty adds --allow-empty so a commit succeeds with no staged changes (release markers, etc.); defaults to false.
+
+**Returns:** Promise<{ sha: string }> — sha is the full SHA of the newly created HEAD commit.
+
+**Throws:** Throws if message is missing or blank, git is not on PATH, or git commit exits non-zero (e.g. nothing staged and allowEmpty is false).
+
+```ts
+const c = await services.git.commit("chore: bump", { allowEmpty: true });
+```
+
 #### services.git.diffStat
 
 ```
-diffStat(...args: unknown[]): Promise<{ files: number; insertions: number; deletions: number }>
+diffStat(opts?: { cwd?: string, revRange?: string }): Promise<{ files: number; insertions: number; deletions: number }>
 ```
 
 Aggregate { files, insertions, deletions } from `git diff --shortstat`. Default revRange HEAD~1..HEAD.
 
+**Parameters**
+
+- `opts` *({ cwd?: string, revRange?: string }, optional)* — cwd selects the checkout. revRange is the diff range (default "HEAD~1..HEAD", the last commit).
+
+**Returns:** Promise<{ files: number, insertions: number, deletions: number }> — counters parsed from git diff --shortstat. An empty diff returns all zeros.
+
+**Throws:** Throws if git is not on PATH, the directory is not a git repository, or git diff exits non-zero (e.g. a bad revRange).
+
+```ts
+const d = await services.git.diffStat();
+runtime.log(d.files, d.insertions, d.deletions);
+```
+
 #### services.git.isClean
 
 ```
-isClean(...args: unknown[]): Promise<boolean>
+isClean(opts?: { cwd?: string }): Promise<boolean>
 ```
 
 True iff `git status --porcelain` is empty.
 
+**Parameters**
+
+- `opts` *({ cwd?: string }, optional)* — cwd selects the checkout; defaults to the engine's working directory.
+
+**Returns:** Promise<boolean> — true when the working tree has no staged, unstaged, or untracked changes.
+
+**Throws:** Throws if git is not on PATH, the directory is not a git repository, or git status exits non-zero.
+
+```ts
+if (await services.git.isClean()) runtime.log("clean");
+```
+
 #### services.git.log
 
 ```
-log(...args: unknown[]): Promise<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }[]>
+log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }[]>
 ```
 
 Recent commits as { sha, shortSha, author, email, timestamp, subject }. opts.limit / opts.revRange.
 
+**Parameters**
+
+- `opts` *({ cwd?: string, limit?: number, revRange?: string }, optional)* — cwd selects the checkout. limit caps the number of commits (default 50; must be positive). revRange selects the range/ref to walk (default "HEAD").
+
+**Returns:** Promise<Array<{ sha: string, shortSha: string, author: string, email: string, timestamp: number, subject: string }>> — newest first; timestamp is the author Unix epoch seconds; subject is the commit's first line.
+
+**Throws:** Throws if limit is <= 0, git is not on PATH, the directory is not a git repository, or git log exits non-zero (e.g. an unknown revRange).
+
+```ts
+const log = await services.git.log({ limit: 5 });
+runtime.log(log[0].subject);
+```
+
 #### services.git.revParse
 
 ```
-revParse(...args: unknown[]): Promise<string>
+revParse(rev: string, opts?: { cwd?: string }): Promise<string>
 ```
 
 Full 40-char SHA for the given rev. Invalid refs throw.
 
+**Parameters**
+
+- `rev` *(string)* — Any revision git understands (branch, tag, HEAD, short SHA, HEAD~2, etc.).
+- `opts` *({ cwd?: string }, optional)* — cwd selects the checkout; defaults to the engine's working directory.
+
+**Returns:** Promise<string> — the full 40-character commit SHA the rev resolves to.
+
+**Throws:** Throws if rev is missing or empty, git is not on PATH, the directory is not a git repository, or the rev cannot be resolved (git's own error message is included).
+
+```ts
+const sha = await services.git.revParse("HEAD");
+```
+
 #### services.git.runText
 
 ```
-runText(...args: unknown[]): Promise<{ stdout: string; stderr: string; exitCode: number }>
+runText(args: string | string[], opts?: { cwd?: string }): Promise<{ stdout: string; stderr: string; exitCode: number }>
 ```
 
 Escape hatch: run any `git <args>`, get { stdout, stderr, exitCode } — exitCode is data, not a throw.
 
+**Parameters**
+
+- `args` *(string | string[])* — git arguments (without the leading "git"), e.g. ["tag", "--list"]. A bare string is treated as a single argument.
+- `opts` *({ cwd?: string }, optional)* — cwd selects the checkout; defaults to the engine's working directory.
+
+**Returns:** Promise<{ stdout: string, stderr: string, exitCode: number }> — captured streams plus git's exit code, so callers can react to any exit status without try/catch.
+
+**Throws:** Throws if args is missing, an empty string, or an empty array; if git is not on PATH; or on a spawn failure / context cancellation. A non-zero exit code does NOT throw — it is returned in exitCode.
+
+```ts
+const r = await services.git.runText(["tag", "--list"]);
+if (r.exitCode === 0) runtime.log(r.stdout);
+```
+
 #### services.git.status
 
 ```
-status(...args: unknown[]): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>
+status(opts?: { cwd?: string }): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>
 ```
 
 Parsed `git status --porcelain` entries: { path, indexStatus, workingStatus }.
+
+**Parameters**
+
+- `opts` *({ cwd?: string }, optional)* — cwd selects the checkout; defaults to the engine's working directory.
+
+**Returns:** Promise<Array<{ path: string, indexStatus: string, workingStatus: string }>> — one entry per changed path; indexStatus / workingStatus are the porcelain v1 X / Y status characters (e.g. "M", "A", "?"). An empty array means a clean tree.
+
+**Throws:** Throws if git is not on PATH, the directory is not a git repository, or git status exits non-zero.
+
+```ts
+for (const e of await services.git.status())
+  runtime.log(e.indexStatus + e.workingStatus, e.path);
+```
 
 ### text
 
