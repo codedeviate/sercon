@@ -15,6 +15,21 @@ func servicesDocs() map[string]scriptengine.MemberDoc {
 			Example: `const r = await services.exec.shell("echo hi");
 if (r.success) runtime.log(r.stdout.trim());`,
 		},
+		"exec.stream": {
+			Summary: "Run a subprocess and stream its stdout/stderr to a callback line by line as output arrives (unlike exec.shell, which buffers). String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Resolves { exitCode, success, durationMs } on exit; non-zero exits resolve normally; spawn failures and timeouts reject.",
+			Params: []scriptengine.Param{
+				{Name: "cmd", Type: "string | string[]", Desc: "A string is passed to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so pipes, redirects, and globs work. A string[] is treated as argv: argv[0] is run directly with no shell."},
+				{Name: "onLine", Type: "(line: string, stream: \"stdout\" | \"stderr\") => void", Desc: "Called once per output line as it arrives. line has its trailing newline stripped; stream is 'stdout' or 'stderr'. A final line without a trailing newline is still delivered. Required — a non-function throws synchronously."},
+				{Name: "opts", Type: "{ cwd?: string, env?: Record<string, string>, stdin?: string, timeout?: number }", Optional: true, Desc: "cwd sets the working directory; env entries merge on top of the inherited environment; stdin is fed to the process. timeout is in ms with NO default (0 / absent = run until exit, unlike exec.shell's 30000); when set, the process tree is killed on expiry and the call rejects."},
+			},
+			ReturnType: "Promise<{ exitCode: number; success: boolean; durationMs: number }>",
+			Returns:    "Promise<{ exitCode: number, success: boolean, durationMs: number }> — resolves on process exit. exitCode is 0 on success; success is exitCode === 0; durationMs is wall-clock spawn-to-exit time. Output is delivered via onLine, not captured into the result.",
+			Errors:     "Throws synchronously if cmd is missing or onLine is not a function. The Promise rejects if the host binary is not on PATH or fails to start, or if the timeout (or context cancellation) fires before exit. A non-zero exit code does NOT reject — it resolves with success:false.",
+			Example: `const r = await services.exec.stream("echo one; echo two", (line, stream) => {
+  runtime.log(stream, line);
+});
+runtime.log("exit", r.exitCode);`,
+		},
 		"exec.http": {
 			Summary: "Make an HTTP request by shelling out to recon (preferred) or curl (fallback). 4xx/5xx resolve as status; transport errors and timeouts throw. opts.backend = 'auto' | 'recon' | 'curl'.",
 			Params: []scriptengine.Param{

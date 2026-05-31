@@ -1008,6 +1008,15 @@ v0.8.0). Members:
 
 - `services.exec.shell(cmd, opts?)` — run a shell command; captures
   stdout/stderr or streams into a `tui` pane when `opts.pane` is set.
+- `services.exec.stream(cmd, onLine, opts?)` — like `exec.shell` but streams
+  the subprocess's output to `onLine(line, stream)` **line by line as it
+  arrives** instead of buffering it. `cmd` and `opts` (`cwd` / `env` /
+  `stdin` / `timeout`) match `exec.shell`, except `timeout` has **no default**
+  (0 / absent = run until exit), since streaming targets long-running output.
+  `stream` is `"stdout"` or `"stderr"`. Returns a `Promise` resolving to
+  `{ exitCode, success, durationMs }` on exit; a non-zero exit resolves with
+  `success: false`, while spawn failures and timeouts reject. Useful for
+  processing large or incremental output without holding it all in memory.
 - `services.exec.http(method, url, opts?)` — shell-level `curl`-style
   HTTP (separate from `net.http`, intended for raw protocol use).
 - `services.git.*` — git porcelain wrappers (clone, status, commit,

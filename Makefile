@@ -62,6 +62,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/diff.ts \
 	examples/scripts/jq.ts \
 	examples/scripts/exec-shell.ts \
+	examples/scripts/exec-stream.ts \
 	examples/scripts/exec-http.ts \
 	examples/scripts/http-request.ts \
 	examples/scripts/browser.ts \

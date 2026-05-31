@@ -516,7 +516,14 @@ const fed = await services.exec.shell(["/usr/bin/tr", "a-z", "A-Z"], {
   cwd: "/tmp",
   env: { GREETING: "hi" },
   timeout: 5000,
-});`)
+});
+
+// services.exec.stream: same cmd/opts, but output streams to a callback
+// line by line as it arrives (no buffering), resolving on exit.
+const s = await services.exec.stream("echo one; echo two", (line, stream) => {
+  runtime.log(stream, line);
+});
+runtime.log("stream exit", s.exitCode);`)
 	note("Non-zero exits resolve with success:false; timeouts and spawn failures throw.")
 
 	header(26, "HTTP via recon (with curl fallback) (services.exec.http)")
