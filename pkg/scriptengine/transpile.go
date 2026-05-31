@@ -1,6 +1,8 @@
 package scriptengine
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -99,19 +101,55 @@ func transpileEntry(source, sourceFile string) (transpileResult, error) {
 		Sourcefile: sourceFile,
 		Supported:  gojaUnsupported,
 		KeepNames:  true,
+		// External map so result.Code stays clean ESM for the rewrite below;
+		// we shift it for the rewrite's line offset and re-attach it inline.
+		Sourcemap: esbuild.SourceMapExternal,
 	})
 	if len(result.Errors) > 0 {
 		return transpileResult{}, fmt.Errorf("%w: %s: %s", ErrTranspile, sourceFile, formatMessages(result.Errors))
 	}
-	js := rewriteEntryESMToCJS(string(result.Code))
+	js, shift := rewriteEntryESMToCJS(string(result.Code))
+	if shifted, err := shiftSourceMap(result.Map, shift); err == nil && len(shifted) > 0 {
+		js = js + "\n" + inlineSourceMap(shifted) + "\n"
+	}
+	// On a map error we fall through with the un-mapped JS — errors then point
+	// at transpiled-JS lines (prior behaviour), never worse.
 	return transpileResult{JS: js, SourceFile: sourceFile}, nil
+}
+
+// shiftSourceMap prepends `shift` blank output lines to an esbuild source map
+// (raw JSON) by prepending `shift` semicolons to its "mappings" field. This is
+// safe without re-encoding any VLQ segments: inserting blank leading output
+// lines leaves every real segment's zero-relative encoding unchanged. Returns
+// the (possibly unchanged) JSON.
+func shiftSourceMap(raw []byte, shift int) ([]byte, error) {
+	if shift <= 0 || len(raw) == 0 {
+		return raw, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	mappings, _ := m["mappings"].(string)
+	m["mappings"] = strings.Repeat(";", shift) + mappings
+	return json.Marshal(m)
+}
+
+// inlineSourceMap renders an esbuild source map (raw JSON) as a
+// //# sourceMappingURL=data:... directive line that goja parses natively.
+func inlineSourceMap(raw []byte) string {
+	return "//# sourceMappingURL=data:application/json;base64," +
+		base64.StdEncoding.EncodeToString(raw)
 }
 
 // rewriteEntryESMToCJS splits the esbuild ESM output into its leading import
 // block and the rest of the body, converts each import to an equivalent
 // require() declaration, and wraps the body in an async IIFE whose settlement
-// is reported through __resolve / __reject.
-func rewriteEntryESMToCJS(esm string) string {
+// is reported through __resolve / __reject. It also returns the source-map
+// line shift: how many blank output lines the rewrite prepends to the body
+// relative to esbuild's output, so the caller can adjust an external source
+// map before attaching it.
+func rewriteEntryESMToCJS(esm string) (string, int) {
 	lines := strings.Split(esm, "\n")
 	var imports []string
 	var body []string
@@ -142,15 +180,34 @@ func rewriteEntryESMToCJS(esm string) string {
 		body = lines[bodyStart:]
 	}
 
+	// The body must sit at or below its original esbuild line number so the
+	// map only needs blank lines PREPENDED (never segments dropped). The
+	// natural prefix is one line per converted import plus the IIFE opener;
+	// pad with blank lines until it reaches bodyStart. shift = prefixLines -
+	// bodyStart (>= 0) is how many blank output lines the map must gain.
+	prefixLines := len(imports) + 1 // import lines + the ";(async () => {" opener
+	pad := 0
+	if bodyStart > prefixLines {
+		pad = bodyStart - prefixLines
+		prefixLines = bodyStart
+	}
+	shift := prefixLines - bodyStart
+	if bodyStart < 0 {
+		shift = 0 // no body found; nothing to map
+	}
+
 	var b strings.Builder
 	for _, imp := range imports {
 		b.WriteString(imp)
 		b.WriteByte('\n')
 	}
+	for k := 0; k < pad; k++ {
+		b.WriteByte('\n')
+	}
 	b.WriteString(";(async () => {\n")
 	b.WriteString(strings.Join(body, "\n"))
 	b.WriteString("\n})().then(__resolve, __reject);\n")
-	return b.String()
+	return b.String(), shift
 }
 
 // isImportStart returns true if the trimmed line begins a statement that we
