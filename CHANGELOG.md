@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-05-31
+
 ### Added
 
 - **`net.capture` `filter` option — tcpdump-syntax packet filtering.**
