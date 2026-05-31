@@ -91,24 +91,21 @@ needs root / CAP_NET_RAW) — all with a push/callback read model
 
 ### Documentation
 
-- **Complete the MANUAL's binding reference — every package, every
-  function, with parameters.** Today MANUAL.md §5/§6 describe each global
-  in prose and *mention* functions at best; the parameters, their types,
-  optional-vs-required, the returned object shape, and the errors thrown
-  are largely undocumented. This is crucial and must be improved even if
-  the manual grows substantially: each binding needs a full signature
-  (name, every parameter with type + meaning + default, return shape,
-  thrown errors, a short example). **Approach to settle:** the data
-  already exists in two places — the one-line JSDoc summaries in
-  `cmd/sercon/docs.go` and the generated `examples/scripts/sercon.d.ts`
-  (which carries the TypeScript signatures). Rather than hand-write and
-  drift, prefer enriching the per-member docs (param-level JSDoc in
-  `docs.go`) and **generating** the MANUAL's reference section from the
-  binding metadata + d.ts, so the long-form reference stays in lockstep
-  with the surface automatically. Moderate because the generator + the
-  param-level doc model is a design choice, not just typing; the volume
-  is large but mechanical once the pipeline exists. Until then, every new
-  binding should at least document its parameters inline.
+- **Complete the MANUAL's binding reference — migrate the remaining
+  namespaces.** *(Pipeline + `crypto` shipped — vX.)* The structured
+  `scriptengine.MemberDoc{Summary, Params, ReturnType, Returns, Errors,
+  Example}` model is now the single source of truth: it drives real d.ts
+  signatures + `@param` AND a generated MANUAL §16 reference (`make
+  reference` / `sercon --emit-reference`). `crypto` is fully documented
+  (params/returns/errors/examples) as the proof. **Remaining:** author the
+  structured docs for the other 10 namespaces — `runtime`, `text`, `codec`,
+  `fs`, `net`, `db`, `server`, `services`, `tui`, `console` — a few per
+  cycle. Each is pure authoring in `cmd/sercon/docs.go` (fill `Params`/
+  `ReturnType`/`Returns`/`Errors`/`Example`, cross-checked against the
+  binding impls); regenerating (`make types && make reference`) grows both
+  the d.ts and the MANUAL automatically. Until a namespace is migrated its
+  members show their one-line summary + a collapsed `(...args)` signature.
+  `net` is the largest/most valuable next target.
 
 
 ## Hard
