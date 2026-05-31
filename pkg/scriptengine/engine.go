@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -480,7 +481,12 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 					return
 				}
 			}
-			scriptErr = err
+			var ex *goja.Exception
+			if errors.As(err, &ex) {
+				scriptErr = &scriptException{ex: ex}
+			} else {
+				scriptErr = err
+			}
 		}
 	})
 
@@ -590,18 +596,36 @@ func (e *Engine) applyRegistrations(vm *goja.Runtime, loop *eventloop.EventLoop)
 	return nil
 }
 
-// jsErrToGo turns a JS value thrown to __reject into a Go error.
+// jsErrToGo turns a JS value thrown to __reject into a Go error. It prefers the
+// (source-mapped) stack — goja renders Error.stack as "<message>\n\tat …" — so
+// async rejections carry a full trace. Falls back to message, then String().
 func jsErrToGo(vm *goja.Runtime, v goja.Value) error {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return errors.New("script rejected with undefined")
 	}
 	if obj, ok := v.(*goja.Object); ok {
+		if st := obj.Get("stack"); st != nil && !goja.IsUndefined(st) && !goja.IsNull(st) {
+			// goja's stack ends with a trailing newline; Go error strings
+			// conventionally do not, and the CLI prints via Fprintln.
+			if s := strings.TrimRight(st.String(), "\n"); s != "" {
+				return errors.New(s)
+			}
+		}
 		if msg := obj.Get("message"); msg != nil && !goja.IsUndefined(msg) {
 			return errors.New(msg.String())
 		}
 	}
 	return errors.New(v.String())
 }
+
+// scriptException wraps a *goja.Exception so the surfaced error string carries
+// the full (source-mapped) stack. goja's Exception.Error() includes only the
+// top frame, while String() includes every frame. Unwrap exposes the
+// underlying *goja.Exception so errors.As keeps working for library callers.
+type scriptException struct{ ex *goja.Exception }
+
+func (e *scriptException) Error() string { return strings.TrimRight(e.ex.String(), "\n") }
+func (e *scriptException) Unwrap() error { return e.ex }
 
 // SetResolveHook installs (or clears, with nil) a callback invoked
 // with the absolute path of each module file resolved during a Run.

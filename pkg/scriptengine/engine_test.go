@@ -1155,3 +1155,47 @@ if (b !== 22) throw new Error("b: expected 22, got " + b);
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestRun_AsyncErrorSurfacesStack: an error thrown after a top-level await
+// rejects the entry IIFE and flows through jsErrToGo. The returned error must
+// carry the message AND a stack trace (previously it was message-only).
+func TestRun_AsyncErrorSurfacesStack(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	_, err := eng.Run(context.Background(), "async.ts", `
+await Promise.resolve();
+throw new Error("boom-async");
+`)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "boom-async") {
+		t.Errorf("missing message in %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "at ") {
+		t.Errorf("expected a stack trace, got %q", err.Error())
+	}
+}
+
+// TestRun_SyncModuleLoadErrorFullStack: a module that throws at load time
+// propagates synchronously out of RunScript as a *goja.Exception. The wrapper
+// must surface the FULL stack (every frame), so the error names both the
+// module and the entry script — not just the top frame.
+func TestRun_SyncModuleLoadErrorFullStack(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "boom.ts"),
+		[]byte("throw new Error(\"load-boom\");\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: dir, DisableConsole: true})
+	_, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"),
+		`import "./boom.ts";`)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "load-boom") {
+		t.Errorf("missing message in %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "boom.ts") || !strings.Contains(err.Error(), "main.ts") {
+		t.Errorf("expected full stack naming both boom.ts and main.ts, got %q", err.Error())
+	}
+}
