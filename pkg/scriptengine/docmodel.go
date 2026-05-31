@@ -32,7 +32,14 @@ type MemberDoc struct {
 	// Params describes each parameter. When empty, the d.ts emitter falls
 	// back to the reflected `(...args: unknown[])` signature.
 	Params []Param
-	// Returns is prose or a TS-ish description of the return value.
+	// ReturnType is the bare TS return type emitted into the d.ts signature
+	// (e.g. "string", "{ valid: boolean }"). It must be valid TypeScript —
+	// do NOT put prose here (that's Returns). Empty falls back to the
+	// reflected Go return type. Ignored for async bindings (their Promise<T>
+	// type comes from the binding's Promised[T] marker).
+	ReturnType string
+	// Returns is prose describing the return value, for the `@returns` JSDoc
+	// line and the markdown reference's Returns section (NOT the signature).
 	Returns string
 	// Errors describes when and what the member throws.
 	Errors string

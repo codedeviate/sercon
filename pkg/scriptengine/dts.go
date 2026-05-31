@@ -217,7 +217,7 @@ func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any, doc Memb
 	switch t.Kind() {
 	case reflect.Func:
 		if len(doc.Params) > 0 {
-			ret := doc.Returns
+			ret := doc.ReturnType
 			if ret == "" {
 				ret = returnType(ctx, t)
 			}
@@ -282,7 +282,7 @@ func writeMemberObject(w *errWriter, ctx *typeCtx, members map[string]any, path 
 			w.WriteString(pad + k + ": unknown;\n")
 		case t.Kind() == reflect.Func:
 			if len(doc.Params) > 0 {
-				ret := doc.Returns
+				ret := doc.ReturnType
 				if ret == "" {
 					ret = returnType(ctx, t)
 				}

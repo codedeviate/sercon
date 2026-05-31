@@ -172,7 +172,7 @@ func sigForMember(name string, v any, doc MemberDoc) string {
 		return name + "(...args: unknown[]): " + ret
 	}
 	if len(doc.Params) > 0 {
-		ret := doc.Returns
+		ret := doc.ReturnType
 		if ret == "" {
 			ret = "void"
 		}

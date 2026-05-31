@@ -19,9 +19,10 @@ func TestWriteReference_DocumentedMember(t *testing.T) {
 			Params: []Param{
 				{Name: "input", Type: "string", Desc: "UTF-8 input to hash"},
 			},
-			Returns: "hex digest",
-			Errors:  "throws if input is not a string",
-			Example: `crypto.sha256("hello")`,
+			ReturnType: "string",
+			Returns:    "hex digest",
+			Errors:     "throws if input is not a string",
+			Example:    `crypto.sha256("hello")`,
 		},
 	})
 
@@ -34,7 +35,7 @@ func TestWriteReference_DocumentedMember(t *testing.T) {
 	wants := []string{
 		"### crypto",
 		"#### crypto.sha256",
-		"sha256(input: string): hex digest",
+		"sha256(input: string): string",
 		"SHA-256 hex digest of a UTF-8 input.",
 		"- `input` *(string)* — UTF-8 input to hash",
 		"**Returns:** hex digest",
