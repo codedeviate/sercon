@@ -226,76 +226,224 @@ declare const crypto: {
 /** String / regex / charset / data manipulation — all text-shaped transforms. */
 declare const text: {
   charset: {
-    /** Decode bytes in a named charset to a UTF-8 string. */
-    decode(...args: unknown[]): Promise<string>;
-    /** Detect the most-likely charset of a byte sequence (saintfish/chardet). Returns top guess + candidates. */
-    detect(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Encode a UTF-8 string to bytes in the named charset. */
-    encode(...args: unknown[]): Promise<Uint8Array>;
+    /**
+     * Decode bytes in a named charset to a UTF-8 string.
+     * @param input Bytes encoded in `charset`.
+     * @param charset WHATWG/HTML5 encoding name or alias (UTF-8, ISO-8859-1, Windows-1252, Shift_JIS, GBK, …).
+     * @returns Promise<string> — the bytes decoded to a UTF-8 string.
+     */
+    decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>;
+    /**
+     * Detect the most-likely charset of a byte sequence (saintfish/chardet). Returns top guess + candidates.
+     * @param input Bytes to sniff. A string is taken as its raw UTF-8 bytes.
+     * @returns Promise<{ charset: string, confidence: number, language?: string, candidates: { charset: string, confidence: number, language?: string }[] }> — the top match plus all candidates; confidence is chardet's 0–100 score. language is present only when chardet reports one.
+     */
+    detect(input: string | Uint8Array | ArrayBuffer): Promise<Record<string, unknown>>;
+    /**
+     * Encode a UTF-8 string to bytes in the named charset.
+     * @param input UTF-8 string to encode.
+     * @param charset Target WHATWG/HTML5 encoding name or alias.
+     * @returns Promise<Uint8Array> — the string encoded as bytes in the target charset.
+     */
+    encode(input: string, charset: string): Promise<Uint8Array>;
   };
   diff: {
-    /** Unified-diff two text inputs. opts: context (default 3), fromFile / toFile (default 'a' / 'b'). Binary inputs return { binary: true } with an empty diff. */
-    compare(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Unified-diff two text inputs. opts: context (default 3), fromFile / toFile (default 'a' / 'b'). Binary inputs return { binary: true } with an empty diff.
+     * @param a The 'from' / left side. A string is taken as its UTF-8 bytes.
+     * @param b The 'to' / right side.
+     * @param opts context is the number of unchanged lines around each hunk (default 3); fromFile / toFile are the header labels (default 'a' / 'b').
+     * @returns Promise<{ identical: boolean, binary: boolean, added: number, removed: number, diff: string, format: "unified" }> — diff holds the unified-diff text (empty when identical or binary); added/removed count body +/- lines excluding file headers; binary is true when either input has a NUL byte in its first 8 KB.
+     */
+    compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number, fromFile?: string, toFile?: string }): Promise<Record<string, unknown>>;
   };
   jq: {
-    /** Run a jq filter over data and return the first emitted value (or null). */
-    query(...args: unknown[]): Promise<unknown>;
-    /** Run a jq filter and drain the iterator into an array. */
-    queryAll(...args: unknown[]): Promise<unknown[]>;
+    /**
+     * Run a jq filter over data and return the first emitted value (or null).
+     * @param data Input value — any JSON-like JS value (object/array/scalar). Passed to gojq directly; integers of any width are normalised so queries don't blow up.
+     * @param filter A jq filter expression, e.g. ".users[0].name" or ".items | length".
+     * @returns Promise<unknown> — the first value the filter emits, or null when it emits nothing (e.g. an optional path like .a.b? that misses).
+     */
+    query(data: unknown, filter: string): Promise<unknown>;
+    /**
+     * Run a jq filter and drain the iterator into an array.
+     * @param data Input value — any JSON-like JS value.
+     * @param filter A jq filter expression. Use this when the filter explodes a stream, e.g. ".[]" or ".users[].id".
+     * @returns Promise<unknown[]> — every value the filter emits, in order (empty array when it emits nothing).
+     */
+    queryAll(data: unknown, filter: string): Promise<unknown[]>;
   };
   preg: {
-    /** First hit of /pattern/flags against subject, or null. Returns { match, groups, index }; optional groups that didn't match surface as empty strings. */
-    match(arg0: string, arg1: string): unknown;
-    /** Every hit of /pattern/flags against subject, as an array of { match, groups, index } objects. */
-    matchAll(arg0: string, arg1: string): unknown;
-    /** Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / ${1} backref syntax — PHP's \1 form is NOT translated. */
-    replace(arg0: string, arg1: string, arg2: string): unknown;
+    /**
+     * First hit of /pattern/flags against subject, or null. Returns { match, groups, index }; optional groups that didn't match surface as empty strings.
+     * @param pattern A PHP-style /regex/flags delimited pattern (forward-slash delimiter only). Engine is Go RE2. Flags: i (case-insensitive), m (multiline ^/$), s (dotall). u/U/x are rejected.
+     * @param subject The string to search.
+     * @returns { match, groups, index } for the first match, where match is the full match, groups holds the numbered submatches after group 0 (unmatched optionals as ""), and index is the byte offset; null when there is no match.
+     */
+    match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null;
+    /**
+     * Every hit of /pattern/flags against subject, as an array of { match, groups, index } objects.
+     * @param pattern A PHP-style /regex/flags delimited pattern (RE2 engine; i/m/s flags).
+     * @param subject The string to search.
+     * @returns Array of { match, groups, index } objects, one per non-overlapping match; empty array when there is none.
+     */
+    matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[];
+    /**
+     * Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / ${1} backref syntax — PHP's \1 form is NOT translated.
+     * @param pattern A PHP-style /regex/flags delimited pattern (RE2 engine; i/m/s flags).
+     * @param replacement Replacement template using Go's RE2 syntax: $1 / ${name} reference groups; use ${1} to disambiguate. PHP's \1 backrefs are NOT supported.
+     * @param subject The string to transform.
+     * @returns string — subject with every match replaced (all occurrences).
+     */
+    replace(pattern: string, replacement: string, subject: string): string;
   };
   preg2: {
-    /** First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/backreferences. Same { match, groups, index } shape as preg. No linear-time guarantee. */
-    match(arg0: string, arg1: string): unknown;
-    /** Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, index }. */
-    matchAll(arg0: string, arg1: string): unknown;
-    /** Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 / ${1} syntax. Backtracking engine — keep a timeout around untrusted input. */
-    replace(arg0: string, arg1: string, arg2: string): unknown;
+    /**
+     * First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/backreferences. Same { match, groups, index } shape as preg. No linear-time guarantee.
+     * @param pattern A /regex/flags delimited pattern run on the .NET-flavoured regexp2 engine (lookaround, backreferences, possessive quantifiers). Flags: i, m, s, and x (ignore-pattern-whitespace, unavailable in preg). u/U are rejected.
+     * @param subject The string to search.
+     * @returns { match, groups, index } for the first match (same shape as preg.match); null when there is no match.
+     */
+    match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null;
+    /**
+     * Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, index }.
+     * @param pattern A /regex/flags delimited pattern on the regexp2 engine (i/m/s/x flags).
+     * @param subject The string to search.
+     * @returns Array of { match, groups, index } objects, one per match; empty array when there is none.
+     */
+    matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[];
+    /**
+     * Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 / ${1} syntax. Backtracking engine — keep a timeout around untrusted input.
+     * @param pattern A /regex/flags delimited pattern on the regexp2 engine (i/m/s/x flags).
+     * @param replacement Replacement template using .NET substitution syntax: $1 / ${1} reference groups, $$ is a literal dollar.
+     * @param subject The string to transform.
+     * @returns string — subject with every match replaced (startAt 0, count -1).
+     */
+    replace(pattern: string, replacement: string, subject: string): string;
   };
   str: {
-    /** Standard base64; URL-safe input is accepted via auto-detect. */
-    base64Decode(...args: unknown[]): unknown;
-    /** Standard base64 (with padding). */
-    base64Encode(...args: unknown[]): unknown;
-    /** Inverse of nl2br: <br>, <br/>, <br /> → '\n'. */
-    br2nl(...args: unknown[]): unknown;
-    /** Decode named and numeric HTML entities to their UTF-8 equivalents. */
-    htmlEntityDecode(...args: unknown[]): unknown;
-    /** Shortcut for pad(side: 'left'). */
-    lpad(...args: unknown[]): unknown;
-    /** Like trim, left side only. */
-    ltrim(...args: unknown[]): unknown;
-    /** Replace newlines with <br> (or <br/> when xhtml=true). */
-    nl2br(...args: unknown[]): unknown;
-    /** Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr'). */
-    normalizeNewlines(...args: unknown[]): unknown;
-    /** Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', or 'both'. */
-    pad(...args: unknown[]): unknown;
-    /** sprintf + write to stdout. */
-    printf(...args: unknown[]): unknown;
-    /** Rune-aware reversal — `reverse('café')` is `'éfac'`. */
-    reverse(...args: unknown[]): unknown;
-    /** Shortcut for pad(side: 'right'). */
-    rpad(...args: unknown[]): unknown;
-    /** Like trim, right side only. */
-    rtrim(...args: unknown[]): unknown;
-    /** Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's. */
-    sprintf(...args: unknown[]): unknown;
-    /** Remove HTML tags and decode common entities. */
-    stripHtml(...args: unknown[]): unknown;
-    /** Strip whitespace (or any char in the optional mask string) from both ends. */
-    trim(...args: unknown[]): unknown;
-    /** Inverse of urlEncode. */
-    urlDecode(...args: unknown[]): unknown;
-    /** Form-encoding ('+' for space). For path segments use encodeURIComponent (provided by goja). */
-    urlEncode(...args: unknown[]): unknown;
+    /**
+     * Standard base64; URL-safe input is accepted via auto-detect.
+     * @param input Standard-alphabet base64 string (with padding).
+     * @returns string — the decoded bytes interpreted as a UTF-8 string.
+     */
+    base64Decode(input: string): string;
+    /**
+     * Standard base64 (with padding).
+     * @param input UTF-8 string to encode (encoded as its raw bytes).
+     * @returns string — RFC 4648 standard base64 with `=` padding.
+     */
+    base64Encode(input: string): string;
+    /**
+     * Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
+     * @param input Source text. Any case-insensitive <br>, <br/>, or <br /> variant is matched.
+     * @returns string — input with each <br> variant replaced by a single \n.
+     */
+    br2nl(input: string): string;
+    /**
+     * Decode named and numeric HTML entities to their UTF-8 equivalents.
+     * @param input Text containing HTML entities (named like &amp; or numeric like &#39; / &#x27;).
+     * @returns string — input with recognised entities decoded to their UTF-8 characters.
+     */
+    htmlEntityDecode(input: string): string;
+    /**
+     * Shortcut for pad(side: 'left').
+     * @param input The string to pad on the left.
+     * @param len Target rune length.
+     * @param padChar Pad string; defaults to a single space.
+     * @returns string — input left-padded to len runes.
+     */
+    lpad(input: string, len: number, padChar?: string): string;
+    /**
+     * Like trim, left side only.
+     * @param input The string to trim.
+     * @param mask Cutset of characters to strip from the left. Defaults to the whitespace set " \t\n\r\v\f".
+     * @returns string — input with leading mask characters removed.
+     */
+    ltrim(input: string, mask?: string): string;
+    /**
+     * Replace newlines with <br> (or <br/> when xhtml=true).
+     * @param input Source text. CRLF is normalised to LF first, so each line break yields one tag.
+     * @param xhtml When truthy, emit the self-closing <br/> instead of <br>. Defaults to false.
+     * @returns string — input with each \n replaced by the chosen <br> tag followed by the original newline.
+     */
+    nl2br(input: string, xhtml?: boolean): string;
+    /**
+     * Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr').
+     * @param input Text with any mix of CRLF, CR, and LF line endings.
+     * @param style Target line-ending style. Defaults to 'lf'.
+     * @returns string — input with every line ending rewritten to the requested style.
+     */
+    normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string;
+    /**
+     * Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', or 'both'.
+     * @param input The string to pad. Returned unchanged when its rune length already meets or exceeds len.
+     * @param len Target rune length. Measured in runes, not bytes.
+     * @param padChar Pad string; truncated to fit the needed width. Defaults to a single space.
+     * @param side Which side(s) to pad. 'both' splits the deficit with the extra rune going right. Defaults to 'right'; any unknown value is treated as 'right'.
+     * @returns string — input padded to len runes on the chosen side(s).
+     */
+    pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string;
+    /**
+     * sprintf + write to stdout.
+     * @param format A Go fmt format string (same verbs as sprintf).
+     * @param args Values substituted into the verbs.
+     * @returns void — writes the formatted text directly to process stdout; returns nothing.
+     */
+    printf(format: string, args?: ...unknown): void;
+    /**
+     * Rune-aware reversal — `reverse('café')` is `'éfac'`.
+     * @param input The string to reverse. Reversed by Unicode code point, not byte, so multi-byte runes stay intact.
+     * @returns string — the input reversed rune-by-rune.
+     */
+    reverse(input: string): string;
+    /**
+     * Shortcut for pad(side: 'right').
+     * @param input The string to pad on the right.
+     * @param len Target rune length.
+     * @param padChar Pad string; defaults to a single space.
+     * @returns string — input right-padded to len runes.
+     */
+    rpad(input: string, len: number, padChar?: string): string;
+    /**
+     * Like trim, right side only.
+     * @param input The string to trim.
+     * @param mask Cutset of characters to strip from the right. Defaults to the whitespace set " \t\n\r\v\f".
+     * @returns string — input with trailing mask characters removed.
+     */
+    rtrim(input: string, mask?: string): string;
+    /**
+     * Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
+     * @param format A Go fmt format string. Uses Go verbs: %s string, %d integer, %f / %.2f float, %x hex, %v default, %t bool, %q quoted, %%  literal percent.
+     * @param args Values substituted into the verbs (passed through .Export(), so JS numbers arrive as Go int64/float64).
+     * @returns string — the formatted result.
+     */
+    sprintf(format: string, args?: ...unknown): string;
+    /**
+     * Remove HTML tags and decode common entities.
+     * @param input HTML source. Anything matching <...> is removed.
+     * @returns string — the input with all <...> tag spans deleted.
+     */
+    stripHtml(input: string): string;
+    /**
+     * Strip whitespace (or any char in the optional mask string) from both ends.
+     * @param input The string to trim.
+     * @param mask Cutset: any character in this string is trimmed (PHP-style, not a prefix). Defaults to the whitespace set " \t\n\r\v\f".
+     * @returns string — input with leading and trailing mask characters removed.
+     */
+    trim(input: string, mask?: string): string;
+    /**
+     * Inverse of urlEncode.
+     * @param input A form-encoded string (`+` decodes to space, %XX to bytes).
+     * @returns string — the decoded value.
+     */
+    urlDecode(input: string): string;
+    /**
+     * Form-encoding ('+' for space). For path segments use encodeURIComponent (provided by goja).
+     * @param input String to percent-encode. Uses application/x-www-form-urlencoded rules: space becomes `+`.
+     * @returns string — the form-encoded value.
+     */
+    urlEncode(input: string): string;
   };
 };
 
@@ -478,122 +626,296 @@ declare const fs: {
 /** Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions. */
 declare const net: {
   browser: {
-    /** Open a stateful HTTP session: { setUserAgent, setHeader, get, post, cookies }. Cookie jar + default headers persist across requests (like a browser). */
+    /**
+     * Open a stateful HTTP session: { setUserAgent, setHeader, get, post, cookies }. Cookie jar + default headers persist across requests (like a browser).
+     * @returns Promise<{ setUserAgent(ua: string): void, setHeader(name: string, value: string): void, get(url: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, post(url: string, body?: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, cookies(url: string): Promise<{ name: string, value: string }[]> }> — a session handle backed by an http.Client with an automatic cookie jar (public-suffix scoped). setUserAgent/setHeader register default headers replayed on every request; get/post return the same result shape as net.http.request; cookies lists the jar's cookies for a URL.
+     */
     open(...args: unknown[]): Promise<Record<string, unknown>>;
   };
   capture: {
-    /** List the host's network interfaces synchronously: net.capture.interfaces() → array of { name, addresses: string[], up, loopback }. Pure-Go (no privileges, all platforms). */
-    interfaces(...args: unknown[]): unknown;
-    /** Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, port/src port/dst port, and/or/not + parens, implicit-and between juxtaposed primaries. No CIDR (net X/Y) or portrange yet; a malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo). */
-    open(...args: unknown[]): unknown;
-    /** Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) → Promise<void>. Calls the handler once per decoded packet (same shape as capture.open) and resolves at EOF. Offline; no privileges. opts is an optional trailing arg { filter? } — the 2-arg form still works; filter is the same tcpdump-like expression string as capture.open (post-decode/userspace, not kernel BPF; no CIDR/portrange; malformed → rejects). */
-    openFile(...args: unknown[]): unknown;
-    /** Write raw frames to a .pcap file: net.capture.toFile(path, { linkType?, snaplen? }) → { write(bytes, { ts? }), close() }. write appends a raw frame (Uint8Array); ts (ms) overrides the timestamp. close() flushes and returns Promise<void>. Offline; no privileges. */
-    toFile(...args: unknown[]): unknown;
+    /**
+     * List the host's network interfaces synchronously: net.capture.interfaces() → array of { name, addresses: string[], up, loopback }. Pure-Go (no privileges, all platforms).
+     * @returns { name: string, addresses: string[], up: boolean, loopback: boolean }[] — one entry per interface with its name, assigned addresses (CIDR strings), and up / loopback flags. Synchronous (not a Promise).
+     */
+    interfaces(): { name: string; addresses: string[]; up: boolean; loopback: boolean }[];
+    /**
+     * Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, port/src port/dst port, and/or/not + parens, implicit-and between juxtaposed primaries. No CIDR (net X/Y) or portrange yet; a malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo).
+     * @param opts iface is the interface name to capture on (required); promisc enables promiscuous mode (default true); snaplen caps the per-packet capture length in bytes (default 262144); filter is an optional tcpdump-like expression (e.g. 'tcp and port 80') applied post-decode in userspace — supports tcp/udp/icmp/ip/ip6, host/src host/dst host, port/src port/dst port, and/or/not + parens; no CIDR or portrange.
+     * @param onPacket Called once per matching frame with the decoded packet. ts is epoch ms; layer keys are present only when that layer decoded; bytes is always the raw frame; payload is the application-layer bytes when present.
+     * @returns Promise<{ iface: string, link: string, close(): Promise<void> }> — a live-capture handle. link is the link-type name; close() stops the capture and resolves when the source is torn down. The handler keeps firing until close() is called or the source errors.
+     */
+    open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, payload?: Uint8Array, bytes: Uint8Array }) => void): unknown;
+    /**
+     * Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) → Promise<void>. Calls the handler once per decoded packet (same shape as capture.open) and resolves at EOF. Offline; no privileges. opts is an optional trailing arg { filter? } — the 2-arg form still works; filter is the same tcpdump-like expression string as capture.open (post-decode/userspace, not kernel BPF; no CIDR/portrange; malformed → rejects).
+     * @param path Path to a .pcap or .pcapng file; the format is auto-detected from the magic bytes.
+     * @param onPacket Called once per decoded packet (same shape as capture.open's handler).
+     * @param opts filter is the same tcpdump-like expression as capture.open, applied post-decode in userspace; omit (2-arg form) to deliver every packet.
+     * @returns Promise<void> — resolves at end-of-file after dispatching every (matching) packet to the handler.
+     */
+    openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): unknown;
+    /**
+     * Write raw frames to a .pcap file: net.capture.toFile(path, { linkType?, snaplen? }) → { write(bytes, { ts? }), close() }. write appends a raw frame (Uint8Array); ts (ms) overrides the timestamp. close() flushes and returns Promise<void>. Offline; no privileges.
+     * @param path Path of the .pcap file to create (overwritten if it exists).
+     * @param opts snaplen is the pcap global-header snap length (default 262144); linkType is the numeric pcap link-type written into the header (default Ethernet).
+     * @returns { write(bytes, opts?): void, close(): Promise<void> } — a writer handle (returned synchronously, not a Promise). write appends one raw frame to the file (opts.ts in ms overrides the timestamp, defaulting to now) and returns undefined. close() flushes and closes the file, resolving when done.
+     */
+    toFile(path: string, opts?: { snaplen?: number, linkType?: number }): { write(bytes: string | Uint8Array, opts?: { ts?: number }): void; close(): Promise<void> };
   };
   email: {
-    /** Run all five email probes in parallel — five-way handshake aggregate. */
-    all(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'. */
-    bimi(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags. */
-    dmarc(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file. */
-    mtaSts(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Send an outbound email: net.email.send({to, from, subject, body, html?, attachments?, headers?, server: {host, port?, auth?, tls?}, timeout?}) → Promise<{accepted: string[], rejected: [{address, reason}]}>. One TCP connection per call; per-recipient outcome captured. Transport failures throw; per-RCPT rejections surface in the result. TLS modes: starttls (default), tls, none. */
-    send(...args: unknown[]): Promise<{ accepted: string[]; rejected: { address: string; reason: string }[] }>;
-    /** Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy. */
-    spf(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua. */
-    tlsRpt(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Run all five email probes in parallel — five-way handshake aggregate.
+     * @param domain The domain to run all five email-auth probes against.
+     * @returns Promise<{ domain: string, spf: object, dmarc: object, mtaSts: object, tlsRpt: object, bimi: object }> — domain echoes the input; each probe key holds that probe's result (the same shape its individual binding returns) or { error: string } when that single probe failed. A per-probe failure doesn't fail the aggregate.
+     */
+    all(domain: string): Promise<Record<string, unknown>>;
+    /**
+     * Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'.
+     * @param domain The domain whose <selector>._bimi.<domain> TXT record is queried for a v=BIMI1 record.
+     * @param opts selector names the BIMI selector to query (default 'default').
+     * @returns Promise<{ present: false, selector: string } | { present: true, selector: string, record: string, tags: Record<string, string>, l: string, a: string }> — selector echoes the queried selector; when found, l is the logo URL tag and a is the assertion (VMC) tag. Missing record resolves to { present: false, selector }.
+     */
+    bimi(domain: string, opts?: { selector?: string }): Promise<Record<string, unknown>>;
+    /**
+     * Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.
+     * @param domain The domain whose _dmarc.<domain> TXT record is queried for a v=DMARC1 record.
+     * @returns Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, policy: string, subdomain: string, percent: string, rua: string, ruf: string }> — tags is the full parsed tag map; policy/subdomain/percent/rua/ruf surface the common p/sp/pct/rua/ruf tags. Missing record resolves to { present: false }.
+     */
+    dmarc(domain: string): Promise<Record<string, unknown>>;
+    /**
+     * Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file.
+     * @param domain The domain whose _mta-sts.<domain> TXT record and well-known policy file are probed.
+     * @returns Promise<{ present: false } | { present: true, record: string, txt: { v: string, id: string }, policy?: { version?: string, mode?: string, mx?: string[], maxAge?: number | string }, policyError?: string }> — txt carries the versioned id from the TXT marker; policy is the parsed well-known file (mode + mx + maxAge), or policyError holds the fetch/parse error string when the file couldn't be retrieved. Missing TXT resolves to { present: false }.
+     */
+    mtaSts(domain: string): Promise<Record<string, unknown>>;
+    /**
+     * Send an outbound email: net.email.send({to, from, subject, body, html?, attachments?, headers?, server: {host, port?, auth?, tls?}, timeout?}) → Promise<{accepted: string[], rejected: [{address, reason}]}>. One TCP connection per call; per-recipient outcome captured. Transport failures throw; per-RCPT rejections surface in the result. TLS modes: starttls (default), tls, none.
+     * @param opts to (string or array) and from are required, as is server.host. subject/body/html shape the message: body alone → text/plain, body+html → multipart/alternative, any attachments → multipart/mixed. attachments carry raw bytes (contentType defaults to application/octet-stream). headers adds custom headers (CR/LF stripped). server.port defaults to 587; server.auth enables PLAIN auth (skipped when tls is 'none'); server.tls picks the transport: 'starttls' (default), implicit 'tls', or 'none'. timeout is the dial / connection timeout in ms (default 30000).
+     * @returns Promise<{ accepted: string[], rejected: { address: string, reason: string }[] }> — accepted lists recipients the server accepted at RCPT TO; rejected pairs each refused address with the server's reason. The DATA body is sent only when at least one recipient was accepted.
+     */
+    send(opts: { to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number }): Promise<{ accepted: string[]; rejected: { address: string; reason: string }[] }>;
+    /**
+     * Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.
+     * @param domain The domain whose apex TXT records are queried for an SPF (v=spf1) record.
+     * @returns Promise<{ present: false } | { present: true, record: string, mechanisms: string[], allPolicy: string }> — when found, record is the raw SPF string, mechanisms is the tokenised list after v=spf1, and allPolicy summarises the trailing all-style mechanism (pass / fail / softfail / neutral). Missing record resolves to { present: false }.
+     */
+    spf(domain: string): Promise<Record<string, unknown>>;
+    /**
+     * Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua.
+     * @param domain The domain whose _smtp._tls.<domain> TXT record is queried for a v=TLSRPTv1 record.
+     * @returns Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, rua: string }> — tags is the parsed tag map; rua surfaces the report-URI tag. Missing record resolves to { present: false }.
+     */
+    tlsRpt(domain: string): Promise<Record<string, unknown>>;
   };
   http: {
-    /** Perform an HTTP GET with a 5-second default timeout. Returns { status, body }. */
-    get(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Perform an HTTP POST with a 5-second default timeout. Returns { status, body }. */
-    post(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx. */
-    request(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Perform an HTTP GET with a 5-second default timeout. Returns { status, body }.
+     * @param url Absolute request URL (http:// or https://).
+     * @returns Promise<{ status: number, body: string }> — the HTTP status code and the response body as a string. Redirects are followed by the default client.
+     */
+    get(url: string): Promise<Record<string, unknown>>;
+    /**
+     * Perform an HTTP POST with a 5-second default timeout. Returns { status, body }.
+     * @param url Absolute request URL (http:// or https://).
+     * @param body Request body sent verbatim; omit or pass empty for no body. No Content-Type header is set automatically.
+     * @returns Promise<{ status: number, body: string }> — the HTTP status code and the response body as a string.
+     */
+    post(url: string, body?: string): Promise<Record<string, unknown>>;
+    /**
+     * Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
+     * @param method HTTP method (GET, POST, PUT, …); upper-cased internally. Required.
+     * @param url Absolute request URL. Required.
+     * @param opts headers sets request headers; body is the raw request body; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth.
+     * @returns Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text; url is the final URL after redirects.
+     */
+    request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<Record<string, unknown>>;
   };
   icmp: {
-    /** Open a raw ICMP socket: net.icmp.open(opts?) → Promise<handle>. Requires root / CAP_NET_RAW (open rejects otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. handle.send({ to, type?, code?, id?, seq?, payload? }) builds an Echo-shaped body (non-Echo bodies not modelled); push/callback model — onMessage(cb) events carry { address, type, code }; onClose(cb)/onError(cb); handle.network/local; handle.close(). */
-    open(...args: unknown[]): unknown;
+    /**
+     * Open a raw ICMP socket: net.icmp.open(opts?) → Promise<handle>. Requires root / CAP_NET_RAW (open rejects otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. handle.send({ to, type?, code?, id?, seq?, payload? }) builds an Echo-shaped body (non-Echo bodies not modelled); push/callback model — onMessage(cb) events carry { address, type, code }; onClose(cb)/onError(cb); handle.network/local; handle.close().
+     * @param opts network selects the IP version (default 'ip4'); readBuffer is the inbound channel capacity (default 64).
+     * @returns Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose, onError, close(): void }> — a raw-ICMP handle. send builds an ICMP message (Echo-shaped body; type defaults to the network's echo request, to is the destination address). onMessage fires per received packet with the marshalled body plus { address, type, code } meta.
+     */
+    open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): unknown;
   };
   netstatus: {
-    /** Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws. */
-    check(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws.
+     * @param host The host to check. Required.
+     * @param opts port is the TCP/TLS port (default "443"); timeout bounds all four sub-probes in ms (default 10000).
+     * @returns Promise<{ host: string, port: string, elapsedMs: number, reachable: boolean, dns: { ok: boolean, ips: string[], error?: string }, tcp: { ok: boolean, latencyMs: number, error?: string }, tls: { ok: boolean, daysRemaining: number, error?: string }, http: { ok: boolean, status: number, error?: string } }> — the four sub-probe results plus elapsed time. reachable is dns.ok AND tcp.ok; TLS/HTTP are reported but don't gate it. Each sub-probe carries its own error string instead of failing the call.
+     */
+    check(host: string, opts?: { port?: string, timeout?: number }): Promise<Record<string, unknown>>;
   };
   probe: {
-    /** Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five. */
-    dns(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / dispersion. */
-    ntp(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw. */
-    ping(...args: unknown[]): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>;
-    /** SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw. */
-    smtp(...args: unknown[]): Promise<{ host: string; port: string; banner: string; ehloDomain: string; extensions: string[]; starttls: boolean; authMechanisms: string[]; sizeLimit: number }>;
-    /** Dial a TCP target and report latency + resolved IP. Default timeout 5s. */
-    tcp(...args: unknown[]): Promise<{ host: string; port: number; ip: string; latencyMs: number }>;
-    /** Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary. */
-    tls(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text. */
-    whois(...args: unknown[]): Promise<Record<string, unknown>>;
-    /** WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws. */
-    wss(...args: unknown[]): Promise<{ url: string; connected: boolean; subprotocol: string; status: number; handshakeMs: number; pingMs: number }>;
+    /**
+     * Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five.
+     * @param host The hostname to resolve.
+     * @param opts types restricts the lookup to a subset (case-insensitive: 'a','aaaa','mx','txt','cname','ns'); omit to query all.
+     * @returns Promise<{ a?: string[], aaaa?: string[], mx?: { preference: number, host: string }[], txt?: string[], cname?: string, ns?: string[] }> — each key is present only when that record type returned at least one entry, so use `"mx" in result` to test presence.
+     */
+    dns(host: string, opts?: { types?: string[] }): Promise<Record<string, unknown>>;
+    /**
+     * Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / dispersion.
+     * @param host The NTP server hostname or IP.
+     * @param opts timeout is the query timeout in ms (default 5000); port overrides the default UDP port 123.
+     * @returns Promise<{ serverTime: string, offsetMs: number, rttMs: number, stratum: number, referenceTime: string, rootDelayMs: number, rootDispersionMs: number }> — the server's time and reference time (RFC3339 nanos), clock offset and round-trip in ms, the stratum, and the root delay / dispersion in ms.
+     */
+    ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<Record<string, unknown>>;
+    /**
+     * Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.
+     * @param host The target host. Required.
+     * @param opts mode selects the probe (default 'tcp' — opens count TCP connections; 'icmp' sends real ICMP echo and needs raw-socket privileges); count is the number of probes (default 4); timeout is the per-probe timeout in ms (default 5000); port is the TCP target port (default "80", tcp mode only).
+     * @returns Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }> — the resolved IP, the mode used, packets sent/received, loss percentage, and min/avg/max RTT in ms. A fully unreachable host resolves with received:0 and lossPercent:100 rather than rejecting.
+     */
+    ping(host: string, opts?: { mode?: "tcp" | "icmp", count?: number, timeout?: number, port?: string }): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>;
+    /**
+     * SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw.
+     * @param host The SMTP server host. Required.
+     * @param opts port is the SMTP port (default "25"); timeout bounds the whole conversation in ms (default 10000); ehloName is the domain sent in EHLO (default "localhost").
+     * @returns Promise<{ host: string, port: string, banner: string, ehloDomain: string, extensions: string[], starttls: boolean, authMechanisms: string[], sizeLimit: number }> — the greeting banner, the server's EHLO greeting line, the raw advertised extension lines, whether STARTTLS is offered, the upper-cased AUTH mechanism names, and the SIZE limit (0 if unadvertised). No mail is sent.
+     */
+    smtp(host: string, opts?: { port?: string, timeout?: number, ehloName?: string }): Promise<{ host: string; port: string; banner: string; ehloDomain: string; extensions: string[]; starttls: boolean; authMechanisms: string[]; sizeLimit: number }>;
+    /**
+     * Dial a TCP target and report latency + resolved IP. Default timeout 5s.
+     * @param target host:port to dial; a bare host uses opts.port (default 80).
+     * @param opts timeout is the dial timeout in ms (default 5000); port is the fallback port when target has no :port (default "80").
+     * @returns Promise<{ host: string, port: number, ip: string, latencyMs: number }> — the parsed host, port, the resolved remote IP, and the connect latency in milliseconds.
+     */
+    tcp(target: string, opts?: { timeout?: number, port?: string }): Promise<{ host: string; port: number; ip: string; latencyMs: number }>;
+    /**
+     * Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary.
+     * @param target host:port to dial; a bare host uses port 443. The host is sent as SNI.
+     * @param opts timeout is the dial timeout in ms (default 5000).
+     * @returns Promise<{ cn: string, issuer: string, notBefore: string, notAfter: string, daysRemaining: number, dnsNames: string[], serialNumber: string, fingerprintSha256: string }> — leaf-certificate fields: common name, issuer CN, validity bounds (RFC3339), days until expiry, SAN DNS names, decimal serial, and the SHA-256 fingerprint as hex. Verification is skipped, so expired / mismatched certs still report.
+     */
+    tls(target: string, opts?: { timeout?: number }): Promise<Record<string, unknown>>;
+    /**
+     * Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text.
+     * @param domain The domain (or IP / ASN) to look up.
+     * @param opts timeout is the wire-level WHOIS client timeout in ms (default 10000).
+     * @returns Promise<{ raw: string, domain?: { name: string, punycode: string, whoisServer: string, nameServers: string[], status: string[], dnssec: boolean, createdDate: string, updatedDate: string, expirationDate: string }, registrar?: { name: string } }> — raw is always the full WHOIS text; domain and registrar are best-effort parsed fields, omitted for TLDs the parser doesn't recognise.
+     */
+    whois(domain: string, opts?: { timeout?: number }): Promise<Record<string, unknown>>;
+    /**
+     * WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws.
+     * @param url The WebSocket URL (ws:// or wss://). Required.
+     * @param opts timeout bounds the handshake and ping in ms (default 10000); ping toggles the ping/pong RTT measurement (default true).
+     * @returns Promise<{ url: string, connected: boolean, subprotocol: string, status: number, handshakeMs: number, pingMs: number }> — connected is true on a successful upgrade, subprotocol is the negotiated subprotocol (or empty), status is the HTTP status of the 101 upgrade, handshakeMs is the handshake time in ms, and pingMs is the ping/pong RTT (or -1 when the ping was skipped or unanswered). The connection is closed immediately.
+     */
+    wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string; connected: boolean; subprotocol: string; status: number; handshakeMs: number; pingMs: number }>;
   };
   tcp: {
-    /** Open a TCP client socket: net.tcp.connect(host, port, opts?) → Promise<handle>. Push/callback read model — handle.onData(cb)/onClose(cb)/onError(cb) register listeners; handle.write(data) sends (string→UTF-8 / Uint8Array); handle.remote/local are the peer/local addresses; handle.close() shuts down. opts { timeout?, readBuffer? }. */
-    connect(...args: unknown[]): unknown;
+    /**
+     * Open a TCP client socket: net.tcp.connect(host, port, opts?) → Promise<handle>. Push/callback read model — handle.onData(cb)/onClose(cb)/onError(cb) register listeners; handle.write(data) sends (string→UTF-8 / Uint8Array); handle.remote/local are the peer/local addresses; handle.close() shuts down. opts { timeout?, readBuffer? }.
+     * @param host The remote host to dial.
+     * @param port The remote port.
+     * @param opts timeout is the dial timeout in ms (default 10000); readBuffer is the inbound channel capacity (default 64).
+     * @returns Promise<{ remote: string, local: string, write(data: string | Uint8Array): Promise<void>, onData(cb: (ev: { bytes: Uint8Array, text: string }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }> — a connected-socket handle. remote/local are the peer/local addresses. write resolves once the bytes are written. onData fires per inbound chunk with both a Uint8Array and a UTF-8 text view; onClose fires when the stream ends; onError forwards non-EOF read/transport errors. close() tears down the connection.
+     */
+    connect(host: string, port: string | number, opts?: { timeout?: number, readBuffer?: number }): unknown;
   };
   udp: {
-    /** Open a UDP socket: net.udp.open(opts) → Promise<handle>. Connected mode { host, port } exposes send(data); bound mode { bind: ':9999' } exposes sendTo(data, host, port) and tags inbound events with { address, port }. Push/callback model — onMessage(cb)/onClose(cb)/onError(cb); handle.local is the bound address; handle.close() shuts down. opts also takes readBuffer?. */
-    open(...args: unknown[]): unknown;
+    /**
+     * Open a UDP socket: net.udp.open(opts) → Promise<handle>. Connected mode { host, port } exposes send(data); bound mode { bind: ':9999' } exposes sendTo(data, host, port) and tags inbound events with { address, port }. Push/callback model — onMessage(cb)/onClose(cb)/onError(cb); handle.local is the bound address; handle.close() shuts down. opts also takes readBuffer?.
+     * @param opts Selects the mode: connected mode needs { host, port } (net.DialUDP to that peer); bound mode needs { bind } (e.g. ':9999', net.ListenUDP on that local address). readBuffer is the inbound channel capacity (default 64). Provide exactly one of the two modes.
+     * @returns Promise<handle> — connected mode resolves to { local: string, send(data: string | Uint8Array): Promise<void>, onMessage, onClose, onError, close(): void }; bound mode resolves to { local: string, sendTo(data: string | Uint8Array, host: string, port: string | number): Promise<void>, send (throws), onMessage, onClose, onError, close(): void }. onMessage fires per datagram with { bytes: Uint8Array, text: string } plus { address, port } in bound mode. local is the bound address.
+     */
+    open(opts: { host?: string, port?: string | number, bind?: string, readBuffer?: number }): unknown;
   };
 };
 
 /** Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict. */
 declare const db: {
   clickhouse: {
-    /** Connect to ClickHouse via the pure-Go clickhouse-go v2 driver. Arg is a clickhouse:// URL DSN string or an options object { host, port, user, password, database, secure }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses ? placeholders; default native port 9000 (set secure:true for TLS). Pings on open. */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Connect to ClickHouse via the pure-Go clickhouse-go v2 driver. Arg is a clickhouse:// URL DSN string or an options object { host, port, user, password, database, secure }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses ? placeholders; default native port 9000 (set secure:true for TLS). Pings on open.
+     * @param dsn A clickhouse:// URL DSN string used verbatim, OR an options object assembled into one (defaults: host localhost, port 9000 native protocol, empty database). secure:true appends secure=true to the URL for TLS (typically port 9440).
+     * @returns Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx>; prepare(sql) → Promise<stmt>; close() → Promise<void>. ClickHouse uses ? positional placeholders (or @name).
+     */
+    open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, secure?: boolean }): Promise<Record<string, unknown>>;
   };
   dict: {
-    /** RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error). */
-    define(...args: unknown[]): Promise<{ word: string; found: boolean; definitions: { db: string; dbName: string; text: string }[] }>;
-    /** RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database, opts.port (default 2628). */
-    match(...args: unknown[]): Promise<{ word: string; matches: { db: string; word: string }[] }>;
+    /**
+     * RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error). One-shot: connect, query, QUIT.
+     * @param host The DICT server hostname.
+     * @param word The word to look up.
+     * @param opts database selects a specific dictionary (default "*" = all); port is the DICT port (default "2628"); timeout is the dial/read deadline in milliseconds (default 10000).
+     * @returns Promise<{ word: string, found: boolean, definitions: { db: string, dbName: string, text: string }[] }> — definitions carries one entry per matching dictionary (db is the dictionary code, dbName its human name, text the definition body). A word with no definitions resolves with found:false and an empty list.
+     */
+    define(host: string, word: string, opts?: { database?: string, port?: string, timeout?: number }): Promise<{ word: string; found: boolean; definitions: { db: string; dbName: string; text: string }[] }>;
+    /**
+     * RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database (default *), opts.port (default 2628). One-shot: connect, query, QUIT.
+     * @param host The DICT server hostname.
+     * @param word The word (or pattern) to match.
+     * @param opts strategy is the match strategy (default "prefix"); database selects a specific dictionary (default "*" = all); port is the DICT port (default "2628"); timeout is the dial/read deadline in milliseconds (default 10000).
+     * @returns Promise<{ word: string, matches: { db: string, word: string }[] }> — matches carries one entry per matched word (db is the dictionary it was found in, word the matched headword). No matches resolves with an empty matches list.
+     */
+    match(host: string, word: string, opts?: { strategy?: string, database?: string, port?: string, timeout?: number }): Promise<{ word: string; matches: { db: string; word: string }[] }>;
   };
   ldap: {
-    /** Dial LDAP (ldap://host:port), anonymous bind (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata. */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Dial LDAP (ldap://host:port or ldaps://...), anonymous bind by default (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata.
+     * @param url An LDAP URL: ldap://host:port (or ldaps://... for TLS, e.g. ldap://localhost:389).
+     * @param opts When bindDN is set, the connection binds with bindDN/password instead of doing an anonymous bind.
+     * @returns Promise<handle> resolving to { rootDSE, search, close }: rootDSE() → Promise<object> reads the server's Root DSE (an ordered { dn, <attr>: string[] } object advertising naming contexts, supported controls, vendor, etc.; an empty object when the server returns no entry); search(baseDN, filter, attrs?) → Promise<object[]> runs a whole-subtree search and returns one ordered { dn, <attr>: string[] } object per entry (multi-valued attributes stay arrays; filter defaults to (objectClass=*); attrs is an optional array of attribute names); close() → Promise<void>. A directory-inspection (read) binding, not a write/modify surface.
+     */
+    open(url: string, opts?: { bindDN?: string, password?: string }): Promise<Record<string, unknown>>;
   };
   memcached: {
-    /** Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?). */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?). No ping on open; the pool is lazy.
+     * @param addr A memcached server address, host:port (e.g. localhost:11211).
+     * @returns Promise<handle> resolving to { get, set, delete }: get(key) → Promise<string | null> (null on a cache miss); set(key, value, expirySeconds?) → Promise<void> (value stored as bytes; expirySeconds 0 or omitted means never expire); delete(key) → Promise<boolean> (true if the key existed, false on a miss). gomemcache pools connections lazily, so there is no ping-on-open and no close method (the pool is GC'd with the handle).
+     */
+    open(addr: string): Promise<Record<string, unknown>>;
   };
   mssql: {
-    /** Connect to Microsoft SQL Server via the pure-Go go-mssqldb driver. Arg is a sqlserver:// URL DSN string or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses @p1,@p2,… placeholders. Pings on open. */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Connect to Microsoft SQL Server via the pure-Go go-mssqldb driver. Arg is a sqlserver:// URL DSN string or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses @p1,@p2,… placeholders. Pings on open.
+     * @param dsn A sqlserver:// URL DSN string used verbatim, OR an options object assembled into one (defaults: host localhost, port 1433; database goes in the URL query string per the go-mssqldb form).
+     * @returns Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx>; prepare(sql) → Promise<stmt>; close() → Promise<void>. SQL Server uses @p1, @p2, … placeholders.
+     */
+    open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>;
   };
   mysql: {
-    /** Connect to MySQL/MariaDB via the pure-Go go-sql-driver. Arg is a go-sql-driver DSN string (user:pass@tcp(host:port)/db) or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses ? placeholders. Pings on open. */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Connect to MySQL/MariaDB via the pure-Go go-sql-driver. Arg is a go-sql-driver DSN string (user:pass@tcp(host:port)/db) or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses ? placeholders. Pings on open.
+     * @param dsn A go-sql-driver DSN string (user:pass@tcp(host:port)/db?params) used verbatim, OR an options object assembled into one (defaults: host localhost, port 3306, empty database). One driver serves both MySQL and MariaDB.
+     * @returns Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx>; prepare(sql) → Promise<stmt>; close() → Promise<void>. MySQL uses ? positional placeholders.
+     */
+    open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>;
   };
   oracle: {
-    /** Connect to Oracle via the pure-Go go-ora driver (no cgo). Arg is an oracle:// URL DSN string or an options object { host, port, user, password, database } where database is the service name. Returns the shared SQL handle. Uses :1,:2,… bind placeholders; default port 1521. Pings on open. */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Connect to Oracle via the pure-Go go-ora driver (no cgo). Arg is an oracle:// URL DSN string or an options object { host, port, user, password, database } where database is the service name. Returns the shared SQL handle. Uses :1,:2,… bind placeholders; default port 1521. Pings on open.
+     * @param dsn An oracle:// URL DSN string used verbatim, OR an options object assembled into one (defaults: host localhost, port 1521). database is the Oracle service name and goes in the URL path. The go-ora driver is pure Go, unlike the OCI-bound godror.
+     * @returns Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx>; prepare(sql) → Promise<stmt>; close() → Promise<void>. Oracle uses :1, :2, … (or :name) bind placeholders.
+     */
+    open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>;
   };
   postgres: {
-    /** Connect to PostgreSQL via the pure-Go pgx driver. Arg is a libpq DSN/URL string or an options object { host, port, user, password, database, sslmode }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses $1,$2,… placeholders. Pings on open. */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Connect to PostgreSQL via the pure-Go pgx driver. Arg is a libpq DSN/URL string or an options object { host, port, user, password, database, sslmode }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses $1,$2,… placeholders. Pings on open.
+     * @param dsn A libpq DSN/URL string used verbatim, OR an options object assembled into a postgres:// URL (defaults: host localhost, port 5432, empty database; sslmode added to the query string when set). CockroachDB and other Postgres-wire engines connect through the same driver.
+     * @returns Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row, keyed by column name in column order); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx> ({ exec, query, queryValue, commit, rollback }); prepare(sql) → Promise<stmt> ({ exec, query, queryValue, close }); close() → Promise<void>. Postgres uses $1, $2, … positional placeholders.
+     */
+    open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, sslmode?: string }): Promise<Record<string, unknown>>;
   };
   redis: {
-    /** Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses. */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses.
+     * @param url A standard Redis URL: redis://[:password@]host:port/db (rediss:// for TLS), parsed by go-redis's ParseURL.
+     * @returns Promise<handle> resolving to { do, ping, close }: do(cmd, ...args) → Promise<any> runs an arbitrary RESP command (the first arg is the command name, the rest its arguments) and returns the reply coerced to a JS value — strings, numbers, arrays, or null; a nil reply (missing key) resolves to null rather than throwing. ping() → Promise<string> ('PONG'). close() → Promise<void>.
+     */
+    open(url: string): Promise<Record<string, unknown>>;
   };
   sqlite: {
-    /** Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, begin, prepare, close }. Connection is Ping-ed before resolving. */
-    open(...args: unknown[]): Promise<Record<string, unknown>>;
+    /**
+     * Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, begin, prepare, close }. Connection is Ping-ed before resolving.
+     * @param path ":memory:" for an in-RAM database, or a filesystem path. Missing files are created by the modernc.org/sqlite (pure-Go, no cgo) driver.
+     * @returns Promise<handle> resolving to the shared SQL handle object: exec(sql, ...params) → Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql, ...params) → Promise<object[]> (one ordered object per row, keyed by column name in column order); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null when no rows match); begin() → Promise<tx> ({ exec, query, queryValue, commit, rollback }); prepare(sql) → Promise<stmt> ({ exec, query, queryValue, close }); close() → Promise<void>. SQLite uses ? positional placeholders. UTF-8 byte columns scan to strings; genuinely binary bytes surface as Uint8Array.
+     */
+    open(path: string): Promise<Record<string, unknown>>;
   };
 };
 
@@ -713,37 +1035,75 @@ declare const services: {
 
 /** Multi-pane terminal UI: layout, pane, write, focus. */
 declare const tui: {
-  /** Declare the pane layout for this Run. Tree nodes: { name, title?, weight? } (leaf), { rows: [...], weight? } (vertical split), { cols: [...], weight? } (horizontal split). Throws on duplicate names, empty rows/cols, unknown keys, or under --watch. */
-  layout(...args: unknown[]): unknown;
-  /** Return a Pane handle for a declared pane. Throws if the name wasn't in the layout. Handle methods: write(text), writeln(text), clear(), title(text). services.exec.shell({pane}) streams subprocess I/O into a pane. */
-  pane(...args: unknown[]): unknown;
+  /**
+   * Declare the pane layout for this Run. Tree nodes: { name, title?, weight? } (leaf), { rows: [...], weight? } (vertical split), { cols: [...], weight? } (horizontal split). Throws on duplicate names, empty rows/cols, unknown keys, or under --watch.
+   * @param tree The root layout node. Exactly one of name / rows / cols must be set per node. A leaf (name) becomes a bordered pane addressable via tui.pane(name); name must be a non-empty string and unique across the whole tree. rows stacks children top-to-bottom; cols places them side-by-side; both arrays must be non-empty. weight (positive integer, default 1) sets the child's proportional share of its parent's space. title (string, leaf only) seeds the pane's border caption. Any other key is rejected. The tree is realised over the full terminal as a tview Flex when stdout is a TTY; otherwise it falls back to prefixed-line output.
+   * @returns void — installs the layout and brings up the UI (TTY) or the fallback line writer (non-TTY); the controller is torn down automatically at Run end.
+   */
+  layout(tree: { name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number }): void;
+  /**
+   * Return a Pane handle for a declared pane. Throws if the name wasn't in the layout. Handle methods: write(text), writeln(text), clear(), title(text). services.exec.shell({pane}) streams subprocess I/O into a pane.
+   * @param name The leaf name declared in the tui.layout tree.
+   * @returns A Pane handle. write(text) appends text (subprocess ANSI SGR colors are translated to pane colors); writeln(text) appends text followed by a newline; clear() empties the pane (no-op in the non-TTY fallback); title(text) updates the pane's border caption (no-op in fallback). All methods return undefined and are safe to call from any callback. The handle can also be passed as the pane option to services.exec.shell to stream a subprocess's stdout/stderr live into the pane.
+   */
+  pane(name: string): { write(text: string): void; writeln(text: string): void; clear(): void; title(text: string): void };
 };
 
 /** Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade. */
 declare const server: {
   http: {
-    /** Bind an HTTP listener: server.http.listen({port, host?, routes, use?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}. */
-    listen(...args: unknown[]): unknown;
-    /** Static-file mount: server.http.static({dir, stripPrefix, index?, etag?}) → handler. Assign to a wildcard route (GET /assets/{rest...}). Internally stdlib http.FileServer with stripPrefix; ETag/Last-Modified/range requests work; no directory listing. */
-    static(...args: unknown[]): unknown;
+    /**
+     * Bind an HTTP listener: server.http.listen({port, host?, routes, use?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}.
+     * @param opts Listener config. port is required; host defaults to "0.0.0.0". routes maps Go 1.22+ ServeMux patterns ('GET /', 'POST /users/{id}', 'GET /assets/{rest...}') to a handler function or a {use, handler} object for per-route middleware. use is a global middleware chain run before every route. Under `sercon serve`, --port-override replaces port.
+     * @returns A server handle (returned synchronously): address is 'tcp/host:port' (resolved, so a port:0 ephemeral bind reports its OS-chosen port); stopped resolves when the server stops (rejects if Serve fails with a non-close error); close() begins a graceful 30s shutdown and resolves with the same stopped Promise.
+     */
+    listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> };
+    /**
+     * Static-file mount: server.http.static({dir, stripPrefix, index?, etag?}) → handler. Assign to a wildcard route (GET /assets/{rest...}). Internally stdlib http.FileServer with stripPrefix; ETag/Last-Modified/range requests work; no directory listing.
+     * @param opts dir is the filesystem root to serve. stripPrefix is removed from the request path before lookup (set it to the route's static prefix). index and etag are accepted but currently unused — http.FileServer already serves index.html and emits ETag/Last-Modified by default.
+     * @returns A route handler marker (returned synchronously). Assign it as a routes entry, typically under a wildcard pattern like 'GET /assets/{rest...}'. The route compiler unwraps it to a stdlib http.FileServer mounted under http.StripPrefix.
+     */
+    static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void;
   };
   https: {
-    /** Like server.http.listen plus required cert/key (file paths OR inline PEM strings). No autocert; no self-signed magic. */
-    listen(...args: unknown[]): unknown;
-    /** Like server.http.static; same options. */
-    static(...args: unknown[]): unknown;
+    /**
+     * Like server.http.listen plus required cert/key (file paths OR inline PEM strings). No autocert; no self-signed magic.
+     * @param opts Same shape as server.http.listen plus cert and key. Each is either a filesystem path or an inline PEM string (detected by a leading '-----BEGIN'). TLS is pinned to a minimum of TLS 1.2.
+     * @returns Same handle shape as server.http.listen; address is 'tcp/host:port'.
+     */
+    listen(opts: { port: number; host?: string; cert: string; key: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> };
+    /**
+     * Like server.http.static; same options.
+     * @param opts Identical to server.http.static — dir is the root, stripPrefix is removed from the path before lookup, index/etag are accepted but unused.
+     * @returns A route handler marker (returned synchronously); assign it to a wildcard route on an https listener.
+     */
+    static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void;
   };
   smtp: {
-    /** Bind an SMTP listener: server.smtp.listen({port, hostname?, handlers: {onMail, onRcpt, onData}, auth?, starttls?, allowInsecureAuth?, maxMessageBytes?, maxRecipients?, sessionTimeout?}) → handle with .address, .close(), .stopped Promise. Handlers receive (envelope, …) per stage; return true/undefined to accept, false to reject, a string for a 550 reason, throw for 451 temp-fail. onData receives a parsed Message with text/html bodies, attachments, and raw bytes. */
-    listen(...args: unknown[]): unknown;
+    /**
+     * Bind an SMTP listener: server.smtp.listen({port, hostname?, handlers: {onMail, onRcpt, onData}, auth?, starttls?, allowInsecureAuth?, maxMessageBytes?, maxRecipients?, sessionTimeout?}) → handle with .address, .close(), .stopped Promise. Handlers receive (envelope, …) per stage; return true/undefined to accept, false to reject, a string for a 550 reason, throw for 451 temp-fail. onData receives a parsed Message with text/html bodies, attachments, and raw bytes.
+     * @param opts port is required; host (bind interface) defaults to "0.0.0.0"; hostname (advertised EHLO domain) defaults to the OS hostname. handlers.onMail/onRcpt/onData are all required and run per protocol stage — each returns true/undefined to accept, false for a 550 reject, a string for '550 <string>', or throws for a 451 temp-fail. auth (optional) enables PLAIN+LOGIN SASL; return truthy to accept. starttls {cert, key} (paths or inline PEM) enables STARTTLS. allowInsecureAuth permits AUTH without TLS. maxMessageBytes defaults to 10 MiB (non-positive values ignored), maxRecipients to 100, sessionTimeout to 30000 (milliseconds).
+     * @returns A server handle (returned synchronously): address is 'tcp/host:port'; stopped resolves when the server stops (rejects on a non-close Serve error); close() shuts the listener down and resolves with the stopped Promise. The Envelope passed to handlers is { from, recipients, remote, helo, authenticatedUser?, tls?: { version, cipher } }; the Message passed to onData is { from, to, cc, subject, headers, body: { text, html }, attachments: { filename, contentType, bytes }[], raw: Uint8Array }.
+     */
+    listen(opts: { port: number; host?: string; hostname?: string; handlers: { onMail: (env: Envelope) => boolean | string | void | Promise<boolean | string | void>; onRcpt: (env: Envelope, to: string) => boolean | string | void | Promise<boolean | string | void>; onData: (env: Envelope, msg: Message) => boolean | string | void | Promise<boolean | string | void> }; auth?: (user: string, pass: string, env: Envelope) => boolean | Promise<boolean>; starttls?: { cert: string; key: string }; allowInsecureAuth?: boolean; maxMessageBytes?: number; maxRecipients?: number; sessionTimeout?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> };
   };
   tcp: {
-    /** Bind a raw TCP server: server.tcp.listen({port, host?, readBuffer?}, conn => {…}) → handle { address: 'tcp/host:port', close() }. The connection handler runs once per accepted socket; conn is the SAME handle shape as net.tcp.connect — onData(cb) (cb gets {bytes, text}), onClose(cb), onError(cb), write(data) (string or Uint8Array), close(), and remote/local addresses. Synchronous bind (throws on bind error); port:0 binds an OS-chosen ephemeral port. Emits a READY line under `sercon serve` and joins graceful shutdown. */
-    listen(...args: unknown[]): unknown;
+    /**
+     * Bind a raw TCP server: server.tcp.listen({port, host?, readBuffer?}, conn => {…}) → handle { address: 'tcp/host:port', close() }. The connection handler runs once per accepted socket; conn is the SAME handle shape as net.tcp.connect — onData(cb) (cb gets {bytes, text}), onClose(cb), onError(cb), write(data) (string or Uint8Array), close(), and remote/local addresses. Synchronous bind (throws on bind error); port:0 binds an OS-chosen ephemeral port. Emits a READY line under `sercon serve` and joins graceful shutdown.
+     * @param opts port is the listen port (0 binds an OS-chosen ephemeral port). host defaults to all interfaces. readBuffer is the per-connection inbound channel capacity (frames buffered before backpressure), default 64.
+     * @param handler Invoked once per accepted connection. conn matches net.tcp.connect's handle: register onData/onClose/onError callbacks, write() to send (returns a Promise), close() to tear down. remote/local are 'host:port' strings.
+     * @returns A server handle (returned synchronously): address is 'tcp/host:port' (the resolved bind address, so port:0 reports its ephemeral port). close() closes the listener and all accepted connections, then resolves.
+     */
+    listen(opts: { port: number; host?: string; readBuffer?: number }, handler: (conn: { remote: string; local: string; write(data: string | Uint8Array): Promise<void>; onData(cb: (msg: { bytes: Uint8Array; text: string }) => void): void; onClose(cb: () => void): void; onError(cb: (err: unknown) => void): void; close(): void }) => void): { address: string; close(): Promise<void> };
   };
   udp: {
-    /** Bind a raw UDP server: server.udp.listen({port, host?}, (msg, reply) => {…}) → handle { address: 'udp/host:port', close() }. The handler runs once per inbound datagram; msg is {bytes, text, address, port} (the sender) and reply(data) (string or Uint8Array) sends a datagram back to that sender, returning a Promise. Synchronous bind (throws on bind error); port:0 binds an OS-chosen ephemeral port. Emits a READY line under `sercon serve` and joins graceful shutdown. */
-    listen(...args: unknown[]): unknown;
+    /**
+     * Bind a raw UDP server: server.udp.listen({port, host?}, (msg, reply) => {…}) → handle { address: 'udp/host:port', close() }. The handler runs once per inbound datagram; msg is {bytes, text, address, port} (the sender) and reply(data) (string or Uint8Array) sends a datagram back to that sender, returning a Promise. Synchronous bind (throws on bind error); port:0 binds an OS-chosen ephemeral port. Emits a READY line under `sercon serve` and joins graceful shutdown.
+     * @param opts port is the listen port (0 binds an OS-chosen ephemeral port). host defaults to all interfaces.
+     * @param handler Invoked once per inbound datagram. msg carries the payload (bytes/text) and the sender's address/port. reply(data) sends a datagram back to that sender and returns a Promise that resolves once written (rejects on a write error).
+     * @returns A server handle (returned synchronously): address is 'udp/host:port' (resolved, so port:0 reports its ephemeral port). close() closes the socket and resolves. There is no per-connection handle — UDP is connectionless, so reply is bound to the originating datagram's sender.
+     */
+    listen(opts: { port: number; host?: string }, handler: (msg: { bytes: Uint8Array; text: string; address: string; port: number }, reply: (data: string | Uint8Array) => Promise<void>) => void): { address: string; close(): Promise<void> };
   };
 };
 

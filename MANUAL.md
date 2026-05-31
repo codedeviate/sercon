@@ -2942,90 +2942,253 @@ Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server
 #### db.clickhouse.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, secure?: boolean }): Promise<Record<string, unknown>>
 ```
 
 Connect to ClickHouse via the pure-Go clickhouse-go v2 driver. Arg is a clickhouse:// URL DSN string or an options object { host, port, user, password, database, secure }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses ? placeholders; default native port 9000 (set secure:true for TLS). Pings on open.
 
+**Parameters**
+
+- `dsn` *(string | { host?: string, port?: number, user?: string, password?: string, database?: string, secure?: boolean })* — A clickhouse:// URL DSN string used verbatim, OR an options object assembled into one (defaults: host localhost, port 9000 native protocol, empty database). secure:true appends secure=true to the URL for TLS (typically port 9440).
+
+**Returns:** Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx>; prepare(sql) → Promise<stmt>; close() → Promise<void>. ClickHouse uses ? positional placeholders (or @name).
+
+**Throws:** Throws if no argument is given, the DSN string is empty, the argument is neither a string nor an object, or the connection ping fails.
+
+```ts
+const db = await db.clickhouse.open({ host: "localhost", database: "metrics", secure: false });
+const rows = await db.query("SELECT name, value FROM stats WHERE host = ?", "web1");
+await db.close();
+```
+
 #### db.dict.define
 
 ```
-define(...args: unknown[]): Promise<{ word: string; found: boolean; definitions: { db: string; dbName: string; text: string }[] }>
+define(host: string, word: string, opts?: { database?: string, port?: string, timeout?: number }): Promise<{ word: string; found: boolean; definitions: { db: string; dbName: string; text: string }[] }>
 ```
 
-RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error).
+RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error). One-shot: connect, query, QUIT.
+
+**Parameters**
+
+- `host` *(string)* — The DICT server hostname.
+- `word` *(string)* — The word to look up.
+- `opts` *({ database?: string, port?: string, timeout?: number }, optional)* — database selects a specific dictionary (default "*" = all); port is the DICT port (default "2628"); timeout is the dial/read deadline in milliseconds (default 10000).
+
+**Returns:** Promise<{ word: string, found: boolean, definitions: { db: string, dbName: string, text: string }[] }> — definitions carries one entry per matching dictionary (db is the dictionary code, dbName its human name, text the definition body). A word with no definitions resolves with found:false and an empty list.
+
+**Throws:** Throws if host or word is empty, on dial/banner failure, or on an unexpected DICT status code (e.g. 550 invalid database). A 552 "no match" is NOT an error — it resolves with found:false.
+
+```ts
+const r = await db.dict.define("dict.org", "serendipity");
+if (r.found) runtime.log(r.definitions[0].text);
+```
 
 #### db.dict.match
 
 ```
-match(...args: unknown[]): Promise<{ word: string; matches: { db: string; word: string }[] }>
+match(host: string, word: string, opts?: { strategy?: string, database?: string, port?: string, timeout?: number }): Promise<{ word: string; matches: { db: string; word: string }[] }>
 ```
 
-RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database, opts.port (default 2628).
+RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database (default *), opts.port (default 2628). One-shot: connect, query, QUIT.
+
+**Parameters**
+
+- `host` *(string)* — The DICT server hostname.
+- `word` *(string)* — The word (or pattern) to match.
+- `opts` *({ strategy?: string, database?: string, port?: string, timeout?: number }, optional)* — strategy is the match strategy (default "prefix"); database selects a specific dictionary (default "*" = all); port is the DICT port (default "2628"); timeout is the dial/read deadline in milliseconds (default 10000).
+
+**Returns:** Promise<{ word: string, matches: { db: string, word: string }[] }> — matches carries one entry per matched word (db is the dictionary it was found in, word the matched headword). No matches resolves with an empty matches list.
+
+**Throws:** Throws if host or word is empty, on dial/banner failure, or on an unexpected DICT status code. A 552 "no match" is NOT an error — it resolves with an empty matches list.
+
+```ts
+const r = await db.dict.match("dict.org", "seren", { strategy: "prefix" });
+runtime.log(r.matches.map(m => m.word));
+```
 
 #### db.ldap.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(url: string, opts?: { bindDN?: string, password?: string }): Promise<Record<string, unknown>>
 ```
 
-Dial LDAP (ldap://host:port), anonymous bind (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata.
+Dial LDAP (ldap://host:port or ldaps://...), anonymous bind by default (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata.
+
+**Parameters**
+
+- `url` *(string)* — An LDAP URL: ldap://host:port (or ldaps://... for TLS, e.g. ldap://localhost:389).
+- `opts` *({ bindDN?: string, password?: string }, optional)* — When bindDN is set, the connection binds with bindDN/password instead of doing an anonymous bind.
+
+**Returns:** Promise<handle> resolving to { rootDSE, search, close }: rootDSE() → Promise<object> reads the server's Root DSE (an ordered { dn, <attr>: string[] } object advertising naming contexts, supported controls, vendor, etc.; an empty object when the server returns no entry); search(baseDN, filter, attrs?) → Promise<object[]> runs a whole-subtree search and returns one ordered { dn, <attr>: string[] } object per entry (multi-valued attributes stay arrays; filter defaults to (objectClass=*); attrs is an optional array of attribute names); close() → Promise<void>. A directory-inspection (read) binding, not a write/modify surface.
+
+**Throws:** open throws if url is empty, the dial fails, or (when bindDN is set) the bind fails (the connection is closed on bind failure). rootDSE / search throw on the underlying LDAP search error.
+
+```ts
+const dir = await db.ldap.open("ldap://localhost:389");
+const meta = await dir.rootDSE();
+const people = await dir.search("ou=people,dc=example,dc=com", "(uid=alice)", ["cn", "mail"]);
+await dir.close();
+```
 
 #### db.memcached.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(addr: string): Promise<Record<string, unknown>>
 ```
 
-Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?).
+Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?). No ping on open; the pool is lazy.
+
+**Parameters**
+
+- `addr` *(string)* — A memcached server address, host:port (e.g. localhost:11211).
+
+**Returns:** Promise<handle> resolving to { get, set, delete }: get(key) → Promise<string | null> (null on a cache miss); set(key, value, expirySeconds?) → Promise<void> (value stored as bytes; expirySeconds 0 or omitted means never expire); delete(key) → Promise<boolean> (true if the key existed, false on a miss). gomemcache pools connections lazily, so there is no ping-on-open and no close method (the pool is GC'd with the handle).
+
+**Throws:** open throws if addr is empty. set throws if key is empty or the value cannot be coerced to bytes. get / delete throw on transport errors; a cache miss is data (get → null, delete → false), not an error.
+
+```ts
+const mc = await db.memcached.open("localhost:11211");
+await mc.set("session:42", "active", 300);
+const v = await mc.get("session:42"); // "active" or null
+const existed = await mc.delete("session:42"); // true
+```
 
 #### db.mssql.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>
 ```
 
 Connect to Microsoft SQL Server via the pure-Go go-mssqldb driver. Arg is a sqlserver:// URL DSN string or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses @p1,@p2,… placeholders. Pings on open.
 
+**Parameters**
+
+- `dsn` *(string | { host?: string, port?: number, user?: string, password?: string, database?: string })* — A sqlserver:// URL DSN string used verbatim, OR an options object assembled into one (defaults: host localhost, port 1433; database goes in the URL query string per the go-mssqldb form).
+
+**Returns:** Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx>; prepare(sql) → Promise<stmt>; close() → Promise<void>. SQL Server uses @p1, @p2, … placeholders.
+
+**Throws:** Throws if no argument is given, the DSN string is empty, the argument is neither a string nor an object, or the connection ping fails.
+
+```ts
+const db = await db.mssql.open({ host: "localhost", user: "sa", password: "P@ss", database: "shop" });
+const rows = await db.query("SELECT TOP 5 id, name FROM users WHERE region = @p1", "EU");
+await db.close();
+```
+
 #### db.mysql.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>
 ```
 
 Connect to MySQL/MariaDB via the pure-Go go-sql-driver. Arg is a go-sql-driver DSN string (user:pass@tcp(host:port)/db) or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses ? placeholders. Pings on open.
 
+**Parameters**
+
+- `dsn` *(string | { host?: string, port?: number, user?: string, password?: string, database?: string })* — A go-sql-driver DSN string (user:pass@tcp(host:port)/db?params) used verbatim, OR an options object assembled into one (defaults: host localhost, port 3306, empty database). One driver serves both MySQL and MariaDB.
+
+**Returns:** Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx>; prepare(sql) → Promise<stmt>; close() → Promise<void>. MySQL uses ? positional placeholders.
+
+**Throws:** Throws if no argument is given, the DSN string is empty, the argument is neither a string nor an object, or the connection ping fails.
+
+```ts
+const db = await db.mysql.open("app:s3cr3t@tcp(localhost:3306)/shop");
+const n = await db.queryValue("SELECT COUNT(*) FROM orders WHERE status = ?", "paid");
+await db.close();
+```
+
 #### db.oracle.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>
 ```
 
 Connect to Oracle via the pure-Go go-ora driver (no cgo). Arg is an oracle:// URL DSN string or an options object { host, port, user, password, database } where database is the service name. Returns the shared SQL handle. Uses :1,:2,… bind placeholders; default port 1521. Pings on open.
 
+**Parameters**
+
+- `dsn` *(string | { host?: string, port?: number, user?: string, password?: string, database?: string })* — An oracle:// URL DSN string used verbatim, OR an options object assembled into one (defaults: host localhost, port 1521). database is the Oracle service name and goes in the URL path. The go-ora driver is pure Go, unlike the OCI-bound godror.
+
+**Returns:** Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx>; prepare(sql) → Promise<stmt>; close() → Promise<void>. Oracle uses :1, :2, … (or :name) bind placeholders.
+
+**Throws:** Throws if no argument is given, the DSN string is empty, the argument is neither a string nor an object, or the connection ping fails.
+
+```ts
+const db = await db.oracle.open({ host: "localhost", user: "app", password: "s3cr3t", database: "ORCLPDB1" });
+const rows = await db.query("SELECT id, name FROM users WHERE id = :1", 42);
+await db.close();
+```
+
 #### db.postgres.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, sslmode?: string }): Promise<Record<string, unknown>>
 ```
 
 Connect to PostgreSQL via the pure-Go pgx driver. Arg is a libpq DSN/URL string or an options object { host, port, user, password, database, sslmode }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses $1,$2,… placeholders. Pings on open.
 
+**Parameters**
+
+- `dsn` *(string | { host?: string, port?: number, user?: string, password?: string, database?: string, sslmode?: string })* — A libpq DSN/URL string used verbatim, OR an options object assembled into a postgres:// URL (defaults: host localhost, port 5432, empty database; sslmode added to the query string when set). CockroachDB and other Postgres-wire engines connect through the same driver.
+
+**Returns:** Promise<handle> resolving to the shared SQL handle: exec(sql, ...params) → Promise<{ rowsAffected, lastInsertId }>; query(sql, ...params) → Promise<object[]> (one ordered object per row, keyed by column name in column order); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null); begin() → Promise<tx> ({ exec, query, queryValue, commit, rollback }); prepare(sql) → Promise<stmt> ({ exec, query, queryValue, close }); close() → Promise<void>. Postgres uses $1, $2, … positional placeholders.
+
+**Throws:** Throws if no argument is given, the DSN string is empty, the argument is neither a string nor an object, or the connection ping fails (the pool is closed on ping failure).
+
+```ts
+const db = await db.postgres.open({ host: "localhost", user: "app", password: "s3cr3t", database: "shop", sslmode: "disable" });
+const rows = await db.query("SELECT id, name FROM users WHERE id = $1", 42);
+await db.close();
+```
+
 #### db.redis.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(url: string): Promise<Record<string, unknown>>
 ```
 
 Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses.
 
+**Parameters**
+
+- `url` *(string)* — A standard Redis URL: redis://[:password@]host:port/db (rediss:// for TLS), parsed by go-redis's ParseURL.
+
+**Returns:** Promise<handle> resolving to { do, ping, close }: do(cmd, ...args) → Promise<any> runs an arbitrary RESP command (the first arg is the command name, the rest its arguments) and returns the reply coerced to a JS value — strings, numbers, arrays, or null; a nil reply (missing key) resolves to null rather than throwing. ping() → Promise<string> ('PONG'). close() → Promise<void>.
+
+**Throws:** open throws if url is empty, the URL fails to parse, or the open-time ping fails (the client is closed on ping failure). do throws on Redis-level errors (WRONGTYPE, unknown command, etc.); a missing-key nil reply is data, not an error.
+
+```ts
+const r = await db.redis.open("redis://localhost:6379/0");
+await r.do("SET", "greeting", "hi");
+const v = await r.do("GET", "greeting"); // "hi"
+const missing = await r.do("GET", "nope"); // null
+await r.close();
+```
+
 #### db.sqlite.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(path: string): Promise<Record<string, unknown>>
 ```
 
 Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, begin, prepare, close }. Connection is Ping-ed before resolving.
+
+**Parameters**
+
+- `path` *(string)* — ":memory:" for an in-RAM database, or a filesystem path. Missing files are created by the modernc.org/sqlite (pure-Go, no cgo) driver.
+
+**Returns:** Promise<handle> resolving to the shared SQL handle object: exec(sql, ...params) → Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql, ...params) → Promise<object[]> (one ordered object per row, keyed by column name in column order); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null when no rows match); begin() → Promise<tx> ({ exec, query, queryValue, commit, rollback }); prepare(sql) → Promise<stmt> ({ exec, query, queryValue, close }); close() → Promise<void>. SQLite uses ? positional placeholders. UTF-8 byte columns scan to strings; genuinely binary bytes surface as Uint8Array.
+
+**Throws:** Throws if path is missing or empty, or if the connection ping fails (the *sql.DB is closed on ping failure rather than leaked). Subsequent exec/query/etc. throw the driver error on bad SQL or bind mismatch.
+
+```ts
+const db = await db.sqlite.open(":memory:");
+await db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)");
+await db.exec("INSERT INTO t (name) VALUES (?)", "alice");
+const rows = await db.query("SELECT * FROM t WHERE name = ?", "alice");
+await db.close();
+```
 
 ### fs
 
@@ -3129,213 +3292,567 @@ open(...args: unknown[]): Promise<Record<string, unknown>>
 
 Open a stateful HTTP session: { setUserAgent, setHeader, get, post, cookies }. Cookie jar + default headers persist across requests (like a browser).
 
+**Returns:** Promise<{ setUserAgent(ua: string): void, setHeader(name: string, value: string): void, get(url: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, post(url: string, body?: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, cookies(url: string): Promise<{ name: string, value: string }[]> }> — a session handle backed by an http.Client with an automatic cookie jar (public-suffix scoped). setUserAgent/setHeader register default headers replayed on every request; get/post return the same result shape as net.http.request; cookies lists the jar's cookies for a URL.
+
+**Throws:** browser.open rejects only if the cookie jar can't be created. get/post reject if the URL is empty or the request fails (transport error); cookies rejects if the URL is empty or unparseable. 4xx/5xx responses resolve normally.
+
+```ts
+const b = await net.browser.open();
+b.setUserAgent("my-bot/1.0");
+await b.post("https://site/login", "user=x&pass=y");
+const home = await b.get("https://site/home");
+runtime.log(await b.cookies("https://site/"));
+```
+
 #### net.capture.interfaces
 
 ```
-interfaces(...args: unknown[])
+interfaces(): { name: string; addresses: string[]; up: boolean; loopback: boolean }[]
 ```
 
 List the host's network interfaces synchronously: net.capture.interfaces() → array of { name, addresses: string[], up, loopback }. Pure-Go (no privileges, all platforms).
 
+**Returns:** { name: string, addresses: string[], up: boolean, loopback: boolean }[] — one entry per interface with its name, assigned addresses (CIDR strings), and up / loopback flags. Synchronous (not a Promise).
+
+**Throws:** Throws if interface enumeration fails.
+
+```ts
+for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);
+```
+
 #### net.capture.open
 
 ```
-open(...args: unknown[])
+open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, payload?: Uint8Array, bytes: Uint8Array }) => void): void
 ```
 
 Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, port/src port/dst port, and/or/not + parens, implicit-and between juxtaposed primaries. No CIDR (net X/Y) or portrange yet; a malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo).
 
+**Parameters**
+
+- `opts` *({ iface: string, promisc?: boolean, snaplen?: number, filter?: string })* — iface is the interface name to capture on (required); promisc enables promiscuous mode (default true); snaplen caps the per-packet capture length in bytes (default 262144); filter is an optional tcpdump-like expression (e.g. 'tcp and port 80') applied post-decode in userspace — supports tcp/udp/icmp/ip/ip6, host/src host/dst host, port/src port/dst port, and/or/not + parens; no CIDR or portrange.
+- `onPacket` *((pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, payload?: Uint8Array, bytes: Uint8Array }) => void)* — Called once per matching frame with the decoded packet. ts is epoch ms; layer keys are present only when that layer decoded; bytes is always the raw frame; payload is the application-layer bytes when present.
+
+**Returns:** Promise<{ iface: string, link: string, close(): Promise<void> }> — a live-capture handle. link is the link-type name; close() stops the capture and resolves when the source is torn down. The handler keeps firing until close() is called or the source errors.
+
+**Throws:** Rejects if iface is missing, the filter expression is malformed, the platform is unsupported (Windows), or the capture can't be opened (missing root / CAP_NET_RAW on Linux, /dev/bpf access on macOS). Throws synchronously if onPacket is not a function.
+
+```ts
+const cap = await net.capture.open({ iface: "en0", filter: "tcp and port 443" }, pkt => {
+  runtime.log(pkt.ip?.src, "→", pkt.ip?.dst);
+});
+await cap.close();
+```
+
 #### net.capture.openFile
 
 ```
-openFile(...args: unknown[])
+openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): void
 ```
 
 Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) → Promise<void>. Calls the handler once per decoded packet (same shape as capture.open) and resolves at EOF. Offline; no privileges. opts is an optional trailing arg { filter? } — the 2-arg form still works; filter is the same tcpdump-like expression string as capture.open (post-decode/userspace, not kernel BPF; no CIDR/portrange; malformed → rejects).
 
+**Parameters**
+
+- `path` *(string)* — Path to a .pcap or .pcapng file; the format is auto-detected from the magic bytes.
+- `onPacket` *((pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, payload?: Uint8Array, bytes: Uint8Array }) => void)* — Called once per decoded packet (same shape as capture.open's handler).
+- `opts` *({ filter?: string }, optional)* — filter is the same tcpdump-like expression as capture.open, applied post-decode in userspace; omit (2-arg form) to deliver every packet.
+
+**Returns:** Promise<void> — resolves at end-of-file after dispatching every (matching) packet to the handler.
+
+**Throws:** Rejects if the filter expression is malformed, the file can't be opened or parsed, or the handler throws. Throws synchronously if onPacket is not a function.
+
+```ts
+await net.capture.openFile("/tmp/dump.pcap", pkt => runtime.log(pkt.tcp?.dstPort), { filter: "tcp" });
+```
+
 #### net.capture.toFile
 
 ```
-toFile(...args: unknown[])
+toFile(path: string, opts?: { snaplen?: number, linkType?: number }): { write(bytes: string | Uint8Array, opts?: { ts?: number }): void; close(): Promise<void> }
 ```
 
 Write raw frames to a .pcap file: net.capture.toFile(path, { linkType?, snaplen? }) → { write(bytes, { ts? }), close() }. write appends a raw frame (Uint8Array); ts (ms) overrides the timestamp. close() flushes and returns Promise<void>. Offline; no privileges.
 
+**Parameters**
+
+- `path` *(string)* — Path of the .pcap file to create (overwritten if it exists).
+- `opts` *({ snaplen?: number, linkType?: number }, optional)* — snaplen is the pcap global-header snap length (default 262144); linkType is the numeric pcap link-type written into the header (default Ethernet).
+
+**Returns:** { write(bytes, opts?): void, close(): Promise<void> } — a writer handle (returned synchronously, not a Promise). write appends one raw frame to the file (opts.ts in ms overrides the timestamp, defaulting to now) and returns undefined. close() flushes and closes the file, resolving when done.
+
+**Throws:** Throws synchronously if the file can't be created or the header can't be written, and on a per-frame write error. write throws if called after close. close() rejects on a close error.
+
+```ts
+const w = net.capture.toFile("/tmp/out.pcap");
+w.write(frameBytes, { ts: Date.now() });
+await w.close();
+```
+
 #### net.email.all
 
 ```
-all(...args: unknown[]): Promise<Record<string, unknown>>
+all(domain: string): Promise<Record<string, unknown>>
 ```
 
 Run all five email probes in parallel — five-way handshake aggregate.
 
+**Parameters**
+
+- `domain` *(string)* — The domain to run all five email-auth probes against.
+
+**Returns:** Promise<{ domain: string, spf: object, dmarc: object, mtaSts: object, tlsRpt: object, bimi: object }> — domain echoes the input; each probe key holds that probe's result (the same shape its individual binding returns) or { error: string } when that single probe failed. A per-probe failure doesn't fail the aggregate.
+
+**Throws:** Resolves even when individual probes fail (their failure surfaces under <probe>.error). Always resolves.
+
+```ts
+const a = await net.email.all("example.com"); runtime.log(a.spf, a.dmarc);
+```
+
 #### net.email.bimi
 
 ```
-bimi(...args: unknown[]): Promise<Record<string, unknown>>
+bimi(domain: string, opts?: { selector?: string }): Promise<Record<string, unknown>>
 ```
 
 Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'.
 
+**Parameters**
+
+- `domain` *(string)* — The domain whose <selector>._bimi.<domain> TXT record is queried for a v=BIMI1 record.
+- `opts` *({ selector?: string }, optional)* — selector names the BIMI selector to query (default 'default').
+
+**Returns:** Promise<{ present: false, selector: string } | { present: true, selector: string, record: string, tags: Record<string, string>, l: string, a: string }> — selector echoes the queried selector; when found, l is the logo URL tag and a is the assertion (VMC) tag. Missing record resolves to { present: false, selector }.
+
+**Throws:** Rejects only on a DNS lookup error other than NXDOMAIN; an absent record resolves to { present: false, selector }.
+
+```ts
+const r = await net.email.bimi("example.com", { selector: "v1" }); runtime.log(r.present && r.l);
+```
+
 #### net.email.dmarc
 
 ```
-dmarc(...args: unknown[]): Promise<Record<string, unknown>>
+dmarc(domain: string): Promise<Record<string, unknown>>
 ```
 
 Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.
 
+**Parameters**
+
+- `domain` *(string)* — The domain whose _dmarc.<domain> TXT record is queried for a v=DMARC1 record.
+
+**Returns:** Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, policy: string, subdomain: string, percent: string, rua: string, ruf: string }> — tags is the full parsed tag map; policy/subdomain/percent/rua/ruf surface the common p/sp/pct/rua/ruf tags. Missing record resolves to { present: false }.
+
+**Throws:** Rejects only on a DNS lookup error other than NXDOMAIN; an absent record resolves to { present: false }.
+
+```ts
+const r = await net.email.dmarc("example.com"); runtime.log(r.present && r.policy);
+```
+
 #### net.email.mtaSts
 
 ```
-mtaSts(...args: unknown[]): Promise<Record<string, unknown>>
+mtaSts(domain: string): Promise<Record<string, unknown>>
 ```
 
 Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file.
 
+**Parameters**
+
+- `domain` *(string)* — The domain whose _mta-sts.<domain> TXT record and well-known policy file are probed.
+
+**Returns:** Promise<{ present: false } | { present: true, record: string, txt: { v: string, id: string }, policy?: { version?: string, mode?: string, mx?: string[], maxAge?: number | string }, policyError?: string }> — txt carries the versioned id from the TXT marker; policy is the parsed well-known file (mode + mx + maxAge), or policyError holds the fetch/parse error string when the file couldn't be retrieved. Missing TXT resolves to { present: false }.
+
+**Throws:** Rejects only on a DNS lookup error other than NXDOMAIN; an absent record resolves to { present: false }. A policy-file fetch failure is captured in policyError, not thrown.
+
+```ts
+const r = await net.email.mtaSts("example.com"); runtime.log(r.present && r.policy?.mode);
+```
+
 #### net.email.send
 
 ```
-send(...args: unknown[]): Promise<{ accepted: string[]; rejected: { address: string; reason: string }[] }>
+send(opts: { to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number }): Promise<{ accepted: string[]; rejected: { address: string; reason: string }[] }>
 ```
 
 Send an outbound email: net.email.send({to, from, subject, body, html?, attachments?, headers?, server: {host, port?, auth?, tls?}, timeout?}) → Promise<{accepted: string[], rejected: [{address, reason}]}>. One TCP connection per call; per-recipient outcome captured. Transport failures throw; per-RCPT rejections surface in the result. TLS modes: starttls (default), tls, none.
 
+**Parameters**
+
+- `opts` *({ to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number })* — to (string or array) and from are required, as is server.host. subject/body/html shape the message: body alone → text/plain, body+html → multipart/alternative, any attachments → multipart/mixed. attachments carry raw bytes (contentType defaults to application/octet-stream). headers adds custom headers (CR/LF stripped). server.port defaults to 587; server.auth enables PLAIN auth (skipped when tls is 'none'); server.tls picks the transport: 'starttls' (default), implicit 'tls', or 'none'. timeout is the dial / connection timeout in ms (default 30000).
+
+**Returns:** Promise<{ accepted: string[], rejected: { address: string, reason: string }[] }> — accepted lists recipients the server accepted at RCPT TO; rejected pairs each refused address with the server's reason. The DATA body is sent only when at least one recipient was accepted.
+
+**Throws:** Rejects on missing required fields (to / from / server.host), transport / protocol failures (dial, HELO, STARTTLS unavailable when requested, AUTH, MAIL FROM, DATA), or timeout. Per-recipient RCPT rejections are returned in rejected, not thrown.
+
+```ts
+const r = await net.email.send({
+  to: "to@example.com", from: "from@example.com", subject: "hi", body: "hello",
+  server: { host: "smtp.example.com", port: 587, auth: { username: "u", password: "p" } },
+});
+runtime.log(r.accepted, r.rejected);
+```
+
 #### net.email.spf
 
 ```
-spf(...args: unknown[]): Promise<Record<string, unknown>>
+spf(domain: string): Promise<Record<string, unknown>>
 ```
 
 Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.
 
+**Parameters**
+
+- `domain` *(string)* — The domain whose apex TXT records are queried for an SPF (v=spf1) record.
+
+**Returns:** Promise<{ present: false } | { present: true, record: string, mechanisms: string[], allPolicy: string }> — when found, record is the raw SPF string, mechanisms is the tokenised list after v=spf1, and allPolicy summarises the trailing all-style mechanism (pass / fail / softfail / neutral). Missing record resolves to { present: false }.
+
+**Throws:** Rejects only on a DNS lookup error other than NXDOMAIN; an absent record resolves to { present: false }.
+
+```ts
+const r = await net.email.spf("example.com"); if (r.present) runtime.log(r.allPolicy);
+```
+
 #### net.email.tlsRpt
 
 ```
-tlsRpt(...args: unknown[]): Promise<Record<string, unknown>>
+tlsRpt(domain: string): Promise<Record<string, unknown>>
 ```
 
 Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua.
 
+**Parameters**
+
+- `domain` *(string)* — The domain whose _smtp._tls.<domain> TXT record is queried for a v=TLSRPTv1 record.
+
+**Returns:** Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, rua: string }> — tags is the parsed tag map; rua surfaces the report-URI tag. Missing record resolves to { present: false }.
+
+**Throws:** Rejects only on a DNS lookup error other than NXDOMAIN; an absent record resolves to { present: false }.
+
+```ts
+const r = await net.email.tlsRpt("example.com"); runtime.log(r.present && r.rua);
+```
+
 #### net.http.get
 
 ```
-get(...args: unknown[]): Promise<Record<string, unknown>>
+get(url: string): Promise<Record<string, unknown>>
 ```
 
 Perform an HTTP GET with a 5-second default timeout. Returns { status, body }.
 
+**Parameters**
+
+- `url` *(string)* — Absolute request URL (http:// or https://).
+
+**Returns:** Promise<{ status: number, body: string }> — the HTTP status code and the response body as a string. Redirects are followed by the default client.
+
+**Throws:** Rejects on transport errors (DNS failure, connection refused, TLS handshake) or if the 5s context deadline is exceeded. 4xx/5xx responses do NOT reject — they surface via status.
+
+```ts
+const r = await net.http.get("https://example.com"); runtime.log(r.status);
+```
+
 #### net.http.post
 
 ```
-post(...args: unknown[]): Promise<Record<string, unknown>>
+post(url: string, body?: string): Promise<Record<string, unknown>>
 ```
 
 Perform an HTTP POST with a 5-second default timeout. Returns { status, body }.
 
+**Parameters**
+
+- `url` *(string)* — Absolute request URL (http:// or https://).
+- `body` *(string, optional)* — Request body sent verbatim; omit or pass empty for no body. No Content-Type header is set automatically.
+
+**Returns:** Promise<{ status: number, body: string }> — the HTTP status code and the response body as a string.
+
+**Throws:** Rejects on transport errors (DNS failure, connection refused, TLS handshake) or if the 5s context deadline is exceeded. 4xx/5xx responses do NOT reject.
+
+```ts
+const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1 }));
+```
+
 #### net.http.request
 
 ```
-request(...args: unknown[]): Promise<Record<string, unknown>>
+request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<Record<string, unknown>>
 ```
 
 Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
 
+**Parameters**
+
+- `method` *(string)* — HTTP method (GET, POST, PUT, …); upper-cased internally. Required.
+- `url` *(string)* — Absolute request URL. Required.
+- `opts` *({ headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }, optional)* — headers sets request headers; body is the raw request body; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth.
+
+**Returns:** Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text; url is the final URL after redirects.
+
+**Throws:** Rejects on transport errors (DNS, connection refused, TLS) or context deadline, and after exhausting retries on a persistent transport error / 5xx. A malformed method or URL rejects immediately (not retried). 4xx/5xx that succeed at the transport level resolve normally.
+
+```ts
+const r = await net.http.request("POST", "https://api.example.com", { headers: { "content-type": "application/json" }, body: "{}", retry: 2 });
+```
+
 #### net.icmp.open
 
 ```
-open(...args: unknown[])
+open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): void
 ```
 
 Open a raw ICMP socket: net.icmp.open(opts?) → Promise<handle>. Requires root / CAP_NET_RAW (open rejects otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. handle.send({ to, type?, code?, id?, seq?, payload? }) builds an Echo-shaped body (non-Echo bodies not modelled); push/callback model — onMessage(cb) events carry { address, type, code }; onClose(cb)/onError(cb); handle.network/local; handle.close().
 
+**Parameters**
+
+- `opts` *({ network?: "ip4" | "ip6", readBuffer?: number }, optional)* — network selects the IP version (default 'ip4'); readBuffer is the inbound channel capacity (default 64).
+
+**Returns:** Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose, onError, close(): void }> — a raw-ICMP handle. send builds an ICMP message (Echo-shaped body; type defaults to the network's echo request, to is the destination address). onMessage fires per received packet with the marshalled body plus { address, type, code } meta.
+
+**Throws:** Rejects if the raw socket can't be opened — typically because it needs root / CAP_NET_RAW. send rejects on resolve/marshal/write errors, throws synchronously after close, and throws if opts.to is missing. Read errors surface via onError.
+
+```ts
+const p = await net.icmp.open();
+p.onMessage(ev => runtime.log(ev.address, ev.type));
+await p.send({ to: "8.8.8.8", id: 1, seq: 1, payload: "ping" });
+```
+
 #### net.netstatus.check
 
 ```
-check(...args: unknown[]): Promise<Record<string, unknown>>
+check(host: string, opts?: { port?: string, timeout?: number }): Promise<Record<string, unknown>>
 ```
 
 Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws.
 
+**Parameters**
+
+- `host` *(string)* — The host to check. Required.
+- `opts` *({ port?: string, timeout?: number }, optional)* — port is the TCP/TLS port (default "443"); timeout bounds all four sub-probes in ms (default 10000).
+
+**Returns:** Promise<{ host: string, port: string, elapsedMs: number, reachable: boolean, dns: { ok: boolean, ips: string[], error?: string }, tcp: { ok: boolean, latencyMs: number, error?: string }, tls: { ok: boolean, daysRemaining: number, error?: string }, http: { ok: boolean, status: number, error?: string } }> — the four sub-probe results plus elapsed time. reachable is dns.ok AND tcp.ok; TLS/HTTP are reported but don't gate it. Each sub-probe carries its own error string instead of failing the call.
+
+**Throws:** Rejects only if host is empty. Sub-probe failures are captured as data (ok:false + error) rather than thrown.
+
+```ts
+const s = await net.netstatus.check("example.com"); runtime.log(s.reachable);
+```
+
 #### net.probe.dns
 
 ```
-dns(...args: unknown[]): Promise<Record<string, unknown>>
+dns(host: string, opts?: { types?: string[] }): Promise<Record<string, unknown>>
 ```
 
 Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five.
 
+**Parameters**
+
+- `host` *(string)* — The hostname to resolve.
+- `opts` *({ types?: string[] }, optional)* — types restricts the lookup to a subset (case-insensitive: 'a','aaaa','mx','txt','cname','ns'); omit to query all.
+
+**Returns:** Promise<{ a?: string[], aaaa?: string[], mx?: { preference: number, host: string }[], txt?: string[], cname?: string, ns?: string[] }> — each key is present only when that record type returned at least one entry, so use `"mx" in result` to test presence.
+
+**Throws:** Resolves with an object omitting record types that errored or were empty; per-type lookup failures are swallowed (not thrown). Always resolves.
+
+```ts
+const r = await net.probe.dns("example.com", { types: ["a", "mx"] });
+```
+
 #### net.probe.ntp
 
 ```
-ntp(...args: unknown[]): Promise<Record<string, unknown>>
+ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<Record<string, unknown>>
 ```
 
 Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / dispersion.
 
+**Parameters**
+
+- `host` *(string)* — The NTP server hostname or IP.
+- `opts` *({ timeout?: number, port?: number | string }, optional)* — timeout is the query timeout in ms (default 5000); port overrides the default UDP port 123.
+
+**Returns:** Promise<{ serverTime: string, offsetMs: number, rttMs: number, stratum: number, referenceTime: string, rootDelayMs: number, rootDispersionMs: number }> — the server's time and reference time (RFC3339 nanos), clock offset and round-trip in ms, the stratum, and the root delay / dispersion in ms.
+
+**Throws:** Rejects if the NTP query fails (unreachable server, timeout, malformed response).
+
+```ts
+const r = await net.probe.ntp("pool.ntp.org"); runtime.log(r.offsetMs);
+```
+
 #### net.probe.ping
 
 ```
-ping(...args: unknown[]): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>
+ping(host: string, opts?: { mode?: "tcp" | "icmp", count?: number, timeout?: number, port?: string }): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>
 ```
 
 Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.
 
+**Parameters**
+
+- `host` *(string)* — The target host. Required.
+- `opts` *({ mode?: "tcp" | "icmp", count?: number, timeout?: number, port?: string }, optional)* — mode selects the probe (default 'tcp' — opens count TCP connections; 'icmp' sends real ICMP echo and needs raw-socket privileges); count is the number of probes (default 4); timeout is the per-probe timeout in ms (default 5000); port is the TCP target port (default "80", tcp mode only).
+
+**Returns:** Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }> — the resolved IP, the mode used, packets sent/received, loss percentage, and min/avg/max RTT in ms. A fully unreachable host resolves with received:0 and lossPercent:100 rather than rejecting.
+
+**Throws:** Rejects if host is empty, mode is neither 'tcp' nor 'icmp', DNS resolution fails (tcp mode), or the ICMP run fails (typically missing raw-socket privileges). Individual lost packets are counted, not thrown.
+
+```ts
+const p = await net.probe.ping("example.com", { count: 3 }); runtime.log(p.lossPercent);
+```
+
 #### net.probe.smtp
 
 ```
-smtp(...args: unknown[]): Promise<{ host: string; port: string; banner: string; ehloDomain: string; extensions: string[]; starttls: boolean; authMechanisms: string[]; sizeLimit: number }>
+smtp(host: string, opts?: { port?: string, timeout?: number, ehloName?: string }): Promise<{ host: string; port: string; banner: string; ehloDomain: string; extensions: string[]; starttls: boolean; authMechanisms: string[]; sizeLimit: number }>
 ```
 
 SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw.
 
+**Parameters**
+
+- `host` *(string)* — The SMTP server host. Required.
+- `opts` *({ port?: string, timeout?: number, ehloName?: string }, optional)* — port is the SMTP port (default "25"); timeout bounds the whole conversation in ms (default 10000); ehloName is the domain sent in EHLO (default "localhost").
+
+**Returns:** Promise<{ host: string, port: string, banner: string, ehloDomain: string, extensions: string[], starttls: boolean, authMechanisms: string[], sizeLimit: number }> — the greeting banner, the server's EHLO greeting line, the raw advertised extension lines, whether STARTTLS is offered, the upper-cased AUTH mechanism names, and the SIZE limit (0 if unadvertised). No mail is sent.
+
+**Throws:** Rejects if host is empty, the dial fails, or the greeting / EHLO cannot be read. A server that simply omits STARTTLS or AUTH reports them as false / empty — a finding, not an error.
+
+```ts
+const s = await net.probe.smtp("mail.example.com"); runtime.log(s.starttls, s.authMechanisms);
+```
+
 #### net.probe.tcp
 
 ```
-tcp(...args: unknown[]): Promise<{ host: string; port: number; ip: string; latencyMs: number }>
+tcp(target: string, opts?: { timeout?: number, port?: string }): Promise<{ host: string; port: number; ip: string; latencyMs: number }>
 ```
 
 Dial a TCP target and report latency + resolved IP. Default timeout 5s.
 
+**Parameters**
+
+- `target` *(string)* — host:port to dial; a bare host uses opts.port (default 80).
+- `opts` *({ timeout?: number, port?: string }, optional)* — timeout is the dial timeout in ms (default 5000); port is the fallback port when target has no :port (default "80").
+
+**Returns:** Promise<{ host: string, port: number, ip: string, latencyMs: number }> — the parsed host, port, the resolved remote IP, and the connect latency in milliseconds.
+
+**Throws:** Rejects if the dial fails (refused, unreachable, name resolution failure, or timeout).
+
+```ts
+const r = await net.probe.tcp("example.com:443"); runtime.log(r.latencyMs);
+```
+
 #### net.probe.tls
 
 ```
-tls(...args: unknown[]): Promise<Record<string, unknown>>
+tls(target: string, opts?: { timeout?: number }): Promise<Record<string, unknown>>
 ```
 
 Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary.
 
+**Parameters**
+
+- `target` *(string)* — host:port to dial; a bare host uses port 443. The host is sent as SNI.
+- `opts` *({ timeout?: number }, optional)* — timeout is the dial timeout in ms (default 5000).
+
+**Returns:** Promise<{ cn: string, issuer: string, notBefore: string, notAfter: string, daysRemaining: number, dnsNames: string[], serialNumber: string, fingerprintSha256: string }> — leaf-certificate fields: common name, issuer CN, validity bounds (RFC3339), days until expiry, SAN DNS names, decimal serial, and the SHA-256 fingerprint as hex. Verification is skipped, so expired / mismatched certs still report.
+
+**Throws:** Rejects if the dial / handshake fails, the connection is not TLS, or no peer certificates are presented.
+
+```ts
+const c = await net.probe.tls("example.com:443"); runtime.log(c.daysRemaining);
+```
+
 #### net.probe.whois
 
 ```
-whois(...args: unknown[]): Promise<Record<string, unknown>>
+whois(domain: string, opts?: { timeout?: number }): Promise<Record<string, unknown>>
 ```
 
 Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text.
 
+**Parameters**
+
+- `domain` *(string)* — The domain (or IP / ASN) to look up.
+- `opts` *({ timeout?: number }, optional)* — timeout is the wire-level WHOIS client timeout in ms (default 10000).
+
+**Returns:** Promise<{ raw: string, domain?: { name: string, punycode: string, whoisServer: string, nameServers: string[], status: string[], dnssec: boolean, createdDate: string, updatedDate: string, expirationDate: string }, registrar?: { name: string } }> — raw is always the full WHOIS text; domain and registrar are best-effort parsed fields, omitted for TLDs the parser doesn't recognise.
+
+**Throws:** Rejects if the WHOIS query itself fails (no referral, connection error, timeout). A parse failure is non-fatal — only raw is returned.
+
+```ts
+const w = await net.probe.whois("example.com"); runtime.log(w.domain?.expirationDate);
+```
+
 #### net.probe.wss
 
 ```
-wss(...args: unknown[]): Promise<{ url: string; connected: boolean; subprotocol: string; status: number; handshakeMs: number; pingMs: number }>
+wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string; connected: boolean; subprotocol: string; status: number; handshakeMs: number; pingMs: number }>
 ```
 
 WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws.
 
+**Parameters**
+
+- `url` *(string)* — The WebSocket URL (ws:// or wss://). Required.
+- `opts` *({ timeout?: number, ping?: boolean }, optional)* — timeout bounds the handshake and ping in ms (default 10000); ping toggles the ping/pong RTT measurement (default true).
+
+**Returns:** Promise<{ url: string, connected: boolean, subprotocol: string, status: number, handshakeMs: number, pingMs: number }> — connected is true on a successful upgrade, subprotocol is the negotiated subprotocol (or empty), status is the HTTP status of the 101 upgrade, handshakeMs is the handshake time in ms, and pingMs is the ping/pong RTT (or -1 when the ping was skipped or unanswered). The connection is closed immediately.
+
+**Throws:** Rejects if url is empty or the handshake fails (non-101, refused, bad URL). A failed ping leaves pingMs at -1 rather than rejecting.
+
+```ts
+const w = await net.probe.wss("wss://echo.websocket.org"); runtime.log(w.handshakeMs);
+```
+
 #### net.tcp.connect
 
 ```
-connect(...args: unknown[])
+connect(host: string, port: string | number, opts?: { timeout?: number, readBuffer?: number }): void
 ```
 
 Open a TCP client socket: net.tcp.connect(host, port, opts?) → Promise<handle>. Push/callback read model — handle.onData(cb)/onClose(cb)/onError(cb) register listeners; handle.write(data) sends (string→UTF-8 / Uint8Array); handle.remote/local are the peer/local addresses; handle.close() shuts down. opts { timeout?, readBuffer? }.
 
+**Parameters**
+
+- `host` *(string)* — The remote host to dial.
+- `port` *(string | number)* — The remote port.
+- `opts` *({ timeout?: number, readBuffer?: number }, optional)* — timeout is the dial timeout in ms (default 10000); readBuffer is the inbound channel capacity (default 64).
+
+**Returns:** Promise<{ remote: string, local: string, write(data: string | Uint8Array): Promise<void>, onData(cb: (ev: { bytes: Uint8Array, text: string }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }> — a connected-socket handle. remote/local are the peer/local addresses. write resolves once the bytes are written. onData fires per inbound chunk with both a Uint8Array and a UTF-8 text view; onClose fires when the stream ends; onError forwards non-EOF read/transport errors. close() tears down the connection.
+
+**Throws:** The returned Promise rejects if the dial fails (refused, unreachable, timeout). After connect, write rejects on a write error and throws synchronously if called after close; transport read errors surface via the onError callback, not as rejections.
+
+```ts
+const sock = await net.tcp.connect("example.com", 80);
+sock.onData(ev => runtime.log(ev.text));
+await sock.write("GET / HTTP/1.0\r\n\r\n");
+```
+
 #### net.udp.open
 
 ```
-open(...args: unknown[])
+open(opts: { host?: string, port?: string | number, bind?: string, readBuffer?: number }): void
 ```
 
 Open a UDP socket: net.udp.open(opts) → Promise<handle>. Connected mode { host, port } exposes send(data); bound mode { bind: ':9999' } exposes sendTo(data, host, port) and tags inbound events with { address, port }. Push/callback model — onMessage(cb)/onClose(cb)/onError(cb); handle.local is the bound address; handle.close() shuts down. opts also takes readBuffer?.
+
+**Parameters**
+
+- `opts` *({ host?: string, port?: string | number, bind?: string, readBuffer?: number })* — Selects the mode: connected mode needs { host, port } (net.DialUDP to that peer); bound mode needs { bind } (e.g. ':9999', net.ListenUDP on that local address). readBuffer is the inbound channel capacity (default 64). Provide exactly one of the two modes.
+
+**Returns:** Promise<handle> — connected mode resolves to { local: string, send(data: string | Uint8Array): Promise<void>, onMessage, onClose, onError, close(): void }; bound mode resolves to { local: string, sendTo(data: string | Uint8Array, host: string, port: string | number): Promise<void>, send (throws), onMessage, onClose, onError, close(): void }. onMessage fires per datagram with { bytes: Uint8Array, text: string } plus { address, port } in bound mode. local is the bound address.
+
+**Throws:** Rejects if neither { bind } nor { host, port } is supplied, or the dial / listen fails. send/sendTo reject on a write error and throw synchronously after close; calling send on a bound socket throws (use sendTo). Read errors surface via onError (a clean close ends silently).
+
+```ts
+const u = await net.udp.open({ host: "1.1.1.1", port: 53 });
+u.onMessage(ev => runtime.log(ev.bytes.length));
+await u.send(query);
+```
 
 ### runtime
 
@@ -3505,58 +4022,175 @@ Network servers: HTTP/HTTPS listeners with routing, middleware, static files, We
 #### server.http.listen
 
 ```
-listen(...args: unknown[])
+listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> }
 ```
 
 Bind an HTTP listener: server.http.listen({port, host?, routes, use?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}.
 
+**Parameters**
+
+- `opts` *({ port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] })* — Listener config. port is required; host defaults to "0.0.0.0". routes maps Go 1.22+ ServeMux patterns ('GET /', 'POST /users/{id}', 'GET /assets/{rest...}') to a handler function or a {use, handler} object for per-route middleware. use is a global middleware chain run before every route. Under `sercon serve`, --port-override replaces port.
+
+**Returns:** A server handle (returned synchronously): address is 'tcp/host:port' (resolved, so a port:0 ephemeral bind reports its OS-chosen port); stopped resolves when the server stops (rejects if Serve fails with a non-close error); close() begins a graceful 30s shutdown and resolves with the same stopped Promise.
+
+**Throws:** Throws synchronously if opts is missing, port is 0/absent, routes is missing, a use[] entry or route value is not a function/valid {use, handler}, or the bind fails (e.g. address already in use).
+
+```ts
+const srv = server.http.listen({
+  port: 8080,
+  routes: { "GET /": (req, res) => res.json({ ok: true }) },
+});
+runtime.log(srv.address);
+await srv.close();
+```
+
 #### server.http.static
 
 ```
-static(...args: unknown[])
+static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
 ```
 
 Static-file mount: server.http.static({dir, stripPrefix, index?, etag?}) → handler. Assign to a wildcard route (GET /assets/{rest...}). Internally stdlib http.FileServer with stripPrefix; ETag/Last-Modified/range requests work; no directory listing.
 
+**Parameters**
+
+- `opts` *({ dir: string; stripPrefix?: string; index?: string; etag?: boolean })* — dir is the filesystem root to serve. stripPrefix is removed from the request path before lookup (set it to the route's static prefix). index and etag are accepted but currently unused — http.FileServer already serves index.html and emits ETag/Last-Modified by default.
+
+**Returns:** A route handler marker (returned synchronously). Assign it as a routes entry, typically under a wildcard pattern like 'GET /assets/{rest...}'. The route compiler unwraps it to a stdlib http.FileServer mounted under http.StripPrefix.
+
+**Throws:** The call itself does not throw; an invalid dir surfaces as 404s at request time.
+
+```ts
+server.http.listen({
+  port: 8080,
+  routes: { "GET /assets/{rest...}": server.http.static({ dir: "./public", stripPrefix: "/assets/" }) },
+});
+```
+
 #### server.https.listen
 
 ```
-listen(...args: unknown[])
+listen(opts: { port: number; host?: string; cert: string; key: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> }
 ```
 
 Like server.http.listen plus required cert/key (file paths OR inline PEM strings). No autocert; no self-signed magic.
 
+**Parameters**
+
+- `opts` *({ port: number; host?: string; cert: string; key: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] })* — Same shape as server.http.listen plus cert and key. Each is either a filesystem path or an inline PEM string (detected by a leading '-----BEGIN'). TLS is pinned to a minimum of TLS 1.2.
+
+**Returns:** Same handle shape as server.http.listen; address is 'tcp/host:port'.
+
+**Throws:** Throws synchronously on the same conditions as server.http.listen, plus if cert/key are missing or the key pair fails to load/parse.
+
+```ts
+const srv = server.https.listen({
+  port: 8443,
+  cert: "/etc/ssl/cert.pem",
+  key: "/etc/ssl/key.pem",
+  routes: { "GET /": (req, res) => res.text("secure") },
+});
+```
+
 #### server.https.static
 
 ```
-static(...args: unknown[])
+static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
 ```
 
 Like server.http.static; same options.
 
+**Parameters**
+
+- `opts` *({ dir: string; stripPrefix?: string; index?: string; etag?: boolean })* — Identical to server.http.static — dir is the root, stripPrefix is removed from the path before lookup, index/etag are accepted but unused.
+
+**Returns:** A route handler marker (returned synchronously); assign it to a wildcard route on an https listener.
+
+**Throws:** The call itself does not throw; an invalid dir surfaces as 404s at request time.
+
+```ts
+server.https.listen({
+  port: 8443, cert, key,
+  routes: { "GET /assets/{rest...}": server.https.static({ dir: "./public", stripPrefix: "/assets/" }) },
+});
+```
+
 #### server.smtp.listen
 
 ```
-listen(...args: unknown[])
+listen(opts: { port: number; host?: string; hostname?: string; handlers: { onMail: (env: Envelope) => boolean | string | void | Promise<boolean | string | void>; onRcpt: (env: Envelope, to: string) => boolean | string | void | Promise<boolean | string | void>; onData: (env: Envelope, msg: Message) => boolean | string | void | Promise<boolean | string | void> }; auth?: (user: string, pass: string, env: Envelope) => boolean | Promise<boolean>; starttls?: { cert: string; key: string }; allowInsecureAuth?: boolean; maxMessageBytes?: number; maxRecipients?: number; sessionTimeout?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
 ```
 
 Bind an SMTP listener: server.smtp.listen({port, hostname?, handlers: {onMail, onRcpt, onData}, auth?, starttls?, allowInsecureAuth?, maxMessageBytes?, maxRecipients?, sessionTimeout?}) → handle with .address, .close(), .stopped Promise. Handlers receive (envelope, …) per stage; return true/undefined to accept, false to reject, a string for a 550 reason, throw for 451 temp-fail. onData receives a parsed Message with text/html bodies, attachments, and raw bytes.
 
+**Parameters**
+
+- `opts` *({ port: number; host?: string; hostname?: string; handlers: { onMail: (env: Envelope) => boolean | string | void | Promise<boolean | string | void>; onRcpt: (env: Envelope, to: string) => boolean | string | void | Promise<boolean | string | void>; onData: (env: Envelope, msg: Message) => boolean | string | void | Promise<boolean | string | void> }; auth?: (user: string, pass: string, env: Envelope) => boolean | Promise<boolean>; starttls?: { cert: string; key: string }; allowInsecureAuth?: boolean; maxMessageBytes?: number; maxRecipients?: number; sessionTimeout?: number })* — port is required; host (bind interface) defaults to "0.0.0.0"; hostname (advertised EHLO domain) defaults to the OS hostname. handlers.onMail/onRcpt/onData are all required and run per protocol stage — each returns true/undefined to accept, false for a 550 reject, a string for '550 <string>', or throws for a 451 temp-fail. auth (optional) enables PLAIN+LOGIN SASL; return truthy to accept. starttls {cert, key} (paths or inline PEM) enables STARTTLS. allowInsecureAuth permits AUTH without TLS. maxMessageBytes defaults to 10 MiB (non-positive values ignored), maxRecipients to 100, sessionTimeout to 30000 (milliseconds).
+
+**Returns:** A server handle (returned synchronously): address is 'tcp/host:port'; stopped resolves when the server stops (rejects on a non-close Serve error); close() shuts the listener down and resolves with the stopped Promise. The Envelope passed to handlers is { from, recipients, remote, helo, authenticatedUser?, tls?: { version, cipher } }; the Message passed to onData is { from, to, cc, subject, headers, body: { text, html }, attachments: { filename, contentType, bytes }[], raw: Uint8Array }.
+
+**Throws:** Throws synchronously if opts is missing, port is 0/absent, handlers is missing, any of onMail/onRcpt/onData is absent or not a function, auth is present but not a function, the starttls key pair fails to load, or the bind fails.
+
+```ts
+const srv = server.smtp.listen({
+  port: 2525,
+  handlers: {
+    onMail: (env) => true,
+    onRcpt: (env, to) => to.endsWith("@example.com"),
+    onData: (env, msg) => { runtime.log(msg.subject); },
+  },
+});
+```
+
 #### server.tcp.listen
 
 ```
-listen(...args: unknown[])
+listen(opts: { port: number; host?: string; readBuffer?: number }, handler: (conn: { remote: string; local: string; write(data: string | Uint8Array): Promise<void>; onData(cb: (msg: { bytes: Uint8Array; text: string }) => void): void; onClose(cb: () => void): void; onError(cb: (err: unknown) => void): void; close(): void }) => void): { address: string; close(): Promise<void> }
 ```
 
 Bind a raw TCP server: server.tcp.listen({port, host?, readBuffer?}, conn => {…}) → handle { address: 'tcp/host:port', close() }. The connection handler runs once per accepted socket; conn is the SAME handle shape as net.tcp.connect — onData(cb) (cb gets {bytes, text}), onClose(cb), onError(cb), write(data) (string or Uint8Array), close(), and remote/local addresses. Synchronous bind (throws on bind error); port:0 binds an OS-chosen ephemeral port. Emits a READY line under `sercon serve` and joins graceful shutdown.
 
+**Parameters**
+
+- `opts` *({ port: number; host?: string; readBuffer?: number })* — port is the listen port (0 binds an OS-chosen ephemeral port). host defaults to all interfaces. readBuffer is the per-connection inbound channel capacity (frames buffered before backpressure), default 64.
+- `handler` *((conn: { remote: string; local: string; write(data: string | Uint8Array): Promise<void>; onData(cb: (msg: { bytes: Uint8Array; text: string }) => void): void; onClose(cb: () => void): void; onError(cb: (err: unknown) => void): void; close(): void }) => void)* — Invoked once per accepted connection. conn matches net.tcp.connect's handle: register onData/onClose/onError callbacks, write() to send (returns a Promise), close() to tear down. remote/local are 'host:port' strings.
+
+**Returns:** A server handle (returned synchronously): address is 'tcp/host:port' (the resolved bind address, so port:0 reports its ephemeral port). close() closes the listener and all accepted connections, then resolves.
+
+**Throws:** Throws synchronously if opts is missing, the handler is not a function, or the bind fails (e.g. address already in use).
+
+```ts
+const srv = server.tcp.listen({ port: 0 }, (conn) => {
+  conn.onData((msg) => conn.write("echo: " + msg.text));
+});
+runtime.log(srv.address);
+await srv.close();
+```
+
 #### server.udp.listen
 
 ```
-listen(...args: unknown[])
+listen(opts: { port: number; host?: string }, handler: (msg: { bytes: Uint8Array; text: string; address: string; port: number }, reply: (data: string | Uint8Array) => Promise<void>) => void): { address: string; close(): Promise<void> }
 ```
 
 Bind a raw UDP server: server.udp.listen({port, host?}, (msg, reply) => {…}) → handle { address: 'udp/host:port', close() }. The handler runs once per inbound datagram; msg is {bytes, text, address, port} (the sender) and reply(data) (string or Uint8Array) sends a datagram back to that sender, returning a Promise. Synchronous bind (throws on bind error); port:0 binds an OS-chosen ephemeral port. Emits a READY line under `sercon serve` and joins graceful shutdown.
+
+**Parameters**
+
+- `opts` *({ port: number; host?: string })* — port is the listen port (0 binds an OS-chosen ephemeral port). host defaults to all interfaces.
+- `handler` *((msg: { bytes: Uint8Array; text: string; address: string; port: number }, reply: (data: string | Uint8Array) => Promise<void>) => void)* — Invoked once per inbound datagram. msg carries the payload (bytes/text) and the sender's address/port. reply(data) sends a datagram back to that sender and returns a Promise that resolves once written (rejects on a write error).
+
+**Returns:** A server handle (returned synchronously): address is 'udp/host:port' (resolved, so port:0 reports its ephemeral port). close() closes the socket and resolves. There is no per-connection handle — UDP is connectionless, so reply is bound to the originating datagram's sender.
+
+**Throws:** Throws synchronously if opts is missing, the handler is not a function, the address fails to resolve, or the bind fails.
+
+```ts
+const srv = server.udp.listen({ port: 0 }, (msg, reply) => {
+  reply("pong: " + msg.text);
+});
+runtime.log(srv.address);
+await srv.close();
+```
 
 ### services
 
@@ -3900,242 +4534,632 @@ String / regex / charset / data manipulation — all text-shaped transforms.
 #### text.charset.decode
 
 ```
-decode(...args: unknown[]): Promise<string>
+decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>
 ```
 
 Decode bytes in a named charset to a UTF-8 string.
 
+**Parameters**
+
+- `input` *(string | Uint8Array | ArrayBuffer)* — Bytes encoded in `charset`.
+- `charset` *(string)* — WHATWG/HTML5 encoding name or alias (UTF-8, ISO-8859-1, Windows-1252, Shift_JIS, GBK, …).
+
+**Returns:** Promise<string> — the bytes decoded to a UTF-8 string.
+
+**Throws:** Rejects if input is an unsupported type, the charset name is unknown, or the bytes are invalid for that encoding.
+
+```ts
+const s = await text.charset.decode(bytes, "Windows-1252");
+```
+
 #### text.charset.detect
 
 ```
-detect(...args: unknown[]): Promise<Record<string, unknown>>
+detect(input: string | Uint8Array | ArrayBuffer): Promise<Record<string, unknown>>
 ```
 
 Detect the most-likely charset of a byte sequence (saintfish/chardet). Returns top guess + candidates.
 
+**Parameters**
+
+- `input` *(string | Uint8Array | ArrayBuffer)* — Bytes to sniff. A string is taken as its raw UTF-8 bytes.
+
+**Returns:** Promise<{ charset: string, confidence: number, language?: string, candidates: { charset: string, confidence: number, language?: string }[] }> — the top match plus all candidates; confidence is chardet's 0–100 score. language is present only when chardet reports one.
+
+**Throws:** Rejects if input is empty, an unsupported type, or chardet finds no candidates.
+
+```ts
+const r = await text.charset.detect(bytes);
+runtime.log(r.charset, r.confidence);
+```
+
 #### text.charset.encode
 
 ```
-encode(...args: unknown[]): Promise<Uint8Array>
+encode(input: string, charset: string): Promise<Uint8Array>
 ```
 
 Encode a UTF-8 string to bytes in the named charset.
 
+**Parameters**
+
+- `input` *(string)* — UTF-8 string to encode.
+- `charset` *(string)* — Target WHATWG/HTML5 encoding name or alias.
+
+**Returns:** Promise<Uint8Array> — the string encoded as bytes in the target charset.
+
+**Throws:** Rejects if the charset name is unknown, or a character has no representation in the target encoding (no lossy fallback — characters are not silently dropped).
+
+```ts
+const bytes = await text.charset.encode("café", "ISO-8859-1");
+```
+
 #### text.diff.compare
 
 ```
-compare(...args: unknown[]): Promise<Record<string, unknown>>
+compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number, fromFile?: string, toFile?: string }): Promise<Record<string, unknown>>
 ```
 
 Unified-diff two text inputs. opts: context (default 3), fromFile / toFile (default 'a' / 'b'). Binary inputs return { binary: true } with an empty diff.
 
+**Parameters**
+
+- `a` *(string | Uint8Array | ArrayBuffer)* — The 'from' / left side. A string is taken as its UTF-8 bytes.
+- `b` *(string | Uint8Array | ArrayBuffer)* — The 'to' / right side.
+- `opts` *({ context?: number, fromFile?: string, toFile?: string }, optional)* — context is the number of unchanged lines around each hunk (default 3); fromFile / toFile are the header labels (default 'a' / 'b').
+
+**Returns:** Promise<{ identical: boolean, binary: boolean, added: number, removed: number, diff: string, format: "unified" }> — diff holds the unified-diff text (empty when identical or binary); added/removed count body +/- lines excluding file headers; binary is true when either input has a NUL byte in its first 8 KB.
+
+**Throws:** Rejects if either input is an unsupported type, or the unified-diff generation fails.
+
+```ts
+const d = await text.diff.compare("a\n", "b\n");
+runtime.log(d.diff, d.added, d.removed);
+```
+
 #### text.jq.query
 
 ```
-query(...args: unknown[]): Promise<unknown>
+query(data: unknown, filter: string): Promise<unknown>
 ```
 
 Run a jq filter over data and return the first emitted value (or null).
 
+**Parameters**
+
+- `data` *(unknown)* — Input value — any JSON-like JS value (object/array/scalar). Passed to gojq directly; integers of any width are normalised so queries don't blow up.
+- `filter` *(string)* — A jq filter expression, e.g. ".users[0].name" or ".items | length".
+
+**Returns:** Promise<unknown> — the first value the filter emits, or null when it emits nothing (e.g. an optional path like .a.b? that misses).
+
+**Throws:** Rejects if data is undefined, the filter string is empty, the filter fails to parse, or evaluation produces an error.
+
+```ts
+const name = await text.jq.query(obj, ".users[0].name");
+```
+
 #### text.jq.queryAll
 
 ```
-queryAll(...args: unknown[]): Promise<unknown[]>
+queryAll(data: unknown, filter: string): Promise<unknown[]>
 ```
 
 Run a jq filter and drain the iterator into an array.
 
+**Parameters**
+
+- `data` *(unknown)* — Input value — any JSON-like JS value.
+- `filter` *(string)* — A jq filter expression. Use this when the filter explodes a stream, e.g. ".[]" or ".users[].id".
+
+**Returns:** Promise<unknown[]> — every value the filter emits, in order (empty array when it emits nothing).
+
+**Throws:** Rejects if data is undefined, the filter string is empty, the filter fails to parse, or evaluation produces an error.
+
+```ts
+const ids = await text.jq.queryAll(obj, ".users[].id");
+```
+
 #### text.preg.match
 
 ```
-match(...args: unknown[])
+match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
 ```
 
 First hit of /pattern/flags against subject, or null. Returns { match, groups, index }; optional groups that didn't match surface as empty strings.
 
+**Parameters**
+
+- `pattern` *(string)* — A PHP-style /regex/flags delimited pattern (forward-slash delimiter only). Engine is Go RE2. Flags: i (case-insensitive), m (multiline ^/$), s (dotall). u/U/x are rejected.
+- `subject` *(string)* — The string to search.
+
+**Returns:** { match, groups, index } for the first match, where match is the full match, groups holds the numbered submatches after group 0 (unmatched optionals as ""), and index is the byte offset; null when there is no match.
+
+**Throws:** Throws if the pattern is empty, lacks a leading/closing `/`, uses an unsupported flag (u/U/x), or fails RE2 compilation (e.g. backreferences/lookaround, which RE2 does not support).
+
+```ts
+const m = text.preg.match("/(\\d+)/", "x42"); // { match: "42", groups: ["42"], index: 1 }
+```
+
 #### text.preg.matchAll
 
 ```
-matchAll(...args: unknown[])
+matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
 ```
 
 Every hit of /pattern/flags against subject, as an array of { match, groups, index } objects.
 
+**Parameters**
+
+- `pattern` *(string)* — A PHP-style /regex/flags delimited pattern (RE2 engine; i/m/s flags).
+- `subject` *(string)* — The string to search.
+
+**Returns:** Array of { match, groups, index } objects, one per non-overlapping match; empty array when there is none.
+
+**Throws:** Throws on the same conditions as preg.match (bad delimiter, unsupported flag, RE2 compile failure).
+
+```ts
+const all = text.preg.matchAll("/\\d+/", "1 22 333"); // 3 matches
+```
+
 #### text.preg.replace
 
 ```
-replace(...args: unknown[])
+replace(pattern: string, replacement: string, subject: string): string
 ```
 
 Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / ${1} backref syntax — PHP's \1 form is NOT translated.
 
+**Parameters**
+
+- `pattern` *(string)* — A PHP-style /regex/flags delimited pattern (RE2 engine; i/m/s flags).
+- `replacement` *(string)* — Replacement template using Go's RE2 syntax: $1 / ${name} reference groups; use ${1} to disambiguate. PHP's \1 backrefs are NOT supported.
+- `subject` *(string)* — The string to transform.
+
+**Returns:** string — subject with every match replaced (all occurrences).
+
+**Throws:** Throws on the same conditions as preg.match (bad delimiter, unsupported flag, RE2 compile failure).
+
+```ts
+text.preg.replace("/(\\w+)@/", "${1}_at_", "a@b"); // "a_at_b"
+```
+
 #### text.preg2.match
 
 ```
-match(...args: unknown[])
+match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
 ```
 
 First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/backreferences. Same { match, groups, index } shape as preg. No linear-time guarantee.
 
+**Parameters**
+
+- `pattern` *(string)* — A /regex/flags delimited pattern run on the .NET-flavoured regexp2 engine (lookaround, backreferences, possessive quantifiers). Flags: i, m, s, and x (ignore-pattern-whitespace, unavailable in preg). u/U are rejected.
+- `subject` *(string)* — The string to search.
+
+**Returns:** { match, groups, index } for the first match (same shape as preg.match); null when there is no match.
+
+**Throws:** Throws if the pattern is empty, lacks a leading/closing `/`, uses an unsupported flag (u/U), fails regexp2 compilation, or errors during matching. Backtracking engine: guard untrusted input with a timeout.
+
+```ts
+const m = text.preg2.match("/(?<=@)\\w+/", "a@host"); // { match: "host", ... }
+```
+
 #### text.preg2.matchAll
 
 ```
-matchAll(...args: unknown[])
+matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
 ```
 
 Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, index }.
 
+**Parameters**
+
+- `pattern` *(string)* — A /regex/flags delimited pattern on the regexp2 engine (i/m/s/x flags).
+- `subject` *(string)* — The string to search.
+
+**Returns:** Array of { match, groups, index } objects, one per match; empty array when there is none.
+
+**Throws:** Throws on the same conditions as preg2.match. Backtracking engine: guard untrusted input with a timeout.
+
+```ts
+const all = text.preg2.matchAll("/\\w+/", "a b c"); // 3 matches
+```
+
 #### text.preg2.replace
 
 ```
-replace(...args: unknown[])
+replace(pattern: string, replacement: string, subject: string): string
 ```
 
 Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 / ${1} syntax. Backtracking engine — keep a timeout around untrusted input.
 
+**Parameters**
+
+- `pattern` *(string)* — A /regex/flags delimited pattern on the regexp2 engine (i/m/s/x flags).
+- `replacement` *(string)* — Replacement template using .NET substitution syntax: $1 / ${1} reference groups, $$ is a literal dollar.
+- `subject` *(string)* — The string to transform.
+
+**Returns:** string — subject with every match replaced (startAt 0, count -1).
+
+**Throws:** Throws on the same conditions as preg2.match, or if replacement fails. Backtracking engine: guard untrusted input with a timeout.
+
+```ts
+text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
+```
+
 #### text.str.base64Decode
 
 ```
-base64Decode(...args: unknown[])
+base64Decode(input: string): string
 ```
 
 Standard base64; URL-safe input is accepted via auto-detect.
 
+**Parameters**
+
+- `input` *(string)* — Standard-alphabet base64 string (with padding).
+
+**Returns:** string — the decoded bytes interpreted as a UTF-8 string.
+
+**Throws:** Throws a TypeError if input is missing/null/undefined; throws if the input is not valid standard base64.
+
+```ts
+text.str.base64Decode("aGk="); // "hi"
+```
+
 #### text.str.base64Encode
 
 ```
-base64Encode(...args: unknown[])
+base64Encode(input: string): string
 ```
 
 Standard base64 (with padding).
 
+**Parameters**
+
+- `input` *(string)* — UTF-8 string to encode (encoded as its raw bytes).
+
+**Returns:** string — RFC 4648 standard base64 with `=` padding.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.base64Encode("hi"); // "aGk="
+```
+
 #### text.str.br2nl
 
 ```
-br2nl(...args: unknown[])
+br2nl(input: string): string
 ```
 
 Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
 
+**Parameters**
+
+- `input` *(string)* — Source text. Any case-insensitive <br>, <br/>, or <br /> variant is matched.
+
+**Returns:** string — input with each <br> variant replaced by a single \n.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.br2nl("a<br/>b"); // "a\nb"
+```
+
 #### text.str.htmlEntityDecode
 
 ```
-htmlEntityDecode(...args: unknown[])
+htmlEntityDecode(input: string): string
 ```
 
 Decode named and numeric HTML entities to their UTF-8 equivalents.
 
+**Parameters**
+
+- `input` *(string)* — Text containing HTML entities (named like &amp; or numeric like &#39; / &#x27;).
+
+**Returns:** string — input with recognised entities decoded to their UTF-8 characters.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.htmlEntityDecode("a &amp; b"); // "a & b"
+```
+
 #### text.str.lpad
 
 ```
-lpad(...args: unknown[])
+lpad(input: string, len: number, padChar?: string): string
 ```
 
 Shortcut for pad(side: 'left').
 
+**Parameters**
+
+- `input` *(string)* — The string to pad on the left.
+- `len` *(number)* — Target rune length.
+- `padChar` *(string, optional)* — Pad string; defaults to a single space.
+
+**Returns:** string — input left-padded to len runes.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.lpad("7", 3, "0"); // "007"
+```
+
 #### text.str.ltrim
 
 ```
-ltrim(...args: unknown[])
+ltrim(input: string, mask?: string): string
 ```
 
 Like trim, left side only.
 
+**Parameters**
+
+- `input` *(string)* — The string to trim.
+- `mask` *(string, optional)* — Cutset of characters to strip from the left. Defaults to the whitespace set " \t\n\r\v\f".
+
+**Returns:** string — input with leading mask characters removed.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.ltrim("--x", "-"); // "x"
+```
+
 #### text.str.nl2br
 
 ```
-nl2br(...args: unknown[])
+nl2br(input: string, xhtml?: boolean): string
 ```
 
 Replace newlines with <br> (or <br/> when xhtml=true).
 
+**Parameters**
+
+- `input` *(string)* — Source text. CRLF is normalised to LF first, so each line break yields one tag.
+- `xhtml` *(boolean, optional)* — When truthy, emit the self-closing <br/> instead of <br>. Defaults to false.
+
+**Returns:** string — input with each \n replaced by the chosen <br> tag followed by the original newline.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.nl2br("a\nb"); // "a<br>\nb"
+```
+
 #### text.str.normalizeNewlines
 
 ```
-normalizeNewlines(...args: unknown[])
+normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string
 ```
 
 Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr').
 
+**Parameters**
+
+- `input` *(string)* — Text with any mix of CRLF, CR, and LF line endings.
+- `style` *("lf" | "crlf" | "cr", optional)* — Target line-ending style. Defaults to 'lf'.
+
+**Returns:** string — input with every line ending rewritten to the requested style.
+
+**Throws:** Throws a TypeError if style is not one of 'lf', 'crlf', or 'cr'.
+
+```ts
+text.str.normalizeNewlines("a\r\nb", "lf"); // "a\nb"
+```
+
 #### text.str.pad
 
 ```
-pad(...args: unknown[])
+pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string
 ```
 
 Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', or 'both'.
 
+**Parameters**
+
+- `input` *(string)* — The string to pad. Returned unchanged when its rune length already meets or exceeds len.
+- `len` *(number)* — Target rune length. Measured in runes, not bytes.
+- `padChar` *(string, optional)* — Pad string; truncated to fit the needed width. Defaults to a single space.
+- `side` *("right" | "left" | "both", optional)* — Which side(s) to pad. 'both' splits the deficit with the extra rune going right. Defaults to 'right'; any unknown value is treated as 'right'.
+
+**Returns:** string — input padded to len runes on the chosen side(s).
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.pad("7", 3, "0", "left"); // "007"
+```
+
 #### text.str.printf
 
 ```
-printf(...args: unknown[])
+printf(format: string, args?: ...unknown): void
 ```
 
 sprintf + write to stdout.
 
+**Parameters**
+
+- `format` *(string)* — A Go fmt format string (same verbs as sprintf).
+- `args` *(...unknown, optional)* — Values substituted into the verbs.
+
+**Returns:** void — writes the formatted text directly to process stdout; returns nothing.
+
+**Throws:** Throws a TypeError if called with no arguments (format string required).
+
+```ts
+text.str.printf("%d items\n", 3);
+```
+
 #### text.str.reverse
 
 ```
-reverse(...args: unknown[])
+reverse(input: string): string
 ```
 
 Rune-aware reversal — `reverse('café')` is `'éfac'`.
 
+**Parameters**
+
+- `input` *(string)* — The string to reverse. Reversed by Unicode code point, not byte, so multi-byte runes stay intact.
+
+**Returns:** string — the input reversed rune-by-rune.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.reverse("café"); // "éfac"
+```
+
 #### text.str.rpad
 
 ```
-rpad(...args: unknown[])
+rpad(input: string, len: number, padChar?: string): string
 ```
 
 Shortcut for pad(side: 'right').
 
+**Parameters**
+
+- `input` *(string)* — The string to pad on the right.
+- `len` *(number)* — Target rune length.
+- `padChar` *(string, optional)* — Pad string; defaults to a single space.
+
+**Returns:** string — input right-padded to len runes.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.rpad("7", 3, "."); // "7.."
+```
+
 #### text.str.rtrim
 
 ```
-rtrim(...args: unknown[])
+rtrim(input: string, mask?: string): string
 ```
 
 Like trim, right side only.
 
+**Parameters**
+
+- `input` *(string)* — The string to trim.
+- `mask` *(string, optional)* — Cutset of characters to strip from the right. Defaults to the whitespace set " \t\n\r\v\f".
+
+**Returns:** string — input with trailing mask characters removed.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.rtrim("x...", "."); // "x"
+```
+
 #### text.str.sprintf
 
 ```
-sprintf(...args: unknown[])
+sprintf(format: string, args?: ...unknown): string
 ```
 
 Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 
+**Parameters**
+
+- `format` *(string)* — A Go fmt format string. Uses Go verbs: %s string, %d integer, %f / %.2f float, %x hex, %v default, %t bool, %q quoted, %%  literal percent.
+- `args` *(...unknown, optional)* — Values substituted into the verbs (passed through .Export(), so JS numbers arrive as Go int64/float64).
+
+**Returns:** string — the formatted result.
+
+**Throws:** Throws a TypeError if called with no arguments (format string required). Verb/arg mismatches are not thrown — Go renders %!verb(...) error markers inline.
+
+```ts
+text.str.sprintf("%s=%d", "n", 5); // "n=5"
+```
+
 #### text.str.stripHtml
 
 ```
-stripHtml(...args: unknown[])
+stripHtml(input: string): string
 ```
 
 Remove HTML tags and decode common entities.
 
+**Parameters**
+
+- `input` *(string)* — HTML source. Anything matching <...> is removed.
+
+**Returns:** string — the input with all <...> tag spans deleted.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.stripHtml("<b>hi</b>"); // "hi"
+```
+
 #### text.str.trim
 
 ```
-trim(...args: unknown[])
+trim(input: string, mask?: string): string
 ```
 
 Strip whitespace (or any char in the optional mask string) from both ends.
 
+**Parameters**
+
+- `input` *(string)* — The string to trim.
+- `mask` *(string, optional)* — Cutset: any character in this string is trimmed (PHP-style, not a prefix). Defaults to the whitespace set " \t\n\r\v\f".
+
+**Returns:** string — input with leading and trailing mask characters removed.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.trim("  hi  "); // "hi"
+```
+
 #### text.str.urlDecode
 
 ```
-urlDecode(...args: unknown[])
+urlDecode(input: string): string
 ```
 
 Inverse of urlEncode.
 
+**Parameters**
+
+- `input` *(string)* — A form-encoded string (`+` decodes to space, %XX to bytes).
+
+**Returns:** string — the decoded value.
+
+**Throws:** Throws a TypeError if input is missing/null/undefined; throws on malformed percent-escapes.
+
+```ts
+text.str.urlDecode("a+b%26c"); // "a b&c"
+```
+
 #### text.str.urlEncode
 
 ```
-urlEncode(...args: unknown[])
+urlEncode(input: string): string
 ```
 
 Form-encoding ('+' for space). For path segments use encodeURIComponent (provided by goja).
+
+**Parameters**
+
+- `input` *(string)* — String to percent-encode. Uses application/x-www-form-urlencoded rules: space becomes `+`.
+
+**Returns:** string — the form-encoded value.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.urlEncode("a b&c"); // "a+b%26c"
+```
 
 ### tui
 
@@ -4144,18 +5168,45 @@ Multi-pane terminal UI: layout, pane, write, focus.
 #### tui.layout
 
 ```
-layout(...args: unknown[])
+layout(tree: { name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number }): void
 ```
 
 Declare the pane layout for this Run. Tree nodes: { name, title?, weight? } (leaf), { rows: [...], weight? } (vertical split), { cols: [...], weight? } (horizontal split). Throws on duplicate names, empty rows/cols, unknown keys, or under --watch.
 
+**Parameters**
+
+- `tree` *({ name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number })* — The root layout node. Exactly one of name / rows / cols must be set per node. A leaf (name) becomes a bordered pane addressable via tui.pane(name); name must be a non-empty string and unique across the whole tree. rows stacks children top-to-bottom; cols places them side-by-side; both arrays must be non-empty. weight (positive integer, default 1) sets the child's proportional share of its parent's space. title (string, leaf only) seeds the pane's border caption. Any other key is rejected. The tree is realised over the full terminal as a tview Flex when stdout is a TTY; otherwise it falls back to prefixed-line output.
+
+**Returns:** void — installs the layout and brings up the UI (TTY) or the fallback line writer (non-TTY); the controller is torn down automatically at Run end.
+
+**Throws:** Throws if called under --watch; if layout was already called this Run; if the tree argument is missing/null/undefined; if any node violates the structure rules (not an object, more than one of name/rows/cols, missing all three, empty rows/cols, unknown key, non-string or empty name, duplicate name, title on a non-leaf, or non-positive/non-integer weight) — the error includes the tree path (e.g. "rows[1].cols[0]"); or if the terminal screen / fallback writer fails to start.
+
+```ts
+tui.layout({ cols: [{ name: "log", title: "Log" }, { name: "out", weight: 2 }] });
+tui.pane("log").writeln("started");
+```
+
 #### tui.pane
 
 ```
-pane(...args: unknown[])
+pane(name: string): { write(text: string): void; writeln(text: string): void; clear(): void; title(text: string): void }
 ```
 
 Return a Pane handle for a declared pane. Throws if the name wasn't in the layout. Handle methods: write(text), writeln(text), clear(), title(text). services.exec.shell({pane}) streams subprocess I/O into a pane.
+
+**Parameters**
+
+- `name` *(string)* — The leaf name declared in the tui.layout tree.
+
+**Returns:** A Pane handle. write(text) appends text (subprocess ANSI SGR colors are translated to pane colors); writeln(text) appends text followed by a newline; clear() empties the pane (no-op in the non-TTY fallback); title(text) updates the pane's border caption (no-op in fallback). All methods return undefined and are safe to call from any callback. The handle can also be passed as the pane option to services.exec.shell to stream a subprocess's stdout/stderr live into the pane.
+
+**Throws:** Throws if tui.layout has not been called yet this Run, or if name was not declared as a leaf in the layout (the message lists the available pane names).
+
+```ts
+const p = tui.pane("out");
+p.title("Output");
+p.writeln("hello");
+```
 <!-- END GENERATED REFERENCE -->
 
 ---
