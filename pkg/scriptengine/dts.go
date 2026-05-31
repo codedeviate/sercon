@@ -38,10 +38,10 @@ func writeDTS(w io.Writer, regs []registration, docs map[string]MemberDoc) error
 	bw.WriteString("\n")
 	for _, reg := range regs {
 		ctx := newTypeCtx()
-		writeJSDoc(bw, docs[reg.name].Summary, 0)
+		writeMemberJSDoc(bw, docs[reg.name], 0)
 		switch reg.kind {
 		case regValue:
-			writeValueDecl(bw, ctx, reg.name, reg.value)
+			writeValueDecl(bw, ctx, reg.name, reg.value, docs[reg.name])
 		case regNamespace:
 			writeNamespaceDecl(bw, ctx, reg.name, reg.members, reg.value, docs)
 		case regConstructor:
@@ -50,6 +50,61 @@ func writeDTS(w io.Writer, regs []registration, docs map[string]MemberDoc) error
 		bw.WriteString("\n")
 	}
 	return bw.err
+}
+
+// sigFromParams renders a TS call signature from a MemberDoc's structured
+// Params. Optional params get a trailing `?` on the name; param types are
+// emitted verbatim from Param.Type (falling back to `unknown` when empty).
+// `ret` is the return type to use — callers pass MemberDoc.Returns when set,
+// otherwise the reflected return type the call site already computed.
+func sigFromParams(params []Param, ret string) string {
+	args := make([]string, 0, len(params))
+	for _, p := range params {
+		name := p.Name
+		if p.Optional {
+			name += "?"
+		}
+		typ := p.Type
+		if typ == "" {
+			typ = "unknown"
+		}
+		args = append(args, name+": "+typ)
+	}
+	return "(" + strings.Join(args, ", ") + "): " + ret
+}
+
+// writeMemberJSDoc renders the JSDoc block for a documented member. When the
+// MemberDoc carries Params/Returns it expands to a multi-line block with
+// `@param` lines (one per param with a non-empty Desc) and an `@returns`
+// line; otherwise it falls back to the plain Summary rendering.
+func writeMemberJSDoc(w *errWriter, doc MemberDoc, indent int) {
+	hasParams := len(doc.Params) > 0
+	if !hasParams && doc.Returns == "" {
+		writeJSDoc(w, doc.Summary, indent)
+		return
+	}
+	pad := strings.Repeat("  ", indent)
+	w.WriteString(pad + "/**\n")
+	if s := strings.TrimSpace(doc.Summary); s != "" {
+		for _, line := range strings.Split(s, "\n") {
+			line = strings.TrimRight(line, " \t")
+			if line == "" {
+				w.WriteString(pad + " *\n")
+				continue
+			}
+			w.WriteString(pad + " * " + line + "\n")
+		}
+	}
+	for _, p := range doc.Params {
+		if strings.TrimSpace(p.Desc) == "" {
+			continue
+		}
+		w.WriteString(pad + " * @param " + p.Name + " " + p.Desc + "\n")
+	}
+	if doc.Returns != "" {
+		w.WriteString(pad + " * @returns " + doc.Returns + "\n")
+	}
+	w.WriteString(pad + " */\n")
 }
 
 // writeJSDoc renders a `/** ... */` block at the given indent level.
@@ -126,7 +181,7 @@ func (c *typeCtx) leave(t reflect.Type) {
 	c.depth--
 }
 
-func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any) {
+func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any, doc MemberDoc) {
 	// Resolve RegisterFactory-style bindings by calling the factory with
 	// nil vm/loop. The factory bodies build their value without
 	// dereferencing those arguments (closures capture them for runtime),
@@ -147,6 +202,10 @@ func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any) {
 		}
 	}
 	if a, ok := value.(AsyncBinding); ok {
+		if len(doc.Params) > 0 {
+			w.WriteString("declare function " + name + sigFromParams(doc.Params, "Promise<"+a.TSReturnType+">") + ";\n")
+			return
+		}
 		w.WriteString(fmt.Sprintf("declare function %s(...args: unknown[]): Promise<%s>;\n", name, a.TSReturnType))
 		return
 	}
@@ -157,6 +216,14 @@ func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any) {
 	}
 	switch t.Kind() {
 	case reflect.Func:
+		if len(doc.Params) > 0 {
+			ret := doc.Returns
+			if ret == "" {
+				ret = returnType(ctx, t)
+			}
+			w.WriteString("declare function " + name + sigFromParams(doc.Params, ret) + ";\n")
+			return
+		}
 		w.WriteString("declare function " + name + funcSig(ctx, t, false) + ";\n")
 	case reflect.Struct, reflect.Pointer:
 		w.WriteString(fmt.Sprintf("declare const %s: %s;\n", name, structShape(ctx, t)))
@@ -193,8 +260,13 @@ func writeMemberObject(w *errWriter, ctx *typeCtx, members map[string]any, path 
 	for _, k := range keys {
 		v := members[k]
 		memberPath := path + "." + k
-		writeJSDoc(w, docs[memberPath].Summary, indent)
+		doc := docs[memberPath]
+		writeMemberJSDoc(w, doc, indent)
 		if a, ok := v.(AsyncBinding); ok {
+			if len(doc.Params) > 0 {
+				w.WriteString(pad + k + sigFromParams(doc.Params, "Promise<"+a.TSReturnType+">") + ";\n")
+				continue
+			}
 			w.WriteString(pad + k + "(...args: unknown[]): Promise<" + a.TSReturnType + ">;\n")
 			continue
 		}
@@ -209,6 +281,14 @@ func writeMemberObject(w *errWriter, ctx *typeCtx, members map[string]any, path 
 		case t == nil:
 			w.WriteString(pad + k + ": unknown;\n")
 		case t.Kind() == reflect.Func:
+			if len(doc.Params) > 0 {
+				ret := doc.Returns
+				if ret == "" {
+					ret = returnType(ctx, t)
+				}
+				w.WriteString(pad + k + sigFromParams(doc.Params, ret) + ";\n")
+				continue
+			}
 			w.WriteString(pad + k + funcSig(ctx, t, false) + ";\n")
 		default:
 			w.WriteString(pad + k + ": " + tsType(ctx, t) + ";\n")

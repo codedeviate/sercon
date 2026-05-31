@@ -278,6 +278,18 @@ func TestWriteTypes_Golden(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := eng.RegisterNamespace("demo", map[string]any{
+		"hash": func(s string) string { return s },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng.SetMemberDocsStructured("demo", map[string]scriptengine.MemberDoc{
+		"hash": {
+			Summary: "Hash it.",
+			Params:  []scriptengine.Param{{Name: "input", Type: "string", Desc: "the UTF-8 input"}},
+			Returns: "string",
+		},
+	})
 	var buf bytes.Buffer
 	if err := eng.WriteTypes(&buf); err != nil {
 		t.Fatal(err)
@@ -816,9 +828,10 @@ func TestSetMemberDocs_StringWrapsToSummary(t *testing.T) {
 	}
 }
 
-// SetMemberDocsStructured stores a MemberDoc directly; its Summary renders
-// as the member's JSDoc block (the Params/Returns plumbing is unused by the
-// d.ts emitter in this phase, so output matches the Summary-only path).
+// SetMemberDocsStructured stores a MemberDoc directly; its Summary, Params,
+// and Returns drive the member's JSDoc block and signature: documented
+// params produce a real `name(p: t): ret` signature plus `@param`/`@returns`
+// lines instead of the reflected `(...args)` fallback.
 func TestSetMemberDocsStructured_SummaryRenders(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := eng.RegisterNamespace("ns", map[string]any{
@@ -838,9 +851,15 @@ func TestSetMemberDocsStructured_SummaryRenders(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := buf.String()
-	// Summary still renders; signature is unchanged (...args) in this phase.
-	if !strings.Contains(got, "  /** hello */\n  m(") {
-		t.Errorf("expected Summary JSDoc block; got:\n%s", got)
+	// Documented params drive a real signature plus @param/@returns JSDoc.
+	if !strings.Contains(got, "m(input: string): hex digest;") {
+		t.Errorf("expected param-aware signature; got:\n%s", got)
+	}
+	if !strings.Contains(got, "* @param input UTF-8 input") {
+		t.Errorf("expected @param JSDoc line; got:\n%s", got)
+	}
+	if !strings.Contains(got, "* @returns hex digest") {
+		t.Errorf("expected @returns JSDoc line; got:\n%s", got)
 	}
 	// An entry with no content deletes the key.
 	eng.SetMemberDocsStructured("ns", map[string]scriptengine.MemberDoc{"m": {}})
