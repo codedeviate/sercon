@@ -89,25 +89,6 @@ needs root / CAP_NET_RAW) — all with a push/callback read model
   callback marshalling) and `Engine.HoldRun` (keep the loop alive while the
   subprocess runs) — so only the binding remains.
 
-### Documentation
-
-- **Complete the MANUAL's binding reference — migrate the remaining
-  namespaces.** *(Pipeline + `crypto` shipped — vX.)* The structured
-  `scriptengine.MemberDoc{Summary, Params, ReturnType, Returns, Errors,
-  Example}` model is now the single source of truth: it drives real d.ts
-  signatures + `@param` AND a generated MANUAL §16 reference (`make
-  reference` / `sercon --emit-reference`). `crypto` is fully documented
-  (params/returns/errors/examples) as the proof. **Remaining:** author the
-  structured docs for the other 10 namespaces — `runtime`, `text`, `codec`,
-  `fs`, `net`, `db`, `server`, `services`, `tui`, `console` — a few per
-  cycle. Each is pure authoring in `cmd/sercon/docs.go` (fill `Params`/
-  `ReturnType`/`Returns`/`Errors`/`Example`, cross-checked against the
-  binding impls); regenerating (`make types && make reference`) grows both
-  the d.ts and the MANUAL automatically. Until a namespace is migrated its
-  members show their one-line summary + a collapsed `(...args)` signature.
-  `net` is the largest/most valuable next target.
-
-
 ## Hard
 
 ### Engine
