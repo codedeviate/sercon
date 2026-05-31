@@ -784,6 +784,75 @@ func TestWriteTypes_DocsEmptyStringRemoves(t *testing.T) {
 	}
 }
 
+// SetMemberDocs (the string form) wraps each value as MemberDoc{Summary}
+// and stores it via the structured path. Behaviourally this must produce
+// exactly the same d.ts JSDoc as before the structured model existed: the
+// summary renders as the member's JSDoc block.
+func TestSetMemberDocs_StringWrapsToSummary(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.RegisterNamespace("ns", map[string]any{
+		"m": func() string { return "x" },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng.SetMemberDocs("ns", map[string]string{"m": "hello"})
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "  /** hello */\n  m(") {
+		t.Errorf("expected the string doc to render as a Summary JSDoc block; got:\n%s", got)
+	}
+
+	// Empty string still deletes (preserved semantics).
+	eng.SetMemberDocs("ns", map[string]string{"m": ""})
+	buf.Reset()
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "hello") {
+		t.Errorf("expected empty-string to clear the member doc; got:\n%s", buf.String())
+	}
+}
+
+// SetMemberDocsStructured stores a MemberDoc directly; its Summary renders
+// as the member's JSDoc block (the Params/Returns plumbing is unused by the
+// d.ts emitter in this phase, so output matches the Summary-only path).
+func TestSetMemberDocsStructured_SummaryRenders(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.RegisterNamespace("ns", map[string]any{
+		"m": func() string { return "x" },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng.SetMemberDocsStructured("ns", map[string]scriptengine.MemberDoc{
+		"m": {
+			Summary: "hello",
+			Params:  []scriptengine.Param{{Name: "input", Type: "string", Desc: "UTF-8 input"}},
+			Returns: "hex digest",
+		},
+	})
+	var buf bytes.Buffer
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	// Summary still renders; signature is unchanged (...args) in this phase.
+	if !strings.Contains(got, "  /** hello */\n  m(") {
+		t.Errorf("expected Summary JSDoc block; got:\n%s", got)
+	}
+	// An entry with no content deletes the key.
+	eng.SetMemberDocsStructured("ns", map[string]scriptengine.MemberDoc{"m": {}})
+	buf.Reset()
+	if err := eng.WriteTypes(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "hello") {
+		t.Errorf("expected empty MemberDoc to clear the member doc; got:\n%s", buf.String())
+	}
+}
+
 // ModuleLoader serves a module from memory instead of disk. The loader
 // matches the `.ts` candidate by suffix; sercon transpiles it like a
 // disk read. Proves the virtualisation hook works end-to-end.

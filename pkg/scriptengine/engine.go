@@ -89,7 +89,7 @@ type Engine struct {
 	// declaration. Lives on the engine (not the registration) so the same
 	// SetDocs call can attach docs to a registration that was made via
 	// any of the five Register variants.
-	docs map[string]string
+	docs map[string]MemberDoc
 
 	// regCache reuses a Registry across runs so compiled module bytecode is
 	// cached on the Engine. Module exports remain per-runtime because each
@@ -234,13 +234,13 @@ func (e *Engine) SetDocs(path, doc string) {
 	e.regMu.Lock()
 	defer e.regMu.Unlock()
 	if e.docs == nil {
-		e.docs = map[string]string{}
+		e.docs = map[string]MemberDoc{}
 	}
 	if doc == "" {
 		delete(e.docs, path)
 		return
 	}
-	e.docs[path] = doc
+	e.docs[path] = MemberDoc{Summary: doc}
 }
 
 // SetMemberDocs is a convenience for documenting many members of a
@@ -248,23 +248,56 @@ func (e *Engine) SetDocs(path, doc string) {
 // SetMemberDocs prepends the namespace prefix when storing them. The
 // namespace itself can be documented separately via
 // `SetDocs("namespace", ...)`.
+//
+// SetMemberDocs is the string-only convenience form: each value is wrapped
+// as MemberDoc{Summary: value} and stored via SetMemberDocsStructured. An
+// empty string removes any previously-set doc for that member (same
+// "empty deletes" semantics as SetDocs).
 func (e *Engine) SetMemberDocs(namespace string, docs map[string]string) {
+	if len(docs) == 0 {
+		return
+	}
+	structured := make(map[string]MemberDoc, len(docs))
+	for member, doc := range docs {
+		structured[member] = MemberDoc{Summary: doc}
+	}
+	e.SetMemberDocsStructured(namespace, structured)
+}
+
+// SetMemberDocsStructured documents many members of a namespace in one call
+// using the structured MemberDoc model. Keys are bare member names (no
+// dots); the namespace prefix is prepended when storing them. An entry with
+// no content at all — empty Summary and empty Params/Returns/Errors/Example
+// — removes any previously-set doc for that member, mirroring the
+// "empty string deletes" behaviour of SetMemberDocs and SetDocs.
+func (e *Engine) SetMemberDocsStructured(namespace string, docs map[string]MemberDoc) {
 	if namespace == "" {
 		return
 	}
 	e.regMu.Lock()
 	defer e.regMu.Unlock()
 	if e.docs == nil {
-		e.docs = map[string]string{}
+		e.docs = map[string]MemberDoc{}
 	}
 	for member, doc := range docs {
 		key := namespace + "." + member
-		if doc == "" {
+		if isEmptyMemberDoc(doc) {
 			delete(e.docs, key)
 			continue
 		}
 		e.docs[key] = doc
 	}
+}
+
+// isEmptyMemberDoc reports whether a MemberDoc carries no documentation at
+// all. Such an entry deletes any existing doc for its key, preserving the
+// "empty deletes" semantics the flat string API relied on.
+func isEmptyMemberDoc(d MemberDoc) bool {
+	return d.Summary == "" &&
+		len(d.Params) == 0 &&
+		d.Returns == "" &&
+		d.Errors == "" &&
+		d.Example == ""
 }
 
 func (e *Engine) registry() *require.Registry {
