@@ -72,6 +72,10 @@ func transpileTS(source, sourceFile string) (transpileResult, error) {
 		Supported:  gojaUnsupported,
 		// Keep names so stack traces are easier to read.
 		KeepNames: true,
+		// Append an inline source map so goja maps runtime stack frames back
+		// to the original TS positions (goja parses the trailing
+		// //# sourceMappingURL=data:... directive natively).
+		Sourcemap: esbuild.SourceMapInline,
 	})
 
 	if len(result.Errors) > 0 {
