@@ -168,11 +168,11 @@ func lex(expr string) []string {
 		}
 	}
 	for _, r := range expr {
-		switch {
-		case r == '(' || r == ')':
+		switch r {
+		case '(', ')':
 			flush()
 			toks = append(toks, string(r))
-		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+		case ' ', '\t', '\n', '\r':
 			flush()
 		default:
 			cur.WriteRune(r)
