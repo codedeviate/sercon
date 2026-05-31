@@ -120,17 +120,30 @@ func transpileEntry(source, sourceFile string) (transpileResult, error) {
 // shiftSourceMap prepends `shift` blank output lines to an esbuild source map
 // (raw JSON) by prepending `shift` semicolons to its "mappings" field. This is
 // safe without re-encoding any VLQ segments: inserting blank leading output
-// lines leaves every real segment's zero-relative encoding unchanged. Returns
-// the (possibly unchanged) JSON.
+// lines leaves every real segment's zero-relative encoding unchanged.
+//
+// It returns (nil, nil) when the map carries no mappings — an empty,
+// whitespace-only, or comment-only entry script produces "mappings":"" and
+// goja's parser rejects an attached map with empty mappings ("mappings are
+// empty"). Returning nil signals the caller to skip attaching a map (errors
+// then fall back to transpiled-JS positions, which for such bodies is moot).
+// The emptiness check runs BEFORE the shift<=0 fast path because the no-body
+// case has bodyStart == -1 → shift == 0.
 func shiftSourceMap(raw []byte, shift int) ([]byte, error) {
-	if shift <= 0 || len(raw) == 0 {
-		return raw, nil
+	if len(raw) == 0 {
+		return nil, nil
 	}
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
 	mappings, _ := m["mappings"].(string)
+	if mappings == "" {
+		return nil, nil
+	}
+	if shift <= 0 {
+		return raw, nil
+	}
 	m["mappings"] = strings.Repeat(";", shift) + mappings
 	return json.Marshal(m)
 }

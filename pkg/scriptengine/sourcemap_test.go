@@ -77,3 +77,17 @@ func TestSourceMap_NoImportEntryMapped(t *testing.T) {
 		t.Errorf("expected mapped frame main.ts:2, got:\n%s", err.Error())
 	}
 }
+
+// TestSourceMap_EmptyEntryNoMapCrash is a regression guard: an empty,
+// whitespace-only, or comment-only entry script transpiles to a body with no
+// source-map segments ("mappings":""). Attaching such a map made goja reject
+// the script ("mappings are empty"); shiftSourceMap must skip attachment so
+// these scripts run cleanly (exit with no error).
+func TestSourceMap_EmptyEntryNoMapCrash(t *testing.T) {
+	for _, src := range []string{"", "\n", "   \n", "// just a comment\n"} {
+		eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+		if _, err := eng.Run(context.Background(), "empty.ts", src); err != nil {
+			t.Errorf("empty/comment-only entry %q should run without error, got: %v", src, err)
+		}
+	}
+}
