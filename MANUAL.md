@@ -2280,146 +2280,370 @@ Hashing, JWT, age encryption — anything that produces a digest, signature, or 
 #### crypto.encrypt.decrypt
 
 ```
-decrypt(...args: unknown[])
+decrypt(ciphertext: string | Uint8Array | ArrayBuffer, identities: string | string[]): Uint8Array
 ```
 
 Open a payload with one of the supplied identities. Routes to age or PGP based on the identity / ciphertext format. age: binary or armored auto-detected. Wrong identity throws.
 
+**Parameters**
+
+- `ciphertext` *(string | Uint8Array | ArrayBuffer)* — The encrypted payload; age armor and PGP armor are auto-detected.
+- `identities` *(string | string[])* — One or more private keys. AGE-SECRET-KEY-1... identities use the age backend; -----BEGIN PGP PRIVATE KEY BLOCK----- entries (or an armored PGP message) use the PGP backend.
+
+**Returns:** Uint8Array — the decrypted plaintext bytes (decode with new TextDecoder().decode(...) for a string).
+
+**Throws:** Throws if ciphertext is empty or an unsupported type, no identities are given, an identity is actually a public key, or no supplied identity matches the ciphertext's recipients.
+
+```ts
+const pt = crypto.encrypt.decrypt(ct, privateKey);
+const text = new TextDecoder().decode(pt);
+```
+
 #### crypto.encrypt.detectBackend
 
 ```
-detectBackend(...args: unknown[])
+detectBackend(input: string): { backend: string; kind?: string }
 ```
 
 Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown', kind?: 'public'|'private' }. Pure prefix matching; no parsing or I/O.
 
+**Parameters**
+
+- `input` *(string)* — A recipient or identity string to classify (age bech32, age SSH public key, or PGP armored block).
+
+**Returns:** { backend: "age" | "pgp" | "unknown", kind?: "public" | "private" } — kind is present only when the backend was identified.
+
+**Throws:** Never throws; unrecognised input returns { backend: "unknown" }.
+
+```ts
+const info = crypto.encrypt.detectBackend("age1abc..."); // { backend: "age", kind: "public" }
+```
+
 #### crypto.encrypt.encrypt
 
 ```
-encrypt(...args: unknown[])
+encrypt(data: string | Uint8Array | ArrayBuffer, recipients: string | string[], opts?: { armored?: boolean }): Uint8Array
 ```
 
 Seal data to recipients. age public keys (age1...) → age backend (opts.armored for ASCII); PGP public-key blocks → PGP backend (always armored). Auto-dispatched on key format. Multi-recipient: any listed identity decrypts.
 
+**Parameters**
+
+- `data` *(string | Uint8Array | ArrayBuffer)* — Plaintext to encrypt.
+- `recipients` *(string | string[])* — One or more recipient public keys. age1... bech32 keys use the age backend; -----BEGIN PGP PUBLIC KEY BLOCK----- entries use the PGP backend. Backends cannot be mixed in one call.
+- `opts` *({ armored?: boolean }, optional)* — armored (age backend only) wraps the output in age ASCII armor; defaults to false (binary). Ignored on the PGP path, which is always armored.
+
+**Returns:** Uint8Array — the ciphertext (binary age, ASCII-armored age when opts.armored, or armored PGP message bytes).
+
+**Throws:** Throws if data is an unsupported type, no recipients are given, a recipient is actually a private key, or a recipient string fails to parse.
+
+```ts
+const ct = crypto.encrypt.encrypt("secret", publicKey, { armored: true });
+```
+
 #### crypto.encrypt.keygen
 
 ```
-keygen(...args: unknown[])
+keygen(): { publicKey: string; privateKey: string }
 ```
 
 Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.
 
+**Returns:** { publicKey: string, privateKey: string } — publicKey is the shareable age1... recipient; privateKey is the secret AGE-SECRET-KEY-1... identity.
+
+**Throws:** Throws if the system RNG fails to generate an identity.
+
+```ts
+const { publicKey, privateKey } = crypto.encrypt.keygen();
+```
+
 #### crypto.encrypt.keygenPgp
 
 ```
-keygenPgp(...args: unknown[])
+keygenPgp(opts?: { name?: string, email?: string }): { publicKey: string; privateKey: string }
 ```
 
 Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. Returns armored { publicKey, privateKey } blocks. encrypt/decrypt auto-route to PGP when they see these.
 
+**Parameters**
+
+- `opts` *({ name?: string, email?: string }, optional)* — name and email populate the primary user ID; both default to empty (fine for throwaway keys).
+
+**Returns:** { publicKey: string, privateKey: string } — both ASCII-armored PGP key blocks (-----BEGIN PGP PUBLIC/PRIVATE KEY BLOCK-----).
+
+**Throws:** Throws if entity generation or armor serialisation fails.
+
+```ts
+const { publicKey, privateKey } = crypto.encrypt.keygenPgp({ name: "Test", email: "t@example.com" });
+```
+
 #### crypto.encrypt.rekey
 
 ```
-rekey(...args: unknown[])
+rekey(ciphertext: string | Uint8Array | ArrayBuffer, oldIdentities: string | string[], newRecipients: string | string[], opts?: { armored?: boolean }): Uint8Array
 ```
 
 Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop.
 
+**Parameters**
+
+- `ciphertext` *(string | Uint8Array | ArrayBuffer)* — The existing age ciphertext to re-key (armor auto-detected).
+- `oldIdentities` *(string | string[])* — Current AGE-SECRET-KEY-1... private keys used to decrypt the existing ciphertext.
+- `newRecipients` *(string | string[])* — New age1... public keys to encrypt the result for.
+- `opts` *({ armored?: boolean }, optional)* — armored forces the output armor state; default preserves the input's armor state.
+
+**Returns:** Uint8Array — the re-encrypted ciphertext for the new recipient set.
+
+**Throws:** Throws if ciphertext is empty, either key list is empty, a key is the wrong kind (public vs private), or the decrypt step fails (no matching identity / malformed input). age backend only.
+
+```ts
+const rotated = crypto.encrypt.rekey(ct, oldKey, newPublicKey);
+```
+
 #### crypto.hash.blake3
 
 ```
-blake3(...args: unknown[])
+blake3(input: string): string
 ```
 
 BLAKE3 hex digest (32-byte output, lukechampine.com/blake3).
 
+**Parameters**
+
+- `input` *(string)* — Data to hash, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 64-char lowercase hex digest (256-bit output).
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const d = crypto.hash.blake3("hello");
+```
+
 #### crypto.hash.crc32
 
 ```
-crc32(...args: unknown[])
+crc32(input: string): string
 ```
 
 CRC-32 (IEEE polynomial), zero-padded to 8 hex chars.
 
+**Parameters**
+
+- `input` *(string)* — Data to checksum, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 8-char zero-padded lowercase hex checksum.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const c = crypto.hash.crc32("hello"); // "3610a686"
+```
+
 #### crypto.hash.md5
 
 ```
-md5(...args: unknown[])
+md5(input: string): string
 ```
 
 MD5 hex digest of a UTF-8 input. Avoid for security purposes — exposed for compatibility with legacy fingerprints.
 
+**Parameters**
+
+- `input` *(string)* — Data to hash, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 32-char lowercase hex digest.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const d = crypto.hash.md5("hello"); // "5d41402abc4b2a76b9719d911017c592"
+```
+
 #### crypto.hash.sha1
 
 ```
-sha1(...args: unknown[])
+sha1(input: string): string
 ```
 
 SHA-1 hex digest of a UTF-8 input. Avoid for security purposes.
 
+**Parameters**
+
+- `input` *(string)* — Data to hash, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 40-char lowercase hex digest.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const d = crypto.hash.sha1("hello");
+```
+
 #### crypto.hash.sha256
 
 ```
-sha256(...args: unknown[])
+sha256(input: string): string
 ```
 
 SHA-256 hex digest of a UTF-8 input.
 
+**Parameters**
+
+- `input` *(string)* — Data to hash, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 64-char lowercase hex digest.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const d = crypto.hash.sha256("hello");
+```
+
 #### crypto.hash.sha384
 
 ```
-sha384(...args: unknown[])
+sha384(input: string): string
 ```
 
 SHA-384 hex digest of a UTF-8 input.
 
+**Parameters**
+
+- `input` *(string)* — Data to hash, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 96-char lowercase hex digest.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const d = crypto.hash.sha384("hello");
+```
+
 #### crypto.hash.sha3_256
 
 ```
-sha3_256(...args: unknown[])
+sha3_256(input: string): string
 ```
 
 SHA-3 256-bit hex digest. The underscore in the name matches recon's binding.
 
+**Parameters**
+
+- `input` *(string)* — Data to hash, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 64-char lowercase hex digest.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const d = crypto.hash.sha3_256("hello");
+```
+
 #### crypto.hash.sha3_512
 
 ```
-sha3_512(...args: unknown[])
+sha3_512(input: string): string
 ```
 
 SHA-3 512-bit hex digest.
 
+**Parameters**
+
+- `input` *(string)* — Data to hash, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 128-char lowercase hex digest.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const d = crypto.hash.sha3_512("hello");
+```
+
 #### crypto.hash.sha512
 
 ```
-sha512(...args: unknown[])
+sha512(input: string): string
 ```
 
 SHA-512 hex digest of a UTF-8 input.
 
+**Parameters**
+
+- `input` *(string)* — Data to hash, interpreted as a UTF-8 byte sequence.
+
+**Returns:** string — 128-char lowercase hex digest.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+const d = crypto.hash.sha512("hello");
+```
+
 #### crypto.jwt.sign
 
 ```
-sign(...args: unknown[])
+sign(claims: Record<string, unknown>, secret: string, opts?: { algorithm?: string }): string
 ```
 
 Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA; or a JWK JSON object (kty picks the key type) for any algorithm. opts.algorithm defaults to HS256.
 
+**Parameters**
+
+- `claims` *(Record<string, unknown>)* — Claims payload. Passed through to MapClaims; RFC 7519 reserved claims (exp/nbf/iat/iss/aud/sub) are honoured. Reserved claims are NOT synthesised — set iat/exp explicitly if you want them.
+- `secret` *(string)* — Key material: raw HMAC bytes for HS256/384/512, a PEM-encoded private key (-----BEGIN ...) for RS*/PS*/ES*/EdDSA, or a JWK JSON object ({"kty":...}).
+- `opts` *({ algorithm?: string }, optional)* — algorithm names the RFC 7518 alg (HS256/HS384/HS512, RS256/384/512, PS256/384/512, ES256/384/512, EdDSA); case-insensitive. Defaults to HS256.
+
+**Returns:** string — the signed compact-serialisation JWT (header.payload.signature).
+
+**Throws:** Throws if claims is null, secret is empty, the algorithm is unsupported, or the secret shape mismatches the algorithm (e.g. HMAC algo with a PEM key, or asymmetric algo with plain bytes).
+
+```ts
+const tok = crypto.jwt.sign({ sub: "u1" }, "topsecret", { algorithm: "HS256" });
+```
+
 #### crypto.jwt.validate
 
 ```
-validate(...args: unknown[])
+validate(token: string, secret: string, opts?: { algorithm?: string, audience?: string, issuer?: string }): { valid: boolean; claims?: object; reason?: string }
 ```
 
 Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.
 
+**Parameters**
+
+- `token` *(string)* — The compact-serialisation JWT to verify.
+- `secret` *(string)* — Verification key: raw HMAC bytes, a PEM-encoded public key (or certificate), or a JWK JSON object.
+- `opts` *({ algorithm?: string, audience?: string, issuer?: string }, optional)* — algorithm pins the accepted alg (algorithm-confusion guard); when unset, any supported alg is accepted. audience / issuer enforce the aud / iss claims when set.
+
+**Returns:** { valid: true, claims: object } on success, or { valid: false, reason: string } on any verification / claim failure.
+
+**Throws:** Throws only on structural / wiring errors (empty token or secret, malformed token, or a secret shape that mismatches the token's algorithm). Cryptographic and claim failures resolve as { valid: false, reason } instead of throwing.
+
+```ts
+const r = crypto.jwt.validate(tok, "topsecret", { algorithm: "HS256" });
+if (r.valid) runtime.log(r.claims.sub);
+```
+
 #### crypto.jwt.view
 
 ```
-view(...args: unknown[])
+view(token: string): { header: object; payload: object; signature: string }
 ```
 
 Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws.
+
+**Parameters**
+
+- `token` *(string)* — A compact-serialisation JWT (three dot-separated base64url segments).
+
+**Returns:** { header: object, payload: object, signature: string } — decoded header and payload (object key order preserved) plus the raw signature segment.
+
+**Throws:** Throws if the token is not three dot-separated segments or a segment fails base64url / JSON decoding.
+
+```ts
+const { header, payload } = crypto.jwt.view(tok);
+```
 
 ### db
 

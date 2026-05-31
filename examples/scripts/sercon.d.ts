@@ -44,46 +44,127 @@ declare const runtime: {
 /** Hashing, JWT, age encryption — anything that produces a digest, signature, or ciphertext. */
 declare const crypto: {
   encrypt: {
-    /** Open a payload with one of the supplied identities. Routes to age or PGP based on the identity / ciphertext format. age: binary or armored auto-detected. Wrong identity throws. */
-    decrypt(arg0: unknown, arg1: unknown): unknown;
-    /** Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown', kind?: 'public'|'private' }. Pure prefix matching; no parsing or I/O. */
-    detectBackend(arg0: string): unknown;
-    /** Seal data to recipients. age public keys (age1...) → age backend (opts.armored for ASCII); PGP public-key blocks → PGP backend (always armored). Auto-dispatched on key format. Multi-recipient: any listed identity decrypts. */
-    encrypt(arg0: unknown, arg1: unknown, arg2: unknown): unknown;
-    /** Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }. */
-    keygen(): unknown;
-    /** Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. Returns armored { publicKey, privateKey } blocks. encrypt/decrypt auto-route to PGP when they see these. */
-    keygenPgp(arg0: unknown): unknown;
-    /** Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop. */
-    rekey(arg0: unknown, arg1: unknown, arg2: unknown, arg3: unknown): unknown;
+    /**
+     * Open a payload with one of the supplied identities. Routes to age or PGP based on the identity / ciphertext format. age: binary or armored auto-detected. Wrong identity throws.
+     * @param ciphertext The encrypted payload; age armor and PGP armor are auto-detected.
+     * @param identities One or more private keys. AGE-SECRET-KEY-1... identities use the age backend; -----BEGIN PGP PRIVATE KEY BLOCK----- entries (or an armored PGP message) use the PGP backend.
+     * @returns Uint8Array — the decrypted plaintext bytes (decode with new TextDecoder().decode(...) for a string).
+     */
+    decrypt(ciphertext: string | Uint8Array | ArrayBuffer, identities: string | string[]): Uint8Array;
+    /**
+     * Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown', kind?: 'public'|'private' }. Pure prefix matching; no parsing or I/O.
+     * @param input A recipient or identity string to classify (age bech32, age SSH public key, or PGP armored block).
+     * @returns { backend: "age" | "pgp" | "unknown", kind?: "public" | "private" } — kind is present only when the backend was identified.
+     */
+    detectBackend(input: string): { backend: string; kind?: string };
+    /**
+     * Seal data to recipients. age public keys (age1...) → age backend (opts.armored for ASCII); PGP public-key blocks → PGP backend (always armored). Auto-dispatched on key format. Multi-recipient: any listed identity decrypts.
+     * @param data Plaintext to encrypt.
+     * @param recipients One or more recipient public keys. age1... bech32 keys use the age backend; -----BEGIN PGP PUBLIC KEY BLOCK----- entries use the PGP backend. Backends cannot be mixed in one call.
+     * @param opts armored (age backend only) wraps the output in age ASCII armor; defaults to false (binary). Ignored on the PGP path, which is always armored.
+     * @returns Uint8Array — the ciphertext (binary age, ASCII-armored age when opts.armored, or armored PGP message bytes).
+     */
+    encrypt(data: string | Uint8Array | ArrayBuffer, recipients: string | string[], opts?: { armored?: boolean }): Uint8Array;
+    /**
+     * Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey: 'AGE-SECRET-KEY-1...' }.
+     * @returns { publicKey: string, privateKey: string } — publicKey is the shareable age1... recipient; privateKey is the secret AGE-SECRET-KEY-1... identity.
+     */
+    keygen(): { publicKey: string; privateKey: string };
+    /**
+     * Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. Returns armored { publicKey, privateKey } blocks. encrypt/decrypt auto-route to PGP when they see these.
+     * @param opts name and email populate the primary user ID; both default to empty (fine for throwaway keys).
+     * @returns { publicKey: string, privateKey: string } — both ASCII-armored PGP key blocks (-----BEGIN PGP PUBLIC/PRIVATE KEY BLOCK-----).
+     */
+    keygenPgp(opts?: { name?: string, email?: string }): { publicKey: string; privateKey: string };
+    /**
+     * Re-encrypt for a new recipient set without exposing plaintext to JS. Output format defaults to match the input; opts.armored forces. Internal decrypt+encrypt loop.
+     * @param ciphertext The existing age ciphertext to re-key (armor auto-detected).
+     * @param oldIdentities Current AGE-SECRET-KEY-1... private keys used to decrypt the existing ciphertext.
+     * @param newRecipients New age1... public keys to encrypt the result for.
+     * @param opts armored forces the output armor state; default preserves the input's armor state.
+     * @returns Uint8Array — the re-encrypted ciphertext for the new recipient set.
+     */
+    rekey(ciphertext: string | Uint8Array | ArrayBuffer, oldIdentities: string | string[], newRecipients: string | string[], opts?: { armored?: boolean }): Uint8Array;
   };
   hash: {
-    /** BLAKE3 hex digest (32-byte output, lukechampine.com/blake3). */
-    blake3(...args: unknown[]): unknown;
-    /** CRC-32 (IEEE polynomial), zero-padded to 8 hex chars. */
-    crc32(...args: unknown[]): unknown;
-    /** MD5 hex digest of a UTF-8 input. Avoid for security purposes — exposed for compatibility with legacy fingerprints. */
-    md5(...args: unknown[]): unknown;
-    /** SHA-1 hex digest of a UTF-8 input. Avoid for security purposes. */
-    sha1(...args: unknown[]): unknown;
-    /** SHA-256 hex digest of a UTF-8 input. */
-    sha256(...args: unknown[]): unknown;
-    /** SHA-384 hex digest of a UTF-8 input. */
-    sha384(...args: unknown[]): unknown;
-    /** SHA-3 256-bit hex digest. The underscore in the name matches recon's binding. */
-    sha3_256(...args: unknown[]): unknown;
-    /** SHA-3 512-bit hex digest. */
-    sha3_512(...args: unknown[]): unknown;
-    /** SHA-512 hex digest of a UTF-8 input. */
-    sha512(...args: unknown[]): unknown;
+    /**
+     * BLAKE3 hex digest (32-byte output, lukechampine.com/blake3).
+     * @param input Data to hash, interpreted as a UTF-8 byte sequence.
+     * @returns string — 64-char lowercase hex digest (256-bit output).
+     */
+    blake3(input: string): string;
+    /**
+     * CRC-32 (IEEE polynomial), zero-padded to 8 hex chars.
+     * @param input Data to checksum, interpreted as a UTF-8 byte sequence.
+     * @returns string — 8-char zero-padded lowercase hex checksum.
+     */
+    crc32(input: string): string;
+    /**
+     * MD5 hex digest of a UTF-8 input. Avoid for security purposes — exposed for compatibility with legacy fingerprints.
+     * @param input Data to hash, interpreted as a UTF-8 byte sequence.
+     * @returns string — 32-char lowercase hex digest.
+     */
+    md5(input: string): string;
+    /**
+     * SHA-1 hex digest of a UTF-8 input. Avoid for security purposes.
+     * @param input Data to hash, interpreted as a UTF-8 byte sequence.
+     * @returns string — 40-char lowercase hex digest.
+     */
+    sha1(input: string): string;
+    /**
+     * SHA-256 hex digest of a UTF-8 input.
+     * @param input Data to hash, interpreted as a UTF-8 byte sequence.
+     * @returns string — 64-char lowercase hex digest.
+     */
+    sha256(input: string): string;
+    /**
+     * SHA-384 hex digest of a UTF-8 input.
+     * @param input Data to hash, interpreted as a UTF-8 byte sequence.
+     * @returns string — 96-char lowercase hex digest.
+     */
+    sha384(input: string): string;
+    /**
+     * SHA-3 256-bit hex digest. The underscore in the name matches recon's binding.
+     * @param input Data to hash, interpreted as a UTF-8 byte sequence.
+     * @returns string — 64-char lowercase hex digest.
+     */
+    sha3_256(input: string): string;
+    /**
+     * SHA-3 512-bit hex digest.
+     * @param input Data to hash, interpreted as a UTF-8 byte sequence.
+     * @returns string — 128-char lowercase hex digest.
+     */
+    sha3_512(input: string): string;
+    /**
+     * SHA-512 hex digest of a UTF-8 input.
+     * @param input Data to hash, interpreted as a UTF-8 byte sequence.
+     * @returns string — 128-char lowercase hex digest.
+     */
+    sha512(input: string): string;
   };
   jwt: {
-    /** Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA; or a JWK JSON object (kty picks the key type) for any algorithm. opts.algorithm defaults to HS256. */
-    sign(arg0: Record<string, unknown>, arg1: string, arg2: unknown): unknown;
-    /** Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }. */
-    validate(arg0: string, arg1: string, arg2: unknown): unknown;
-    /** Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws. */
-    view(arg0: string): unknown;
+    /**
+     * Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA; or a JWK JSON object (kty picks the key type) for any algorithm. opts.algorithm defaults to HS256.
+     * @param claims Claims payload. Passed through to MapClaims; RFC 7519 reserved claims (exp/nbf/iat/iss/aud/sub) are honoured. Reserved claims are NOT synthesised — set iat/exp explicitly if you want them.
+     * @param secret Key material: raw HMAC bytes for HS256/384/512, a PEM-encoded private key (-----BEGIN ...) for RS*/PS*/ES*/EdDSA, or a JWK JSON object ({"kty":...}).
+     * @param opts algorithm names the RFC 7518 alg (HS256/HS384/HS512, RS256/384/512, PS256/384/512, ES256/384/512, EdDSA); case-insensitive. Defaults to HS256.
+     * @returns string — the signed compact-serialisation JWT (header.payload.signature).
+     */
+    sign(claims: Record<string, unknown>, secret: string, opts?: { algorithm?: string }): string;
+    /**
+     * Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.
+     * @param token The compact-serialisation JWT to verify.
+     * @param secret Verification key: raw HMAC bytes, a PEM-encoded public key (or certificate), or a JWK JSON object.
+     * @param opts algorithm pins the accepted alg (algorithm-confusion guard); when unset, any supported alg is accepted. audience / issuer enforce the aud / iss claims when set.
+     * @returns { valid: true, claims: object } on success, or { valid: false, reason: string } on any verification / claim failure.
+     */
+    validate(token: string, secret: string, opts?: { algorithm?: string, audience?: string, issuer?: string }): { valid: boolean; claims?: object; reason?: string };
+    /**
+     * Decode header + payload WITHOUT verifying the signature. Useful for inspection / debugging auth flows. Malformed input throws.
+     * @param token A compact-serialisation JWT (three dot-separated base64url segments).
+     * @returns { header: object, payload: object, signature: string } — decoded header and payload (object key order preserved) plus the raw signature segment.
+     */
+    view(token: string): { header: object; payload: object; signature: string };
   };
 };
 
