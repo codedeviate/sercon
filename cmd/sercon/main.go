@@ -63,6 +63,7 @@ func run(args []string) int {
 	timeout := fs.Duration("timeout", 10*time.Second, "Per-script timeout")
 	root := fs.String("root", "", "Script root for require resolution (default: dirname of first script)")
 	emitDTS := fs.String("emit-dts", "", "Write the .d.ts for the example bindings to this path and exit")
+	emitReference := fs.String("emit-reference", "", "Write the markdown binding reference to this path and exit")
 	verbose := fs.Bool("v", false, "Verbose: trace transpile output and module resolutions to stderr; also print duration on script failure")
 	helpShort := fs.Bool("h", false, "Show in-depth, colorized help and exit")
 	helpLong := fs.Bool("help", false, "Show in-depth, colorized help and exit")
@@ -88,7 +89,7 @@ func run(args []string) int {
 	}
 
 	scripts := fs.Args()
-	if *emitDTS == "" && len(scripts) == 0 {
+	if *emitDTS == "" && *emitReference == "" && len(scripts) == 0 {
 		fmt.Fprintln(os.Stderr, "sercon: no scripts given")
 		fs.Usage()
 		return exitUsage
@@ -137,6 +138,22 @@ func run(args []string) int {
 		}
 		defer f.Close()
 		if err := eng.WriteTypes(f); err != nil {
+			fmt.Fprintln(os.Stderr, "sercon:", err)
+			return exitUsage
+		}
+		if len(scripts) == 0 && *emitReference == "" {
+			return exitOK
+		}
+	}
+
+	if *emitReference != "" {
+		f, err := os.Create(*emitReference)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "sercon:", err)
+			return exitUsage
+		}
+		defer f.Close()
+		if err := eng.WriteReference(f); err != nil {
 			fmt.Fprintln(os.Stderr, "sercon:", err)
 			return exitUsage
 		}
@@ -423,27 +440,27 @@ func registerSurface(e *scriptengine.Engine) error {
 	// .d.ts grows useful editor hover. Docs are gathered in docs.go
 	// (centralised so lockstep updates touch one file).
 	e.SetDocs("runtime", "Script-host scaffolding: logging, assertions, time, environment, runtime.argv.")
-	e.SetMemberDocs("runtime", runtimeDocs())
+	e.SetMemberDocsStructured("runtime", runtimeDocs())
 	e.SetDocs("crypto", "Hashing, JWT, age encryption — anything that produces a digest, signature, or ciphertext.")
-	e.SetMemberDocs("crypto", cryptoDocs())
+	e.SetMemberDocsStructured("crypto", cryptoDocs())
 	e.SetDocs("text", "String / regex / charset / data manipulation — all text-shaped transforms.")
-	e.SetMemberDocs("text", textDocs())
+	e.SetMemberDocsStructured("text", textDocs())
 	e.SetDocs("codec", "Binary-format codecs: compression, barcodes, check digits.")
-	e.SetMemberDocs("codec", codecDocs())
+	e.SetMemberDocsStructured("codec", codecDocs())
 	e.SetDocs("fs", "Filesystem operations: path manipulation and archive create/extract.")
-	e.SetMemberDocs("fs", fsDocs())
+	e.SetMemberDocsStructured("fs", fsDocs())
 	e.SetDocs("net", "Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions.")
-	e.SetMemberDocs("net", netDocs())
+	e.SetMemberDocsStructured("net", netDocs())
 	e.SetDocs("db", "Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict.")
-	e.SetMemberDocs("db", dbDocs())
+	e.SetMemberDocsStructured("db", dbDocs())
 	e.SetDocs("services", "Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers.")
-	e.SetMemberDocs("services", servicesDocs())
+	e.SetMemberDocsStructured("services", servicesDocs())
 	e.SetDocs("tui", "Multi-pane terminal UI: layout, pane, write, focus.")
-	e.SetMemberDocs("tui", tuiDocs())
+	e.SetMemberDocsStructured("tui", tuiDocs())
 	e.SetDocs("server", "Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.")
-	e.SetMemberDocs("server", serverDocs())
+	e.SetMemberDocsStructured("server", serverDocs())
 	e.SetDocs("console", "Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.")
-	e.SetMemberDocs("console", consoleDocs())
+	e.SetMemberDocsStructured("console", consoleDocs())
 	return nil
 }
 

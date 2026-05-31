@@ -214,6 +214,7 @@ func showHelp(w io.Writer) {
 	flagLine("-timeout", "duration", "Per-script wall-clock limit (default 10s; 0 disables).")
 	flagLine("-root", "dir", "Script root for require/import resolution (default: dir of the first script).")
 	flagLine("-emit-dts", "path", "Write a .d.ts for the example bindings to `path` and exit.")
+	flagLine("-emit-reference", "path", "Write the markdown binding reference to `path` and exit.")
 	flagLine("-v", "", "Verbose: trace the rewritten entry-script JS and each module resolution to stderr; also print duration on script failure.")
 	flagLine("--help, -h", "", "Show this help and exit.")
 	flagLine("--examples", "", "Show colourised script examples covering every feature; then exit.")
