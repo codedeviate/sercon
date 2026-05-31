@@ -32,8 +32,8 @@ func TestWriteReference_DocumentedMember(t *testing.T) {
 	out := buf.String()
 
 	wants := []string{
-		"## crypto",
-		"### crypto.sha256",
+		"### crypto",
+		"#### crypto.sha256",
 		"sha256(input: string): hex digest",
 		"SHA-256 hex digest of a UTF-8 input.",
 		"- `input` *(string)* — UTF-8 input to hash",
@@ -65,7 +65,7 @@ func TestWriteReference_SummaryOnly(t *testing.T) {
 	}
 	out := buf.String()
 
-	for _, w := range []string{"### text.upper", "Uppercase a string.", "upper(...args: unknown[])"} {
+	for _, w := range []string{"#### text.upper", "Uppercase a string.", "upper(...args: unknown[])"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("output missing %q\n---\n%s", w, out)
 		}

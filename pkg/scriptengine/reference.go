@@ -33,7 +33,7 @@ func writeReference(w io.Writer, regs []registration, docs map[string]MemberDoc)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].name < sorted[j].name })
 
 	for _, reg := range sorted {
-		bw.WriteString("\n## " + reg.name + "\n")
+		bw.WriteString("\n### " + reg.name + "\n")
 		doc := docs[reg.name]
 		switch reg.kind {
 		case regNamespace:
@@ -86,7 +86,7 @@ func writeReferenceMembers(w *errWriter, members map[string]any, path string, do
 			// heading + summary paragraph (no signature fence), then recurse.
 			if doc, ok := docs[memberPath]; ok {
 				if s := strings.TrimSpace(doc.Summary); s != "" {
-					w.WriteString("\n### " + memberPath + "\n\n" + s + "\n")
+					w.WriteString("\n#### " + memberPath + "\n\n" + s + "\n")
 				}
 			}
 			writeReferenceMembers(w, nested, memberPath, docs)
@@ -101,7 +101,7 @@ func writeReferenceMembers(w *errWriter, members map[string]any, path string, do
 // the Summary paragraph, Parameters, Returns, Throws, and Example — omitting
 // every empty section.
 func writeReferenceEntry(w *errWriter, path, name string, doc MemberDoc, signature string) {
-	w.WriteString("\n### " + path + "\n")
+	w.WriteString("\n#### " + path + "\n")
 	w.WriteString("\n```\n" + signature + "\n```\n")
 
 	if s := strings.TrimSpace(doc.Summary); s != "" {

@@ -37,7 +37,7 @@ GOLANGCI_VERSION  ?= v2.12.2
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 
-.PHONY: build release manual test vet lint demo types release-prep version-check clean
+.PHONY: build release manual reference test vet lint demo types release-prep version-check clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -92,7 +92,14 @@ release:
 	CGO_ENABLED=0 $(GO) build $(RELEASE_FLAGS) -o $(BIN) ./cmd/sercon
 	@ls -lh $(BIN) | awk '{print "  built:", $$NF, "(" $$5 ")"}'
 
-manual:
+reference: build
+	@./$(BIN) --emit-reference .manual-reference.tmp
+	@awk '/<!-- BEGIN GENERATED REFERENCE -->/{print; while ((getline line < ".manual-reference.tmp") > 0) print line; skip=1; next} /<!-- END GENERATED REFERENCE -->/{skip=0} !skip{print}' MANUAL.md > MANUAL.md.ref.tmp
+	@mv MANUAL.md.ref.tmp MANUAL.md
+	@rm -f .manual-reference.tmp
+	@echo "Regenerated the MANUAL.md '## 16. Binding reference' section."
+
+manual: reference
 	$(RECON) --md-to-pdf MANUAL.md -o MANUAL.pdf \
 		--gfm --unsafe-html --page-break-on-h1 \
 		--doc-title "sercon User Manual" \
