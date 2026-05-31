@@ -55,15 +55,6 @@ for conditional / dynamic / decoded-JSON keys; `text.jq` is the lone
 exception, since `gojq` discards key order internally). The remaining
 open items:
 
-### Encoding / decoding / barcodes
-
-- **PDF417 decoder.** v0.5.4 shipped what is now
-  `codec.barcode.decode` over gozxing, which doesn't cover
-  PDF417 (the encoder still works via boombuler). A pure-Go PDF417
-  reader would close the symmetry. No obvious maintained library
-  exists — porting ZXing's Java PDF417 reader would be the realistic
-  path. Defer until someone actually needs PDF417 round-tripping.
-
 ### Networking — clients & raw sockets
 
 Read/write client sockets shipped in v0.22.0: `net.tcp.connect`,
@@ -76,18 +67,26 @@ needs root / CAP_NET_RAW) — all with a push/callback read model
   Echo-shaped body (id/seq/payload) with a customizable type/code —
   enough for echo/timestamp-style probing. Hand-built non-Echo bodies
   (e.g. a crafted destination-unreachable) aren't modelled yet.
-- **Interface / route enumeration.** Listing local interfaces, addresses,
-  and routes (`net.Interfaces`, `net.InterfaceAddrs`) is not exposed.
-  **Library:** stdlib `net`. Promote on demand.
+- **Interface / address enumeration shipped** as `net.capture.interfaces`
+  (v0.24.0 — stdlib `net.Interfaces`, returning `{ name, addresses, up,
+  loopback }` per interface). A general `net.interfaces` alias outside the
+  capture namespace could wrap the same call on demand. Route-table
+  enumeration is the one piece still missing and is parked under
+  **Deferred → Networking — clients & raw sockets** (no portable stdlib
+  route API).
 
 ### Process / external tools
 
 - **`shell_stream(cmd, cb)`** — Stream a subprocess's stdout/stderr line by
-  line into a JS callback (script: `shell.rhai`); a building block for the
-  recon-fallback path. **Library:** `os/exec` (stdlib) + `bufio`. The engine
-  work is already done — v0.10.0's `scriptengine.NewLoopCallable` (repeated
-  callback marshalling) and `Engine.HoldRun` (keep the loop alive while the
-  subprocess runs) — so only the binding remains.
+  line into a **JS callback**. Note the *pane*-streaming form already
+  shipped: `services.exec.shell({pane})` streams subprocess stdout/stderr
+  live into a declared TUI pane (`exec.go`), reusing the same v0.10.0
+  engine plumbing. What remains is narrowly the callback-per-line variant
+  — a building block for the recon-fallback path that wants the lines in
+  script rather than on screen. **Library:** `os/exec` (stdlib) + `bufio`;
+  `scriptengine.NewLoopCallable` (repeated callback marshalling) and
+  `Engine.HoldRun` (keep the loop alive while the subprocess runs) are
+  done, so only the binding remains.
 
 ## Hard
 
@@ -179,6 +178,16 @@ Items here aren't ranked by difficulty — they're parked for a stated
 reason. Move them back into Trivial / Easy / Moderate / Hard once the
 reason resolves.
 
+### Encoding / decoding / barcodes
+
+- **PDF417 decoder.** v0.5.4 shipped what is now `codec.barcode.decode`
+  over gozxing, which doesn't cover PDF417 (the encoder still works via
+  boombuler). A pure-Go PDF417 reader would close the symmetry.
+  **Reason:** no maintained pure-Go PDF417 reader exists — the realistic
+  path is porting ZXing's Java PDF417 reader, which is a from-scratch
+  effort with no demand signal. Re-promote if a library appears or
+  someone actually needs PDF417 round-tripping.
+
 ### Archives & document handling
 
 - **`pdf_export_page(src, page, dest_or_opts?, opts?)`** — Render one
@@ -216,6 +225,18 @@ than tracked here. The two parked below have a concrete reason to wait.
   most here. **Reason:** no pure-Go ODBC implementation exists.
   Re-promote if one appears, or skip ODBC entirely — the native
   pure-Go drivers already cover the engines people actually ask for.
+
+### Networking — clients & raw sockets
+
+- **Route-table enumeration.** Listing the host's routing table (gateway,
+  destination, interface per route) has no portable stdlib API — `net`
+  exposes interfaces and addresses but not routes. The realistic path is
+  per-OS: `golang.org/x/net/route` on BSD/macOS, parsing `/proc/net/route`
+  (or netlink) on Linux, and the IP Helper API on Windows — three distinct
+  implementations behind one binding. **Reason:** no single pure-Go
+  cross-platform route API; the per-OS effort outweighs current demand.
+  Interface + address enumeration already ships as `net.capture.interfaces`.
+  Re-promote when route inspection is actually needed.
 
 ### Networking — servers
 
