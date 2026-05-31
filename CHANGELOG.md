@@ -8,20 +8,25 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-05-31
+
 ### Added
 
-- **Structured binding-doc model + generated reference.** `scriptengine`
-  gains `MemberDoc{Summary, Params, ReturnType, Returns, Errors, Example}`
-  as the single source of truth for binding docs. The d.ts emitter now
-  renders real signatures + `@param`/`@returns` from it (e.g.
-  `crypto.hash.sha256(input: string): string` instead of `(...args)`), and
-  a new `sercon --emit-reference` / `Engine.WriteReference` generates a
+- **Structured binding-doc model + generated reference (all namespaces).**
+  `scriptengine` gains `MemberDoc{Summary, Params, ReturnType, Returns,
+  Errors, Example}` as the single source of truth for binding docs. The
+  d.ts emitter now renders real signatures + `@param`/`@returns` from it
+  (e.g. `crypto.hash.sha256(input: string): string` instead of `(...args)`),
+  and a new `sercon --emit-reference` / `Engine.WriteReference` generates a
   markdown reference spliced into MANUAL.md's `## 16. Binding reference`
-  section (via `make reference`, which `make manual` now runs). Phase 1
-  fully documents the **crypto** namespace (params, returns, errors,
-  examples); the other namespaces show their summaries + collapsed
-  signatures until migrated. `SetMemberDocs(map[string]string)` still works
-  (wraps as `MemberDoc{Summary}`).
+  section (via `make reference`, which `make manual` now runs). **All
+  eleven namespaces** (`runtime`, `crypto`, `text`, `codec`, `fs`, `net`,
+  `db`, `server`, `services`, `tui`, `console`) are fully documented —
+  every function's parameters (name, type, optional, meaning), return
+  shape, thrown errors, and an example — cross-checked against the
+  implementations. `docs.go` is split into per-namespace `docs_<ns>.go`
+  files; `SetMemberDocs(map[string]string)` still works (wraps as
+  `MemberDoc{Summary}`).
 
 ## [0.25.0] — 2026-05-31
 
