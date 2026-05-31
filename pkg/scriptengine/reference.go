@@ -34,19 +34,23 @@ func writeReference(w io.Writer, regs []registration, docs map[string]MemberDoc)
 
 	for _, reg := range sorted {
 		bw.WriteString("\n## " + reg.name + "\n")
-		if doc, ok := docs[reg.name]; ok {
-			writeReferenceEntry(bw, reg.name, reg.name, doc, topLevelSig(reg, doc))
-		}
+		doc := docs[reg.name]
 		switch reg.kind {
 		case regNamespace:
+			// A namespace is a container, not a callable — render its summary
+			// as the section intro (no signature fence), then its members.
+			if s := strings.TrimSpace(doc.Summary); s != "" {
+				bw.WriteString("\n" + s + "\n")
+			}
 			members := reg.members
 			if m, ok := reg.value.(namespaceFactoryMarker); ok && members == nil {
 				members = introspectNamespaceFactory(m)
 			}
 			writeReferenceMembers(bw, members, reg.name, docs)
 		case regValue, regConstructor:
-			// Top-level value/constructor: the entry above (if documented)
-			// covers it; constructors carry no per-member docs here.
+			// A top-level value/constructor IS callable — full entry with a
+			// signature.
+			writeReferenceEntry(bw, reg.name, reg.name, doc, topLevelSig(reg, doc))
 		}
 	}
 	return bw.err
@@ -78,10 +82,12 @@ func writeReferenceMembers(w *errWriter, members map[string]any, path string, do
 		v := members[k]
 		memberPath := path + "." + k
 		if nested, ok := v.(map[string]any); ok {
-			// A nested sub-namespace may itself be documented; emit its
-			// entry (if any) then recurse.
+			// A nested sub-namespace is a container too: if documented, emit a
+			// heading + summary paragraph (no signature fence), then recurse.
 			if doc, ok := docs[memberPath]; ok {
-				writeReferenceEntry(w, memberPath, k, doc, sigForMember(k, v, doc))
+				if s := strings.TrimSpace(doc.Summary); s != "" {
+					w.WriteString("\n### " + memberPath + "\n\n" + s + "\n")
+				}
 			}
 			writeReferenceMembers(w, nested, memberPath, docs)
 			continue
