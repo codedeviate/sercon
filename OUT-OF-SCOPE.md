@@ -291,11 +291,19 @@ all blocked on the no-cgo rule or missing pure-Go prior art:
 - **Windows live capture.** Needs Npcap → **cgo**. **Reason:** breaks the
   `CGO_ENABLED=0` build + static-binary releases. File read/write + decode
   already work on Windows; only live sniffing is stubbed out there.
-- **BPF filter expressions** (tcpdump-style `"tcp port 80"`). Compiling a
-  filter expression to a BPF program is a libpcap (**cgo**) capability;
-  no mature pure-Go compiler exists. **Reason:** filter inside the
-  `onPacket` callback for now (the packet is fully decoded). A pure-Go
-  hand-assembled `x/net/bpf` program attached at the socket is a possible
-  future enhancement for high-pps drops.
+- **Kernel-level BPF filtering.** A post-decode tcpdump-*syntax* `filter`
+  shipped in v0.25.0 (`net.capture.open`/`openFile` `filter: "tcp and port
+  80"`) — a pure-Go predicate evaluated in userspace after decode (subset:
+  proto / host / port with src·dst, and·or·not·parens, implicit-and). What
+  remains is true **kernel-level** drop: compiling the expression to a cBPF
+  program (`x/net/bpf` can assemble instructions, but no pure-Go
+  *expression→BPF compiler* exists — we'd write one) and attaching it at the
+  socket. **Reason:** Linux could attach via `afpacket.SetBPF` /
+  `SO_ATTACH_FILTER`, but macOS `bsdbpf` exposes no filter-attach API (would
+  need forking it or raw `BIOCSETF`), so it's Linux-mostly + a from-scratch
+  compiler. Re-promote if high-pps kernel drop is actually needed.
+- **Filter grammar extensions.** `net X/Y` (CIDR) and `portrange A-B` are
+  not in the v0.25.0 subset. Cheap to add to the post-decode evaluator on
+  demand.
 - **Deeper / exotic decode.** Only common layers map to fields today;
   other protocols surface as `bytes`. Extend `decodePacket` on demand.
