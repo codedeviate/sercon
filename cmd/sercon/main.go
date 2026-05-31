@@ -416,8 +416,9 @@ func registerSurface(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("services", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
 			"exec": map[string]any{
-				"shell": scriptengine.PromisifyAsync(vm, loop, execShell),
-				"http":  scriptengine.PromisifyAsync(vm, loop, execHTTP),
+				"shell":  scriptengine.PromisifyAsync(vm, loop, execShell),
+				"http":   scriptengine.PromisifyAsync(vm, loop, execHTTP),
+				"stream": execStreamFn(vm, loop, e),
 			},
 			"git": gitNamespace(vm, loop),
 			"gh":  ghNamespace(vm, loop),
