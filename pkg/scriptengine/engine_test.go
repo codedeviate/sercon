@@ -852,8 +852,11 @@ func TestSetMemberDocsStructured_SummaryRenders(t *testing.T) {
 	}
 	got := buf.String()
 	// Documented params drive a real signature plus @param/@returns JSDoc.
-	if !strings.Contains(got, "m(input: string): hex digest;") {
-		t.Errorf("expected param-aware signature; got:\n%s", got)
+	// The return TYPE comes from ReturnType (here empty → the reflected Go
+	// return `string`); the prose Returns ("hex digest") must NOT leak into
+	// the signature — it belongs only in the @returns line.
+	if !strings.Contains(got, "m(input: string): string;") {
+		t.Errorf("expected param-aware signature with reflected return type; got:\n%s", got)
 	}
 	if !strings.Contains(got, "* @param input UTF-8 input") {
 		t.Errorf("expected @param JSDoc line; got:\n%s", got)
