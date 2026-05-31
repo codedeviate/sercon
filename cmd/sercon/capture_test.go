@@ -142,6 +142,75 @@ func TestCaptureFile_ScriptRoundTrip(t *testing.T) {
 	}
 }
 
+// buildTCPFrame serializes an Ethernet/IPv4/TCP frame with the given dst port.
+func buildTCPFrame(t *testing.T, dstPort layers.TCPPort) []byte {
+	t.Helper()
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}
+	ip := &layers.IPv4{Version: 4, TTL: 64, Protocol: layers.IPProtocolTCP, SrcIP: net.IPv4(10, 0, 0, 1), DstIP: net.IPv4(10, 0, 0, 2)}
+	tcp := &layers.TCP{SrcPort: 1234, DstPort: dstPort, SYN: true}
+	_ = tcp.SetNetworkLayerForChecksum(ip)
+	if err := gopacket.SerializeLayers(buf, opts,
+		&layers.Ethernet{SrcMAC: mustMAC("00:11:22:33:44:55"), DstMAC: mustMAC("66:77:88:99:aa:bb"), EthernetType: layers.EthernetTypeIPv4},
+		ip, tcp); err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// TestCaptureFile_FilterScript writes a TCP/80 and a UDP/53 frame to a pcap,
+// then reads it back with a `{ filter: "udp" }` option and asserts only the
+// UDP packet is delivered to the handler.
+func TestCaptureFile_FilterScript(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "filter.pcap")
+	tcp := buildTCPFrame(t, 80)
+	udp := buildUDPFrame(t, 53)
+
+	got := runCaptureScript(t, fmt.Sprintf(`
+		const w = net.capture.toFile(%q);
+		w.write(__tcp);
+		w.write(__udp);
+		await w.close();
+		const ports = [];
+		await net.capture.openFile(%q, p => {
+			if (p.udp) ports.push(p.udp.dstPort);
+			else if (p.tcp) ports.push(p.tcp.dstPort);
+		}, { filter: "udp" });
+		__capture(ports.join(","));
+	`, path, path), map[string]any{"__tcp": tcp, "__udp": udp})
+
+	if got != "53" {
+		t.Fatalf("filtered openFile: got %q want %q", got, "53")
+	}
+}
+
+// TestCaptureFile_FilterInvalidRejects asserts a malformed filter expression
+// makes openFile reject with a parse error before any packet is read.
+func TestCaptureFile_FilterInvalidRejects(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "invalid.pcap")
+	frame := buildUDPFrame(t, 53)
+
+	got := runCaptureScript(t, fmt.Sprintf(`
+		const w = net.capture.toFile(%q);
+		w.write(__frame);
+		await w.close();
+		try {
+			await net.capture.openFile(%q, p => {}, { filter: "port" });
+			__capture("resolved");
+		} catch (e) {
+			__capture("err:" + String(e));
+		}
+	`, path, path), map[string]any{"__frame": frame})
+
+	s, ok := got.(string)
+	if !ok {
+		t.Fatalf("expected string result, got %#v", got)
+	}
+	if !strings.Contains(s, "filter") {
+		t.Fatalf("expected a rejection mentioning %q, got %q", "filter", s)
+	}
+}
+
 func TestDecodePacket_EthIPv4UDP(t *testing.T) {
 	buf := gopacket.NewSerializeBuffer()
 	opts := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}

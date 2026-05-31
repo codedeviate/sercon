@@ -66,11 +66,13 @@ func captureOpenFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengin
 		iface := ""
 		promisc := true
 		snaplen := 262144
+		filterExpr := ""
 		if opts := call.Argument(0); opts != nil && !goja.IsUndefined(opts) && !goja.IsNull(opts) {
 			if m, ok := opts.Export().(map[string]any); ok {
 				iface = optString(m, "iface", "")
 				promisc = optBool(m, "promisc", promisc)
 				snaplen = optInt(m, "snaplen", snaplen)
+				filterExpr = optString(m, "filter", "")
 			}
 		}
 
@@ -85,6 +87,18 @@ func captureOpenFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengin
 			// Reject asynchronously so the returned value is always a Promise.
 			_ = reject(vm.NewGoError(errors.New("net.capture.open: opts.iface is required")))
 			return vm.ToValue(promise)
+		}
+
+		// Compile the filter up front, on the loop, so a malformed expression
+		// rejects before any capture is opened (mirrors the missing-iface path).
+		var flt *captureFilter
+		if filterExpr != "" {
+			f, err := compileFilter(filterExpr)
+			if err != nil {
+				_ = reject(vm.NewGoError(fmt.Errorf("net.capture.open: filter: %w", err)))
+				return vm.ToValue(promise)
+			}
+			flt = f
 		}
 
 		// Hold the loop alive across the off-loop open: vm.NewPromise() + a
@@ -125,7 +139,11 @@ func captureOpenFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengin
 						if rerr != nil {
 							return
 						}
-						o := decodePacket(data, link, ci)
+						pkt := gopacket.NewPacket(data, link, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
+						if flt != nil && !flt.match(pkt) {
+							continue
+						}
+						o := decodePacketFrom(pkt, data, link, ci)
 						if _, cerr := handler.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
 							return []goja.Value{scriptengine.OrderedToValue(vm, o)}, nil
 						}); cerr != nil {
@@ -282,7 +300,30 @@ func captureOpenFileFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scripte
 		}
 		handler := scriptengine.NewLoopCallable(loop, fn)
 
+		// Optional trailing opts arg — openFile(path, onPacket, { filter? }).
+		// The 2-arg form (no opts) stays backward-compatible: flt is nil and
+		// every packet passes.
+		filterExpr := ""
+		if opts := call.Argument(2); opts != nil && !goja.IsUndefined(opts) && !goja.IsNull(opts) {
+			if m, ok := opts.Export().(map[string]any); ok {
+				filterExpr = optString(m, "filter", "")
+			}
+		}
+
 		promise, resolve, reject := vm.NewPromise()
+
+		// Compile the filter up front, on the loop, so a malformed expression
+		// rejects before the file is read.
+		var flt *captureFilter
+		if filterExpr != "" {
+			f, err := compileFilter(filterExpr)
+			if err != nil {
+				_ = reject(vm.NewGoError(fmt.Errorf("net.capture.openFile: filter: %w", err)))
+				return vm.ToValue(promise)
+			}
+			flt = f
+		}
+
 		// Hold the loop alive across the off-loop read: vm.NewPromise() + a
 		// goroutine does not bump the loop's jobCount, so without this the loop
 		// could exit before the read completes. Released on the loop on settle.
@@ -312,7 +353,11 @@ func captureOpenFileFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scripte
 					})
 					return
 				}
-				o := decodePacket(data, link, ci)
+				pkt := gopacket.NewPacket(data, link, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
+				if flt != nil && !flt.match(pkt) {
+					continue
+				}
+				o := decodePacketFrom(pkt, data, link, ci)
 				if _, cerr := handler.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
 					return []goja.Value{scriptengine.OrderedToValue(vm, o)}, nil
 				}); cerr != nil {
@@ -409,13 +454,21 @@ func toInt64(v any) (int64, bool) {
 // still yield a usable object. Every extraction is guarded by a nil/type
 // check so malformed input never panics.
 func decodePacket(data []byte, link layers.LinkType, ci gopacket.CaptureInfo) *scriptengine.Ordered {
+	pkt := gopacket.NewPacket(data, link, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
+	return decodePacketFrom(pkt, data, link, ci)
+}
+
+// decodePacketFrom decodes an already-parsed packet into an insertion-ordered
+// object. It is the body of decodePacket split out so capture readers that
+// also evaluate a filter can parse the frame once (gopacket.NewPacket) and
+// share the resulting packet between match() and the decode. data is still used
+// for the raw "bytes" key.
+func decodePacketFrom(pkt gopacket.Packet, data []byte, link layers.LinkType, ci gopacket.CaptureInfo) *scriptengine.Ordered {
 	o := scriptengine.NewOrdered()
 	o.Set("ts", ci.Timestamp.UnixMilli()) // 0 if zero-value; callers may set Timestamp
 	o.Set("length", ci.Length)
 	o.Set("captureLength", ci.CaptureLength)
 	o.Set("link", link.String())
-
-	pkt := gopacket.NewPacket(data, link, gopacket.DecodeOptions{Lazy: true, NoCopy: true})
 
 	if l, _ := pkt.Layer(layers.LayerTypeEthernet).(*layers.Ethernet); l != nil {
 		o.Set("eth", scriptengine.NewOrdered().
