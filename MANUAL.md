@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.27.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.28.0</div> <!-- x-release-please-version -->
 <div class="date">2026-05-31</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -4292,6 +4292,31 @@ const r = await services.exec.shell("echo hi");
 if (r.success) runtime.log(r.stdout.trim());
 ```
 
+#### services.exec.stream
+
+```
+stream(cmd: string | string[], onLine: (line: string, stream: "stdout" | "stderr") => void, opts?: { cwd?: string, env?: Record<string, string>, stdin?: string, timeout?: number }): Promise<{ exitCode: number; success: boolean; durationMs: number }>
+```
+
+Run a subprocess and stream its stdout/stderr to a callback line by line as output arrives (unlike exec.shell, which buffers). String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Resolves { exitCode, success, durationMs } on exit; non-zero exits resolve normally; spawn failures and timeouts reject.
+
+**Parameters**
+
+- `cmd` *(string | string[])* — A string is passed to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so pipes, redirects, and globs work. A string[] is treated as argv: argv[0] is run directly with no shell.
+- `onLine` *((line: string, stream: "stdout" | "stderr") => void)* — Called once per output line as it arrives. line has its trailing newline stripped; stream is 'stdout' or 'stderr'. A final line without a trailing newline is still delivered. Required — a non-function throws synchronously.
+- `opts` *({ cwd?: string, env?: Record<string, string>, stdin?: string, timeout?: number }, optional)* — cwd sets the working directory; env entries merge on top of the inherited environment; stdin is fed to the process. timeout is in ms with NO default (0 / absent = run until exit, unlike exec.shell's 30000); when set, the process tree is killed on expiry and the call rejects.
+
+**Returns:** Promise<{ exitCode: number, success: boolean, durationMs: number }> — resolves on process exit. exitCode is 0 on success; success is exitCode === 0; durationMs is wall-clock spawn-to-exit time. Output is delivered via onLine, not captured into the result.
+
+**Throws:** Throws synchronously if cmd is missing or onLine is not a function. The Promise rejects if the host binary is not on PATH or fails to start, or if the timeout (or context cancellation) fires before exit. A non-zero exit code does NOT reject — it resolves with success:false.
+
+```ts
+const r = await services.exec.stream("echo one; echo two", (line, stream) => {
+  runtime.log(stream, line);
+});
+runtime.log("exit", r.exitCode);
+```
+
 #### services.gh.authStatus
 
 ```
@@ -5225,7 +5250,7 @@ p.writeln("hello");
 
 ---
 
-*This manual covers sercon v0.27.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.28.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

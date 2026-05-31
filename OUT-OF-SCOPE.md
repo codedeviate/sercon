@@ -52,8 +52,12 @@ parsing — shipped across v0.5.0 – v0.5.30 (re-bucketed under v0.8.0's
 object-returning bindings landed later, across v0.16.0 (json-tagged
 structs for fixed-shape results) and v0.20.0 (`scriptengine.Ordered`
 for conditional / dynamic / decoded-JSON keys; `text.jq` is the lone
-exception, since `gojq` discards key order internally). The remaining
-open items:
+exception, since `gojq` discards key order internally). The last open
+Moderate item, `shell_stream(cmd, cb)`, shipped in v0.28.0 as
+`services.exec.stream` (line-streaming a subprocess's stdout/stderr to a
+JS callback). **No open Moderate items remain** — the subsection below is
+a shipped-record whose one residual gap (route-table enumeration) is
+parked under Deferred:
 
 ### Networking — clients & raw sockets
 
@@ -73,19 +77,6 @@ remain in this subsection:
   enumeration is the one piece still missing and is parked under
   **Deferred → Networking — clients & raw sockets** (no portable stdlib
   route API).
-
-### Process / external tools
-
-- **`shell_stream(cmd, cb)`** — Stream a subprocess's stdout/stderr line by
-  line into a **JS callback**. Note the *pane*-streaming form already
-  shipped: `services.exec.shell({pane})` streams subprocess stdout/stderr
-  live into a declared TUI pane (`exec.go`), reusing the same v0.10.0
-  engine plumbing. What remains is narrowly the callback-per-line variant
-  — a building block for the recon-fallback path that wants the lines in
-  script rather than on screen. **Library:** `os/exec` (stdlib) + `bufio`;
-  `scriptengine.NewLoopCallable` (repeated callback marshalling) and
-  `Engine.HoldRun` (keep the loop alive while the subprocess runs) are
-  done, so only the binding remains.
 
 ## Hard
 

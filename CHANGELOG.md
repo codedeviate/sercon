@@ -8,6 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.28.0] — 2026-05-31
+
+### Added
+
+- **`services.exec.stream(cmd, onLine, opts?)`.** Run a subprocess and stream
+  its stdout/stderr to `onLine(line, stream)` line by line as output arrives,
+  instead of buffering like `exec.shell`. Resolves
+  `{ exitCode, success, durationMs }` on exit (non-zero exit → `success:false`;
+  spawn failure / timeout reject; a non-function `onLine` throws). `cmd`,
+  `cwd`, `env`, and `stdin` match `exec.shell`; `timeout` has **no default**
+  (0 / absent = run until exit), since streaming targets long-running output.
+  Hand-rolled on `scriptengine.NewLoopCallable` + `Engine.HoldRun`.
+
 ## [0.27.0] — 2026-05-31
 
 ### Added
