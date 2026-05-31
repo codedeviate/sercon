@@ -145,6 +145,9 @@ func runStream(cmd *exec.Cmd, handler *scriptengine.LoopCallable) error {
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
+		// Start (which would otherwise close stdoutPipe) never runs, so close
+		// it here. Only reachable under fd exhaustion.
+		_ = stdoutPipe.Close()
 		return err
 	}
 	if err := cmd.Start(); err != nil {
@@ -157,8 +160,11 @@ func runStream(cmd *exec.Cmd, handler *scriptengine.LoopCallable) error {
 	go streamPipe(&wg, handler, stderrPipe, "stderr")
 	// os/exec requires draining the pipes before Wait. Both streamPipe
 	// goroutines run to EOF in the normal case; they only bail early on loop
-	// teardown, after which the process is killed via the context and the
-	// WaitDelay set by configureProcessTermination bounds how long Wait blocks.
+	// teardown. With a timeout set, the context kill plus the WaitDelay from
+	// configureProcessTermination bound how long Wait then blocks; with no
+	// timeout, a torn-down stream's Wait blocks until the process exits on its
+	// own — the same run-until-exit lifetime tradeoff the other long-lived
+	// bindings carry.
 	wg.Wait()
 
 	return cmd.Wait()
