@@ -57,6 +57,26 @@ func marshalEcho(network string, id, seq int, payload []byte) ([]byte, error) {
 	return msg.Marshal(nil)
 }
 
+// marshalRaw builds an ICMP message with a caller-supplied raw body for the
+// given network ("ip4" or "ip6"), type number, and code, and marshals it to
+// wire bytes. The body is emitted verbatim (icmp.RawBody) — used for
+// hand-built non-Echo messages (e.g. destination-unreachable). Privilege-free;
+// mirrors marshalEcho and is exercised by the round-trip unit test.
+func marshalRaw(network string, typeNum, code int, body []byte) ([]byte, error) {
+	var typ icmp.Type
+	if network == "ip6" {
+		typ = ipv6.ICMPType(typeNum)
+	} else {
+		typ = ipv4.ICMPType(typeNum)
+	}
+	msg := icmp.Message{
+		Type: typ,
+		Code: code,
+		Body: &icmp.RawBody{Data: body},
+	}
+	return msg.Marshal(nil)
+}
+
 // parseICMP parses a marshalled ICMP message for the given network ("ip4" or
 // "ip6"), returning the message type as an int, the code, and the marshalled
 // body. Privilege-free.
@@ -186,72 +206,123 @@ func buildICMPObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scripteng
 	return obj
 }
 
+// icmpSendOpts is the parsed, validated state of a handle.send(opts) call.
+type icmpSendOpts struct {
+	to      string
+	code    int
+	hasType bool
+	typeNum int
+	id, seq int
+	payload []byte
+	hasBody bool
+	body    []byte
+}
+
+// parseICMPSendOpts parses and validates a send opts map. On a validation
+// failure it returns a non-empty message suitable for vm.NewTypeError; on
+// success it returns the parsed opts and "". It is privilege-free and
+// independent of the socket so the validation rules can be unit-tested
+// directly (mirroring marshalEcho / parseICMP). Detection of id/seq/payload is
+// by key PRESENCE, not value, so { body, id: 0 } is still rejected. A nil map
+// (no opts passed) yields the "to required" error.
+func parseICMPSendOpts(m map[string]any) (icmpSendOpts, string) {
+	var o icmpSendOpts
+	o.to = optString(m, "to", "")
+	o.code = optInt(m, "code", 0)
+
+	var hasID, hasSeq, hasPayload bool
+	if _, ok := m["id"]; ok {
+		hasID = true
+		o.id = optInt(m, "id", 0)
+	}
+	if _, ok := m["seq"]; ok {
+		hasSeq = true
+		o.seq = optInt(m, "seq", 0)
+	}
+	if _, ok := m["type"]; ok {
+		o.hasType = true
+		o.typeNum = optInt(m, "type", 0)
+	}
+	if pv, ok := m["payload"]; ok {
+		hasPayload = true
+		o.payload = exportPayload(pv)
+	}
+	if bv, ok := m["body"]; ok {
+		o.hasBody = true
+		o.body = exportPayload(bv)
+	}
+
+	if o.to == "" {
+		return o, "send: opts.to (destination address) required"
+	}
+	if o.hasBody {
+		if !o.hasType {
+			return o, "send: opts.type is required when sending a raw body"
+		}
+		if hasID || hasSeq || hasPayload {
+			return o, "send: body is mutually exclusive with id/seq/payload"
+		}
+	}
+	return o, ""
+}
+
 // icmpSendFn implements handle.send(opts): a Promise that builds and writes an
-// ICMP message. opts:
+// ICMP message. opts has two modes (see parseICMPSendOpts):
 //
-//	{ to, type?, code?, id?, seq?, payload? }
+//	Echo mode: { to, type?, code?, id?, seq?, payload? } — type defaults to the
+//	  network's echo request.
+//	Raw mode:  { to, type, code?, body } — body is marshalled verbatim
+//	  (marshalRaw / icmp.RawBody); type is required and mutually exclusive with
+//	  id/seq/payload.
 //
-// to defaults the message type to the network's echo request. The opts are
-// snapshotted ON the loop (extract to/type/code/id/seq + payload bytes); the
-// destination is resolved and the packet built + written OFF the loop,
-// resolving/rejecting back on the loop.
+// The opts are parsed + validated ON the loop (goja values aren't safe
+// off-loop); the destination is resolved and the packet built + written OFF
+// the loop, resolving/rejecting back on the loop.
 func icmpSendFn(vm *goja.Runtime, loop *eventloop.EventLoop, conn *icmp.PacketConn, s *pushSocket, network string, proto int) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		if s.closed.Load() {
 			panic(vm.NewTypeError("send: connection closed"))
 		}
 
-		// Snapshot opts on the loop.
-		var (
-			to      string
-			id, seq int
-			code    int
-			hasType bool
-			typeNum int
-			payload []byte
-		)
+		// Parse + validate opts on the loop (goja values aren't safe off-loop).
+		var m map[string]any
 		if optsArg := call.Argument(0); optsArg != nil && !goja.IsUndefined(optsArg) && !goja.IsNull(optsArg) {
-			if m, ok := optsArg.Export().(map[string]any); ok {
-				to = optString(m, "to", "")
-				id = optInt(m, "id", 0)
-				seq = optInt(m, "seq", 0)
-				code = optInt(m, "code", 0)
-				if _, ok := m["type"]; ok {
-					hasType = true
-					typeNum = optInt(m, "type", 0)
-				}
-				if pv, ok := m["payload"]; ok {
-					payload = exportPayload(pv)
-				}
+			if mm, ok := optsArg.Export().(map[string]any); ok {
+				m = mm
 			}
 		}
-		if to == "" {
-			panic(vm.NewTypeError("send: opts.to (destination address) required"))
+		o, errMsg := parseICMPSendOpts(m)
+		if errMsg != "" {
+			panic(vm.NewTypeError(errMsg))
 		}
 
 		promise, resolve, reject := vm.NewPromise()
 		go func() {
-			dst, err := net.ResolveIPAddr(network, to)
+			dst, err := net.ResolveIPAddr(network, o.to)
 			if err == nil {
-				var typ icmp.Type
-				if hasType {
-					if network == "ip6" {
-						typ = ipv6.ICMPType(typeNum)
-					} else {
-						typ = ipv4.ICMPType(typeNum)
-					}
-				} else if network == "ip6" {
-					typ = ipv6.ICMPTypeEchoRequest
-				} else {
-					typ = ipv4.ICMPTypeEcho
-				}
-				msg := icmp.Message{
-					Type: typ,
-					Code: code,
-					Body: &icmp.Echo{ID: id, Seq: seq, Data: payload},
-				}
 				var b []byte
-				b, err = msg.Marshal(nil)
+				if o.hasBody {
+					b, err = marshalRaw(network, o.typeNum, o.code, o.body)
+				} else {
+					var typ icmp.Type
+					if o.hasType {
+						if network == "ip6" {
+							typ = ipv6.ICMPType(o.typeNum)
+						} else {
+							typ = ipv4.ICMPType(o.typeNum)
+						}
+					} else if network == "ip6" {
+						typ = ipv6.ICMPTypeEchoRequest
+					} else {
+						typ = ipv4.ICMPTypeEcho
+					}
+					msg := icmp.Message{
+						Type: typ,
+						Code: o.code,
+						Body: &icmp.Echo{ID: o.id, Seq: o.seq, Data: o.payload},
+					}
+					b, err = msg.Marshal(nil)
+				}
 				if err == nil {
 					_, err = conn.WriteTo(b, dst)
 				}
@@ -269,8 +340,8 @@ func icmpSendFn(vm *goja.Runtime, loop *eventloop.EventLoop, conn *icmp.PacketCo
 }
 
 // exportPayload converts an already-exported goja value (a map entry, not a
-// goja.Value) to bytes: a []byte (Uint8Array) passes through, anything else
-// falls back to its string form.
+// goja.Value) to bytes: a []byte (Uint8Array) passes through, a string is
+// converted to its bytes; any other type (e.g. a number) yields nil.
 func exportPayload(v any) []byte {
 	switch t := v.(type) {
 	case []byte:

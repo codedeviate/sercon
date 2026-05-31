@@ -79,6 +79,75 @@ func TestICMP_OpenWithoutPrivilegesErrors(t *testing.T) {
 	}
 }
 
+// TestICMP_MarshalRawRoundTrip exercises the privilege-free raw-body core:
+// marshal an ICMP message with a caller-supplied body under an UNASSIGNED
+// type (100), parse it back, and confirm type/code survive and the body
+// round-trips verbatim — i.e. it is NOT coerced into an Echo (id/seq) layout.
+// An unassigned type is parsed by x/net/icmp as a RawBody, so Marshal returns
+// the exact input bytes. MUST pass in CI (no raw socket needed).
+func TestICMP_MarshalRawRoundTrip(t *testing.T) {
+	const (
+		typeNum = 100 // unassigned ICMPv4 type → RawBody on parse
+		code    = 5
+	)
+	raw := []byte{0xde, 0xad, 0xbe, 0xef, 0x01, 0x02}
+
+	b, err := marshalRaw("ip4", typeNum, code, raw)
+	if err != nil {
+		t.Fatalf("marshalRaw: %v", err)
+	}
+
+	typ, gotCode, body, err := parseICMP("ip4", b)
+	if err != nil {
+		t.Fatalf("parseICMP: %v", err)
+	}
+	if typ != typeNum {
+		t.Errorf("type: got %d want %d", typ, typeNum)
+	}
+	if gotCode != code {
+		t.Errorf("code: got %d want %d", gotCode, code)
+	}
+	if !bytes.Equal(body, raw) {
+		t.Errorf("body: got % x want % x (must round-trip verbatim, not Echo-coerced)", body, raw)
+	}
+}
+
+// TestParseICMPSendOpts covers the privilege-free send-opts validation: the
+// required-destination rule, the raw-mode type requirement, and the
+// body/id/seq/payload mutual exclusion (including presence-based detection of
+// a zero-valued id). No socket or script needed, so it always runs in CI.
+func TestParseICMPSendOpts(t *testing.T) {
+	cases := []struct {
+		name    string
+		opts    map[string]any
+		wantErr string // substring; "" means no error expected
+	}{
+		{"missing to", map[string]any{}, "opts.to"},
+		{"nil map", nil, "opts.to"},
+		{"raw body without type", map[string]any{"to": "127.0.0.1", "body": []byte{0, 0, 0, 0}}, "opts.type is required"},
+		{"body with payload", map[string]any{"to": "127.0.0.1", "type": 3, "body": []byte{0, 0, 0, 0}, "payload": "x"}, "mutually exclusive"},
+		{"body with id", map[string]any{"to": "127.0.0.1", "type": 3, "body": []byte{0, 0, 0, 0}, "id": 1}, "mutually exclusive"},
+		{"body with seq", map[string]any{"to": "127.0.0.1", "type": 3, "body": []byte{0, 0, 0, 0}, "seq": 2}, "mutually exclusive"},
+		{"body with id zero (presence)", map[string]any{"to": "127.0.0.1", "type": 3, "body": []byte{0, 0, 0, 0}, "id": 0}, "mutually exclusive"},
+		{"valid raw", map[string]any{"to": "127.0.0.1", "type": 3, "code": 1, "body": []byte{0, 0, 0, 0}}, ""},
+		{"valid echo", map[string]any{"to": "127.0.0.1", "id": 1, "seq": 1, "payload": "ping"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errMsg := parseICMPSendOpts(tc.opts)
+			if tc.wantErr == "" {
+				if errMsg != "" {
+					t.Errorf("expected no error, got %q", errMsg)
+				}
+				return
+			}
+			if !strings.Contains(errMsg, tc.wantErr) {
+				t.Errorf("error: got %q, want substring %q", errMsg, tc.wantErr)
+			}
+		})
+	}
+}
+
 // TestICMP_LoopbackEcho is a privileged end-to-end check: open a raw ICMP
 // socket, send an echo request to 127.0.0.1, and confirm onMessage fires.
 // Skipped unless running as root.
