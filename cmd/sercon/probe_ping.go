@@ -10,9 +10,10 @@ import (
 	probing "github.com/prometheus-community/pro-bing"
 
 	"github.com/dop251/goja"
+	"golang.org/x/net/icmp"
 )
 
-// pingProbe implements `net.probe.ping(host, opts?)`. Two modes:
+// pingProbe implements `net.probe.ping(host, opts?)`. Three modes:
 //
 //   - "tcp" (default) — dials host:port `count` times and measures the
 //     connect RTT. No special privileges; works everywhere. The
@@ -23,6 +24,9 @@ import (
 //     SetPrivileged(false) + a permissive sysctl on Linux). Falls
 //     outside what an unprivileged script can usually do, so it's
 //     opt-in.
+//   - "udp" — sends UDP datagrams to a likely-closed port; an ICMP
+//     port-unreachable reply counts as "host reachable". Requires a
+//     raw ICMP receive socket (root / CAP_NET_RAW).
 //
 // Result shape (RTTs in milliseconds):
 //
@@ -66,8 +70,10 @@ func pingProbe(ctx context.Context, call goja.FunctionCall) (pingProbeResult, er
 		return tcpPing(ctx, host, optString(opts, "port", "80"), count, timeout)
 	case "icmp":
 		return icmpPing(ctx, host, count, timeout)
+	case "udp":
+		return udpPing(ctx, host, optInt(opts, "port", 33434), count, timeout)
 	default:
-		return pingProbeResult{}, fmt.Errorf("net.ping: mode must be 'tcp' or 'icmp', got %q", mode)
+		return pingProbeResult{}, fmt.Errorf("net.ping: mode must be 'tcp', 'icmp', or 'udp', got %q", mode)
 	}
 }
 
@@ -138,6 +144,58 @@ func icmpPing(ctx context.Context, host string, count int, timeout time.Duration
 		AvgMs:       float64(st.AvgRtt) / float64(time.Millisecond),
 		MaxMs:       float64(st.MaxRtt) / float64(time.Millisecond),
 	}, nil
+}
+
+// udpPing sends `count` UDP datagrams to host:port (a likely-closed port) and
+// counts an ICMP port-unreachable reply as "host reachable", recording the
+// round-trip time. Needs root / CAP_NET_RAW for the raw ICMP receive socket.
+func udpPing(ctx context.Context, host string, port, count int, timeout time.Duration) (pingProbeResult, error) {
+	dst, err := net.ResolveIPAddr("ip4", host)
+	if err != nil {
+		return pingProbeResult{}, fmt.Errorf("net.ping: resolve %q: %w", host, err)
+	}
+	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+	if err != nil {
+		return pingProbeResult{}, fmt.Errorf("net.ping: udp mode %w (needs root / CAP_NET_RAW)", err)
+	}
+	defer conn.Close()
+
+	var rtts []time.Duration
+	buf := make([]byte, 1500)
+	for i := 0; i < count; i++ {
+		if err := ctx.Err(); err != nil {
+			return pingProbeResult{}, fmt.Errorf("net.ping: %w", err)
+		}
+		dstPort := port + i
+		uc, derr := net.DialUDP("udp4", nil, &net.UDPAddr{IP: dst.IP, Port: dstPort})
+		if derr != nil {
+			continue
+		}
+		start := time.Now()
+		_, _ = uc.Write([]byte("sercon-ping"))
+		_ = uc.Close()
+		deadline := time.Now().Add(timeout)
+		for {
+			if err := conn.SetReadDeadline(deadline); err != nil {
+				break
+			}
+			n, _, rerr := conn.ReadFrom(buf)
+			if rerr != nil {
+				break // timeout
+			}
+			msg, perr := icmp.ParseMessage(protoICMPv4, buf[:n])
+			if perr != nil {
+				continue
+			}
+			if du, ok := msg.Body.(*icmp.DstUnreach); ok {
+				if mid, ok := parseQuotedProbe(du.Data, "udp"); ok && mid == uint16(dstPort) {
+					rtts = append(rtts, time.Since(start))
+					break
+				}
+			}
+		}
+	}
+	return pingStats(host, dst.IP.String(), "udp", count, rtts), nil
 }
 
 // pingStats computes the result map from a slice of successful RTTs.

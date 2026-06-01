@@ -88,6 +88,28 @@ func TestTraceroute_BadProtocol(t *testing.T) {
 	}
 }
 
+// TestUDPPing_NoPrivilegeRejects: net.probe.ping mode "udp" needs the raw ICMP
+// socket; without root it rejects with a privilege hint (or skips if permitted).
+func TestUDPPing_NoPrivilegeRejects(t *testing.T) {
+	got := runSocketScript(t, `
+		let outcome;
+		try {
+			const r = await net.probe.ping("127.0.0.1", { mode: "udp", count: 1, timeout: 500 });
+			outcome = "ok:" + r.mode;
+		} catch (e) {
+			outcome = "threw: " + (e && e.message ? e.message : String(e));
+		}
+		__capture(outcome);
+	`)
+	s, _ := got.(string)
+	if s == "ok:udp" {
+		t.Skip("raw ICMP permitted in this environment")
+	}
+	if !strings.Contains(s, "privileges") && !strings.Contains(s, "CAP_NET_RAW") && !strings.Contains(s, "root") {
+		t.Errorf("expected privilege rejection, got %q", s)
+	}
+}
+
 // TestTraceroute_LoopbackICMP: privileged — tracing 127.0.0.1 reaches in one
 // hop. Skipped unless root.
 func TestTraceroute_LoopbackICMP(t *testing.T) {
