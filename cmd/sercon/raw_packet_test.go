@@ -214,3 +214,16 @@ func TestParseRawSpec_FlagsAndSrc(t *testing.T) {
 		t.Fatalf("flags = %v, want 2", spec.flags)
 	}
 }
+
+func TestEgressFor_Loopback(t *testing.T) {
+	iface, src, err := egressFor(net.IPv4(127, 0, 0, 1))
+	if err != nil {
+		t.Fatalf("egressFor(127.0.0.1): %v", err)
+	}
+	if iface == "" {
+		t.Fatal("egressFor returned empty iface for loopback")
+	}
+	if src == nil || !src.IsLoopback() {
+		t.Fatalf("egressFor src = %v, want a loopback address", src)
+	}
+}
