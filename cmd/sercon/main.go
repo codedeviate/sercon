@@ -411,6 +411,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"udp":       udpNamespace(vm, loop, e),
 			"icmp":      icmpNamespace(vm, loop, e),
 			"capture":   captureNamespace(vm, loop, e),
+			"raw":       rawNamespace(vm, loop, e),
 		}
 	}); err != nil {
 		return err
