@@ -148,6 +148,43 @@ func TestParseICMPSendOpts(t *testing.T) {
 	}
 }
 
+// TestBuildICMPMessage covers the shared message builder used by net.icmp send
+// and server.icmp reply: Echo body by default (type defaults to echo request)
+// and a verbatim raw body when hasBody is set.
+func TestBuildICMPMessage(t *testing.T) {
+	// Echo: no type → echo request; id/seq/payload round-trip through the body.
+	echo, err := buildICMPMessage("ip4", icmpSendOpts{id: 0x11, seq: 0x22, payload: []byte("hi")})
+	if err != nil {
+		t.Fatalf("buildICMPMessage echo: %v", err)
+	}
+	typ, code, body, err := parseICMP("ip4", echo)
+	if err != nil {
+		t.Fatalf("parseICMP echo: %v", err)
+	}
+	if typ != int(ipv4.ICMPTypeEcho) || code != 0 {
+		t.Errorf("echo header: type=%d code=%d", typ, code)
+	}
+	if len(body) < 4 || body[0] != 0x00 || body[1] != 0x11 || !bytes.Equal(body[4:], []byte("hi")) {
+		t.Errorf("echo body round-trip: % x", body)
+	}
+
+	// Raw: unassigned type 100, code 1, verbatim body bytes. Type 3 (destination
+	// unreachable) is a known ICMPv4 type that x/net/icmp parses as DstUnreach
+	// and requires a minimum body size; unassigned types parse as RawBody and
+	// round-trip verbatim, which is what this test exercises.
+	raw, err := buildICMPMessage("ip4", icmpSendOpts{hasBody: true, hasType: true, typeNum: 100, code: 1, body: []byte{0xde, 0xad}})
+	if err != nil {
+		t.Fatalf("buildICMPMessage raw: %v", err)
+	}
+	typ, code, body, err = parseICMP("ip4", raw)
+	if err != nil {
+		t.Fatalf("parseICMP raw: %v", err)
+	}
+	if typ != 100 || code != 1 || !bytes.Equal(body, []byte{0xde, 0xad}) {
+		t.Errorf("raw round-trip: type=%d code=%d body=% x", typ, code, body)
+	}
+}
+
 // TestICMP_LoopbackEcho is a privileged end-to-end check: open a raw ICMP
 // socket, send an echo request to 127.0.0.1, and confirm onMessage fires.
 // Skipped unless running as root.

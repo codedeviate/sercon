@@ -77,6 +77,34 @@ func marshalRaw(network string, typeNum, code int, body []byte) ([]byte, error) 
 	return msg.Marshal(nil)
 }
 
+// buildICMPMessage builds the wire bytes for an ICMP message from parsed send
+// opts: a raw body (icmp.RawBody) when o.hasBody, otherwise an Echo body. The
+// type defaults to the network's echo request when o.hasType is false. Shared
+// by net.icmp send (icmpSendFn) and server.icmp reply.
+func buildICMPMessage(network string, o icmpSendOpts) ([]byte, error) {
+	if o.hasBody {
+		return marshalRaw(network, o.typeNum, o.code, o.body)
+	}
+	var typ icmp.Type
+	if o.hasType {
+		if network == "ip6" {
+			typ = ipv6.ICMPType(o.typeNum)
+		} else {
+			typ = ipv4.ICMPType(o.typeNum)
+		}
+	} else if network == "ip6" {
+		typ = ipv6.ICMPTypeEchoRequest
+	} else {
+		typ = ipv4.ICMPTypeEcho
+	}
+	msg := icmp.Message{
+		Type: typ,
+		Code: o.code,
+		Body: &icmp.Echo{ID: o.id, Seq: o.seq, Data: o.payload},
+	}
+	return msg.Marshal(nil)
+}
+
 // parseICMP parses a marshalled ICMP message for the given network ("ip4" or
 // "ip6"), returning the message type as an int, the code, and the marshalled
 // body. Privilege-free.
@@ -301,28 +329,7 @@ func icmpSendFn(vm *goja.Runtime, loop *eventloop.EventLoop, conn *icmp.PacketCo
 			dst, err := net.ResolveIPAddr(network, o.to)
 			if err == nil {
 				var b []byte
-				if o.hasBody {
-					b, err = marshalRaw(network, o.typeNum, o.code, o.body)
-				} else {
-					var typ icmp.Type
-					if o.hasType {
-						if network == "ip6" {
-							typ = ipv6.ICMPType(o.typeNum)
-						} else {
-							typ = ipv4.ICMPType(o.typeNum)
-						}
-					} else if network == "ip6" {
-						typ = ipv6.ICMPTypeEchoRequest
-					} else {
-						typ = ipv4.ICMPTypeEcho
-					}
-					msg := icmp.Message{
-						Type: typ,
-						Code: o.code,
-						Body: &icmp.Echo{ID: o.id, Seq: o.seq, Data: o.payload},
-					}
-					b, err = msg.Marshal(nil)
-				}
+				b, err = buildICMPMessage(network, o)
 				if err == nil {
 					_, err = conn.WriteTo(b, dst)
 				}
