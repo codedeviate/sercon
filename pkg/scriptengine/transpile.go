@@ -162,52 +162,66 @@ func inlineSourceMap(raw []byte) string {
 // line shift: how many blank output lines the rewrite prepends to the body
 // relative to esbuild's output, so the caller can adjust an external source
 // map before attaching it.
+//
+// The scanner tolerates an esbuild helper preamble (var __defProp / var __name,
+// emitted by KeepNames when the entry contains a top-level function declaration)
+// that may appear BEFORE the import statements. These lines are absorbed into
+// the body while the prologue scanner continues looking for imports so that the
+// imports are still converted to require() calls instead of leaking as raw ESM.
+//
+// esbuild reduces all exports to a trailing `export { … };` block. That block
+// is stripped; if it contains a `default` binding its local name is appended as
+// a `return` statement in the IIFE, making it Run's resolved value.
 func rewriteEntryESMToCJS(esm string) (string, int) {
 	lines := strings.Split(esm, "\n")
 	var imports []string
 	var body []string
-	bodyStart := -1
+	importLineCount := 0
+	inPrologue := true
 
-	i := 0
-	for i < len(lines) {
+	for i := 0; i < len(lines); {
 		trim := strings.TrimSpace(lines[i])
-		if trim == "" || strings.HasPrefix(trim, "//") {
-			i++
-			continue
-		}
-		if strings.HasPrefix(trim, "import") && isImportStart(trim) {
-			// Accumulate the import statement until we see its terminator.
+		if inPrologue && strings.HasPrefix(trim, "import") && isImportStart(trim) {
+			// Accumulate the import statement (possibly multi-line).
 			stmtLines := []string{lines[i]}
 			for !importStatementComplete(stmtLines) && i+1 < len(lines) {
 				i++
 				stmtLines = append(stmtLines, lines[i])
 			}
 			imports = append(imports, convertImport(strings.Join(stmtLines, "\n")))
+			importLineCount += len(stmtLines)
 			i++
 			continue
 		}
-		bodyStart = i
-		break
-	}
-	if bodyStart >= 0 {
-		body = lines[bodyStart:]
+		// In the prologue, pass blank lines, comments, and esbuild helper
+		// declarations (var __defProp / var __name, emitted by KeepNames) into
+		// the body but keep scanning for imports — esbuild may place the
+		// helper preamble BEFORE the imports. The first line that is none of
+		// these is user code; stop looking for imports so a later `import`-like
+		// line inside a string/template is not misread.
+		if inPrologue && trim != "" && !strings.HasPrefix(trim, "//") && !strings.HasPrefix(trim, "var __") {
+			inPrologue = false
+		}
+		body = append(body, lines[i])
+		i++
 	}
 
+	// Strip esbuild's trailing export block, capturing the default's local.
+	// Removing it (and appending the return below) only touches lines at/after
+	// the end of the body, so user-code source-map positions are unaffected.
+	body, defaultExport := stripExportBlock(body)
+
 	// The body must sit at or below its original esbuild line number so the
-	// map only needs blank lines PREPENDED (never segments dropped). The
-	// natural prefix is one line per converted import plus the IIFE opener;
-	// pad with blank lines until it reaches bodyStart. shift = prefixLines -
-	// bodyStart (>= 0) is how many blank output lines the map must gain.
-	prefixLines := len(imports) + 1 // import lines + the ";(async () => {" opener
+	// map only needs blank lines PREPENDED (never segments dropped). Natural
+	// prefix = one require line per import + the IIFE opener; pad up to
+	// importLineCount so shift stays >= 0. shift = prefixLines - importLineCount.
+	prefixLines := len(imports) + 1
 	pad := 0
-	if bodyStart > prefixLines {
-		pad = bodyStart - prefixLines
-		prefixLines = bodyStart
+	if importLineCount > prefixLines {
+		pad = importLineCount - prefixLines
+		prefixLines = importLineCount
 	}
-	shift := prefixLines - bodyStart
-	if bodyStart < 0 {
-		shift = 0 // no body found; nothing to map
-	}
+	shift := prefixLines - importLineCount
 
 	var b strings.Builder
 	for _, imp := range imports {
@@ -219,8 +233,71 @@ func rewriteEntryESMToCJS(esm string) (string, int) {
 	}
 	b.WriteString(";(async () => {\n")
 	b.WriteString(strings.Join(body, "\n"))
+	if defaultExport != "" {
+		b.WriteString("\nreturn " + defaultExport + ";")
+	}
 	b.WriteString("\n})().then(__resolve, __reject);\n")
 	return b.String(), shift
+}
+
+// stripExportBlock removes esbuild's trailing `export { ... };` statement from
+// the entry body and returns the local name bound to `default` ("" if none).
+// esbuild reduces every export to a single such block (keeping the underlying
+// declarations) emitted as the LAST statement, so we drop only that statement
+// and, for a default, hand back its local so the caller can `return` it from
+// the IIFE. Named-only exports are simply dropped (the entry is never imported,
+// so they are dead).
+//
+// The scan works backward from the last non-blank line — the export block is
+// always trailing — so a line inside a multi-line string/template that happens
+// to trim to "export {" can't be mistaken for it (a forward scan would).
+func stripExportBlock(body []string) ([]string, string) {
+	end := len(body) - 1
+	for end >= 0 && strings.TrimSpace(body[end]) == "" {
+		end--
+	}
+	if end < 0 {
+		return body, ""
+	}
+	last := strings.TrimSpace(body[end])
+	// Single-line block: `export { ... };`.
+	if strings.HasPrefix(last, "export {") && strings.Contains(last, "}") {
+		def := parseDefaultLocal(last)
+		return append(append([]string{}, body[:end]...), body[end+1:]...), def
+	}
+	// Multi-line block: closes with `};` (or `}`); walk back to its `export {`.
+	if last != "};" && last != "}" {
+		return body, ""
+	}
+	start := end
+	for start >= 0 && strings.TrimSpace(body[start]) != "export {" {
+		start--
+	}
+	if start < 0 {
+		return body, "" // no matching opener; leave untouched
+	}
+	def := parseDefaultLocal(strings.Join(body[start:end+1], " "))
+	out := append(append([]string{}, body[:start]...), body[end+1:]...)
+	return out, def
+}
+
+// parseDefaultLocal returns the identifier bound as `default` in an esbuild
+// export block (the token immediately before " as default"), or "".
+func parseDefaultLocal(block string) string {
+	idx := strings.Index(block, " as default")
+	if idx < 0 {
+		return ""
+	}
+	start := idx
+	for start > 0 {
+		c := block[start-1]
+		if c == '_' || c == '$' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
+			start--
+			continue
+		}
+		break
+	}
+	return block[start:idx]
 }
 
 // isImportStart returns true if the trimmed line begins a statement that we
