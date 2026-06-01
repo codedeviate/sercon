@@ -826,6 +826,22 @@ declare const net: {
      */
     wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string; connected: boolean; subprotocol: string; status: number; handshakeMs: number; pingMs: number }>;
   };
+  raw: {
+    /**
+     * Open a raw IPv4 packet engine: net.raw.open({ iface?, filter?, readBuffer? }) → Promise<handle>. Sends crafted IPv4 packets (TCP flags / UDP / arbitrary IP protocol) via an IP_HDRINCL raw socket and receives replies via the capture path. Needs root / CAP_NET_RAW; Linux + macOS only (Windows rejects). iface defaults to the auto-detected default-route interface; filter is a tcpdump-like expression narrowing onPacket. The handle: send(specOrBytes) → Promise<{ bytesSent }>; onPacket(cb) delivers a decoded packet (same shape as net.capture); onClose/onError; close() → Promise<void>. send spec: { dst, dstPort?, srcPort?, src?, proto?: 'tcp'|'udp'|'ip', protocol?, flags?: string[], seq?, ack?, window?, ttl?, ipId?, payload? }; or pass a Uint8Array to send a full IPv4 packet verbatim. Default flags ['SYN'], ttl 64, window 65535, src = egress IP, srcPort = random high.
+     * @param opts iface is the capture/egress interface (auto-detected if omitted); filter is a tcpdump-like expression evaluated post-decode; readBuffer sizes the inbound channel (default 64).
+     * @returns A handle: link is the capture link type; send crafts+fires a packet (structured spec or raw bytes) and resolves { bytesSent }; onPacket receives decoded reply packets; close() tears down the send socket and capture.
+     */
+    open(opts?: { iface?: string, filter?: string, readBuffer?: number }): Promise<{ link: string; send(spec: object | Uint8Array): Promise<{ bytesSent: number }>; onPacket(cb: (pkt: any) => void): void; onClose(cb: () => void): void; onError(cb: (msg: string) => void): void; close(): Promise<void> }>;
+    /**
+     * One-shot raw TCP probe: net.raw.tcp(host, port, opts?) → Promise<reply | null>. Sends a single crafted TCP segment (default a SYN) and resolves with the first reply packet correlated by the 4-tuple, or null on timeout. SYN → SYN/ACK means open; RST means closed; null means filtered/no answer. Needs root / CAP_NET_RAW; Linux + macOS only.
+     * @param host Destination host or IPv4 address. Required.
+     * @param port Destination TCP port. Required.
+     * @param opts flags are the TCP flags to set (default ['SYN']); src/srcPort/seq/ttl/payload tune the crafted segment; timeout is the reply wait in ms (default 2000); iface overrides the auto-detected capture interface.
+     * @returns The decoded reply packet (same shape as net.capture packets), or null if no correlated reply arrived within the timeout. A SYN/ACK indicates the port is open; an RST indicates closed.
+     */
+    tcp(host: string, port: number, opts?: { flags?: string[], srcPort?: number, src?: string, seq?: number, ttl?: number, payload?: Uint8Array | string, timeout?: number, iface?: string }): Promise<{ ts: number; link: string; ip: { src: string; dst: string; protocol: string; ttl: number }; tcp: { srcPort: number; dstPort: number; seq: number; ack: number; flags: { syn: boolean; ack: boolean; fin: boolean; rst: boolean; psh: boolean; urg: boolean } }; payload?: Uint8Array; bytes: Uint8Array } | null>;
+  };
   tcp: {
     /**
      * Open a TCP client socket: net.tcp.connect(host, port, opts?) → Promise<handle>. Push/callback read model — handle.onData(cb)/onClose(cb)/onError(cb) register listeners; handle.write(data) sends (string→UTF-8 / Uint8Array); handle.remote/local are the peer/local addresses; handle.close() shuts down. opts { timeout?, readBuffer? }.

@@ -1,4 +1,5 @@
 /sercon
+/sercon.exe
 /dist/
 *.test
 *.out

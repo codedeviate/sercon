@@ -174,6 +174,37 @@ await p.send({ to: "8.8.8.8", id: 1, seq: 1, payload: "ping" });
 // raw (non-Echo) body — e.g. a hand-built destination-unreachable:
 await p.send({ to: "8.8.8.8", type: 3, code: 1, body: new Uint8Array([0, 0, 0, 0]) });`,
 		},
+		"raw.open": {
+			Summary: "Open a raw IPv4 packet engine: net.raw.open({ iface?, filter?, readBuffer? }) → Promise<handle>. Sends crafted IPv4 packets (TCP flags / UDP / arbitrary IP protocol) via an IP_HDRINCL raw socket and receives replies via the capture path. Needs root / CAP_NET_RAW; Linux + macOS only (Windows rejects). iface defaults to the auto-detected default-route interface; filter is a tcpdump-like expression narrowing onPacket. The handle: send(specOrBytes) → Promise<{ bytesSent }>; onPacket(cb) delivers a decoded packet (same shape as net.capture); onClose/onError; close() → Promise<void>. send spec: { dst, dstPort?, srcPort?, src?, proto?: 'tcp'|'udp'|'ip', protocol?, flags?: string[], seq?, ack?, window?, ttl?, ipId?, payload? }; or pass a Uint8Array to send a full IPv4 packet verbatim. Default flags ['SYN'], ttl 64, window 65535, src = egress IP, srcPort = random high.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ iface?: string, filter?: string, readBuffer?: number }", Optional: true, Desc: "iface is the capture/egress interface (auto-detected if omitted); filter is a tcpdump-like expression evaluated post-decode; readBuffer sizes the inbound channel (default 64)."},
+			},
+			ReturnType: "Promise<{ link: string; send(spec: object | Uint8Array): Promise<{ bytesSent: number }>; onPacket(cb: (pkt: any) => void): void; onClose(cb: () => void): void; onError(cb: (msg: string) => void): void; close(): Promise<void> }>",
+			Returns:    "A handle: link is the capture link type; send crafts+fires a packet (structured spec or raw bytes) and resolves { bytesSent }; onPacket receives decoded reply packets; close() tears down the send socket and capture.",
+			Errors:     "Rejects if the platform is Windows, the raw socket or capture can't be opened (needs root / CAP_NET_RAW), the egress interface can't be detected, or the filter is malformed. send throws on an invalid spec (missing dst, unknown TCP flag, bad port/ttl) and rejects on a write failure.",
+			Example: `// needs root / CAP_NET_RAW
+const h = await net.raw.open({ filter: "tcp and src port 443" });
+h.onPacket(p => runtime.log(p.ip.src, p.tcp.flags));
+await h.send({ dst: "93.184.216.34", dstPort: 443, flags: ["SYN"] });
+await new Promise(r => setTimeout(r, 1000));
+await h.close();`,
+		},
+		"raw.tcp": {
+			Summary: "One-shot raw TCP probe: net.raw.tcp(host, port, opts?) → Promise<reply | null>. Sends a single crafted TCP segment (default a SYN) and resolves with the first reply packet correlated by the 4-tuple, or null on timeout. SYN → SYN/ACK means open; RST means closed; null means filtered/no answer. Needs root / CAP_NET_RAW; Linux + macOS only.",
+			Params: []scriptengine.Param{
+				{Name: "host", Type: "string", Desc: "Destination host or IPv4 address. Required."},
+				{Name: "port", Type: "number", Desc: "Destination TCP port. Required."},
+				{Name: "opts", Type: "{ flags?: string[], srcPort?: number, src?: string, seq?: number, ttl?: number, payload?: Uint8Array | string, timeout?: number, iface?: string }", Optional: true, Desc: "flags are the TCP flags to set (default ['SYN']); src/srcPort/seq/ttl/payload tune the crafted segment; timeout is the reply wait in ms (default 2000); iface overrides the auto-detected capture interface."},
+			},
+			ReturnType: "Promise<{ ts: number; link: string; ip: { src: string; dst: string; protocol: string; ttl: number }; tcp: { srcPort: number; dstPort: number; seq: number; ack: number; flags: { syn: boolean; ack: boolean; fin: boolean; rst: boolean; psh: boolean; urg: boolean } }; payload?: Uint8Array; bytes: Uint8Array } | null>",
+			Returns:    "The decoded reply packet (same shape as net.capture packets), or null if no correlated reply arrived within the timeout. A SYN/ACK indicates the port is open; an RST indicates closed.",
+			Errors:     "Rejects if the platform is Windows, host is empty, port is out of range, DNS resolution fails, or the raw socket / capture can't be opened (needs root / CAP_NET_RAW). A timeout is not an error — it resolves null.",
+			Example: `// needs root / CAP_NET_RAW
+const reply = await net.raw.tcp("scanme.nmap.org", 80, { flags: ["SYN"] });
+if (reply && reply.tcp.flags.syn && reply.tcp.flags.ack) runtime.log("open");
+else if (reply && reply.tcp.flags.rst) runtime.log("closed");
+else runtime.log("filtered / no answer");`,
+		},
 		"capture.interfaces": {
 			Summary:    "List the host's network interfaces synchronously: net.capture.interfaces() → array of { name, addresses: string[], up, loopback }. Pure-Go (no privileges, all platforms).",
 			ReturnType: "{ name: string; addresses: string[]; up: boolean; loopback: boolean }[]",

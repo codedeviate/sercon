@@ -904,7 +904,11 @@ await cli.send("hello-sockets");
 const ic = await net.icmp.open({ network: "ip4" });
 await ic.send({ to: "127.0.0.1", id: 1, seq: 1, payload: "ping" });
 
-await cli.close(); await srv.close(); await t.close();`)
+await cli.close(); await srv.close(); await t.close();
+
+  // Raw packet engine (needs root / CAP_NET_RAW) — send a SYN, read the reply:
+  const reply = await net.raw.tcp("scanme.nmap.org", 80, { flags: ["SYN"] });
+  runtime.log(reply ? reply.tcp.flags : "no answer");`)
 	note("Inbound events carry bytes (Uint8Array) + text; UDP-bound add address/port, ICMP adds address/type/code. ICMP open() rejects without raw-socket privileges; its body is always Echo-shaped (id/seq/payload). See MANUAL.md §net.")
 
 	header(47, "Raw TCP/UDP/ICMP servers (server.tcp / server.udp / server.icmp)")

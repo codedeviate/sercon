@@ -31,6 +31,7 @@ Or pick individual scripts:
 | `pkg-resolution.ts` | `package.json` `source` field preferred over `main` |
 | `net-probe.ts` | `net.tcp/dns/tls/ntp/whois` — hits the real network (not in CI). |
 | `traceroute.ts` | `net.probe.traceroute` — trace the path to a host (icmp/udp/tcp); needs root, so the demo handles the privilege rejection and exits 0. |
+| `raw.ts` | `net.raw` raw packet engine: craft a SYN and read the reply (degrades cleanly without root). |
 | `email-auth.ts` | `email.spf/dmarc/mtaSts/tlsRpt/bimi/all` — hits real DNS (not in CI). |
 | `compression.ts` | `compression.compress/decompress` round-trip across all 9 algos. |
 | `barcode.ts` | `barcode.encode` over all 10 supported symbologies. |
