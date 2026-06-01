@@ -21,5 +21,6 @@ func serverNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scripteng
 		"smtp":  smtpServerMembers(vm, loop, eng),
 		"tcp":   tcpServerMembers(vm, loop, eng),
 		"udp":   udpServerMembers(vm, loop, eng),
+		"icmp":  icmpServerMembers(vm, loop, eng),
 	}
 }
