@@ -131,6 +131,14 @@ func (tr *tracer) probeHop(ctx context.Context, ttl int) tracerouteHop {
 		hop.RTTsMs = append(hop.RTTsMs, rtt)
 		if reached {
 			hop.Reached = true
+			// Stop probing this hop once the destination answers. Besides
+			// being the natural end of the trace, this is load-bearing for
+			// TCP mode: tcpProbe returns the instant its dial goroutine
+			// reports "reached", leaving the sibling awaitICMPReply goroutine
+			// still reading the shared raw ICMP socket. Breaking here prevents
+			// the next probe from spawning a second concurrent reader on that
+			// same socket (the orphan is reaped when traceroute closes conn).
+			break
 		}
 	}
 	return hop
