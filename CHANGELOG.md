@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.31.1] — 2026-06-01
+
+### Fixed
+- Removed the documented-but-ignored `opts.readBuffer` from
+  `server.icmp.listen` (the listener uses a direct read loop with no buffered
+  channel, like `server.udp`). The d.ts and MANUAL no longer advertise a
+  no-op option.
+
 ## [0.31.0] — 2026-06-01
 
 ### Added
