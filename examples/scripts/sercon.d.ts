@@ -777,12 +777,12 @@ declare const net: {
      */
     ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<Record<string, unknown>>;
     /**
-     * Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.
+     * Reachability probe. mode tcp (default; dials host:port), icmp (real ICMP echo, needs raw-socket privileges), or udp (sends a datagram to a closed port and counts ICMP port-unreachable as reachable, needs root / CAP_NET_RAW). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.
      * @param host The target host. Required.
-     * @param opts mode selects the probe (default 'tcp' — opens count TCP connections; 'icmp' sends real ICMP echo and needs raw-socket privileges); count is the number of probes (default 4); timeout is the per-probe timeout in ms (default 5000); port is the TCP target port (default "80", tcp mode only).
+     * @param opts mode selects the probe (default 'tcp' — opens count TCP connections; 'icmp' sends real ICMP echo and needs raw-socket privileges; 'udp' sends a datagram to a closed port and counts the ICMP port-unreachable reply as reachable, needs root / CAP_NET_RAW); count is the number of probes (default 4); timeout is the per-probe timeout in ms (default 5000); port is the TCP target port (default "80", tcp mode only).
      * @returns Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }> — the resolved IP, the mode used, packets sent/received, loss percentage, and min/avg/max RTT in ms. A fully unreachable host resolves with received:0 and lossPercent:100 rather than rejecting.
      */
-    ping(host: string, opts?: { mode?: "tcp" | "icmp", count?: number, timeout?: number, port?: string }): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>;
+    ping(host: string, opts?: { mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>;
     /**
      * SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw.
      * @param host The SMTP server host. Required.
@@ -804,6 +804,13 @@ declare const net: {
      * @returns Promise<{ cn: string, issuer: string, notBefore: string, notAfter: string, daysRemaining: number, dnsNames: string[], serialNumber: string, fingerprintSha256: string }> — leaf-certificate fields: common name, issuer CN, validity bounds (RFC3339), days until expiry, SAN DNS names, decimal serial, and the SHA-256 fingerprint as hex. Verification is skipped, so expired / mismatched certs still report.
      */
     tls(target: string, opts?: { timeout?: number }): Promise<Record<string, unknown>>;
+    /**
+     * Trace the network path to a host: net.probe.traceroute(host, opts?) → Promise<hop[]>. Sends probes with increasing TTL and reports each responding router. Needs root / CAP_NET_RAW (intermediate hops are seen via ICMP time-exceeded). opts { protocol?: 'icmp'|'udp'|'tcp' (default 'icmp'), port?: number (udp 33434 / tcp 80), maxHops?: number (30), timeout?: number ms per probe (2000), probes?: number per hop (3) }. IPv4 only.
+     * @param host The destination host or IP.
+     * @param opts protocol selects the probe type (icmp echo, udp to an incrementing high port, or tcp SYN via a TTL-limited connect). port is the udp/tcp target (ignored for icmp). maxHops caps the trace. timeout is the per-probe wait in ms. probes is the number of probes per hop.
+     * @returns One entry per hop (TTL 1..n): ttl is the hop number; address is the responding router/host IP (null if every probe at that TTL timed out); rttsMs are the round-trip times of the probes that answered; reached is true on the hop where the destination itself replied (the array ends there or at maxHops).
+     */
+    traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string; rttsMs: number[]; reached: boolean }[]>;
     /**
      * Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text.
      * @param domain The domain (or IP / ASN) to look up.

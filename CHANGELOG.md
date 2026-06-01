@@ -8,6 +8,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-06-01
+
+### Added
+- **`net.probe.traceroute(host, opts?)`.** Trace the network path with ICMP,
+  UDP, or TCP probes (TTL-stepped), reporting each responding router as
+  `{ ttl, address, rttsMs, reached }`. Replies are correlated to probes via the
+  quoted packet inside each ICMP `time-exceeded`. Needs root / CAP_NET_RAW.
+- **`net.probe.ping` `mode: "udp"`.** A UDP datagram to a closed port whose
+  ICMP `port-unreachable` proves reachability (needs root / CAP_NET_RAW),
+  alongside the existing `tcp`/`icmp` modes.
+
 ## [0.32.0] — 2026-06-01
 
 ### Added

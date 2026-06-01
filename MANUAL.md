@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.32.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.33.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-01</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -3794,19 +3794,19 @@ const r = await net.probe.ntp("pool.ntp.org"); runtime.log(r.offsetMs);
 #### net.probe.ping
 
 ```
-ping(host: string, opts?: { mode?: "tcp" | "icmp", count?: number, timeout?: number, port?: string }): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>
+ping(host: string, opts?: { mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>
 ```
 
-Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.
+Reachability probe. mode tcp (default; dials host:port), icmp (real ICMP echo, needs raw-socket privileges), or udp (sends a datagram to a closed port and counts ICMP port-unreachable as reachable, needs root / CAP_NET_RAW). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.
 
 **Parameters**
 
 - `host` *(string)* — The target host. Required.
-- `opts` *({ mode?: "tcp" | "icmp", count?: number, timeout?: number, port?: string }, optional)* — mode selects the probe (default 'tcp' — opens count TCP connections; 'icmp' sends real ICMP echo and needs raw-socket privileges); count is the number of probes (default 4); timeout is the per-probe timeout in ms (default 5000); port is the TCP target port (default "80", tcp mode only).
+- `opts` *({ mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }, optional)* — mode selects the probe (default 'tcp' — opens count TCP connections; 'icmp' sends real ICMP echo and needs raw-socket privileges; 'udp' sends a datagram to a closed port and counts the ICMP port-unreachable reply as reachable, needs root / CAP_NET_RAW); count is the number of probes (default 4); timeout is the per-probe timeout in ms (default 5000); port is the TCP target port (default "80", tcp mode only).
 
 **Returns:** Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }> — the resolved IP, the mode used, packets sent/received, loss percentage, and min/avg/max RTT in ms. A fully unreachable host resolves with received:0 and lossPercent:100 rather than rejecting.
 
-**Throws:** Rejects if host is empty, mode is neither 'tcp' nor 'icmp', DNS resolution fails (tcp mode), or the ICMP run fails (typically missing raw-socket privileges). Individual lost packets are counted, not thrown.
+**Throws:** Rejects if host is empty, mode is not one of 'tcp', 'icmp', or 'udp', DNS resolution fails (tcp mode), or the raw ICMP socket can't be opened (icmp/udp modes; typically missing raw-socket privileges). Individual lost packets are counted, not thrown.
 
 ```ts
 const p = await net.probe.ping("example.com", { count: 3 }); runtime.log(p.lossPercent);
@@ -3873,6 +3873,29 @@ Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert
 
 ```ts
 const c = await net.probe.tls("example.com:443"); runtime.log(c.daysRemaining);
+```
+
+#### net.probe.traceroute
+
+```
+traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string; rttsMs: number[]; reached: boolean }[]>
+```
+
+Trace the network path to a host: net.probe.traceroute(host, opts?) → Promise<hop[]>. Sends probes with increasing TTL and reports each responding router. Needs root / CAP_NET_RAW (intermediate hops are seen via ICMP time-exceeded). opts { protocol?: 'icmp'|'udp'|'tcp' (default 'icmp'), port?: number (udp 33434 / tcp 80), maxHops?: number (30), timeout?: number ms per probe (2000), probes?: number per hop (3) }. IPv4 only.
+
+**Parameters**
+
+- `host` *(string)* — The destination host or IP.
+- `opts` *({ protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }, optional)* — protocol selects the probe type (icmp echo, udp to an incrementing high port, or tcp SYN via a TTL-limited connect). port is the udp/tcp target (ignored for icmp). maxHops caps the trace. timeout is the per-probe wait in ms. probes is the number of probes per hop.
+
+**Returns:** One entry per hop (TTL 1..n): ttl is the hop number; address is the responding router/host IP (null if every probe at that TTL timed out); rttsMs are the round-trip times of the probes that answered; reached is true on the hop where the destination itself replied (the array ends there or at maxHops).
+
+**Throws:** Rejects if the host doesn't resolve, the protocol is unknown, or the raw ICMP socket can't be opened (needs root / CAP_NET_RAW). Per-hop timeouts are normal (address: null), not errors.
+
+```ts
+// needs root / CAP_NET_RAW
+const hops = await net.probe.traceroute("1.1.1.1", { protocol: "icmp", maxHops: 20 });
+for (const h of hops) runtime.log(h.ttl, h.address ?? "*", h.rttsMs);
 ```
 
 #### net.probe.whois
@@ -5371,7 +5394,7 @@ p.writeln("hello");
 
 ---
 
-*This manual covers sercon v0.32.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.33.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
