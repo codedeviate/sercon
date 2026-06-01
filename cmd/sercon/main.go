@@ -373,6 +373,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"checkdigit":  checkdigitNamespace(vm),
 			"php":         phpNamespace(vm),
 			"perl":        perlNamespace(vm),
+			"xml":         xmlNamespace(vm),
 		}
 	}); err != nil {
 		return err
