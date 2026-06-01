@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.30.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.31.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-01</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -4159,6 +4159,32 @@ server.https.listen({
 });
 ```
 
+#### server.icmp.listen
+
+```
+listen(opts?: { network?: "ip4" | "ip6", readBuffer?: number }, handler: (msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void): { address: string; close(): Promise<void> }
+```
+
+Bind a raw ICMP listener: server.icmp.listen(opts?, (msg, reply) => {…}) → handle { address: 'icmp/<addr>', close() }. Raw ICMP has no ports — the socket receives ALL host ICMP traffic — and needs root / CAP_NET_RAW (synchronous bind throws otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. The handler runs once per received packet; msg is { bytes, text, address, type, code } (the sender + parsed ICMP header) and reply(opts?) sends an ICMP message back to the sender (Echo by default, or a raw body), returning a Promise. Emits a READY line under `sercon serve` and joins graceful shutdown.
+
+**Parameters**
+
+- `opts` *({ network?: "ip4" | "ip6", readBuffer?: number }, optional)* — network selects the IP version (default 'ip4'); readBuffer is the inbound buffer size (default 64). There is no host/port — raw ICMP binds to all addresses.
+- `handler` *((msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void)* — Invoked once per received ICMP packet. msg carries the marshalled body (bytes/text), the sender address, and the parsed type/code. reply(opts?) sends an ICMP message back to the sender (or opts.to): Echo mode { type?, code?, id?, seq?, payload? } or raw mode { type, code?, body } (body marshalled verbatim); it returns a Promise that resolves once written.
+
+**Returns:** A server handle (returned synchronously): address is 'icmp/<local-addr>'; close() closes the socket and resolves. There is no per-connection handle (ICMP is connectionless) — reply is bound to the received packet's sender.
+
+**Throws:** Throws synchronously if the handler is not a function, or if the raw socket can't be opened (typically because it needs root / CAP_NET_RAW). reply rejects on resolve/marshal/write errors and throws synchronously for the raw-body validation rules (a raw body requires type; body is mutually exclusive with id/seq/payload).
+
+```ts
+// Needs root / CAP_NET_RAW. Reply to every echo request with an echo reply:
+const srv = server.icmp.listen({}, (msg, reply) => {
+  if (msg.type === 8) reply({ type: 0, payload: msg.bytes });
+});
+runtime.log(srv.address);
+await srv.close();
+```
+
 #### server.smtp.listen
 
 ```
@@ -5280,7 +5306,7 @@ p.writeln("hello");
 
 ---
 
-*This manual covers sercon v0.30.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.31.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

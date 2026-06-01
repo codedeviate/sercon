@@ -98,13 +98,11 @@ The server foundation — `LoopCallable` (loop-bound callback marshalling)
 and `Engine.HoldRun` (long-lived `Run` keep-alive) — shipped in v0.10.0.
 Built on it: HTTP / HTTPS (router, middleware, static-file mount, WebSocket
 upgrade — v0.10.0), SMTP (`server.smtp.listen` plus the outbound
-`net.email.send` sender — v0.11.0), and raw TCP / UDP listeners
+`net.email.send` sender — v0.11.0), raw TCP / UDP listeners
 (`server.tcp.listen` / `server.udp.listen`, each reusing the v0.22.0 client
-push-socket handle — v0.23.0). Remaining:
-
-- **ICMP server (listener).** A raw-ICMP receive/respond surface
-  (`golang.org/x/net/icmp`, raw sockets → elevated privileges). Niche;
-  promote on demand.
+push-socket handle — v0.23.0), and the raw ICMP listener
+(`server.icmp.listen` with `reply()`, root / CAP_NET_RAW — v0.31.0). Nothing
+remains open in this subsection.
 
 Application-protocol servers (IMAP, FTP, POP3) and additional protocols
 (e.g. MQTT) are parked under **Deferred → Networking — servers** with their

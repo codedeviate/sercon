@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-06-01
+
+### Added
+- **`server.icmp.listen(opts?, (msg, reply) => …)`.** Raw ICMP listener
+  counterpart to the `net.icmp` client: receives all host ICMP traffic (needs
+  root / CAP_NET_RAW) and `reply(opts?)` sends an ICMP message back to the
+  sender (or `opts.to`), reusing the `net.icmp` Echo/raw-body send options.
+  Synchronous bind + `{ address, close() }` handle like `server.tcp`/`udp`;
+  emits a READY line under `sercon serve`.
+
 ## [0.30.0] — 2026-06-01
 
 ### Added
