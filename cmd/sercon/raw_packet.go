@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	rand "math/rand/v2"
 	"net"
 	"strings"
 
@@ -109,4 +110,73 @@ func buildPacket(spec rawSpec) ([]byte, error) {
 		}
 	}
 	return buf.Bytes(), nil
+}
+
+// parseRawSpec parses and validates a send-opts map into a rawSpec. On a
+// validation failure it returns a non-empty message suitable for a TypeError;
+// on success it returns the spec and "". src may be set or left nil (the caller
+// fills nil from the egress interface). It is privilege-free and socket-free so
+// the validation rules can be unit-tested directly.
+func parseRawSpec(m map[string]any) (rawSpec, string) {
+	var o rawSpec
+	o.proto = strings.ToLower(optString(m, "proto", "tcp"))
+	switch o.proto {
+	case "tcp", "udp", "ip":
+	default:
+		return o, fmt.Sprintf("send: proto must be 'tcp', 'udp', or 'ip', got %q", o.proto)
+	}
+
+	dstStr := optString(m, "dst", "")
+	if dstStr == "" {
+		return o, "send: opts.dst (destination IPv4 address) required"
+	}
+	o.dst = net.ParseIP(dstStr)
+	if o.dst == nil || o.dst.To4() == nil {
+		return o, fmt.Sprintf("send: opts.dst must be an IPv4 address, got %q", dstStr)
+	}
+	if srcStr := optString(m, "src", ""); srcStr != "" {
+		o.src = net.ParseIP(srcStr)
+		if o.src == nil || o.src.To4() == nil {
+			return o, fmt.Sprintf("send: opts.src must be an IPv4 address, got %q", srcStr)
+		}
+	}
+
+	o.ttl = optInt(m, "ttl", 64)
+	if o.ttl < 1 || o.ttl > 255 {
+		return o, fmt.Sprintf("send: ttl must be 1..255, got %d", o.ttl)
+	}
+	o.ipID = optInt(m, "ipId", 0)
+	o.protocol = optInt(m, "protocol", 0)
+	o.window = optInt(m, "window", 65535)
+	o.seq = uint32(optInt(m, "seq", 0))
+	o.ack = uint32(optInt(m, "ack", 0))
+
+	o.dstPort = optInt(m, "dstPort", 0)
+	if (o.proto == "tcp" || o.proto == "udp") && (o.dstPort < 1 || o.dstPort > 65535) {
+		return o, fmt.Sprintf("send: dstPort must be 1..65535 for %s, got %d", o.proto, o.dstPort)
+	}
+	o.srcPort = optInt(m, "srcPort", 0)
+	if o.srcPort == 0 {
+		o.srcPort = 32768 + rand.IntN(28000) // random high port
+	}
+	if o.srcPort < 1 || o.srcPort > 65535 {
+		return o, fmt.Sprintf("send: srcPort must be 1..65535, got %d", o.srcPort)
+	}
+
+	if raw, ok := m["flags"]; ok {
+		if arr, ok := raw.([]any); ok {
+			for _, v := range arr {
+				if s, ok := v.(string); ok {
+					o.flags = append(o.flags, s)
+				}
+			}
+		}
+	}
+	if len(o.flags) == 0 && o.proto == "tcp" {
+		o.flags = []string{"SYN"}
+	}
+	if pv, ok := m["payload"]; ok {
+		o.payload = exportPayload(pv)
+	}
+	return o, ""
 }

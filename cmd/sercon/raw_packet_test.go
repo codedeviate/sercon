@@ -149,3 +149,68 @@ func TestApplyTCPFlags_Unknown(t *testing.T) {
 		t.Fatal("expected error for unknown flag")
 	}
 }
+
+func TestParseRawSpec_Defaults(t *testing.T) {
+	spec, errMsg := parseRawSpec(map[string]any{
+		"dst":     "1.2.3.4",
+		"dstPort": int64(443),
+	})
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+	if spec.proto != "tcp" {
+		t.Fatalf("proto default = %q, want tcp", spec.proto)
+	}
+	if spec.ttl != 64 {
+		t.Fatalf("ttl default = %d, want 64", spec.ttl)
+	}
+	if spec.window != 65535 {
+		t.Fatalf("window default = %d, want 65535", spec.window)
+	}
+	if len(spec.flags) != 1 || spec.flags[0] != "SYN" {
+		t.Fatalf("flags default = %v, want [SYN]", spec.flags)
+	}
+	if spec.srcPort == 0 {
+		t.Fatal("srcPort default should be a non-zero random high port")
+	}
+}
+
+func TestParseRawSpec_Errors(t *testing.T) {
+	cases := []struct {
+		name string
+		m    map[string]any
+	}{
+		{"missing dst", map[string]any{"dstPort": int64(80)}},
+		{"bad dst", map[string]any{"dst": "not-an-ip", "dstPort": int64(80)}},
+		{"ipv6 dst", map[string]any{"dst": "::1", "dstPort": int64(80)}},
+		{"missing port for tcp", map[string]any{"dst": "1.2.3.4"}},
+		{"bad port high", map[string]any{"dst": "1.2.3.4", "dstPort": int64(70000)}},
+		{"bad ttl", map[string]any{"dst": "1.2.3.4", "dstPort": int64(80), "ttl": int64(999)}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, errMsg := parseRawSpec(c.m); errMsg == "" {
+				t.Fatalf("expected validation error for %s", c.name)
+			}
+		})
+	}
+}
+
+func TestParseRawSpec_FlagsAndSrc(t *testing.T) {
+	spec, errMsg := parseRawSpec(map[string]any{
+		"dst":     "9.9.9.9",
+		"dstPort": int64(53),
+		"src":     "8.8.8.8",
+		"flags":   []any{"SYN", "ACK"},
+		"ttl":     int64(32),
+	})
+	if errMsg != "" {
+		t.Fatalf("unexpected error: %s", errMsg)
+	}
+	if !spec.src.Equal(net.IPv4(8, 8, 8, 8)) {
+		t.Fatalf("src = %v, want 8.8.8.8", spec.src)
+	}
+	if len(spec.flags) != 2 {
+		t.Fatalf("flags = %v, want 2", spec.flags)
+	}
+}
