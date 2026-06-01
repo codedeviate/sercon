@@ -11,10 +11,13 @@ import (
 )
 
 // inbound is one received unit: a byte payload plus optional metadata
-// (UDP/ICMP attach sender address etc.). err non-nil ends the stream.
+// (UDP/ICMP attach sender address etc.). decoded, when non-nil, is a
+// pre-decoded packet object delivered verbatim via pushSocket.buildEvent
+// (used by net.raw). err non-nil ends the stream.
 type inbound struct {
 	payload []byte
 	meta    map[string]any
+	decoded *scriptengine.Ordered
 	err     error
 }
 
@@ -41,6 +44,11 @@ type pushSocket struct {
 	release   func()       // HoldRun release (idempotent)
 	teardown  func() error // protocol-specific: cancel ctx, close conn
 	onRelease func()       // optional: fired once when the hold is released
+
+	// buildEvent, when set, overrides the default {bytes,text,meta} data event:
+	// fireData calls it on the loop with the inbound and uses its goja.Value as
+	// the sole callback argument. net.raw sets this to deliver a decoded packet.
+	buildEvent func(vm *goja.Runtime, in inbound) goja.Value
 }
 
 func newPushSocket(vm *goja.Runtime, loop *eventloop.EventLoop, bufSize int) *pushSocket {
@@ -63,14 +71,14 @@ func (s *pushSocket) startDispatch() {
 				s.fireError(in.err)
 				break
 			}
-			s.fireData(in.payload, in.meta)
+			s.fireData(in)
 		}
 		s.fireClose()
 		s.releaseOnce()
 	}()
 }
 
-func (s *pushSocket) fireData(payload []byte, meta map[string]any) {
+func (s *pushSocket) fireData(in inbound) {
 	s.mu.Lock()
 	cb := s.onData
 	s.mu.Unlock()
@@ -79,10 +87,13 @@ func (s *pushSocket) fireData(payload []byte, meta map[string]any) {
 	}
 	// buildArgs runs on the loop: safe to build goja values here.
 	_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+		if s.buildEvent != nil {
+			return []goja.Value{s.buildEvent(vm, in)}, nil
+		}
 		ev := vm.NewObject()
-		_ = ev.Set("bytes", vm.ToValue(payload))
-		_ = ev.Set("text", string(payload))
-		for k, v := range meta {
+		_ = ev.Set("bytes", vm.ToValue(in.payload))
+		_ = ev.Set("text", string(in.payload))
+		for k, v := range in.meta {
 			_ = ev.Set(k, vm.ToValue(v))
 		}
 		return []goja.Value{ev}, nil
