@@ -399,7 +399,11 @@ const n = await net.probe.ntp("pool.ntp.org");
 runtime.log("offsetMs:", n.offsetMs, "rttMs:", n.rttMs, "stratum:", n.stratum);
 
 const w = await net.probe.whois("example.com");
-runtime.log("registrar:", w.registrar?.name, "expires:", w.domain?.expirationDate);`)
+runtime.log("registrar:", w.registrar?.name, "expires:", w.domain?.expirationDate);
+
+// net.probe.traceroute — path to a host (needs root). protocol: icmp|udp|tcp.
+const hops = await net.probe.traceroute("1.1.1.1", { maxHops: 15 });
+for (const h of hops) runtime.log(h.ttl, h.address ?? "*", h.rttsMs);`)
 	note("Optional { timeout: ms } on every probe. Default ports: tcp 80, tls 443, ntp 123.")
 
 	header(17, "Compression (codec.compression.*)")

@@ -834,9 +834,20 @@ Network clients and probes:
 
 - `net.http.{get, post, request}` — fetch-style HTTP client; `request`
   accepts headers, body, timeout, retry, follow, and basic auth.
-- `net.probe.{tcp, dns, tls, ntp, whois, ping, smtp, wss}` — one-shot
-  reachability / handshake probes. Each returns a structured result;
-  failures surface as `Error` objects with details.
+- `net.probe.{tcp, dns, tls, ntp, whois, ping, traceroute, smtp, wss}` —
+  one-shot reachability / handshake probes. Each returns a structured
+  result; failures surface as `Error` objects with details.
+- `net.probe.traceroute(host, opts?)` — trace the network path: send probes
+  with increasing TTL and report each responding router. **Needs root /
+  `CAP_NET_RAW`** (intermediate hops appear only via ICMP `time-exceeded`).
+  `opts.protocol` is `"icmp"` (default), `"udp"` (to an incrementing high
+  port), or `"tcp"` (SYN via a TTL-limited connect); `port` sets the udp/tcp
+  target; `maxHops` (30), `timeout` ms per probe (2000), and `probes` per hop
+  (3) bound the trace. Resolves to one `{ ttl, address, rttsMs, reached }` per
+  hop (`address` is `null` for a timed-out hop). IPv4 only.
+- `net.probe.ping` also accepts `mode: "udp"` — a UDP datagram to a (closed)
+  port whose ICMP `port-unreachable` proves reachability (needs root /
+  `CAP_NET_RAW`), alongside the existing `"tcp"` (default) and `"icmp"` modes.
 - `net.netstatus.check(host)` — combined reachability summary.
 - `net.email.*` — `spf`, `dmarc`, `mtasts`, `tlsrpt`, `bimi`, and
   `all(domain)` which runs every probe in parallel and aggregates; plus

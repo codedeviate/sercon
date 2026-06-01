@@ -85,14 +85,27 @@ func netDocs() map[string]scriptengine.MemberDoc {
 			Example: `const w = await net.probe.whois("example.com"); runtime.log(w.domain?.expirationDate);`,
 		},
 		"probe.ping": {
-			Summary: "Reachability probe. mode tcp (default; dials host:port) or icmp (needs raw-socket privileges). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.",
+			Summary: "Reachability probe. mode tcp (default; dials host:port), icmp (real ICMP echo, needs raw-socket privileges), or udp (sends a datagram to a closed port and counts ICMP port-unreachable as reachable, needs root / CAP_NET_RAW). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.",
 			Params: []scriptengine.Param{
 				{Name: "host", Type: "string", Desc: "The target host. Required."},
-				{Name: "opts", Type: "{ mode?: \"tcp\" | \"icmp\", count?: number, timeout?: number, port?: string }", Optional: true, Desc: "mode selects the probe (default 'tcp' — opens count TCP connections; 'icmp' sends real ICMP echo and needs raw-socket privileges); count is the number of probes (default 4); timeout is the per-probe timeout in ms (default 5000); port is the TCP target port (default \"80\", tcp mode only)."},
+				{Name: "opts", Type: "{ mode?: \"tcp\" | \"icmp\" | \"udp\", count?: number, timeout?: number, port?: string }", Optional: true, Desc: "mode selects the probe (default 'tcp' — opens count TCP connections; 'icmp' sends real ICMP echo and needs raw-socket privileges; 'udp' sends a datagram to a closed port and counts the ICMP port-unreachable reply as reachable, needs root / CAP_NET_RAW); count is the number of probes (default 4); timeout is the per-probe timeout in ms (default 5000); port is the TCP target port (default \"80\", tcp mode only)."},
 			},
 			Returns: "Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }> — the resolved IP, the mode used, packets sent/received, loss percentage, and min/avg/max RTT in ms. A fully unreachable host resolves with received:0 and lossPercent:100 rather than rejecting.",
-			Errors:  "Rejects if host is empty, mode is neither 'tcp' nor 'icmp', DNS resolution fails (tcp mode), or the ICMP run fails (typically missing raw-socket privileges). Individual lost packets are counted, not thrown.",
+			Errors:  "Rejects if host is empty, mode is not one of 'tcp', 'icmp', or 'udp', DNS resolution fails (tcp mode), or the raw ICMP socket can't be opened (icmp/udp modes; typically missing raw-socket privileges). Individual lost packets are counted, not thrown.",
 			Example: `const p = await net.probe.ping("example.com", { count: 3 }); runtime.log(p.lossPercent);`,
+		},
+		"probe.traceroute": {
+			Summary: "Trace the network path to a host: net.probe.traceroute(host, opts?) → Promise<hop[]>. Sends probes with increasing TTL and reports each responding router. Needs root / CAP_NET_RAW (intermediate hops are seen via ICMP time-exceeded). opts { protocol?: 'icmp'|'udp'|'tcp' (default 'icmp'), port?: number (udp 33434 / tcp 80), maxHops?: number (30), timeout?: number ms per probe (2000), probes?: number per hop (3) }. IPv4 only.",
+			Params: []scriptengine.Param{
+				{Name: "host", Type: "string", Desc: "The destination host or IP."},
+				{Name: "opts", Type: "{ protocol?: \"icmp\" | \"udp\" | \"tcp\", port?: number, maxHops?: number, timeout?: number, probes?: number }", Optional: true, Desc: "protocol selects the probe type (icmp echo, udp to an incrementing high port, or tcp SYN via a TTL-limited connect). port is the udp/tcp target (ignored for icmp). maxHops caps the trace. timeout is the per-probe wait in ms. probes is the number of probes per hop."},
+			},
+			ReturnType: "Promise<{ ttl: number; address: string | null; rttsMs: number[]; reached: boolean }[]>",
+			Returns:    "One entry per hop (TTL 1..n): ttl is the hop number; address is the responding router/host IP (null if every probe at that TTL timed out); rttsMs are the round-trip times of the probes that answered; reached is true on the hop where the destination itself replied (the array ends there or at maxHops).",
+			Errors:     "Rejects if the host doesn't resolve, the protocol is unknown, or the raw ICMP socket can't be opened (needs root / CAP_NET_RAW). Per-hop timeouts are normal (address: null), not errors.",
+			Example: `// needs root / CAP_NET_RAW
+const hops = await net.probe.traceroute("1.1.1.1", { protocol: "icmp", maxHops: 20 });
+for (const h of hops) runtime.log(h.ttl, h.address ?? "*", h.rttsMs);`,
 		},
 		"probe.smtp": {
 			Summary: "SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw.",
