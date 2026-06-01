@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -560,6 +561,76 @@ func (e *Engine) drainRunCleanups() []func() {
 	return out
 }
 
+// reflectConstructor wraps an arbitrary Go constructor func into a goja native
+// constructor so `new Name(...)` works from JS. Arguments are converted to the
+// ctor's parameter types via vm.ExportTo (missing args → zero values, extras
+// ignored; variadic tail collected). The first result is returned as the
+// instance (its exported Go methods/fields are reachable via goja's struct
+// reflection). A non-nil error second result makes `new` throw. A non-object
+// result leaves the empty `this` (constructors should return a struct/pointer).
+func reflectConstructor(vm *goja.Runtime, name string, ctor any) (func(goja.ConstructorCall) *goja.Object, error) {
+	fn := reflect.ValueOf(ctor)
+	if !fn.IsValid() || fn.Kind() != reflect.Func {
+		return nil, fmt.Errorf("constructor %s: not a function", name)
+	}
+	ft := fn.Type()
+	errType := reflect.TypeOf((*error)(nil)).Elem()
+	return func(call goja.ConstructorCall) *goja.Object {
+		nin := ft.NumIn()
+		args := make([]reflect.Value, 0, nin)
+		for i := 0; i < nin; i++ {
+			pt := ft.In(i)
+			if ft.IsVariadic() && i == nin-1 {
+				elem := pt.Elem()
+				for j := i; j < len(call.Arguments); j++ {
+					vp := reflect.New(elem)
+					_ = vm.ExportTo(call.Arguments[j], vp.Interface())
+					args = append(args, vp.Elem())
+				}
+				break
+			}
+			vp := reflect.New(pt)
+			if i < len(call.Arguments) {
+				_ = vm.ExportTo(call.Arguments[i], vp.Interface())
+			}
+			args = append(args, vp.Elem())
+		}
+		var results []reflect.Value
+		if ft.IsVariadic() {
+			results = fn.CallSlice(packVariadic(args, ft))
+		} else {
+			results = fn.Call(args)
+		}
+		if n := len(results); n > 0 && ft.Out(n-1) == errType {
+			if e := results[n-1].Interface(); e != nil {
+				panic(vm.NewGoError(e.(error)))
+			}
+		}
+		if len(results) == 0 {
+			return nil
+		}
+		v := vm.ToValue(results[0].Interface())
+		if obj, ok := v.(*goja.Object); ok {
+			return obj
+		}
+		return nil
+	}, nil
+}
+
+// packVariadic re-packs a flat arg list into the shape fn.CallSlice expects:
+// fixed args followed by a single slice holding the variadic tail.
+func packVariadic(args []reflect.Value, ft reflect.Type) []reflect.Value {
+	nfixed := ft.NumIn() - 1
+	out := make([]reflect.Value, 0, nfixed+1)
+	out = append(out, args[:nfixed]...)
+	sl := reflect.MakeSlice(ft.In(nfixed), 0, len(args)-nfixed)
+	for _, a := range args[nfixed:] {
+		sl = reflect.Append(sl, a)
+	}
+	out = append(out, sl)
+	return out
+}
+
 func (e *Engine) applyRegistrations(vm *goja.Runtime, loop *eventloop.EventLoop) error {
 	e.regMu.RLock()
 	defer e.regMu.RUnlock()
@@ -588,7 +659,11 @@ func (e *Engine) applyRegistrations(vm *goja.Runtime, loop *eventloop.EventLoop)
 				return fmt.Errorf("register %s: %w", reg.name, err)
 			}
 		case regConstructor:
-			if err := vm.Set(reg.name, unwrapAsyncBindings(reg.value)); err != nil {
+			ctor, err := reflectConstructor(vm, reg.name, unwrapAsyncBindings(reg.value))
+			if err != nil {
+				return fmt.Errorf("register constructor %s: %w", reg.name, err)
+			}
+			if err := vm.Set(reg.name, ctor); err != nil {
 				return fmt.Errorf("register constructor %s: %w", reg.name, err)
 			}
 		}
