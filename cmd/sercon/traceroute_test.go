@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 // buildQuoted constructs a minimal quoted "IP header + 8 transport bytes" blob
 // as it appears inside an ICMP time-exceeded body: a 20-byte IPv4 header
@@ -40,5 +44,62 @@ func TestParseQuotedProbe(t *testing.T) {
 	withOpts := append(ipOpt, icmp8...)
 	if id, ok := parseQuotedProbe(withOpts, "icmp"); !ok || id != 0x1234 {
 		t.Errorf("icmp w/ options: got %d ok=%v want 0x1234", id, ok)
+	}
+}
+
+// TestTraceroute_NoPrivilegeRejects: without root, opening the raw ICMP socket
+// fails and traceroute rejects with a privilege hint (skips if raw ICMP is
+// permitted in this environment).
+func TestTraceroute_NoPrivilegeRejects(t *testing.T) {
+	got := runSocketScript(t, `
+		let outcome;
+		try {
+			await net.probe.traceroute("127.0.0.1", { maxHops: 1 });
+			outcome = "ok";
+		} catch (e) {
+			outcome = "threw: " + (e && e.message ? e.message : String(e));
+		}
+		__capture(outcome);
+	`)
+	s, _ := got.(string)
+	if s == "ok" {
+		t.Skip("raw ICMP permitted in this environment")
+	}
+	if !strings.Contains(s, "privileges") && !strings.Contains(s, "CAP_NET_RAW") && !strings.Contains(s, "root") {
+		t.Errorf("expected privilege rejection, got %q", s)
+	}
+}
+
+// TestTraceroute_BadProtocol: an unknown protocol rejects before any socket.
+func TestTraceroute_BadProtocol(t *testing.T) {
+	got := runSocketScript(t, `
+		let outcome;
+		try {
+			await net.probe.traceroute("127.0.0.1", { protocol: "sctp" });
+			outcome = "ok";
+		} catch (e) {
+			outcome = "threw: " + (e && e.message ? e.message : String(e));
+		}
+		__capture(outcome);
+	`)
+	s, _ := got.(string)
+	if !strings.Contains(s, "threw:") || !strings.Contains(s, "protocol") {
+		t.Errorf("expected protocol rejection, got %q", s)
+	}
+}
+
+// TestTraceroute_LoopbackICMP: privileged — tracing 127.0.0.1 reaches in one
+// hop. Skipped unless root.
+func TestTraceroute_LoopbackICMP(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	got := runSocketScript(t, `
+		const hops = await net.probe.traceroute("127.0.0.1", { protocol: "icmp", maxHops: 5, timeout: 1000, probes: 1 });
+		const last = hops[hops.length - 1];
+		__capture(last && last.reached && last.address === "127.0.0.1" ? "reached" : JSON.stringify(hops));
+	`)
+	if got != "reached" {
+		t.Errorf("loopback ICMP trace: %v", got)
 	}
 }
