@@ -80,35 +80,6 @@ remain in this subsection:
 
 ## Hard
 
-### Engine
-
-- **Entry-script import extraction vs. esbuild preamble (bug).**
-  `rewriteEntryESMToCJS` scans the esbuild ESM output for leading `import`
-  statements to convert to `require()`. But esbuild sometimes emits a helper
-  preamble (e.g. `var __defProp …; var __name …` from `KeepNames` when the
-  entry has a `function` declaration) **before** the imports. The scanner
-  stops at the first non-import line, so those imports are never converted —
-  a raw ESM `import` is left inside the async IIFE and goja rejects it
-  (`Unexpected reserved word`). Repro: an entry that both `import {x} from
-  "./m.ts"` and declares a top-level `function`. Pre-existing (predates the
-  v0.29.0 source-map work; surfaced by its final review). **Approach:** make
-  the rewriter scan the whole prologue for imports (hoist them out from among
-  the preamble) rather than stopping at the first non-import line; needs care
-  to keep source-map line accounting (`bodyStart`) correct. Its own
-  brainstorm → plan cycle.
-- **Top-level export capture.** `Engine.Run` resolves with whatever
-  `__resolve` receives, which is always `undefined` today. Wiring the
-  entry-script body so its trailing expression flows into the resolve
-  call would let hosts get a return value back. **Approach:** engine
-  internals — no library; needs design for both ESM `export default`
-  and bare trailing-expression cases.
-- **True `RegisterConstructor` runtime semantics.** The d.ts emitter
-  produces `declare class`, but at runtime the constructor is treated
-  like a plain `vm.Set`. Hooking it up so `new Foo(...)` works in JS
-  and respects the returned Go type's methods is open work.
-  **Approach:** goja `Runtime.ToValue` + prototype wiring + reflect; no
-  drop-in library exists for this.
-
 ### Networking — servers
 
 The server foundation — `LoopCallable` (loop-bound callback marshalling)

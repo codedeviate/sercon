@@ -2,8 +2,8 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.29.1</div> <!-- x-release-please-version -->
-<div class="date">2026-05-31</div>
+<div class="version">Version 0.30.0</div> <!-- x-release-please-version -->
+<div class="date">2026-06-01</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
 License · MIT
@@ -1882,6 +1882,12 @@ works through the entry-script rewriter's `__esModule ? .default : m`
 unwrap, so `import answer from "./mod"` resolves to the default
 export.
 
+An **entry script's own `export default <expr>`** is captured as the value
+`Engine.Run` resolves to, and the `sercon` CLI prints that value as JSON to
+stdout (scripts without a default export resolve to `undefined` and print
+nothing; a value that doesn't JSON-encode, such as a function, is skipped).
+This is the supported way for a script to emit a structured result.
+
 ## 10. Top-level `await`
 
 Top-level `await` works in entry scripts:
@@ -2071,9 +2077,15 @@ the seventh artifact in that chain).
   rewriter is line-based and handles the common forms; especially gnarly
   inputs (comments inside the spec list, very unusual whitespace) fall
   back to executing as-is, which may throw.
-- **`RegisterConstructor` is d.ts-only today.** At runtime it behaves
-  like `Register`. True `new`-able constructor semantics are on the
-  roadmap.
+- **`RegisterConstructor` gives real `new` semantics.** `new Foo(...)`
+  runs the registered Go constructor; JS arguments are coerced to its
+  parameter types (an argument that can't be coerced becomes the zero value
+  rather than throwing); the result's exported methods/fields are reachable
+  (subject to the `json`-tag field mapper); and a non-nil trailing `error`
+  result throws. A panic inside the constructor propagates like any Go
+  binding (it is not converted to a catchable JS error), and `instanceof
+  Foo` is not guaranteed (the instance is the Go-wrapped object). This is a
+  library-side API — the CLI registers namespaces, not constructors.
 - **HTTP bindings are real network calls.** `net.http.*` uses
   `net/http` with a 5s timeout. They are not mockable from JS.
 
@@ -5257,7 +5269,7 @@ p.writeln("hello");
 
 ---
 
-*This manual covers sercon v0.29.1. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.30.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

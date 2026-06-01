@@ -8,6 +8,23 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-06-01
+
+### Added
+- **Entry `export default` capture.** An entry script's `export default <expr>`
+  is now the value `Engine.Run` resolves to, and the `sercon` CLI prints it as
+  JSON to stdout (scripts without a default export are unchanged). `export`
+  statements in the entry no longer error.
+- **`RegisterConstructor` runtime semantics.** `new Foo(...)` now runs the
+  registered Go constructor, coerces JS arguments to its parameter types,
+  exposes the result's methods/fields, and throws when the constructor returns
+  a non-nil error.
+
+### Fixed
+- Entry imports that follow an esbuild helper preamble (emitted when the entry
+  declares a top-level `function`) are now converted to `require()` instead of
+  leaking a raw ESM `import` that goja rejected.
+
 ## [0.29.1] — 2026-05-31
 
 ### Fixed
