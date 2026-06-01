@@ -8,6 +8,9 @@ const value = {
     book: [
       { "@id": "b1", title: "Go in Practice" },
       { "@id": "b2", title: "The TypeScript Handbook" },
+      // #text sets an element's text content (here alongside the @id
+      // attribute) → <book id="b3">Untitled draft</book>.
+      { "@id": "b3", "#text": "Untitled draft" },
     ],
   },
 };
