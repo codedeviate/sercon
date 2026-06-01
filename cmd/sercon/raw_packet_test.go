@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/gopacket/gopacket"
@@ -226,4 +227,17 @@ func TestEgressFor_Loopback(t *testing.T) {
 	if src == nil || !src.IsLoopback() {
 		t.Fatalf("egressFor src = %v, want a loopback address", src)
 	}
+}
+
+func TestOpenRawSend_PrivilegeTolerant(t *testing.T) {
+	rc, err := openRawSend()
+	if err != nil {
+		// Without root/CAP_NET_RAW this is expected. Assert the error mentions
+		// the privilege requirement so the message is useful.
+		if !strings.Contains(err.Error(), "CAP_NET_RAW") && !strings.Contains(err.Error(), "root") {
+			t.Fatalf("expected a privilege hint in error, got: %v", err)
+		}
+		return
+	}
+	_ = rc.Close()
 }
