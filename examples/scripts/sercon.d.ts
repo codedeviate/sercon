@@ -585,6 +585,21 @@ declare const codec: {
      */
     varExport(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string;
   };
+  xml: {
+    /**
+     * Parse an XML string to a value using the same @-prefix + #text convention as xml.encode. Attributes become @-keys, text becomes #text (or a bare string for a text-only element), child elements become keys, and repeated same-name siblings become an array. Empty/self-closing elements decode to null. Namespace prefixes are kept literally; all values are strings (no type coercion). Mismatched tags, multiple roots, and malformed XML throw.
+     * @param xml The XML document to parse.
+     * @returns A single-key object whose key is the root element name and whose value is the parsed content (key order follows document order; all leaf values are strings).
+     */
+    decode(xml: string): unknown;
+    /**
+     * Serialize a value to an XML string. Convention: @-prefixed keys are attributes, #text is element text, other keys are child elements, and an array value becomes repeated sibling elements (a scalar key becomes a text-only element, null a self-closing tag). The value must be a single-key object naming the root element, or pass opts.rootName to wrap it. Scalars are stringified; object key order is preserved.
+     * @param value A single-key object whose one key names the root element — e.g. { note: { "@id": "5", "#text": "hi", to: "alice" } } → <note id="5">hi<to>alice</to></note>. Or any value plus opts.rootName to wrap it. Cycles throw.
+     * @param opts rootName wraps the value under that root element. indent pretty-prints with the given unit per level (default compact). declaration prepends <?xml version="1.0" encoding="UTF-8"?> (default off).
+     * @returns The XML string.
+     */
+    encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string;
+  };
 };
 
 /** Filesystem operations: path manipulation and archive create/extract. */

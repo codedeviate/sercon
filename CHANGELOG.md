@@ -8,6 +8,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-06-01
+
+### Added
+- **`codec.xml.encode(value, opts?)` / `codec.xml.decode(xml)`.** Value ↔ XML
+  codec using the `@`-prefix (attributes) + `#text` (text) convention: child
+  elements are plain keys, arrays become repeated sibling elements, a text-only
+  element collapses to a bare string, and an empty/self-closing element ↔
+  `null`. `opts.rootName` / `indent` / `declaration` on encode; decoded values
+  are strings; object key order and namespace prefixes are preserved.
+  Mismatched tags, multiple roots, and malformed XML throw. Built on the shared
+  dump IR (order preservation + cycle detection).
+
 ## [0.31.1] — 2026-06-01
 
 ### Fixed

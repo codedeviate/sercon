@@ -54,22 +54,11 @@ structs for fixed-shape results) and v0.20.0 (`scriptengine.Ordered`
 for conditional / dynamic / decoded-JSON keys; `text.jq` is the lone
 exception, since `gojq` discards key order internally). `shell_stream(cmd,
 cb)` shipped in v0.28.0 as `services.exec.stream` (line-streaming a
-subprocess's stdout/stderr to a JS callback). The one open Moderate item is
-**`codec.xml`** (below); the networking subsection that follows it is a
+subprocess's stdout/stderr to a JS callback). `codec.xml` shipped in v0.32.0
+(value ↔ XML via the shared dump IR, `@`-attribute + `#text` convention).
+**No open Moderate items remain** — the networking subsection below is a
 shipped-record whose one residual gap (route-table enumeration) is parked
 under Deferred.
-
-### Encoding / decoding / barcodes
-
-- **`codec.xml` — value ↔ XML string.** Serialize a JS value (object/array)
-  to an XML string and parse XML back. Arrays map to repeated sibling
-  elements. **Attributes** need a sentinel-key convention since JS objects
-  have no attribute/child distinction — e.g. `{ "@attrs": {...}, "#text": "…",
-  child: … }` (or `@`-prefixed keys). **Library:** Go stdlib `encoding/xml`
-  is cgo-free but struct/tag-oriented and awkward for arbitrary maps/arrays,
-  so the map↔XML walk would be written in-tree (like `codec.php` /
-  `codec.perl`). The attribute representation is the main design fork; its
-  own brainstorm → spec → plan cycle. Promote on demand.
 
 ### Networking — clients & raw sockets
 

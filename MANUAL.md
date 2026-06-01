@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.31.1</div> <!-- x-release-please-version -->
+<div class="version">Version 0.32.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-01</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -2510,6 +2510,49 @@ PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-s
 
 ```ts
 const code = codec.php.varExport({ x: 1 }, { indent: "    " });
+```
+
+#### codec.xml.decode
+
+```
+decode(xml: string): unknown
+```
+
+Parse an XML string to a value using the same @-prefix + #text convention as xml.encode. Attributes become @-keys, text becomes #text (or a bare string for a text-only element), child elements become keys, and repeated same-name siblings become an array. Empty/self-closing elements decode to null. Namespace prefixes are kept literally; all values are strings (no type coercion). Mismatched tags, multiple roots, and malformed XML throw.
+
+**Parameters**
+
+- `xml` *(string)* — The XML document to parse.
+
+**Returns:** A single-key object whose key is the root element name and whose value is the parsed content (key order follows document order; all leaf values are strings).
+
+**Throws:** Throws on malformed XML, mismatched/mis-nested end tags, multiple root elements, or no root element.
+
+```ts
+const v = codec.xml.decode("<note id=\"5\">hi</note>");
+// { note: { "@id": "5", "#text": "hi" } }
+```
+
+#### codec.xml.encode
+
+```
+encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string
+```
+
+Serialize a value to an XML string. Convention: @-prefixed keys are attributes, #text is element text, other keys are child elements, and an array value becomes repeated sibling elements (a scalar key becomes a text-only element, null a self-closing tag). The value must be a single-key object naming the root element, or pass opts.rootName to wrap it. Scalars are stringified; object key order is preserved.
+
+**Parameters**
+
+- `value` *(unknown)* — A single-key object whose one key names the root element — e.g. { note: { "@id": "5", "#text": "hi", to: "alice" } } → <note id="5">hi<to>alice</to></note>. Or any value plus opts.rootName to wrap it. Cycles throw.
+- `opts` *({ rootName?: string, indent?: string, declaration?: boolean }, optional)* — rootName wraps the value under that root element. indent pretty-prints with the given unit per level (default compact). declaration prepends <?xml version="1.0" encoding="UTF-8"?> (default off).
+
+**Returns:** The XML string.
+
+**Throws:** Throws if the value has no single root element and no opts.rootName, if the root content is an array, if a non-scalar is used as an attribute or #text value, or if the value contains a cycle.
+
+```ts
+const xml = codec.xml.encode({ note: { "@id": "5", "#text": "hi" } });
+// <note id="5">hi</note>
 ```
 
 ### console
@@ -5317,7 +5360,7 @@ p.writeln("hello");
 
 ---
 
-*This manual covers sercon v0.31.1. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.32.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
