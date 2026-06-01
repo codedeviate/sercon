@@ -267,6 +267,12 @@ func rawTCPFn(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Eng
 							flags = append(flags, sfl)
 						}
 					}
+					// An explicit empty/garbage flags array re-defaults to SYN,
+					// matching parseRawSpec — net.raw.tcp without flags is a SYN
+					// probe, never a flagless segment.
+					if len(flags) == 0 {
+						flags = []string{"SYN"}
+					}
 				}
 			}
 		}
