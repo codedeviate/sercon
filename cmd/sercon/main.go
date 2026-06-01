@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -195,16 +196,17 @@ func run(args []string) int {
 func runOne(eng *scriptengine.Engine, path string, verbose bool, userArgs []string) error {
 	start := time.Now()
 	var err error
+	var val goja.Value
 	label := path
 	if path == "-" {
 		label = "<stdin>"
 		var data []byte
 		data, err = io.ReadAll(os.Stdin)
 		if err == nil {
-			_, err = eng.Run(context.Background(), "<stdin>", string(data), scriptengine.WithArgs(userArgs))
+			val, err = eng.Run(context.Background(), "<stdin>", string(data), scriptengine.WithArgs(userArgs))
 		}
 	} else {
-		_, err = eng.RunFile(context.Background(), path, scriptengine.WithArgs(userArgs))
+		val, err = eng.RunFile(context.Background(), path, scriptengine.WithArgs(userArgs))
 	}
 	dur := time.Since(start)
 	if err != nil {
@@ -213,8 +215,23 @@ func runOne(eng *scriptengine.Engine, path string, verbose bool, userArgs []stri
 		}
 		return err
 	}
+	printRunResult(val)
 	fmt.Printf("PASS %s (%s)\n", label, dur.Round(time.Millisecond))
 	return nil
+}
+
+// printRunResult prints the entry script's `export default` value (if any) as
+// JSON to stdout. Scripts without a default export resolve to undefined and
+// print nothing; values that don't JSON-encode (e.g. a function) are skipped.
+func printRunResult(val goja.Value) {
+	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+		return
+	}
+	data, err := json.Marshal(val.Export())
+	if err != nil {
+		return
+	}
+	fmt.Println(string(data))
 }
 
 // classifyErr maps an Engine error to one of the documented exit codes.

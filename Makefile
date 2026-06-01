@@ -48,6 +48,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/strings.ts \
 	examples/scripts/path-and-time.ts \
 	examples/scripts/default-export.ts \
+	examples/scripts/export-default.ts \
 	examples/scripts/tsx-demo.ts \
 	examples/scripts/json-import.ts \
 	examples/scripts/pkg-resolution.ts \

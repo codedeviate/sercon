@@ -25,6 +25,7 @@ Or pick individual scripts:
 | `strings.ts` | `str.*` — trim/pad/reverse/strip/encode/sprintf |
 | `path-and-time.ts` | `path.*` and `time.format` (strftime tokens, IANA zones) |
 | `default-export.ts` | ESM `export default` interop via the entry rewriter |
+| `export-default.ts` | `export default` — the entry's default export becomes Run's value, which the CLI prints as JSON to stdout. |
 | `tsx-demo.ts` | `.tsx` module loading with a local `@jsx h` factory |
 | `json-import.ts` | `import data from "./data.json"` and `require("./data.json")` |
 | `pkg-resolution.ts` | `package.json` `source` field preferred over `main` |
