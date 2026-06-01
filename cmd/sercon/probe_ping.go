@@ -158,7 +158,7 @@ func udpPing(ctx context.Context, host string, port, count int, timeout time.Dur
 	if err != nil {
 		return pingProbeResult{}, fmt.Errorf("net.ping: udp mode %w (needs root / CAP_NET_RAW)", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var rtts []time.Duration
 	buf := make([]byte, 1500)

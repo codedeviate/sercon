@@ -87,7 +87,7 @@ func traceroute(ctx context.Context, call goja.FunctionCall) ([]tracerouteHop, e
 	if err != nil {
 		return nil, fmt.Errorf("net.probe.traceroute: %w (needs root / CAP_NET_RAW)", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	tr := &tracer{conn: conn, v4: ipv4.NewPacketConn(conn), dst: dst, protocol: protocol, port: port, timeout: timeout, probes: probes}
 	hops := make([]tracerouteHop, 0, maxHops)
@@ -174,7 +174,7 @@ func (tr *tracer) sendUDP(ttl int, id uint16) error {
 	if err != nil {
 		return err
 	}
-	defer uc.Close()
+	defer func() { _ = uc.Close() }()
 	if err := ipv4.NewConn(uc).SetTTL(ttl); err != nil {
 		return err
 	}
