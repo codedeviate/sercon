@@ -200,5 +200,28 @@ const text = new TextDecoder().decode(raw);`,
 			Errors:     "Throws on malformed input or a reference that would close a cycle.",
 			Example:    `const v = codec.perl.parseDumper("$VAR1 = [1, 2];"); // [1, 2]`,
 		},
+		"xml.encode": {
+			Summary: "Serialize a value to an XML string. Convention: @-prefixed keys are attributes, #text is element text, other keys are child elements, and an array value becomes repeated sibling elements (a scalar key becomes a text-only element, null a self-closing tag). The value must be a single-key object naming the root element, or pass opts.rootName to wrap it. Scalars are stringified; object key order is preserved.",
+			Params: []scriptengine.Param{
+				{Name: "value", Type: "unknown", Desc: "A single-key object whose one key names the root element — e.g. { note: { \"@id\": \"5\", \"#text\": \"hi\", to: \"alice\" } } → <note id=\"5\">hi<to>alice</to></note>. Or any value plus opts.rootName to wrap it. Cycles throw."},
+				{Name: "opts", Type: "{ rootName?: string, indent?: string, declaration?: boolean }", Optional: true, Desc: "rootName wraps the value under that root element. indent pretty-prints with the given unit per level (default compact). declaration prepends <?xml version=\"1.0\" encoding=\"UTF-8\"?> (default off)."},
+			},
+			ReturnType: "string",
+			Returns:    "The XML string.",
+			Errors:     "Throws if the value has no single root element and no opts.rootName, if the root content is an array, if a non-scalar is used as an attribute or #text value, or if the value contains a cycle.",
+			Example: `const xml = codec.xml.encode({ note: { "@id": "5", "#text": "hi" } });
+// <note id="5">hi</note>`,
+		},
+		"xml.decode": {
+			Summary: "Parse an XML string to a value using the same @-prefix + #text convention as xml.encode. Attributes become @-keys, text becomes #text (or a bare string for a text-only element), child elements become keys, and repeated same-name siblings become an array. Empty/self-closing elements decode to null. Namespace prefixes are kept literally; all values are strings (no type coercion). Mismatched tags, multiple roots, and malformed XML throw.",
+			Params: []scriptengine.Param{
+				{Name: "xml", Type: "string", Desc: "The XML document to parse."},
+			},
+			ReturnType: "unknown",
+			Returns:    "A single-key object whose key is the root element name and whose value is the parsed content (key order follows document order; all leaf values are strings).",
+			Errors:     "Throws on malformed XML, mismatched/mis-nested end tags, multiple root elements, or no root element.",
+			Example: `const v = codec.xml.decode("<note id=\"5\">hi</note>");
+// { note: { "@id": "5", "#text": "hi" } }`,
+		},
 	}
 }

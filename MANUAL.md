@@ -735,6 +735,17 @@ Binary-format codecs (was `format` in v0.8.0). Members:
   varDump, parseVarDump}` — read and write PHP data dumps.
 - `codec.perl.{dumper, parseDumper}` — read and write Perl
   `Data::Dumper` output.
+- `codec.xml.encode(value, opts?)` / `codec.xml.decode(xml)` — value ↔ XML.
+  Attributes are `@`-prefixed keys, text is `#text`, other keys are child
+  elements, and an array value becomes repeated sibling elements; a text-only
+  element collapses to a bare string and an empty/self-closing element to
+  `null`. The value must be a single-key object naming the root (or pass
+  `opts.rootName`). `opts.indent` pretty-prints and `opts.declaration` prepends
+  the XML declaration. Object key order and namespace prefixes are preserved.
+  Decoded values are **strings** (XML is untyped — a number round-trips as its
+  string form); surrounding whitespace is trimmed and mixed text/element
+  ordering is not preserved. Cycles, mismatched tags, multiple roots, and
+  malformed XML throw.
 
 #### `codec.php` — PHP dump formats
 

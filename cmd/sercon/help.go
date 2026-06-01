@@ -851,7 +851,12 @@ runtime.log("parseVarExport ->", codec.php.parseVarExport(ve));
 // Perl Data::Dumper. JS booleans use the JSON::XS::Boolean convention
 // (a blessed scalar ref), so they survive the round-trip as booleans.
 const pl = codec.perl.dumper(true);                     // $VAR1 = bless( ... );
-runtime.assert.equal(codec.perl.parseDumper(pl), true, "perl bool");`)
+runtime.assert.equal(codec.perl.parseDumper(pl), true, "perl bool");
+
+// codec.xml — value <-> XML (@-attrs, #text, arrays = repeated siblings).
+const xml = codec.xml.encode({ note: { "@id": "5", "#text": "hi" } });
+runtime.log(xml); // <note id="5">hi</note>
+runtime.log(JSON.stringify(codec.xml.decode(xml)));`)
 	note("Decoded objects keep stable key order (canonical-JSON / payment-hash safe). opts.classKey (default \"__class\"), opts.perlBoolClass (default \"JSON::XS::Boolean\"), opts.indent. See MANUAL.md §codec.")
 
 	header(44, "Console (browser/Node compat)")
