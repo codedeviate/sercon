@@ -1724,6 +1724,17 @@ script.ts` adds the access log, a `READY listening on tcp/…` (or
 the single goja loop, so **handlers serialize** (one at a time across all
 listeners).
 
+- `server.icmp.listen(opts?, (msg, reply) => …)` — bind a raw ICMP listener.
+  **Requires root / `CAP_NET_RAW`** (synchronous bind throws otherwise); raw
+  ICMP has no ports, so the socket receives **all** host ICMP traffic. opts
+  `{ network?: "ip4" | "ip6" (default "ip4"), readBuffer? }`. The handler runs
+  per received packet with `msg` `{ bytes, text, address, type, code }` and a
+  `reply(opts?)` that sends an ICMP message back to the sender (or `opts.to`) —
+  Echo mode `{ type?, code?, id?, seq?, payload? }` or raw mode
+  `{ type, code?, body }`, the same options as `net.icmp` send. The handle is
+  `{ address: "icmp/<addr>", close() }`; it emits a READY line under
+  `sercon serve` and joins graceful shutdown.
+
 ## 7. JavaScript runtime built-ins (goja)
 
 `scriptengine` runs on goja, which implements **ES5.1 + a large subset of

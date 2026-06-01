@@ -107,5 +107,21 @@ await srv.close();`,
 runtime.log(srv.address);
 await srv.close();`,
 		},
+		"icmp.listen": {
+			Summary: "Bind a raw ICMP listener: server.icmp.listen(opts?, (msg, reply) => {…}) → handle { address: 'icmp/<addr>', close() }. Raw ICMP has no ports — the socket receives ALL host ICMP traffic — and needs root / CAP_NET_RAW (synchronous bind throws otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. The handler runs once per received packet; msg is { bytes, text, address, type, code } (the sender + parsed ICMP header) and reply(opts?) sends an ICMP message back to the sender (Echo by default, or a raw body), returning a Promise. Emits a READY line under `sercon serve` and joins graceful shutdown.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ network?: \"ip4\" | \"ip6\", readBuffer?: number }", Optional: true, Desc: "network selects the IP version (default 'ip4'); readBuffer is the inbound buffer size (default 64). There is no host/port — raw ICMP binds to all addresses."},
+				{Name: "handler", Type: "(msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void", Desc: "Invoked once per received ICMP packet. msg carries the marshalled body (bytes/text), the sender address, and the parsed type/code. reply(opts?) sends an ICMP message back to the sender (or opts.to): Echo mode { type?, code?, id?, seq?, payload? } or raw mode { type, code?, body } (body marshalled verbatim); it returns a Promise that resolves once written."},
+			},
+			ReturnType: "{ address: string; close(): Promise<void> }",
+			Returns:    "A server handle (returned synchronously): address is 'icmp/<local-addr>'; close() closes the socket and resolves. There is no per-connection handle (ICMP is connectionless) — reply is bound to the received packet's sender.",
+			Errors:     "Throws synchronously if the handler is not a function, or if the raw socket can't be opened (typically because it needs root / CAP_NET_RAW). reply rejects on resolve/marshal/write errors and throws synchronously for the raw-body validation rules (a raw body requires type; body is mutually exclusive with id/seq/payload).",
+			Example: `// Needs root / CAP_NET_RAW. Reply to every echo request with an echo reply:
+const srv = server.icmp.listen({}, (msg, reply) => {
+  if (msg.type === 8) reply({ type: 0, payload: msg.bytes });
+});
+runtime.log(srv.address);
+await srv.close();`,
+		},
 	}
 }

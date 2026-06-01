@@ -84,6 +84,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/server-ws.ts \
 	examples/scripts/server-smtp.ts \
 	examples/scripts/server-tcp.ts \
+	examples/scripts/server-icmp.ts \
 	examples/scripts/net-sockets.ts \
 	examples/scripts/capture-file.ts
 

@@ -898,7 +898,7 @@ await ic.send({ to: "127.0.0.1", id: 1, seq: 1, payload: "ping" });
 await cli.close(); await srv.close(); await t.close();`)
 	note("Inbound events carry bytes (Uint8Array) + text; UDP-bound add address/port, ICMP adds address/type/code. ICMP open() rejects without raw-socket privileges; its body is always Echo-shaped (id/seq/payload). See MANUAL.md §net.")
 
-	header(47, "Raw TCP/UDP servers (server.tcp / server.udp)")
+	header(47, "Raw TCP/UDP/ICMP servers (server.tcp / server.udp / server.icmp)")
 	code(`// Inbound counterparts to net.tcp.connect / net.udp.open. Both bind
 // synchronously (throw on bind error); port:0 picks an ephemeral port.
 // TCP: the handler runs once per accepted socket; conn is the SAME
@@ -916,7 +916,15 @@ const udp = await server.udp.listen({ port: 0 }, (msg, reply) => {
 });
 runtime.log("udp on", udp.address);          // "udp/127.0.0.1:PORT"
 
-await tcp.close(); await udp.close();`)
+await tcp.close(); await udp.close();
+
+// server.icmp.listen — raw ICMP listener (needs root / CAP_NET_RAW).
+// Receives all host ICMP; reply() answers the sender. msg is
+// { bytes, text, address, type, code }.
+const icmp = server.icmp.listen({}, (msg, reply) => {
+  if (msg.type === 8) reply({ type: 0, payload: msg.bytes }); // echo → reply
+});
+await icmp.close();`)
 	note("Same connection-handle shape as the net.tcp/net.udp clients. Both keep the loop alive while bound; `sercon serve` adds a `READY listening on tcp|udp/…` line + graceful shutdown. See MANUAL.md §6.8.")
 
 	header(48, "Packet capture (net.capture)")
