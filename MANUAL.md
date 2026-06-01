@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.33.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.34.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-01</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -858,6 +858,8 @@ Network clients and probes:
 - `net.icmp.open(opts?)` — open a raw ICMP socket (needs privileges).
 - `net.capture.{interfaces, open, openFile, toFile}` — packet capture
   (live + pcap file I/O), pure-Go gopacket.
+- `net.raw.{open, tcp}` — craft & send raw IPv4 packets (TCP flags / UDP /
+  arbitrary IP protocol) and receive replies (needs privileges).
 
 **Raw sockets (`net.tcp` / `net.udp` / `net.icmp`)** are long-lived,
 bidirectional client sockets with a *push / callback* read model — unlike
@@ -992,6 +994,39 @@ kernel, exactly like `tcpdump`.
 The pcap file API round-trips: write raw frames with `toFile`, read them
 back decoded with `openFile`, no privileges required (see
 `examples/scripts/capture-file.ts`).
+
+#### Raw packets (`net.raw`)
+
+Craft and send raw IPv4 packets and receive the replies — for SYN scans,
+RST/port-state inference, custom-TTL probes, and exotic-packet testing.
+**Linux + macOS only; needs root / `CAP_NET_RAW`** (Windows rejects). Two
+bindings:
+
+- `net.raw.open({ iface?, filter?, readBuffer? })` — open a raw packet
+  engine. `send(spec | Uint8Array)` crafts and fires a packet: a structured
+  spec `{ dst, dstPort?, srcPort?, src?, proto?: "tcp"|"udp"|"ip",
+  protocol?, flags?: string[], seq?, ack?, window?, ttl?, ipId?, payload? }`
+  (full source-IP / TTL / IP-ID control; sercon computes checksums), or a
+  `Uint8Array` holding a complete IPv4 packet sent verbatim. `onPacket(cb)`
+  delivers decoded replies (the **same decoded packet object** as
+  `net.capture`); `onClose` / `onError` / `close()` (returns a `Promise`)
+  round out the handle. `iface` defaults to the auto-detected default-route
+  interface — set it explicitly on multi-homed hosts; `filter` is the same
+  tcpdump-like expression as `net.capture`. Default `flags ["SYN"]`,
+  `ttl 64`, `window 65535`, `src` = the egress interface IP, `srcPort` = a
+  random high port.
+- `net.raw.tcp(host, port, opts?)` — one-shot: send a single crafted TCP
+  segment (default a SYN) and resolve with the first reply correlated by the
+  4-tuple, or `null` on timeout. SYN → SYN/ACK = open, RST = closed, null =
+  filtered/no answer. opts `{ flags?, srcPort?, src?, seq?, ttl?, payload?,
+  timeout? (ms, default 2000), iface? }`.
+
+> **Kernel-RST caveat:** because the host kernel does not own the crafted
+> connection, it may answer the peer's SYN/ACK with its own RST. The probe
+> still captures the reply; only the target's connection state is perturbed.
+> To probe silently, add a host firewall rule dropping the outbound RST
+> (`iptables -A OUTPUT -p tcp --tcp-flags RST RST -j DROP`, or the `pf`
+> equivalent). sercon does not modify your firewall.
 
 ### `db`
 
@@ -3940,6 +3975,57 @@ WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT.
 const w = await net.probe.wss("wss://echo.websocket.org"); runtime.log(w.handshakeMs);
 ```
 
+#### net.raw.open
+
+```
+open(opts?: { iface?: string, filter?: string, readBuffer?: number }): Promise<{ link: string; send(spec: object | Uint8Array): Promise<{ bytesSent: number }>; onPacket(cb: (pkt: any) => void): void; onClose(cb: () => void): void; onError(cb: (msg: string) => void): void; close(): Promise<void> }>
+```
+
+Open a raw IPv4 packet engine: net.raw.open({ iface?, filter?, readBuffer? }) → Promise<handle>. Sends crafted IPv4 packets (TCP flags / UDP / arbitrary IP protocol) via an IP_HDRINCL raw socket and receives replies via the capture path. Needs root / CAP_NET_RAW; Linux + macOS only (Windows rejects). iface defaults to the auto-detected default-route interface; filter is a tcpdump-like expression narrowing onPacket. The handle: send(specOrBytes) → Promise<{ bytesSent }>; onPacket(cb) delivers a decoded packet (same shape as net.capture); onClose/onError; close() → Promise<void>. send spec: { dst, dstPort?, srcPort?, src?, proto?: 'tcp'|'udp'|'ip', protocol?, flags?: string[], seq?, ack?, window?, ttl?, ipId?, payload? }; or pass a Uint8Array to send a full IPv4 packet verbatim. Default flags ['SYN'], ttl 64, window 65535, src = egress IP, srcPort = random high.
+
+**Parameters**
+
+- `opts` *({ iface?: string, filter?: string, readBuffer?: number }, optional)* — iface is the capture/egress interface (auto-detected if omitted); filter is a tcpdump-like expression evaluated post-decode; readBuffer sizes the inbound channel (default 64).
+
+**Returns:** A handle: link is the capture link type; send crafts+fires a packet (structured spec or raw bytes) and resolves { bytesSent }; onPacket receives decoded reply packets; close() tears down the send socket and capture.
+
+**Throws:** Rejects if the platform is Windows, the raw socket or capture can't be opened (needs root / CAP_NET_RAW), the egress interface can't be detected, or the filter is malformed. send throws on an invalid spec (missing dst, unknown TCP flag, bad port/ttl) and rejects on a write failure.
+
+```ts
+// needs root / CAP_NET_RAW
+const h = await net.raw.open({ filter: "tcp and src port 443" });
+h.onPacket(p => runtime.log(p.ip.src, p.tcp.flags));
+await h.send({ dst: "93.184.216.34", dstPort: 443, flags: ["SYN"] });
+await new Promise(r => setTimeout(r, 1000));
+await h.close();
+```
+
+#### net.raw.tcp
+
+```
+tcp(host: string, port: number, opts?: { flags?: string[], srcPort?: number, src?: string, seq?: number, ttl?: number, payload?: Uint8Array | string, timeout?: number, iface?: string }): Promise<{ ts: number; link: string; ip: { src: string; dst: string; protocol: string; ttl: number }; tcp: { srcPort: number; dstPort: number; seq: number; ack: number; flags: { syn: boolean; ack: boolean; fin: boolean; rst: boolean; psh: boolean; urg: boolean } }; payload?: Uint8Array; bytes: Uint8Array } | null>
+```
+
+One-shot raw TCP probe: net.raw.tcp(host, port, opts?) → Promise<reply | null>. Sends a single crafted TCP segment (default a SYN) and resolves with the first reply packet correlated by the 4-tuple, or null on timeout. SYN → SYN/ACK means open; RST means closed; null means filtered/no answer. Needs root / CAP_NET_RAW; Linux + macOS only.
+
+**Parameters**
+
+- `host` *(string)* — Destination host or IPv4 address. Required.
+- `port` *(number)* — Destination TCP port. Required.
+- `opts` *({ flags?: string[], srcPort?: number, src?: string, seq?: number, ttl?: number, payload?: Uint8Array | string, timeout?: number, iface?: string }, optional)* — flags are the TCP flags to set (default ['SYN']); src/srcPort/seq/ttl/payload tune the crafted segment; timeout is the reply wait in ms (default 2000); iface overrides the auto-detected capture interface.
+
+**Returns:** The decoded reply packet (same shape as net.capture packets), or null if no correlated reply arrived within the timeout. A SYN/ACK indicates the port is open; an RST indicates closed.
+
+**Throws:** Rejects if the platform is Windows, host is empty, port is out of range, DNS resolution fails, or the raw socket / capture can't be opened (needs root / CAP_NET_RAW). A timeout is not an error — it resolves null.
+
+```ts
+// needs root / CAP_NET_RAW
+const reply = await net.raw.tcp("scanme.nmap.org", 80, { flags: ["SYN"] });
+if (reply && reply.tcp.flags.syn && reply.tcp.flags.ack) runtime.log("open");
+else if (reply && reply.tcp.flags.rst) runtime.log("closed");
+else runtime.log("filtered / no answer");
+```
+
 #### net.tcp.connect
 
 ```
@@ -5394,7 +5480,7 @@ p.writeln("hello");
 
 ---
 
-*This manual covers sercon v0.33.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.34.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

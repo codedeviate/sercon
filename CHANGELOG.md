@@ -8,6 +8,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-06-01
+
+### Added
+- **`net.raw.open({ iface?, filter?, readBuffer? })`.** Raw IPv4 packet
+  engine: craft and send TCP (arbitrary flags), UDP, or arbitrary-IP-protocol
+  packets with full IP-header control (source IP, TTL, IP-ID), and receive
+  decoded replies via a tcpdump-filtered capture. Needs root / CAP_NET_RAW;
+  Linux + macOS only.
+- **`net.raw.tcp(host, port, opts?)`.** One-shot raw TCP probe: send a crafted
+  segment (default SYN) and resolve with the first correlated reply packet
+  (SYN/ACK = open, RST = closed) or null on timeout.
+
 ## [0.33.0] — 2026-06-01
 
 ### Added
