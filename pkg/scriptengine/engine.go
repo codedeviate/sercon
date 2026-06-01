@@ -602,8 +602,8 @@ func reflectConstructor(vm *goja.Runtime, name string, ctor any) (func(goja.Cons
 			results = fn.Call(args)
 		}
 		if n := len(results); n > 0 && ft.Out(n-1) == errType {
-			if e := results[n-1].Interface(); e != nil {
-				panic(vm.NewGoError(e.(error)))
+			if err, _ := results[n-1].Interface().(error); err != nil {
+				panic(vm.NewGoError(err))
 			}
 		}
 		if len(results) == 0 {
