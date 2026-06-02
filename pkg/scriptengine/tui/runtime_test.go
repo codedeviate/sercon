@@ -367,6 +367,24 @@ func TestController_InteractiveFalseInFallback(t *testing.T) {
 	}
 }
 
+func TestController_OnKeyHandlerPanicIsolated(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	got := make(chan tui.KeyEvent, 1)
+	// First handler panics; second must still receive the key.
+	c.AddKeyHandler(func(ev tui.KeyEvent) { panic("boom") })
+	c.AddKeyHandler(func(ev tui.KeyEvent) { got <- ev })
+	sim.InjectKey(tcell.KeyRune, 'z', tcell.ModNone)
+	select {
+	case ev := <-got:
+		if ev.Rune != "z" {
+			t.Fatalf("got %+v, want rune z", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second handler did not receive the key (panic not isolated, or dispatch died)")
+	}
+}
+
 // waitFocus polls FocusedPane until it returns want or the timeout
 // elapses. Used in TTY-mode tests because tview's Application loop
 // drains the screen-event channel and the QueueUpdateDraw channel

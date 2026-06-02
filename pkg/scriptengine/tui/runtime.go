@@ -497,7 +497,14 @@ func (c *Controller) dispatchKey(ev KeyEvent) {
 	}
 	c.keyMu.Unlock()
 	for _, h := range handlers {
-		h(ev)
+		// Isolate each handler: a panic must not propagate to the tview
+		// application goroutine, whose event loop re-panics out of app.Run()
+		// and would crash the whole process. One bad handler must not kill
+		// the dispatcher.
+		func(h func(KeyEvent)) {
+			defer func() { _ = recover() }()
+			h(ev)
+		}(h)
 	}
 }
 
