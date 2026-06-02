@@ -305,9 +305,6 @@ func clamp255(v int) int {
 	return v
 }
 
-// palette256 maps an xterm 256-color index to a hex string. The xterm
-// palette is: 0–15 = the basic + bright 16 colors; 16–231 = 6×6×6 color
-// cube; 232–255 = 24 grayscale shades.
 // StripANSI removes ANSI escape sequences from s and returns plain text.
 // Newlines, carriage returns, and other printable bytes are preserved;
 // only escape sequences (CSI, OSC, lone ESC) are dropped. Shared by the
@@ -365,6 +362,9 @@ func skipEscapeAt(p []byte, i int) int {
 	}
 }
 
+// palette256 maps an xterm 256-color index to a hex string. The xterm
+// palette is: 0–15 = the basic + bright 16 colors; 16–231 = 6×6×6 color
+// cube; 232–255 = 24 grayscale shades.
 func palette256(n int) string {
 	switch {
 	case n < 0 || n > 255:
