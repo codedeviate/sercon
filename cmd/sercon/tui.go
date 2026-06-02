@@ -83,6 +83,11 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 		}
 		ctrl = c
 		setActiveController(c)
+		// Single-press Ctrl-C: route the TUI's Ctrl-C through the engine's
+		// cancel path so the first press ends the Run (and the cleanup below
+		// restores the screen). Without this the script keeps running after
+		// the screen is torn down, requiring a second Ctrl-C.
+		c.SetAbort(func() { eng.AbortRun() })
 		eng.AddRunCleanup(func() {
 			c.Stop()
 			setActiveController(nil)
