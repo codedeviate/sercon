@@ -194,6 +194,41 @@ func TestStartControllerScreen_InitsScreenExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestTUIBinding_OnKeyRegistersAndUnsubscribes(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	withTestStdout(&captured, func() {
+		_, err = eng.Run(context.Background(), "onkey.ts", `
+tui.layout({ rows: [ { name: "log" } ] });
+const off = tui.onKey((k) => { /* never fires in fallback */ });
+if (typeof off !== "function") throw new Error("onKey must return an unsubscribe function");
+off(); // must not throw
+`)
+	})
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+}
+
+func TestTUIBinding_OnKeyBeforeLayoutThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	withTestStdout(&captured, func() {
+		_, err = eng.Run(context.Background(), "onkey-early.ts", `tui.onKey(() => {});`)
+	})
+	if err == nil {
+		t.Fatal("expected onKey-before-layout to throw")
+	}
+}
+
 // TestTUIBinding_AbortRunEndsScript verifies that calling eng.AbortRun()
 // from a goroutine while a TUI script is parked on a long timer ends the
 // Run promptly and returns context.Canceled.

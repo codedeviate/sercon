@@ -130,9 +130,42 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 			goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
 		return obj
 	}
+	onKey := func(call goja.FunctionCall) goja.Value {
+		ctrlMu.Lock()
+		c := ctrl
+		ctrlMu.Unlock()
+		if c == nil {
+			throw("tui.onKey: call tui.layout(...) first")
+		}
+		fnArg := call.Argument(0)
+		handler, ok := goja.AssertFunction(fnArg)
+		if !ok {
+			throw("tui.onKey: argument must be a function")
+		}
+		// Non-TTY: no keyboard. Register nothing; return a no-op unsubscribe
+		// so scripts that run in both modes don't break.
+		if !c.Interactive() {
+			return vm.ToValue(func(goja.FunctionCall) goja.Value { return goja.Undefined() })
+		}
+		// c.AddKeyHandler invokes this Go func on the tview goroutine. We must
+		// NOT block it, so schedule the JS handler with a non-blocking
+		// RunOnLoop (RunOnLoop enqueues and returns; it does not wait). Calling
+		// the captured Callable directly off-loop, or via a blocking call,
+		// would corrupt goja / deadlock against QueueUpdateDraw.
+		id := c.AddKeyHandler(func(ev tui.KeyEvent) {
+			loop.RunOnLoop(func(vm *goja.Runtime) {
+				_, _ = handler(goja.Undefined(), keyEventToValue(vm, ev))
+			})
+		})
+		return vm.ToValue(func(goja.FunctionCall) goja.Value {
+			c.RemoveKeyHandler(id)
+			return goja.Undefined()
+		})
+	}
 	return map[string]any{
 		"layout": layout,
 		"pane":   pane,
+		"onKey":  onKey,
 	}
 }
 
@@ -211,4 +244,16 @@ func isTTY(w io.Writer) bool {
 		return false
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// keyEventToValue builds the JS object passed to onKey handlers / resolved
+// by waitKey: { name, rune, ctrl, alt, shift }.
+func keyEventToValue(vm *goja.Runtime, ev tui.KeyEvent) goja.Value {
+	o := vm.NewObject()
+	_ = o.Set("name", ev.Name)
+	_ = o.Set("rune", ev.Rune)
+	_ = o.Set("ctrl", ev.Ctrl)
+	_ = o.Set("alt", ev.Alt)
+	_ = o.Set("shift", ev.Shift)
+	return o
 }
