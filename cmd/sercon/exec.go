@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -51,6 +52,7 @@ func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 	timeout := optMillis(opts, "timeout", 30*time.Second)
 	cwd := optString(opts, "cwd", "")
 	stdin := optString(opts, "stdin", "")
+	usePTY := optBool(opts, "pty", false)
 
 	argv, err := buildArgv(cmdArg)
 	if err != nil {
@@ -67,43 +69,78 @@ func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 	if env := buildEnv(opts); env != nil {
 		cmd.Env = env
 	}
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
-	}
 
-	var stdoutBuf, stderrBuf bytes.Buffer
 	pane, err := resolvePane(call.Argument(1))
 	if err != nil {
 		return nil, err
 	}
-	if pane != nil {
-		// Stream stdout+stderr live into the pane. The result's
-		// stdout/stderr strings stay empty in that mode (data was
-		// streamed, not captured) — documented in MANUAL.md.
-		w := pane.AsWriter()
-		cmd.Stdout = w
-		cmd.Stderr = w
-	} else {
-		cmd.Stdout = &stdoutBuf
-		cmd.Stderr = &stderrBuf
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	start := time.Now()
+	var runErr error
+
+	if usePTY {
+		// PTY path: the child runs under a pseudo-terminal so it believes it
+		// is a terminal and emits color/progress. startPTY starts the process
+		// (it owns the child's stdio), so we must not set cmd.Std* or Run().
+		master, perr := startPTY(cmd)
+		switch {
+		case errors.Is(perr, errPTYUnsupported):
+			usePTY = false // Windows: fall through to the pipe path below.
+		case perr != nil:
+			return nil, fmt.Errorf("shell: pty: %w", perr)
+		default:
+			// Destination: a pane (renders ANSI) or the capture buffer. A PTY
+			// merges stdout+stderr onto one stream, so stderrBuf stays empty.
+			var dst io.Writer = &stdoutBuf
+			if pane != nil {
+				dst = pane.AsWriter()
+			}
+			if stdin != "" {
+				// stdin is written to the master (the child reads its tty);
+				// the master is not closed, so stdin-EOF is not signalled.
+				go func() { _, _ = io.WriteString(master, stdin) }()
+			}
+			done := make(chan struct{})
+			go func() {
+				_, _ = io.Copy(dst, master) // ends on EOF/EIO when the child exits
+				close(done)
+			}()
+			runErr = cmd.Wait()
+			<-done
+			_ = master.Close()
+		}
 	}
 
-	// Make a timeout/cancel kill the whole subprocess tree promptly rather
-	// than blocking on a grandchild that still holds the output pipes.
-	configureProcessTermination(cmd)
+	if !usePTY {
+		// Pipe path (also the Windows pty fallback): original behaviour.
+		if stdin != "" {
+			cmd.Stdin = strings.NewReader(stdin)
+		}
+		if pane != nil {
+			// Stream stdout+stderr live into the pane. The result's
+			// stdout/stderr strings stay empty in that mode (data was
+			// streamed, not captured) — documented in MANUAL.md.
+			w := pane.AsWriter()
+			cmd.Stdout = w
+			cmd.Stderr = w
+		} else {
+			cmd.Stdout = &stdoutBuf
+			cmd.Stderr = &stderrBuf
+		}
+		configureProcessTermination(cmd)
+		runErr = cmd.Run()
+	}
 
-	start := time.Now()
-	runErr := cmd.Run()
 	durationMs := time.Since(start).Milliseconds()
 
 	exitCode := 0
 	success := true
 	if runErr != nil {
 		// Context deadline / cancel are qualitatively different from a
-		// non-zero exit — the subprocess never got to choose its own
-		// exit code. Surface those as Go errors / JS throws so scripts
-		// can react accordingly. exec.CommandContext wraps the kill in
-		// an *exec.ExitError on some platforms, so check ctx.Err first.
+		// non-zero exit — the subprocess never got to choose its own exit
+		// code. Surface those as Go errors / JS throws. Check ctx first
+		// because CommandContext wraps the kill in an *exec.ExitError.
 		if ctxErr := runCtx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("shell: %w", ctxErr)
 		}

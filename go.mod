@@ -12,6 +12,7 @@ require (
 	github.com/boombuler/barcode v1.1.0
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/coder/websocket v1.8.14
+	github.com/creack/pty v1.1.24
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14

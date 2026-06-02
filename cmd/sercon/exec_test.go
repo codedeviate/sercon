@@ -273,3 +273,68 @@ runtime.assert.equal(r.exitCode, 0);
 		t.Errorf("expected 100 lines (50 out + 50 err); got %d. Output:\n%s", lines, got)
 	}
 }
+
+func TestExecShell_PTY_ChildSeesTTY(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pty is unix-only; Windows falls back to pipes")
+	}
+	out, err := runShell(t, shellCall{
+		cmd:  "test -t 1 && echo TTY || echo PIPE",
+		opts: map[string]any{"pty": true},
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(out["stdout"].(string), "TTY") {
+		t.Fatalf("pty: expected child to see a tty; stdout=%q", out["stdout"])
+	}
+	if out["stderr"].(string) != "" {
+		t.Fatalf("pty: stderr should be empty (merged onto the pty); got %q", out["stderr"])
+	}
+}
+
+func TestExecShell_NoPTY_ChildSeesPipe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("assumes /bin/sh")
+	}
+	out, err := runShell(t, shellCall{cmd: "test -t 1 && echo TTY || echo PIPE"})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(out["stdout"].(string), "PIPE") {
+		t.Fatalf("no-pty: expected child to see a pipe; stdout=%q", out["stdout"])
+	}
+}
+
+func TestExecShell_PTY_NonZeroExit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pty unix-only")
+	}
+	out, err := runShell(t, shellCall{
+		cmd:  "exit 3",
+		opts: map[string]any{"pty": true},
+	})
+	if err != nil {
+		t.Fatalf("non-zero exit must not error: %v", err)
+	}
+	if out["exitCode"].(int) != 3 || out["success"].(bool) {
+		t.Fatalf("pty: expected exitCode 3 / success false, got %v / %v", out["exitCode"], out["success"])
+	}
+}
+
+func TestExecShell_PTY_Timeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pty unix-only")
+	}
+	start := time.Now()
+	_, err := runShell(t, shellCall{
+		cmd:  "sleep 60",
+		opts: map[string]any{"pty": true, "timeout": int64(200)},
+	})
+	if err == nil {
+		t.Fatal("pty: expected a timeout error")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("pty: timeout did not kill the child promptly: %s", elapsed)
+	}
+}
