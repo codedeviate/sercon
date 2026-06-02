@@ -333,6 +333,35 @@ func TestController_WaitKeyFIFO(t *testing.T) {
 	}
 }
 
+// A waiter parked in WaitKey must unblock with (zero, false) when the
+// controller stops — this is the crux of the teardown path (a pending
+// tui.waitKey() rejecting cleanly when the Run ends / Ctrl-C aborts).
+func TestController_WaitKeyUnblocksOnStop(t *testing.T) {
+	c, _ := newTUIForKeys(t)
+	type res struct {
+		ev tui.KeyEvent
+		ok bool
+	}
+	done := make(chan res, 1)
+	go func() {
+		ev, ok := c.WaitKey()
+		done <- res{ev, ok}
+	}()
+	time.Sleep(50 * time.Millisecond) // let WaitKey enqueue
+	c.Stop()
+	select {
+	case r := <-done:
+		if r.ok {
+			t.Fatalf("WaitKey should return ok=false on stop, got ok=true (%+v)", r.ev)
+		}
+		if r.ev != (tui.KeyEvent{}) {
+			t.Fatalf("WaitKey should return a zero KeyEvent on stop, got %+v", r.ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitKey did not unblock after Stop")
+	}
+}
+
 func TestController_CtrlCInvokesAbortAndConsumes(t *testing.T) {
 	c, sim := newTUIForKeys(t)
 	defer c.Stop()
