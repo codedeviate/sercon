@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
-## [Unreleased]
+## [0.35.0] — 2026-06-02
 
 ### Added
 - `services.exec.shell` accepts `{ pty: true }` (Unix) to run the command
@@ -30,6 +30,11 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 ### Fixed
 - TUI `Ctrl-C` now aborts the script on a single press; previously the
   first press only tore down the screen and a second was needed to exit.
+- Terminal detection now uses `term.IsTerminal` instead of an
+  `os.ModeCharDevice` check, so a non-terminal character device such as
+  `/dev/null` correctly takes the non-TTY fallback path. Previously a TUI
+  script with stdout redirected to `/dev/null` was misclassified as
+  interactive and segfaulted in the tcell mouse path.
 
 ## [0.34.0] — 2026-06-01
 

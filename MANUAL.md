@@ -2,8 +2,8 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.34.0</div> <!-- x-release-please-version -->
-<div class="date">2026-06-01</div>
+<div class="version">Version 0.35.0</div> <!-- x-release-please-version -->
+<div class="date">2026-06-02</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
 License · MIT
@@ -5547,7 +5547,7 @@ await tui.waitKey();
 
 ---
 
-*This manual covers sercon v0.34.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.35.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
