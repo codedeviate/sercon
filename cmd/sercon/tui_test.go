@@ -229,6 +229,41 @@ func TestTUIBinding_OnKeyBeforeLayoutThrows(t *testing.T) {
 	}
 }
 
+func TestTUIBinding_WaitKeyRejectsInFallback(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	withTestStdout(&captured, func() {
+		_, err = eng.Run(context.Background(), "waitkey.ts", `
+tui.layout({ rows: [ { name: "log" } ] });
+let threw = false;
+try { await tui.waitKey(); } catch (e) { threw = true; }
+if (!threw) throw new Error("waitKey should reject in non-TTY mode");
+`)
+	})
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+}
+
+func TestTUIBinding_WaitKeyBeforeLayoutThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	withTestStdout(&captured, func() {
+		_, err = eng.Run(context.Background(), "waitkey-early.ts", `await tui.waitKey();`)
+	})
+	if err == nil {
+		t.Fatal("expected waitKey-before-layout to reject/throw")
+	}
+}
+
 // TestTUIBinding_AbortRunEndsScript verifies that calling eng.AbortRun()
 // from a goroutine while a TUI script is parked on a long timer ends the
 // Run promptly and returns context.Canceled.

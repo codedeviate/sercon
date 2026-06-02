@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -162,10 +163,33 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 			return goja.Undefined()
 		})
 	}
+	waitKey := scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		ctrlMu.Lock()
+		c := ctrl
+		ctrlMu.Unlock()
+		if c == nil {
+			return nil, errors.New("tui.waitKey: call tui.layout(...) first")
+		}
+		if !c.Interactive() {
+			return nil, errors.New("tui.waitKey: no interactive terminal")
+		}
+		ev, ok := c.WaitKey()
+		if !ok {
+			return nil, errors.New("tui.waitKey: tui closed")
+		}
+		return map[string]any{
+			"name":  ev.Name,
+			"rune":  ev.Rune,
+			"ctrl":  ev.Ctrl,
+			"alt":   ev.Alt,
+			"shift": ev.Shift,
+		}, nil
+	})
 	return map[string]any{
-		"layout": layout,
-		"pane":   pane,
-		"onKey":  onKey,
+		"layout":  layout,
+		"pane":    pane,
+		"onKey":   onKey,
+		"waitKey": waitKey,
 	}
 }
 
