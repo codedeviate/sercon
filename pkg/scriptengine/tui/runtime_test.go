@@ -514,8 +514,9 @@ func TestController_ColorOnRendersColor(t *testing.T) {
 	if !ok {
 		t.Fatalf("rune Z not found on screen:\n%s", screenText(sim))
 	}
-	if fg == tcell.ColorDefault {
-		t.Fatalf("color on: Z should have a non-default foreground, got default")
+	darkred := tcell.GetColor("darkred")
+	if fg != darkred {
+		t.Fatalf("color on: Z should be darkred (SGR 31 rendered), got %v", fg)
 	}
 }
 
