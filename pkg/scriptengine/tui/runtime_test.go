@@ -432,3 +432,117 @@ func waitFocus(t *testing.T, c *tui.Controller, want string, timeout time.Durati
 	}
 	t.Fatalf("focus didn't reach %q within %s; last seen %q", want, timeout, got)
 }
+
+// fgAtRune returns the foreground color of the first screen cell whose
+// primary rune is r, and whether such a cell was found.
+func fgAtRune(sim tcell.SimulationScreen, r rune) (tcell.Color, bool) {
+	cells, w, h := sim.GetContents()
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			rs := cells[y*w+x].Runes
+			if len(rs) > 0 && rs[0] == r {
+				fg, _, _ := cells[y*w+x].Style.Decompose()
+				return fg, true
+			}
+		}
+	}
+	return tcell.ColorDefault, false
+}
+
+func startSingleLeaf(t *testing.T, leaf map[string]any, w, h int) (*tui.Controller, tcell.SimulationScreen) {
+	t.Helper()
+	root, err := tui.ParseLayout(leaf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	// SetSize must come after StartScreen/WaitReady: tview's SetScreen calls
+	// screen.Init() internally which resets the simulation screen to 80×25.
+	// Calling SetSize afterwards injects a resize event that tview processes
+	// on its next draw cycle.
+	sim.SetSize(w, h)
+	c.Sync()
+	return c, sim
+}
+
+func TestController_WrapOffClipsLongLine(t *testing.T) {
+	c, sim := startSingleLeaf(t, map[string]any{"name": "log", "wrap": "off"}, 40, 10)
+	defer c.Stop()
+	c.Pane("log").Writeln(strings.Repeat("X", 60) + "ZEND")
+	c.Sync()
+	time.Sleep(100 * time.Millisecond)
+	c.Sync()
+	if strings.Contains(screenText(sim), "ZEND") {
+		t.Fatalf("wrap:off should clip the long line; ZEND was visible:\n%s", screenText(sim))
+	}
+}
+
+func TestController_WrapCharShowsWrappedTail(t *testing.T) {
+	c, sim := startSingleLeaf(t, map[string]any{"name": "log", "wrap": "char"}, 40, 10)
+	defer c.Stop()
+	c.Pane("log").Writeln(strings.Repeat("X", 60) + "ZEND")
+	c.Sync()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(screenText(sim), "ZEND") {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("wrap:char should wrap the tail into view; ZEND not visible:\n%s", screenText(sim))
+}
+
+func TestController_ColorOnRendersColor(t *testing.T) {
+	c, sim := startSingleLeaf(t, map[string]any{"name": "log"}, 40, 10)
+	defer c.Stop()
+	c.Pane("log").Writeln("\x1b[31mZ\x1b[0m")
+	c.Sync()
+	time.Sleep(100 * time.Millisecond)
+	c.Sync()
+	fg, ok := fgAtRune(sim, 'Z')
+	if !ok {
+		t.Fatalf("rune Z not found on screen:\n%s", screenText(sim))
+	}
+	if fg == tcell.ColorDefault {
+		t.Fatalf("color on: Z should have a non-default foreground, got default")
+	}
+}
+
+func TestController_ColorOffStripsToPlain(t *testing.T) {
+	c, sim := startSingleLeaf(t, map[string]any{"name": "log", "color": false}, 40, 10)
+	defer c.Stop()
+	c.Pane("log").Writeln("\x1b[31mQ\x1b[0m")
+	c.Sync()
+	time.Sleep(100 * time.Millisecond)
+	c.Sync()
+	txt := screenText(sim)
+	if !strings.Contains(txt, "Q") {
+		t.Fatalf("color off: expected plain Q on screen:\n%s", txt)
+	}
+	if strings.Contains(txt, "[31m") {
+		t.Fatalf("color off: raw tag leaked to screen:\n%s", txt)
+	}
+	fg, ok := fgAtRune(sim, 'Q')
+	if !ok {
+		t.Fatalf("rune Q not found:\n%s", txt)
+	}
+	// tview's TextView always renders text with an explicit style (white fg on
+	// black bg in its default theme), not tcell.ColorDefault. The invariant for
+	// color:false is that ANSI SGR 31 (red) is NOT applied — Q's fg should be
+	// the plain-text default (white), not darkred.
+	darkred := tcell.GetColor("darkred")
+	if fg == darkred {
+		t.Fatalf("color off: Q fg is darkred — ANSI SGR 31 was applied when it should have been stripped (got %v)", fg)
+	}
+}
