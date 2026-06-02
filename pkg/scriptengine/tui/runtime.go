@@ -83,6 +83,10 @@ type paneState struct {
 
 	// Shared:
 	ansi *ANSITranslator
+
+	// color reports whether subprocess ANSI is rendered (true) or stripped
+	// to plain text (false). Set from the leaf's color option at build time.
+	color bool
 }
 
 // NewController builds a controller from a parsed layout. It does not
@@ -102,11 +106,13 @@ func NewController(root LayoutNode) (*Controller, error) {
 	for _, n := range names {
 		c.panes[n] = &paneState{name: n, ansi: NewANSITranslator()}
 	}
-	// Seed titles from the layout.
+	// Seed per-leaf options from the layout.
 	root.WalkLeaves(func(leaf LayoutNode) {
+		ps := c.panes[leaf.Name]
 		if leaf.Title != "" {
-			c.panes[leaf.Name].titleInit = leaf.Title
+			ps.titleInit = leaf.Title
 		}
+		ps.color = leaf.Color == nil || *leaf.Color
 	})
 	return c, nil
 }
@@ -300,9 +306,14 @@ func (h paneHandle) write(b []byte) {
 		if h.c.stopped.Load() {
 			return
 		}
-		tagged := h.ps.ansi.Translate(string(b))
+		var rendered string
+		if h.ps.color {
+			rendered = h.ps.ansi.Translate(string(b))
+		} else {
+			rendered = StripANSI(string(b))
+		}
 		tv := h.ps.textView
-		h.c.app.QueueUpdateDraw(func() { _, _ = tv.Write([]byte(tagged)) })
+		h.c.app.QueueUpdateDraw(func() { _, _ = tv.Write([]byte(rendered)) })
 	case modeFallback:
 		_, _ = h.ps.fallback.Write(b)
 	}
@@ -529,16 +540,35 @@ func toKeyEvent(ev *tcell.EventKey) KeyEvent {
 	return ke
 }
 
+// wrapFlags maps a leaf's wrap mode to tview's SetWrap/SetWordWrap flags.
+// "" and "char" char-wrap; "word" wraps at word boundaries; "off" disables.
+func wrapFlags(mode string) (wrap, word bool) {
+	switch mode {
+	case "off":
+		return false, false
+	case "word":
+		return true, true
+	default: // "" or "char"
+		return true, false
+	}
+}
+
 // buildTextViews populates each leaf's TextView in panes. Called by
 // StartScreen before buildFlex stitches them into the Flex tree.
 func buildTextViews(node LayoutNode, panes map[string]*paneState, app *tview.Application) {
 	if node.IsLeaf() {
 		ps := panes[node.Name]
+		wrap, word := wrapFlags(node.Wrap)
+		// colorOn must match paneState.color (set the same way in
+		// NewController): build-time SetDynamicColors and the write-path
+		// translate-vs-strip branch have to agree, or a color:false pane
+		// would render tview tags literally.
+		colorOn := node.Color == nil || *node.Color
 		tv := tview.NewTextView().
-			SetDynamicColors(true).
+			SetDynamicColors(colorOn).
 			SetScrollable(true).
-			SetWrap(true).
-			SetWordWrap(false)
+			SetWrap(wrap).
+			SetWordWrap(word)
 		tv.SetBorder(true).SetTitle(" " + paneTitle(node) + " ").SetBorderColor(tcell.ColorGray)
 		// Trigger a redraw whenever text is appended. Combined with
 		// ScrollToEnd's trackEnd flag (below) the view follows the tail.

@@ -111,6 +111,23 @@ func TestANSI_MalformedEscape(t *testing.T) {
 	}
 }
 
+func TestStripANSI(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"plain", "plain"},
+		{"\x1b[31mred\x1b[0m", "red"},
+		{"\x1b[1;32mx\x1b[0m", "x"},
+		{"a\x1b[Kb", "ab"},
+		{"\x1b]0;title\x07tail", "tail"},
+		{"keep\nnewline", "keep\nnewline"},
+		{"trail\x1b", "trail"},
+	}
+	for _, c := range cases {
+		if got := tui.StripANSI(c.in); got != c.want {
+			t.Errorf("StripANSI(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // itoa is a tiny helper to avoid pulling in strconv in test code; the
 // values are all 2-3 digit ANSI codes.
 func itoa(n int) string {

@@ -1172,6 +1172,12 @@ pinned at the top. Pass `{ mouse: true }` at the layout root to enable
 mouse-wheel scrolling (this disables the terminal's native click-drag
 selection; hold Shift/Option to select while mouse mode is on).
 
+Per-leaf `{ wrap: "char" | "word" | "off" }` controls line wrapping
+(default `"char"`; `"off"` lets long lines scroll horizontally), and
+`{ color: false }` strips a pane's ANSI to plain text instead of rendering
+it. Both affect TTY rendering only — the non-TTY fallback always emits
+plain prefixed lines.
+
 `await tui.waitKey()` resolves with the next key
 (`{ name, rune, ctrl, alt, shift }`); `tui.onKey(handler)` registers a
 persistent per-keypress callback and returns an unsubscribe function. Both
@@ -5458,7 +5464,7 @@ Declare the pane layout for this Run. Tree nodes: { name, title?, weight?, autos
 
 **Parameters**
 
-- `tree` *({ name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number })* — The root layout node. Exactly one of name / rows / cols must be set per node. A leaf (name) becomes a bordered pane addressable via tui.pane(name); name must be a non-empty string and unique across the whole tree. rows stacks children top-to-bottom; cols places them side-by-side; both arrays must be non-empty. weight (positive integer, default 1) sets the child's proportional share of its parent's space. title (string, leaf only) seeds the pane's border caption. Any other key is rejected. The tree is realised over the full terminal as a tview Flex when stdout is a TTY; otherwise it falls back to prefixed-line output. autoscroll (boolean, leaf only, default true) controls whether the pane follows the tail as new lines arrive; set false to keep it pinned at the top. mouse (boolean, root only, default false) enables mouse-wheel scrolling of panes — at the cost of the terminal's native click-drag text selection (use Shift/Option+drag to select while mouse mode is on).
+- `tree` *({ name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number })* — The root layout node. Exactly one of name / rows / cols must be set per node. A leaf (name) becomes a bordered pane addressable via tui.pane(name); name must be a non-empty string and unique across the whole tree. rows stacks children top-to-bottom; cols places them side-by-side; both arrays must be non-empty. weight (positive integer, default 1) sets the child's proportional share of its parent's space. title (string, leaf only) seeds the pane's border caption. Any other key is rejected. The tree is realised over the full terminal as a tview Flex when stdout is a TTY; otherwise it falls back to prefixed-line output. autoscroll (boolean, leaf only, default true) controls whether the pane follows the tail as new lines arrive; set false to keep it pinned at the top. mouse (boolean, root only, default false) enables mouse-wheel scrolling of panes — at the cost of the terminal's native click-drag text selection (use Shift/Option+drag to select while mouse mode is on). wrap (string, leaf only, default "char") sets line wrapping: "char" wraps mid-word, "word" wraps at word boundaries, "off" disables wrapping (long lines scroll horizontally). color (boolean, leaf only, default true) renders subprocess ANSI as pane colors; set false to strip ANSI and show plain text. wrap and color affect TTY rendering only (the non-TTY fallback always emits plain prefixed lines).
 
 **Returns:** void — installs the layout and brings up the UI (TTY) or the fallback line writer (non-TTY); the controller is torn down automatically at Run end.
 
