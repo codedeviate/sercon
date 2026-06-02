@@ -21,7 +21,7 @@ import (
 //
 // cmd MUST have been created with exec.CommandContext: startPTY sets
 // cmd.Cancel, which Go's exec package only permits on a context-backed Cmd.
-func startPTY(cmd *exec.Cmd) (io.ReadCloser, error) {
+func startPTY(cmd *exec.Cmd) (io.ReadWriteCloser, error) {
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)

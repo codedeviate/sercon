@@ -99,11 +99,7 @@ func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, err
 			if stdin != "" {
 				// stdin is written to the master (the child reads its tty);
 				// the master is not closed, so stdin-EOF is not signalled.
-				// The underlying *os.File implements io.Writer but the
-				// interface is declared as io.ReadCloser, so assert here.
-				if mw, ok := master.(io.Writer); ok {
-					go func() { _, _ = io.WriteString(mw, stdin) }()
-				}
+				go func() { _, _ = io.WriteString(master, stdin) }()
 			}
 			done := make(chan struct{})
 			go func() {

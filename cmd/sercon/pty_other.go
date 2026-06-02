@@ -8,6 +8,6 @@ import (
 )
 
 // startPTY is unsupported on Windows; execShell falls back to pipes.
-func startPTY(_ *exec.Cmd) (io.ReadCloser, error) {
+func startPTY(_ *exec.Cmd) (io.ReadWriteCloser, error) {
 	return nil, errPTYUnsupported
 }
