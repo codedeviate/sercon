@@ -32,6 +32,9 @@ type LayoutNode struct {
 	Rows   []LayoutNode
 	Cols   []LayoutNode
 	Weight int
+	// AutoScroll, leaf only. nil = default (follow the tail); explicit
+	// false opts the pane out so it stays pinned at the top.
+	AutoScroll *bool
 }
 
 // IsLeaf reports whether this node is a named pane.
@@ -89,7 +92,7 @@ func ParseLayout(v any) (LayoutNode, error) {
 }
 
 var allowedKeys = map[string]bool{
-	"name": true, "title": true, "rows": true, "cols": true, "weight": true,
+	"name": true, "title": true, "rows": true, "cols": true, "weight": true, "autoscroll": true,
 }
 
 func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
@@ -143,11 +146,23 @@ func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
 			}
 			title = ts
 		}
-		return LayoutNode{Name: name, Title: title, Weight: weight}, nil
+		var autoScroll *bool
+		if av, ok := m["autoscroll"]; ok {
+			ab, ok := av.(bool)
+			if !ok {
+				return LayoutNode{}, fmt.Errorf("%s: autoscroll must be a boolean, got %T", pathLabel(path), av)
+			}
+			autoScroll = &ab
+		}
+		return LayoutNode{Name: name, Title: title, Weight: weight, AutoScroll: autoScroll}, nil
 	}
 
 	if _, hasTitle := m["title"]; hasTitle {
 		return LayoutNode{}, fmt.Errorf("%s: title is only allowed on leaf (name) nodes", pathLabel(path))
+	}
+
+	if _, hasAutoScroll := m["autoscroll"]; hasAutoScroll {
+		return LayoutNode{}, fmt.Errorf("%s: autoscroll is only allowed on leaf (name) nodes", pathLabel(path))
 	}
 
 	key := "rows"
