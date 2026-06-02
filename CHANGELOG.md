@@ -9,6 +9,10 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 ## [Unreleased]
 
 ### Added
+- `services.exec.shell` accepts `{ pty: true }` (Unix) to run the command
+  under a pseudo-terminal so it emits color/progress — rendered into a pane
+  or captured into `stdout`. The general alternative to per-tool force-color
+  flags. Windows falls back to the pipe path (no color).
 - Per-pane `tui` layout options: `wrap` (`"char"` | `"word"` | `"off"`,
   default `"char"`) controls line wrapping, and `color` (boolean, default
   true) strips a pane's ANSI to plain text when set to `false`. Both affect

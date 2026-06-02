@@ -1152,6 +1152,14 @@ was streamed, not captured). ANSI colors are translated to tview color
 tags and rendered natively; `\r` without `\n` overwrites the current
 line so progress spinners render cleanly.
 
+Pass `{ pty: true }` to run the command under a pseudo-terminal (Unix only).
+The child then believes it is a terminal and emits color, progress bars, and
+spinners, which a `pane` renders (or, without a pane, are captured into
+`stdout`). This is the general alternative to per-tool force-color flags
+(`FORCE_COLOR=1`, `--color=always`): it works for any tool that gates output
+on a TTY. A pty merges stdout and stderr onto one stream, so `stderr` is
+empty in pty mode. On Windows `pty` is ignored (pipe fallback, no color).
+
 #### Keybindings (TTY mode only)
 
 | Key                  | Action                          |
@@ -4523,7 +4531,7 @@ runtime.log(r.status, r.backend);
 #### services.exec.shell
 
 ```
-shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane }): Promise<Record<string, unknown>>
+shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<Record<string, unknown>>
 ```
 
 Run a subprocess and wait for it to exit. String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Non-zero exits resolve normally; spawn failures and timeouts throw.
@@ -4531,7 +4539,7 @@ Run a subprocess and wait for it to exit. String cmd → /bin/sh -c (or `cmd /C`
 **Parameters**
 
 - `cmd` *(string | string[])* — A string is passed verbatim to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell, so use this form when arguments contain whitespace or shell metacharacters you don't want re-interpreted.
-- `opts` *({ timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane }, optional)* — timeout in ms (default 30000); on expiry the process tree is killed and the call throws. cwd sets the working directory. stdin is fed to the process's standard input. env entries are merged on top of the inherited environment (they do not replace it). pane (a tui.pane name or Pane handle) streams stdout+stderr live into a TUI pane — in that mode the result's stdout/stderr strings stay empty.
+- `opts` *({ timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }, optional)* — timeout in ms (default 30000); on expiry the process tree is killed and the call throws. cwd sets the working directory. stdin is fed to the process's standard input. env entries are merged on top of the inherited environment (they do not replace it). pane (a tui.pane name or Pane handle) streams stdout+stderr live into a TUI pane — in that mode the result's stdout/stderr strings stay empty. pty (default false) runs the command under a pseudo-terminal so it believes it is a terminal and emits color/progress; with a pane the output is rendered there, without a pane it is captured into stdout (stderr stays empty since a pty merges both streams). Unix only — on Windows pty is ignored and the normal pipe path is used.
 
 **Returns:** Promise<{ stdout: string, stderr: string, exitCode: number, success: boolean, durationMs: number }> — stdout/stderr are captured (empty when streamed to a pane); exitCode is 0 on success; success is exitCode === 0; durationMs is wall-clock spawn-to-exit time.
 
