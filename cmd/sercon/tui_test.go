@@ -239,9 +239,11 @@ func TestTUIBinding_WaitKeyRejectsInFallback(t *testing.T) {
 	withTestStdout(&captured, func() {
 		_, err = eng.Run(context.Background(), "waitkey.ts", `
 tui.layout({ rows: [ { name: "log" } ] });
-let threw = false;
-try { await tui.waitKey(); } catch (e) { threw = true; }
-if (!threw) throw new Error("waitKey should reject in non-TTY mode");
+let caught = "";
+try { await tui.waitKey(); } catch (e) { caught = String(e); }
+if (!caught.includes("no interactive terminal")) {
+    throw new Error("expected 'no interactive terminal', got: " + caught);
+}
 `)
 	})
 	if err != nil {
@@ -261,6 +263,9 @@ func TestTUIBinding_WaitKeyBeforeLayoutThrows(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected waitKey-before-layout to reject/throw")
+	}
+	if !strings.Contains(err.Error(), "call tui.layout") {
+		t.Fatalf("expected 'call tui.layout' in error, got: %v", err)
 	}
 }
 
