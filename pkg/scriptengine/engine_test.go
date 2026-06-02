@@ -1199,3 +1199,32 @@ func TestRun_SyncModuleLoadErrorFullStack(t *testing.T) {
 		t.Errorf("expected full stack naming both boom.ts and main.ts, got %q", err.Error())
 	}
 }
+
+func TestAbortRun_CancelsInFlightRun(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := eng.RegisterFactory("triggerAbort", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
+		return func(goja.FunctionCall) goja.Value {
+			go func() {
+				time.Sleep(50 * time.Millisecond)
+				eng.AbortRun()
+			}()
+			return goja.Undefined()
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	src := `triggerAbort(); await new Promise(r => setTimeout(r, 3600_000));`
+	start := time.Now()
+	_, err := eng.Run(context.Background(), "abort.ts", src)
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("AbortRun did not cut the run short: took %s", elapsed)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestAbortRun_NoopWhenIdle(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	eng.AbortRun() // must not panic when no Run is active
+}

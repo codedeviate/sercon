@@ -51,6 +51,15 @@ type Controller struct {
 	// to QueueUpdateDraw are silently dropped instead of hanging on the
 	// dead event loop's done-channel wait.
 	stopped atomic.Bool
+
+	// Key dispatch (TTY mode). onKey runs on the tview application
+	// goroutine; handlers must not block it, so the binding's handler
+	// closures schedule onto the event loop via a non-blocking RunOnLoop.
+	keyMu       sync.Mutex
+	keyHandlers map[int]func(KeyEvent)
+	nextKeyID   int
+	keyWaiters  []chan KeyEvent
+	abortFn     func()
 }
 
 type controllerMode int
@@ -147,6 +156,10 @@ func (c *Controller) StartScreen(screen tcell.Screen) error {
 	app.SetRoot(rootFlex, true)
 	app.SetFocus(c.panes[c.order[0]].textView)
 	app.SetInputCapture(c.onKey)
+
+	if c.root.Mouse {
+		app.EnableMouse(true)
+	}
 
 	go func() {
 		defer close(c.stopCh)
@@ -345,23 +358,36 @@ func (w *paneIOWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// onKey handles the controller's keybindings.
+// onKey handles the controller's keybindings. Ctrl-C aborts the Run via
+// the abort callback (single press) and is never delivered to JS. Every
+// other key drives built-in nav/scroll AND is dispatched to JS handlers /
+// waiters (the "coexist" model). Tab/Shift-Tab additionally cycle focus.
 func (c *Controller) onKey(ev *tcell.EventKey) *tcell.EventKey {
 	switch ev.Key() {
+	case tcell.KeyCtrlC:
+		c.keyMu.Lock()
+		abort := c.abortFn
+		c.keyMu.Unlock()
+		if abort != nil {
+			abort()
+			return nil // consume; teardown happens via the Run-cleanup path
+		}
+		// No abort wired (defensive / non-engine caller): preserve the old
+		// behaviour so tview's default Ctrl-C still stops the app.
+		return ev
 	case tcell.KeyTab:
 		c.focused = (c.focused + 1) % len(c.order)
 		c.applyFocus()
+		c.dispatchKey(toKeyEvent(ev))
 		return nil
 	case tcell.KeyBacktab:
 		c.focused = (c.focused - 1 + len(c.order)) % len(c.order)
 		c.applyFocus()
+		c.dispatchKey(toKeyEvent(ev))
 		return nil
-	case tcell.KeyCtrlC:
-		// Let tcell's default handler do its thing (raise SIGINT-style
-		// quit). tview converts Ctrl-C into app.Stop, which is what we
-		// want — the engine's watcher goroutine sees ctx.Done().
-		return ev
 	}
+	// All other keys: deliver to JS and let tview handle nav/scroll.
+	c.dispatchKey(toKeyEvent(ev))
 	return ev
 }
 
@@ -381,7 +407,126 @@ func (c *Controller) refreshStatus() {
 		return
 	}
 	keys := "[gray]Tab[-] focus  [gray]PgUp/PgDn[-] scroll  [gray]Home/End[-] jump  [gray]Ctrl-C[-] quit"
+	if c.root.Mouse {
+		keys += "  [gray]mouse[-] on"
+	}
 	c.status.SetText(fmt.Sprintf(" [yellow]%s[-]   %s", c.order[c.focused], keys))
+}
+
+// KeyEvent is the descriptor delivered to tui.onKey handlers and resolved
+// by tui.waitKey. Name is the tcell key name ("Enter", "Up", "Tab",
+// "Ctrl-A", "F1", ...) or "Rune" for a printable character, in which case
+// Rune holds that character. Ctrl/Alt/Shift reflect the event modifiers.
+type KeyEvent struct {
+	Name  string
+	Rune  string
+	Ctrl  bool
+	Alt   bool
+	Shift bool
+}
+
+// SetAbort installs the callback invoked when the user presses Ctrl-C in
+// TTY mode. The binding wires this to Engine.AbortRun so a single press
+// cancels the Run. Ctrl-C is never delivered to key handlers/waiters.
+func (c *Controller) SetAbort(fn func()) {
+	c.keyMu.Lock()
+	c.abortFn = fn
+	c.keyMu.Unlock()
+}
+
+// Interactive reports whether keyboard input is available (TTY mode).
+func (c *Controller) Interactive() bool { return c.mode == modeTUI }
+
+// AddKeyHandler registers fn to be called for every key (except Ctrl-C).
+// Returns an id for RemoveKeyHandler. fn is called from the tview
+// application goroutine and MUST NOT block it.
+func (c *Controller) AddKeyHandler(fn func(KeyEvent)) int {
+	c.keyMu.Lock()
+	defer c.keyMu.Unlock()
+	if c.keyHandlers == nil {
+		c.keyHandlers = map[int]func(KeyEvent){}
+	}
+	c.nextKeyID++
+	id := c.nextKeyID
+	c.keyHandlers[id] = fn
+	return id
+}
+
+// RemoveKeyHandler unregisters a handler previously added via AddKeyHandler.
+func (c *Controller) RemoveKeyHandler(id int) {
+	c.keyMu.Lock()
+	delete(c.keyHandlers, id)
+	c.keyMu.Unlock()
+}
+
+// WaitKey blocks until the next key arrives (returning it, true) or the
+// controller stops (returning a zero KeyEvent, false). FIFO across
+// concurrent callers: one keypress resolves the oldest waiter. Intended to
+// be called from a worker goroutine (e.g. PromisifyAsync), never the loop.
+func (c *Controller) WaitKey() (KeyEvent, bool) {
+	ch := make(chan KeyEvent, 1)
+	c.keyMu.Lock()
+	c.keyWaiters = append(c.keyWaiters, ch)
+	c.keyMu.Unlock()
+	select {
+	case ev := <-ch:
+		return ev, true
+	case <-c.stopCh:
+		return KeyEvent{}, false
+	}
+}
+
+// dispatchKey fans a key out to the oldest pending waiter (if any) and to
+// every registered handler. Called from the tview goroutine (onKey). It
+// must not block: the waiter channel is buffered (non-blocking send) and
+// handlers are documented to return promptly (the binding's closures only
+// enqueue a non-blocking RunOnLoop).
+func (c *Controller) dispatchKey(ev KeyEvent) {
+	c.keyMu.Lock()
+	if len(c.keyWaiters) > 0 {
+		w := c.keyWaiters[0]
+		c.keyWaiters = c.keyWaiters[1:]
+		select {
+		case w <- ev:
+		default:
+		}
+	}
+	handlers := make([]func(KeyEvent), 0, len(c.keyHandlers))
+	for _, h := range c.keyHandlers {
+		handlers = append(handlers, h)
+	}
+	c.keyMu.Unlock()
+	for _, h := range handlers {
+		// Isolate each handler: a panic must not propagate to the tview
+		// application goroutine, whose event loop re-panics out of app.Run()
+		// and would crash the whole process. One bad handler must not kill
+		// the dispatcher.
+		func(h func(KeyEvent)) {
+			defer func() { _ = recover() }()
+			h(ev)
+		}(h)
+	}
+}
+
+// toKeyEvent converts a tcell key event to a KeyEvent descriptor.
+func toKeyEvent(ev *tcell.EventKey) KeyEvent {
+	mod := ev.Modifiers()
+	ke := KeyEvent{
+		Ctrl:  mod&tcell.ModCtrl != 0,
+		Alt:   mod&tcell.ModAlt != 0,
+		Shift: mod&tcell.ModShift != 0,
+	}
+	if ev.Key() == tcell.KeyRune {
+		ke.Name = "Rune"
+		ke.Rune = string(ev.Rune())
+		return ke
+	}
+	if name, ok := tcell.KeyNames[ev.Key()]; ok {
+		ke.Name = name
+	} else {
+		ke.Name = fmt.Sprintf("Key(%d)", int(ev.Key()))
+	}
+	return ke
 }
 
 // buildTextViews populates each leaf's TextView in panes. Called by
@@ -395,8 +540,15 @@ func buildTextViews(node LayoutNode, panes map[string]*paneState, app *tview.App
 			SetWrap(true).
 			SetWordWrap(false)
 		tv.SetBorder(true).SetTitle(" " + paneTitle(node) + " ").SetBorderColor(tcell.ColorGray)
-		// Trigger a redraw whenever text is appended so the view auto-scrolls.
+		// Trigger a redraw whenever text is appended. Combined with
+		// ScrollToEnd's trackEnd flag (below) the view follows the tail.
 		tv.SetChangedFunc(func() { app.Draw() })
+		// Autoscroll defaults on; an explicit { autoscroll: false } leaf
+		// keeps the pane pinned at the top. Manual scroll-up clears tview's
+		// trackEnd flag (pausing follow); scrolling back / End re-enables it.
+		if node.AutoScroll == nil || *node.AutoScroll {
+			tv.ScrollToEnd()
+		}
 		ps.textView = tv
 		return
 	}

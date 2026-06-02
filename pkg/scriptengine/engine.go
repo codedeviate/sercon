@@ -114,6 +114,13 @@ type Engine struct {
 	holdRunMu        sync.Mutex
 	holdRunLoop      *eventloop.EventLoop
 	holdRunSentinels map[*holdRunEntry]struct{}
+
+	// abortFn cancels the in-flight Run. Set at the top of Run to the
+	// run-scoped context's cancel func, cleared on return. AbortRun loads
+	// and invokes it so a binding (e.g. a TUI Ctrl-C key handler) can end
+	// the Run via the normal cancel/interrupt path. Guarded by abortMu.
+	abortMu sync.Mutex
+	abortFn func()
 }
 
 // New constructs an Engine with the supplied options. Defaults are applied for
@@ -138,6 +145,31 @@ func New(opts Options) *Engine {
 // run inside --watch (e.g., the TUI takes over the terminal and would
 // fight the watch loop).
 func (e *Engine) WatchMode() bool { return e.opts.WatchMode }
+
+// AbortRun cancels the Run currently in flight, if any, as if its context
+// had been cancelled: the watcher interrupts the runtime and terminates the
+// event loop, and Run returns context.Canceled. It is a no-op when no Run is
+// active. Safe to call from any goroutine.
+func (e *Engine) AbortRun() {
+	e.abortMu.Lock()
+	fn := e.abortFn
+	e.abortMu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+func (e *Engine) setAbort(fn func()) {
+	e.abortMu.Lock()
+	e.abortFn = fn
+	e.abortMu.Unlock()
+}
+
+func (e *Engine) clearAbort() {
+	e.abortMu.Lock()
+	e.abortFn = nil
+	e.abortMu.Unlock()
+}
 
 // Register adds a named binding visible to scripts as a global. value may be
 // any Go value that goja can convert: function, struct, map, slice, primitive.
@@ -355,6 +387,14 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 		ctx = context.Background()
 	}
 
+	// Run-scoped context so a binding can abort this Run via AbortRun
+	// (TUI Ctrl-C). The watcher below selects on runCtx; cancelling it
+	// drives the same vm.Interrupt + loop.Terminate path as ctx.Done().
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	e.setAbort(cancelRun)
+	defer e.clearAbort()
+
 	cfg := runConfig{scriptRoot: e.opts.ScriptRoot}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -406,7 +446,7 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 		select {
 		case <-done:
 			return
-		case <-ctx.Done():
+		case <-runCtx.Done():
 			canceled.Store(true)
 		case <-timeoutC:
 			timedOut.Store(true)
@@ -415,7 +455,7 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 			if timedOut.Load() {
 				vm.Interrupt(ErrScriptTimeout)
 			} else {
-				vm.Interrupt(ctx.Err())
+				vm.Interrupt(runCtx.Err())
 			}
 		}
 		loop.Terminate()
@@ -507,7 +547,7 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 		if timedOut.Load() {
 			scriptErr = ErrScriptTimeout
 		} else if canceled.Load() {
-			scriptErr = ctx.Err()
+			scriptErr = runCtx.Err()
 		}
 	}
 

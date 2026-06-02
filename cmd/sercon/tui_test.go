@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 
@@ -189,5 +191,110 @@ func TestStartControllerScreen_InitsScreenExactlyOnce(t *testing.T) {
 
 	if n := atomic.LoadInt32(&cs.inits); n != 1 {
 		t.Fatalf("screen Init called %d times, want exactly 1 (double-init leaves the terminal in raw mode after teardown)", n)
+	}
+}
+
+func TestTUIBinding_OnKeyRegistersAndUnsubscribes(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	withTestStdout(&captured, func() {
+		_, err = eng.Run(context.Background(), "onkey.ts", `
+tui.layout({ rows: [ { name: "log" } ] });
+const off = tui.onKey((k) => { /* never fires in fallback */ });
+if (typeof off !== "function") throw new Error("onKey must return an unsubscribe function");
+off(); // must not throw
+`)
+	})
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+}
+
+func TestTUIBinding_OnKeyBeforeLayoutThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	withTestStdout(&captured, func() {
+		_, err = eng.Run(context.Background(), "onkey-early.ts", `tui.onKey(() => {});`)
+	})
+	if err == nil {
+		t.Fatal("expected onKey-before-layout to throw")
+	}
+}
+
+func TestTUIBinding_WaitKeyRejectsInFallback(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	withTestStdout(&captured, func() {
+		_, err = eng.Run(context.Background(), "waitkey.ts", `
+tui.layout({ rows: [ { name: "log" } ] });
+let caught = "";
+try { await tui.waitKey(); } catch (e) { caught = String(e); }
+if (!caught.includes("no interactive terminal")) {
+    throw new Error("expected 'no interactive terminal', got: " + caught);
+}
+`)
+	})
+	if err != nil {
+		t.Fatalf("run error: %v", err)
+	}
+}
+
+func TestTUIBinding_WaitKeyBeforeLayoutThrows(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	withTestStdout(&captured, func() {
+		_, err = eng.Run(context.Background(), "waitkey-early.ts", `await tui.waitKey();`)
+	})
+	if err == nil {
+		t.Fatal("expected waitKey-before-layout to reject/throw")
+	}
+	if !strings.Contains(err.Error(), "call tui.layout") {
+		t.Fatalf("expected 'call tui.layout' in error, got: %v", err)
+	}
+}
+
+// TestTUIBinding_AbortRunEndsScript verifies that calling eng.AbortRun()
+// from a goroutine while a TUI script is parked on a long timer ends the
+// Run promptly and returns context.Canceled.
+func TestTUIBinding_AbortRunEndsScript(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	var err error
+	start := time.Now()
+	withTestStdout(&captured, func() {
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			eng.AbortRun()
+		}()
+		_, err = eng.Run(context.Background(), "abort.ts", `
+tui.layout({ rows: [ { name: "log" } ] });
+tui.pane("log").writeln("up");
+await new Promise(r => setTimeout(r, 3600_000));
+`)
+	})
+	if time.Since(start) > 2*time.Second {
+		t.Fatalf("AbortRun did not end the TUI script promptly")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }

@@ -731,6 +731,14 @@ await services.exec.shell("npm -g update",              { pane: "npm" });
 log.writeln("All done.");`)
 	note("Tab cycles focus, PgUp/PgDn scroll. Pipe stdout (CI / make demo) to get prefixed plain-text lines instead.")
 
+	header(49, "Interactive TUI: autoscroll + wait for a key")
+	code(`tui.layout({ mouse: true, rows: [{ name: "log" }] });
+const log = tui.pane("log");
+for (let i = 0; i < 50; i++) log.writeln("line " + i);   // pane follows the tail
+log.writeln("Done. Press any key to close.");
+await tui.waitKey();`)
+	fmt.Fprintln(w, "")
+
 	header(38, "Server (server.http.listen + routes)")
 	code(`// Bind an HTTP listener. Routes use stdlib http.ServeMux Go 1.22+
 // pattern syntax: "METHOD /path/{param}/{rest...}".
@@ -973,4 +981,4 @@ await net.capture.openFile("/tmp/x.pcap", (pkt) => {
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 48
+const exampleCount = 49

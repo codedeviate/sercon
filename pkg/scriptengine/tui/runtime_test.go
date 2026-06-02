@@ -2,6 +2,7 @@ package tui_test
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -133,6 +134,284 @@ func TestController_StopIdempotent(t *testing.T) {
 	wg.Add(1)
 	go func() { defer wg.Done(); c.Stop() }()
 	wg.Wait()
+}
+
+// screenText flattens the simulation screen's cell buffer into a string.
+func screenText(sim tcell.SimulationScreen) string {
+	cells, w, h := sim.GetContents()
+	var b strings.Builder
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			r := cells[y*w+x].Runes
+			if len(r) == 0 || r[0] == 0 {
+				b.WriteRune(' ')
+			} else {
+				b.WriteRune(r[0])
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func TestController_AutoScrollFollowsTail(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{"name": "log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(40, 10)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	for i := 0; i < 40; i++ {
+		c.Pane("log").Writeln(fmt.Sprintf("LINE-%02d", i))
+	}
+	c.Sync()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(screenText(sim), "LINE-39") {
+			c.Stop()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	c.Stop()
+	t.Fatalf("autoscroll: last line LINE-39 not visible; screen:\n%s", screenText(sim))
+}
+
+func TestController_AutoScrollOptOutStaysTop(t *testing.T) {
+	no := false
+	root := tui.LayoutNode{Name: "log", AutoScroll: &no}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(40, 10)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	for i := 0; i < 40; i++ {
+		c.Pane("log").Writeln(fmt.Sprintf("LINE-%02d", i))
+	}
+	c.Sync()
+	time.Sleep(100 * time.Millisecond)
+	c.Sync()
+	got := screenText(sim)
+	c.Stop()
+	if !strings.Contains(got, "LINE-00") {
+		t.Fatalf("opt-out: expected top line LINE-00 visible; screen:\n%s", got)
+	}
+	if strings.Contains(got, "LINE-39") {
+		t.Fatalf("opt-out: last line should NOT be visible (top pinned); screen:\n%s", got)
+	}
+}
+
+func TestController_MouseStatusIndicator(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{
+		"mouse": true,
+		"rows":  []any{map[string]any{"name": "log"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(80, 10)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	c.Sync()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(screenText(sim), "mouse") {
+			c.Stop()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	c.Stop()
+	t.Fatalf("status bar missing 'mouse' indicator; screen:\n%s", screenText(sim))
+}
+
+func newTUIForKeys(t *testing.T) (*tui.Controller, tcell.SimulationScreen) {
+	t.Helper()
+	root, err := tui.ParseLayout(map[string]any{
+		"rows": []any{
+			map[string]any{"name": "log"},
+			map[string]any{"name": "out"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(80, 20)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	return c, sim
+}
+
+func TestController_OnKeyReceivesRune(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	got := make(chan tui.KeyEvent, 1)
+	c.AddKeyHandler(func(ev tui.KeyEvent) { got <- ev })
+	sim.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	select {
+	case ev := <-got:
+		if ev.Name != "Rune" || ev.Rune != "q" {
+			t.Fatalf("got %+v, want {Name:Rune Rune:q}", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("onKey handler not invoked for rune 'q'")
+	}
+}
+
+func TestController_RemoveKeyHandler(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	got := make(chan tui.KeyEvent, 4)
+	id := c.AddKeyHandler(func(ev tui.KeyEvent) { got <- ev })
+	c.RemoveKeyHandler(id)
+	sim.InjectKey(tcell.KeyRune, 'x', tcell.ModNone)
+	select {
+	case ev := <-got:
+		t.Fatalf("removed handler still fired: %+v", ev)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestController_WaitKeyFIFO(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	res := make(chan tui.KeyEvent, 1)
+	go func() {
+		ev, ok := c.WaitKey()
+		if ok {
+			res <- ev
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	sim.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
+	select {
+	case ev := <-res:
+		if ev.Name != "Enter" {
+			t.Fatalf("got %+v, want Enter", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitKey did not resolve on Enter")
+	}
+}
+
+// A waiter parked in WaitKey must unblock with (zero, false) when the
+// controller stops — this is the crux of the teardown path (a pending
+// tui.waitKey() rejecting cleanly when the Run ends / Ctrl-C aborts).
+func TestController_WaitKeyUnblocksOnStop(t *testing.T) {
+	c, _ := newTUIForKeys(t)
+	type res struct {
+		ev tui.KeyEvent
+		ok bool
+	}
+	done := make(chan res, 1)
+	go func() {
+		ev, ok := c.WaitKey()
+		done <- res{ev, ok}
+	}()
+	time.Sleep(50 * time.Millisecond) // let WaitKey enqueue
+	c.Stop()
+	select {
+	case r := <-done:
+		if r.ok {
+			t.Fatalf("WaitKey should return ok=false on stop, got ok=true (%+v)", r.ev)
+		}
+		if r.ev != (tui.KeyEvent{}) {
+			t.Fatalf("WaitKey should return a zero KeyEvent on stop, got %+v", r.ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitKey did not unblock after Stop")
+	}
+}
+
+func TestController_CtrlCInvokesAbortAndConsumes(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	aborted := make(chan struct{}, 1)
+	c.SetAbort(func() { aborted <- struct{}{} })
+	sim.InjectKey(tcell.KeyCtrlC, 0, tcell.ModCtrl)
+	select {
+	case <-aborted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ctrl-C did not invoke abort callback")
+	}
+}
+
+func TestController_InteractiveTrueInTTY(t *testing.T) {
+	c, _ := newTUIForKeys(t)
+	defer c.Stop()
+	if !c.Interactive() {
+		t.Fatal("Interactive() should be true in TTY mode")
+	}
+}
+
+func TestController_InteractiveFalseInFallback(t *testing.T) {
+	root, _ := tui.ParseLayout(map[string]any{"name": "x"})
+	c, _ := tui.NewController(root)
+	var buf bytes.Buffer
+	if err := c.StartFallback(&buf); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Stop()
+	if c.Interactive() {
+		t.Fatal("Interactive() should be false in fallback mode")
+	}
+}
+
+func TestController_OnKeyHandlerPanicIsolated(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	got := make(chan tui.KeyEvent, 1)
+	// First handler panics; second must still receive the key.
+	c.AddKeyHandler(func(ev tui.KeyEvent) { panic("boom") })
+	c.AddKeyHandler(func(ev tui.KeyEvent) { got <- ev })
+	sim.InjectKey(tcell.KeyRune, 'z', tcell.ModNone)
+	select {
+	case ev := <-got:
+		if ev.Rune != "z" {
+			t.Fatalf("got %+v, want rune z", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second handler did not receive the key (panic not isolated, or dispatch died)")
+	}
 }
 
 // waitFocus polls FocusedPane until it returns want or the timeout

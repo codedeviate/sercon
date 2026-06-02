@@ -32,6 +32,13 @@ type LayoutNode struct {
 	Rows   []LayoutNode
 	Cols   []LayoutNode
 	Weight int
+	// AutoScroll, leaf only. nil = default (follow the tail); explicit
+	// false opts the pane out so it stays pinned at the top.
+	AutoScroll *bool
+	// Mouse, root only. true enables tview mouse capture so the wheel
+	// scrolls panes (at the cost of native click-drag selection). Parsed
+	// from the top-level layout object; ignored on non-root nodes.
+	Mouse bool
 }
 
 // IsLeaf reports whether this node is a named pane.
@@ -89,7 +96,7 @@ func ParseLayout(v any) (LayoutNode, error) {
 }
 
 var allowedKeys = map[string]bool{
-	"name": true, "title": true, "rows": true, "cols": true, "weight": true,
+	"name": true, "title": true, "rows": true, "cols": true, "weight": true, "autoscroll": true, "mouse": true,
 }
 
 func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
@@ -101,6 +108,17 @@ func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
 		if !allowedKeys[k] {
 			return LayoutNode{}, fmt.Errorf("%s: unknown key %q (allowed: name, title, rows, cols, weight)", pathLabel(path), k)
 		}
+	}
+	mouse := false
+	if mv, ok := m["mouse"]; ok {
+		if path != "" {
+			return LayoutNode{}, fmt.Errorf("%s: mouse is only allowed on the root layout node", pathLabel(path))
+		}
+		mb, ok := mv.(bool)
+		if !ok {
+			return LayoutNode{}, fmt.Errorf("%s: mouse must be a boolean, got %T", pathLabel(path), mv)
+		}
+		mouse = mb
 	}
 	hasName := m["name"] != nil
 	hasRows := m["rows"] != nil
@@ -143,11 +161,23 @@ func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
 			}
 			title = ts
 		}
-		return LayoutNode{Name: name, Title: title, Weight: weight}, nil
+		var autoScroll *bool
+		if av, ok := m["autoscroll"]; ok {
+			ab, ok := av.(bool)
+			if !ok {
+				return LayoutNode{}, fmt.Errorf("%s: autoscroll must be a boolean, got %T", pathLabel(path), av)
+			}
+			autoScroll = &ab
+		}
+		return LayoutNode{Name: name, Title: title, Weight: weight, AutoScroll: autoScroll, Mouse: mouse}, nil
 	}
 
 	if _, hasTitle := m["title"]; hasTitle {
 		return LayoutNode{}, fmt.Errorf("%s: title is only allowed on leaf (name) nodes", pathLabel(path))
+	}
+
+	if _, hasAutoScroll := m["autoscroll"]; hasAutoScroll {
+		return LayoutNode{}, fmt.Errorf("%s: autoscroll is only allowed on leaf (name) nodes", pathLabel(path))
 	}
 
 	key := "rows"
@@ -170,9 +200,9 @@ func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
 		children = append(children, child)
 	}
 	if hasRows {
-		return LayoutNode{Rows: children, Weight: weight}, nil
+		return LayoutNode{Rows: children, Weight: weight, Mouse: mouse}, nil
 	}
-	return LayoutNode{Cols: children, Weight: weight}, nil
+	return LayoutNode{Cols: children, Weight: weight, Mouse: mouse}, nil
 }
 
 // asInt accepts the integer representations goja can produce

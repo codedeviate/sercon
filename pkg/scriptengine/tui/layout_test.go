@@ -152,3 +152,90 @@ func TestParseLayout_EmptyName(t *testing.T) {
 		t.Fatalf("expected empty-name error, got %v", err)
 	}
 }
+
+func TestParseLayout_AutoScrollDefaultOn(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{"name": "log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.AutoScroll != nil {
+		t.Fatalf("absent autoscroll should be nil (default on), got %v", *root.AutoScroll)
+	}
+}
+
+func TestParseLayout_AutoScrollOptOut(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{
+		"rows": []any{
+			map[string]any{"name": "log", "autoscroll": false},
+			map[string]any{"name": "out"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := root.Rows[0]
+	if log.AutoScroll == nil || *log.AutoScroll != false {
+		t.Fatalf("log autoscroll should be explicit false, got %v", log.AutoScroll)
+	}
+	if root.Rows[1].AutoScroll != nil {
+		t.Fatalf("out autoscroll should be nil (default on)")
+	}
+}
+
+func TestParseLayout_AutoScrollWrongType(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{"name": "log", "autoscroll": "yes"})
+	if err == nil || !strings.Contains(err.Error(), "autoscroll") {
+		t.Fatalf("expected autoscroll type error, got %v", err)
+	}
+}
+
+func TestParseLayout_AutoScrollOnNonLeafRejected(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{
+		"autoscroll": false,
+		"rows":       []any{map[string]any{"name": "log"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "autoscroll") {
+		t.Fatalf("expected autoscroll-on-non-leaf error, got %v", err)
+	}
+}
+
+func TestParseLayout_MouseRoot(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{
+		"mouse": true,
+		"rows":  []any{map[string]any{"name": "log"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !root.Mouse {
+		t.Fatal("root.Mouse should be true")
+	}
+}
+
+func TestParseLayout_MouseDefaultsOff(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{"name": "log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Mouse {
+		t.Fatal("root.Mouse should default to false")
+	}
+}
+
+func TestParseLayout_MouseWrongType(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{"mouse": "on", "name": "log"})
+	if err == nil || !strings.Contains(err.Error(), "mouse") {
+		t.Fatalf("expected mouse type error, got %v", err)
+	}
+}
+
+func TestParseLayout_MouseOnNonRootRejected(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{
+		"rows": []any{
+			map[string]any{"mouse": true, "name": "log"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "mouse") {
+		t.Fatalf("expected mouse-on-non-root error, got %v", err)
+	}
+}
