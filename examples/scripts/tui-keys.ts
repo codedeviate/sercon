@@ -7,7 +7,7 @@ tui.layout({
   mouse: true,
   rows: [
     { name: "log", title: "Log" },
-    { name: "out", title: "Output", autoscroll: false },
+    { name: "out", title: "Output", autoscroll: false, wrap: "off", color: false },
   ],
 });
 

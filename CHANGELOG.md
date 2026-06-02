@@ -9,6 +9,10 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 ## [Unreleased]
 
 ### Added
+- Per-pane `tui` layout options: `wrap` (`"char"` | `"word"` | `"off"`,
+  default `"char"`) controls line wrapping, and `color` (boolean, default
+  true) strips a pane's ANSI to plain text when set to `false`. Both affect
+  TTY rendering only.
 - `tui` panes now autoscroll to follow the tail by default; opt a pane out
   with `{ autoscroll: false }` on its leaf.
 - `tui.layout({ mouse: true })` enables mouse-wheel scrolling of panes
