@@ -67,6 +67,7 @@ Or pick individual scripts:
 | `server-icmp.ts` | `server.icmp.listen` — raw ICMP listener with reply(); needs root, so the demo handles the privilege rejection and exits 0. |
 | `capture-file.ts` | `net.capture` — list interfaces, then a `toFile`/`openFile` pcap round-trip on a hand-built UDP frame; asserts the decoded `udp.dstPort`. Fully offline (live `net.capture.open` is privileged and Linux/macOS-only, shown in comments). |
 | `net-sockets.ts` | `net.tcp.connect` / `net.udp.open` / `net.icmp.open` — long-lived client sockets with the push/callback read model (`onData`/`onMessage`, `onClose`, `onError`, `close`). Runs an offline UDP loopback round-trip; TCP + ICMP shown in comments. |
+| `tui-keys.ts` | `tui.*` — autoscroll (panes follow the tail), `{ autoscroll: false }` per-pane opt-out, `{ mouse: true }` root option, `tui.onKey` persistent callback, `tui.waitKey` awaitable keypress. Falls back to prefixed lines in non-TTY. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't

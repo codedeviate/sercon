@@ -89,7 +89,8 @@ DEMO_SCRIPTS = \
 	examples/scripts/server-tcp.ts \
 	examples/scripts/server-icmp.ts \
 	examples/scripts/net-sockets.ts \
-	examples/scripts/capture-file.ts
+	examples/scripts/capture-file.ts \
+	examples/scripts/tui-keys.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

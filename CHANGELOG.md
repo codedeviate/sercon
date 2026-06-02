@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `tui` panes now autoscroll to follow the tail by default; opt a pane out
+  with `{ autoscroll: false }` on its leaf.
+- `tui.layout({ mouse: true })` enables mouse-wheel scrolling of panes
+  (disables native click-drag selection while active).
+- `tui.waitKey()` resolves with the next keypress; `tui.onKey(handler)`
+  registers a persistent per-keypress callback returning an unsubscribe
+  function. Both require a TTY.
+- `Engine.AbortRun()` cancels the in-flight Run via the engine's
+  interrupt path (used to wire the TUI's Ctrl-C).
+
+### Fixed
+- TUI `Ctrl-C` now aborts the script on a single press; previously the
+  first press only tore down the screen and a second was needed to exit.
+
 ## [0.34.0] — 2026-06-01
 
 ### Added
