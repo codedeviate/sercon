@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -296,5 +297,33 @@ await new Promise(r => setTimeout(r, 3600_000));
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+// /dev/null is a character device but NOT a terminal. The old isTTY used
+// os.ModeCharDevice and so misclassified it as a TTY, which drove the TUI
+// down the real-screen path and segfaulted in tcell's EnableMouse. isTTY
+// must report false for /dev/null.
+func TestIsTTY_DevNullIsNotTerminal(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if isTTY(f) {
+		t.Fatal("isTTY(/dev/null) = true; want false (char device but not a terminal)")
+	}
+}
+
+func TestShouldColor_DevNullIsNotTerminal(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("FORCE_COLOR", "")
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if shouldColor(f) {
+		t.Fatal("shouldColor(/dev/null) = true; want false")
 	}
 }

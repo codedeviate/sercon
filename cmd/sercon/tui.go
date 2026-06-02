@@ -11,6 +11,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/gdamore/tcell/v2"
+	"golang.org/x/term"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 	"github.com/codedeviate/sercon/pkg/scriptengine/tui"
@@ -256,18 +257,17 @@ func pickFallbackOutput() io.Writer {
 	return os.Stdout
 }
 
-// isTTY reports whether w is a character device. Mirrors help.go's
-// shouldColor logic so the two stay consistent.
+// isTTY reports whether w is a real terminal. It uses term.IsTerminal
+// rather than an os.ModeCharDevice check: /dev/null is a character device
+// but not a terminal, and misclassifying it as a TTY drove the layout down
+// the real-screen path where tcell's EnableMouse dereferenced a nil writer
+// and segfaulted. Mirrors help.go's shouldColor so the two stay consistent.
 func isTTY(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	if !ok {
 		return false
 	}
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // keyEventToValue builds the JS object passed to onKey handlers / resolved

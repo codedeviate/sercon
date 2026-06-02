@@ -7,6 +7,8 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"golang.org/x/term"
+
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
@@ -32,11 +34,7 @@ func shouldColor(w io.Writer) bool {
 	if !ok {
 		return false
 	}
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 func (s *styler) wrap(code, text string) string {
