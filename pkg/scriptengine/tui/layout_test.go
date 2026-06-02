@@ -105,8 +105,8 @@ func TestParseLayout_DuplicateName(t *testing.T) {
 }
 
 func TestParseLayout_UnknownKey(t *testing.T) {
-	_, err := tui.ParseLayout(map[string]any{"name": "x", "color": "red"})
-	if err == nil || !strings.Contains(err.Error(), `unknown key "color"`) {
+	_, err := tui.ParseLayout(map[string]any{"name": "x", "bgcolor": "red"})
+	if err == nil || !strings.Contains(err.Error(), `unknown key "bgcolor"`) {
 		t.Fatalf("expected unknown-key error, got %v", err)
 	}
 }
@@ -237,5 +237,86 @@ func TestParseLayout_MouseOnNonRootRejected(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "mouse") {
 		t.Fatalf("expected mouse-on-non-root error, got %v", err)
+	}
+}
+
+func TestParseLayout_WrapModes(t *testing.T) {
+	for _, mode := range []string{"char", "word", "off"} {
+		root, err := tui.ParseLayout(map[string]any{"name": "log", "wrap": mode})
+		if err != nil {
+			t.Fatalf("wrap=%q: %v", mode, err)
+		}
+		if root.Wrap != mode {
+			t.Fatalf("wrap=%q: stored %q", mode, root.Wrap)
+		}
+	}
+}
+
+func TestParseLayout_WrapDefaultEmpty(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{"name": "log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Wrap != "" {
+		t.Fatalf("absent wrap should be \"\", got %q", root.Wrap)
+	}
+}
+
+func TestParseLayout_WrapInvalidValue(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{"name": "log", "wrap": "soft"})
+	if err == nil || !strings.Contains(err.Error(), "wrap") {
+		t.Fatalf("expected wrap value error, got %v", err)
+	}
+}
+
+func TestParseLayout_WrapWrongType(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{"name": "log", "wrap": true})
+	if err == nil || !strings.Contains(err.Error(), "wrap") {
+		t.Fatalf("expected wrap type error, got %v", err)
+	}
+}
+
+func TestParseLayout_WrapOnNonLeafRejected(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{
+		"wrap": "off",
+		"rows": []any{map[string]any{"name": "log"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "wrap") {
+		t.Fatalf("expected wrap-on-non-leaf error, got %v", err)
+	}
+}
+
+func TestParseLayout_ColorOptOut(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{
+		"rows": []any{
+			map[string]any{"name": "log", "color": false},
+			map[string]any{"name": "out"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Rows[0].Color == nil || *root.Rows[0].Color != false {
+		t.Fatalf("log color should be explicit false, got %v", root.Rows[0].Color)
+	}
+	if root.Rows[1].Color != nil {
+		t.Fatalf("out color should be nil (default)")
+	}
+}
+
+func TestParseLayout_ColorWrongType(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{"name": "log", "color": "no"})
+	if err == nil || !strings.Contains(err.Error(), "color") {
+		t.Fatalf("expected color type error, got %v", err)
+	}
+}
+
+func TestParseLayout_ColorOnNonLeafRejected(t *testing.T) {
+	_, err := tui.ParseLayout(map[string]any{
+		"color": false,
+		"rows":  []any{map[string]any{"name": "log"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "color") {
+		t.Fatalf("expected color-on-non-leaf error, got %v", err)
 	}
 }

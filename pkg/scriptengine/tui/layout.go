@@ -39,6 +39,13 @@ type LayoutNode struct {
 	// scrolls panes (at the cost of native click-drag selection). Parsed
 	// from the top-level layout object; ignored on non-root nodes.
 	Mouse bool
+	// Wrap, leaf only. "" (default) and "char" char-wrap; "word" wraps at
+	// word boundaries; "off" disables wrapping (long lines scroll
+	// horizontally). TTY-mode only.
+	Wrap string
+	// Color, leaf only. nil = default (render subprocess ANSI as color);
+	// explicit false strips ANSI to plain text. TTY-mode only.
+	Color *bool
 }
 
 // IsLeaf reports whether this node is a named pane.
@@ -96,7 +103,8 @@ func ParseLayout(v any) (LayoutNode, error) {
 }
 
 var allowedKeys = map[string]bool{
-	"name": true, "title": true, "rows": true, "cols": true, "weight": true, "autoscroll": true, "mouse": true,
+	"name": true, "title": true, "rows": true, "cols": true, "weight": true,
+	"autoscroll": true, "mouse": true, "wrap": true, "color": true,
 }
 
 func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
@@ -106,7 +114,7 @@ func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
 	}
 	for k := range m {
 		if !allowedKeys[k] {
-			return LayoutNode{}, fmt.Errorf("%s: unknown key %q (allowed: name, title, rows, cols, weight)", pathLabel(path), k)
+			return LayoutNode{}, fmt.Errorf("%s: unknown key %q (allowed: name, title, rows, cols, weight, autoscroll, mouse, wrap, color)", pathLabel(path), k)
 		}
 	}
 	mouse := false
@@ -169,7 +177,28 @@ func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
 			}
 			autoScroll = &ab
 		}
-		return LayoutNode{Name: name, Title: title, Weight: weight, AutoScroll: autoScroll, Mouse: mouse}, nil
+		wrap := ""
+		if wv, ok := m["wrap"]; ok {
+			ws, ok := wv.(string)
+			if !ok {
+				return LayoutNode{}, fmt.Errorf("%s: wrap must be a string, got %T", pathLabel(path), wv)
+			}
+			switch ws {
+			case "char", "word", "off":
+				wrap = ws
+			default:
+				return LayoutNode{}, fmt.Errorf("%s: wrap must be \"char\", \"word\", or \"off\", got %q", pathLabel(path), ws)
+			}
+		}
+		var color *bool
+		if cv, ok := m["color"]; ok {
+			cb, ok := cv.(bool)
+			if !ok {
+				return LayoutNode{}, fmt.Errorf("%s: color must be a boolean, got %T", pathLabel(path), cv)
+			}
+			color = &cb
+		}
+		return LayoutNode{Name: name, Title: title, Weight: weight, AutoScroll: autoScroll, Mouse: mouse, Wrap: wrap, Color: color}, nil
 	}
 
 	if _, hasTitle := m["title"]; hasTitle {
@@ -178,6 +207,14 @@ func parseNode(v any, path string, seen map[string]bool) (LayoutNode, error) {
 
 	if _, hasAutoScroll := m["autoscroll"]; hasAutoScroll {
 		return LayoutNode{}, fmt.Errorf("%s: autoscroll is only allowed on leaf (name) nodes", pathLabel(path))
+	}
+
+	if _, hasWrap := m["wrap"]; hasWrap {
+		return LayoutNode{}, fmt.Errorf("%s: wrap is only allowed on leaf (name) nodes", pathLabel(path))
+	}
+
+	if _, hasColor := m["color"]; hasColor {
+		return LayoutNode{}, fmt.Errorf("%s: color is only allowed on leaf (name) nodes", pathLabel(path))
 	}
 
 	key := "rows"
