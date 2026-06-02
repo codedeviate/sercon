@@ -308,6 +308,63 @@ func clamp255(v int) int {
 // palette256 maps an xterm 256-color index to a hex string. The xterm
 // palette is: 0–15 = the basic + bright 16 colors; 16–231 = 6×6×6 color
 // cube; 232–255 = 24 grayscale shades.
+// StripANSI removes ANSI escape sequences from s and returns plain text.
+// Newlines, carriage returns, and other printable bytes are preserved;
+// only escape sequences (CSI, OSC, lone ESC) are dropped. Shared by the
+// non-TTY fallback writer and by panes with color disabled.
+func StripANSI(s string) string {
+	b := []byte(s)
+	var out strings.Builder
+	i := 0
+	for i < len(b) {
+		if b[i] == 0x1b {
+			i = skipEscapeAt(b, i)
+			continue
+		}
+		out.WriteByte(b[i])
+		i++
+	}
+	return out.String()
+}
+
+// skipEscapeAt advances past an escape sequence starting at i (p[i] == ESC).
+// Returns the index of the first byte after the sequence. CSI sequences end
+// at a byte in 0x40-0x7E; OSC sequences end at BEL or ST. Anything malformed:
+// skip the ESC and continue. (Moved here from fallback.go so the fallback
+// writer and the color-off pane path share one implementation.)
+func skipEscapeAt(p []byte, i int) int {
+	if i+1 >= len(p) {
+		return i + 1
+	}
+	next := p[i+1]
+	switch next {
+	case '[':
+		j := i + 2
+		for j < len(p) {
+			c := p[j]
+			if c >= 0x40 && c <= 0x7E {
+				return j + 1
+			}
+			j++
+		}
+		return j
+	case ']':
+		j := i + 2
+		for j < len(p) {
+			if p[j] == 0x07 {
+				return j + 1
+			}
+			if p[j] == 0x1b && j+1 < len(p) && p[j+1] == '\\' {
+				return j + 2
+			}
+			j++
+		}
+		return j
+	default:
+		return i + 2
+	}
+}
+
 func palette256(n int) string {
 	switch {
 	case n < 0 || n > 255:
