@@ -395,8 +395,15 @@ func buildTextViews(node LayoutNode, panes map[string]*paneState, app *tview.App
 			SetWrap(true).
 			SetWordWrap(false)
 		tv.SetBorder(true).SetTitle(" " + paneTitle(node) + " ").SetBorderColor(tcell.ColorGray)
-		// Trigger a redraw whenever text is appended so the view auto-scrolls.
+		// Trigger a redraw whenever text is appended. Combined with
+		// ScrollToEnd's trackEnd flag (below) the view follows the tail.
 		tv.SetChangedFunc(func() { app.Draw() })
+		// Autoscroll defaults on; an explicit { autoscroll: false } leaf
+		// keeps the pane pinned at the top. Manual scroll-up clears tview's
+		// trackEnd flag (pausing follow); scrolling back / End re-enables it.
+		if node.AutoScroll == nil || *node.AutoScroll {
+			tv.ScrollToEnd()
+		}
 		ps.textView = tv
 		return
 	}

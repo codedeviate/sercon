@@ -2,6 +2,7 @@ package tui_test
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -133,6 +134,90 @@ func TestController_StopIdempotent(t *testing.T) {
 	wg.Add(1)
 	go func() { defer wg.Done(); c.Stop() }()
 	wg.Wait()
+}
+
+// screenText flattens the simulation screen's cell buffer into a string.
+func screenText(sim tcell.SimulationScreen) string {
+	cells, w, h := sim.GetContents()
+	var b strings.Builder
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			r := cells[y*w+x].Runes
+			if len(r) == 0 || r[0] == 0 {
+				b.WriteRune(' ')
+			} else {
+				b.WriteRune(r[0])
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func TestController_AutoScrollFollowsTail(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{"name": "log"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(40, 10)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	for i := 0; i < 40; i++ {
+		c.Pane("log").Writeln(fmt.Sprintf("LINE-%02d", i))
+	}
+	c.Sync()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(screenText(sim), "LINE-39") {
+			c.Stop()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	c.Stop()
+	t.Fatalf("autoscroll: last line LINE-39 not visible; screen:\n%s", screenText(sim))
+}
+
+func TestController_AutoScrollOptOutStaysTop(t *testing.T) {
+	no := false
+	root := tui.LayoutNode{Name: "log", AutoScroll: &no}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(40, 10)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	for i := 0; i < 40; i++ {
+		c.Pane("log").Writeln(fmt.Sprintf("LINE-%02d", i))
+	}
+	c.Sync()
+	time.Sleep(100 * time.Millisecond)
+	c.Sync()
+	got := screenText(sim)
+	c.Stop()
+	if !strings.Contains(got, "LINE-00") {
+		t.Fatalf("opt-out: expected top line LINE-00 visible; screen:\n%s", got)
+	}
+	if strings.Contains(got, "LINE-39") {
+		t.Fatalf("opt-out: last line should NOT be visible (top pinned); screen:\n%s", got)
+	}
 }
 
 // waitFocus polls FocusedPane until it returns want or the timeout
