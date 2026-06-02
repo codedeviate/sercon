@@ -1154,12 +1154,12 @@ line so progress spinners render cleanly.
 
 #### Keybindings (TTY mode only)
 
-| Key                  | Action                       |
-|----------------------|------------------------------|
-| `Tab` / `Shift-Tab`  | Cycle focus through panes    |
-| `PgUp` / `PgDn`      | Scroll focused pane one page |
-| `↑` / `↓`            | Scroll focused pane one line |
-| `Home` / `End`       | Jump to top / bottom         |
+| Key                  | Action                          |
+|----------------------|---------------------------------|
+| `Tab` / `Shift-Tab`  | Cycle focus through panes       |
+| `PgUp` / `PgDn`      | Scroll focused pane one page    |
+| `↑` / `↓`            | Scroll focused pane one line    |
+| `Home` / `End`       | Jump to top / bottom            |
 | `Ctrl-C`             | Abort the script (single press) |
 
 The focused pane has a yellow border; the bottom status bar shows its
@@ -1183,7 +1183,7 @@ is a no-op in non-TTY (fallback) mode.
 
 - `tui` is **incompatible with `--watch`**: calling
   `tui.layout()` under `--watch` throws. Use one or the other.
-- no runtime layout mutation, no input panes (`tui.input`),
+- No runtime layout mutation, no input panes (`tui.input`),
   no snapshot-to-normal-screen on exit. The alt screen is restored at
   script end and the usual `PASS`/`FAIL` line prints.
 
