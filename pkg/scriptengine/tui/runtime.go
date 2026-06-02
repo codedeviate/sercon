@@ -559,6 +559,10 @@ func buildTextViews(node LayoutNode, panes map[string]*paneState, app *tview.App
 	if node.IsLeaf() {
 		ps := panes[node.Name]
 		wrap, word := wrapFlags(node.Wrap)
+		// colorOn must match paneState.color (set the same way in
+		// NewController): build-time SetDynamicColors and the write-path
+		// translate-vs-strip branch have to agree, or a color:false pane
+		// would render tview tags literally.
 		colorOn := node.Color == nil || *node.Color
 		tv := tview.NewTextView().
 			SetDynamicColors(colorOn).
