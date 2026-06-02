@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os/exec"
 	"strings"
@@ -11,9 +12,10 @@ import (
 )
 
 // startPTY must make the child believe stdout is a terminal: `test -t 1`
-// succeeds only on a tty, so the child prints TTY (not PIPE).
+// succeeds only on a tty, so the child prints TTY (not PIPE). The Cmd is
+// created via CommandContext because startPTY sets cmd.Cancel.
 func TestStartPTY_ChildSeesTTY(t *testing.T) {
-	cmd := exec.Command("sh", "-c", "test -t 1 && echo TTY || echo PIPE")
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", "test -t 1 && echo TTY || echo PIPE")
 	master, err := startPTY(cmd)
 	if err != nil {
 		t.Fatalf("startPTY: %v", err)
