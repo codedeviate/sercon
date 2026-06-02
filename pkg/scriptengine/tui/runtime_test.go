@@ -220,6 +220,40 @@ func TestController_AutoScrollOptOutStaysTop(t *testing.T) {
 	}
 }
 
+func TestController_MouseStatusIndicator(t *testing.T) {
+	root, err := tui.ParseLayout(map[string]any{
+		"mouse": true,
+		"rows":  []any{map[string]any{"name": "log"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(80, 10)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	c.Sync()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(screenText(sim), "mouse") {
+			c.Stop()
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	c.Stop()
+	t.Fatalf("status bar missing 'mouse' indicator; screen:\n%s", screenText(sim))
+}
+
 // waitFocus polls FocusedPane until it returns want or the timeout
 // elapses. Used in TTY-mode tests because tview's Application loop
 // drains the screen-event channel and the QueueUpdateDraw channel

@@ -148,6 +148,10 @@ func (c *Controller) StartScreen(screen tcell.Screen) error {
 	app.SetFocus(c.panes[c.order[0]].textView)
 	app.SetInputCapture(c.onKey)
 
+	if c.root.Mouse {
+		app.EnableMouse(true)
+	}
+
 	go func() {
 		defer close(c.stopCh)
 		close(c.readyCh) // mark ready as soon as the goroutine starts
@@ -381,6 +385,9 @@ func (c *Controller) refreshStatus() {
 		return
 	}
 	keys := "[gray]Tab[-] focus  [gray]PgUp/PgDn[-] scroll  [gray]Home/End[-] jump  [gray]Ctrl-C[-] quit"
+	if c.root.Mouse {
+		keys += "  [gray]mouse[-] on"
+	}
 	c.status.SetText(fmt.Sprintf(" [yellow]%s[-]   %s", c.order[c.focused], keys))
 }
 
