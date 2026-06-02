@@ -254,6 +254,119 @@ func TestController_MouseStatusIndicator(t *testing.T) {
 	t.Fatalf("status bar missing 'mouse' indicator; screen:\n%s", screenText(sim))
 }
 
+func newTUIForKeys(t *testing.T) (*tui.Controller, tcell.SimulationScreen) {
+	t.Helper()
+	root, err := tui.ParseLayout(map[string]any{
+		"rows": []any{
+			map[string]any{"name": "log"},
+			map[string]any{"name": "out"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := tui.NewController(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sim.SetSize(80, 20)
+	if err := c.StartScreen(sim); err != nil {
+		t.Fatal(err)
+	}
+	c.WaitReady(2 * time.Second)
+	return c, sim
+}
+
+func TestController_OnKeyReceivesRune(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	got := make(chan tui.KeyEvent, 1)
+	c.AddKeyHandler(func(ev tui.KeyEvent) { got <- ev })
+	sim.InjectKey(tcell.KeyRune, 'q', tcell.ModNone)
+	select {
+	case ev := <-got:
+		if ev.Name != "Rune" || ev.Rune != "q" {
+			t.Fatalf("got %+v, want {Name:Rune Rune:q}", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("onKey handler not invoked for rune 'q'")
+	}
+}
+
+func TestController_RemoveKeyHandler(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	got := make(chan tui.KeyEvent, 4)
+	id := c.AddKeyHandler(func(ev tui.KeyEvent) { got <- ev })
+	c.RemoveKeyHandler(id)
+	sim.InjectKey(tcell.KeyRune, 'x', tcell.ModNone)
+	select {
+	case ev := <-got:
+		t.Fatalf("removed handler still fired: %+v", ev)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestController_WaitKeyFIFO(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	res := make(chan tui.KeyEvent, 1)
+	go func() {
+		ev, ok := c.WaitKey()
+		if ok {
+			res <- ev
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	sim.InjectKey(tcell.KeyEnter, 0, tcell.ModNone)
+	select {
+	case ev := <-res:
+		if ev.Name != "Enter" {
+			t.Fatalf("got %+v, want Enter", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("WaitKey did not resolve on Enter")
+	}
+}
+
+func TestController_CtrlCInvokesAbortAndConsumes(t *testing.T) {
+	c, sim := newTUIForKeys(t)
+	defer c.Stop()
+	aborted := make(chan struct{}, 1)
+	c.SetAbort(func() { aborted <- struct{}{} })
+	sim.InjectKey(tcell.KeyCtrlC, 0, tcell.ModCtrl)
+	select {
+	case <-aborted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ctrl-C did not invoke abort callback")
+	}
+}
+
+func TestController_InteractiveTrueInTTY(t *testing.T) {
+	c, _ := newTUIForKeys(t)
+	defer c.Stop()
+	if !c.Interactive() {
+		t.Fatal("Interactive() should be true in TTY mode")
+	}
+}
+
+func TestController_InteractiveFalseInFallback(t *testing.T) {
+	root, _ := tui.ParseLayout(map[string]any{"name": "x"})
+	c, _ := tui.NewController(root)
+	var buf bytes.Buffer
+	if err := c.StartFallback(&buf); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Stop()
+	if c.Interactive() {
+		t.Fatal("Interactive() should be false in fallback mode")
+	}
+}
+
 // waitFocus polls FocusedPane until it returns want or the timeout
 // elapses. Used in TTY-mode tests because tview's Application loop
 // drains the screen-event channel and the QueueUpdateDraw channel
