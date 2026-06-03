@@ -504,7 +504,11 @@ func (c *Controller) onMouse(event *tcell.EventMouse, action tview.MouseAction) 
 				break
 			}
 		}
-		return event, action // let tview process the click normally too
+		// c.focused is the source of truth for the focus border / status /
+		// keyboard target (FocusedPane reads it). We pass the event through so
+		// tview's own MouseLeftDown->setFocus aligns app focus with applyFocus;
+		// the two stay consistent because both target the pane under the cursor.
+		return event, action
 	}
 	return event, action
 }
