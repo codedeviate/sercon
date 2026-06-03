@@ -165,6 +165,7 @@ func (c *Controller) StartScreen(screen tcell.Screen) error {
 
 	if c.root.Mouse {
 		app.EnableMouse(true)
+		app.SetMouseCapture(c.onMouse)
 	}
 
 	go func() {
@@ -250,6 +251,34 @@ func (c *Controller) FocusedPane() string {
 	})
 	<-done
 	return name
+}
+
+// PaneScrollOffset returns a pane's current vertical scroll offset (top
+// visible row) in TUI mode, read on the event-loop goroutine; -1 in
+// fallback mode or for an unknown pane. Diagnostic/test accessor paired
+// with PaneContent/FocusedPane. Must not be called from within an
+// event-loop callback (see Sync).
+func (c *Controller) PaneScrollOffset(name string) int {
+	if c.mode != modeTUI {
+		return -1
+	}
+	ps, ok := c.panes[name]
+	if !ok || ps.textView == nil {
+		return -1
+	}
+	c.syncMu.Lock()
+	defer c.syncMu.Unlock()
+	if c.stopped.Load() {
+		return -1
+	}
+	var row int
+	done := make(chan struct{})
+	c.app.QueueUpdateDraw(func() {
+		row, _ = ps.textView.GetScrollOffset()
+		close(done)
+	})
+	<-done
+	return row
 }
 
 // PaneContent returns the current text content of a pane. In TUI mode it
@@ -402,6 +431,26 @@ func (c *Controller) onKey(ev *tcell.EventKey) *tcell.EventKey {
 	return ev
 }
 
+// mouseScrollStep is the number of lines a single wheel notch scrolls.
+const mouseScrollStep = 3
+
+// paneAt returns the pane whose TextView body (inner rect, excluding the
+// border) contains the screen point (x, y), or nil when the point is over
+// the status bar, a border, or a gap.
+func (c *Controller) paneAt(x, y int) *paneState {
+	for _, name := range c.order {
+		ps := c.panes[name]
+		if ps.textView == nil {
+			continue
+		}
+		px, py, pw, ph := ps.textView.GetInnerRect()
+		if x >= px && x < px+pw && y >= py && y < py+ph {
+			return ps
+		}
+	}
+	return nil
+}
+
 func (c *Controller) applyFocus() {
 	name := c.order[c.focused]
 	tv := c.panes[name].textView
@@ -411,6 +460,57 @@ func (c *Controller) applyFocus() {
 	}
 	tv.SetBorderColor(tcell.ColorYellow)
 	c.refreshStatus()
+}
+
+// onMouse implements scroll-under-cursor and click-to-focus for mouse mode.
+// Registered via Application.SetMouseCapture, so it runs on the tview
+// application goroutine (like onKey). Wheel scrolls the pane under the
+// cursor without changing focus (and is consumed so tview does not also
+// scroll the focused pane); a left-click focuses the pane under the cursor.
+func (c *Controller) onMouse(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
+	if event == nil {
+		return event, action
+	}
+	x, y := event.Position()
+	switch action {
+	case tview.MouseScrollUp, tview.MouseScrollDown:
+		ps := c.paneAt(x, y)
+		if ps == nil {
+			// No pane under cursor (status bar, border, gap): consume the event
+			// so tview does not scroll the focused pane either.
+			return nil, action
+		}
+		row, col := ps.textView.GetScrollOffset()
+		if action == tview.MouseScrollUp {
+			row -= mouseScrollStep
+			if row < 0 {
+				row = 0
+			}
+		} else {
+			row += mouseScrollStep
+		}
+		ps.textView.ScrollTo(row, col) // ScrollTo clears trackEnd -> pauses autoscroll
+		c.app.ForceDraw()             // we're on the event-loop goroutine; ForceDraw is safe here
+		return nil, action            // consume: don't let tview scroll the focused pane
+	case tview.MouseLeftClick:
+		ps := c.paneAt(x, y)
+		if ps == nil {
+			return event, action
+		}
+		for i, name := range c.order {
+			if name == ps.name {
+				c.focused = i
+				c.applyFocus()
+				break
+			}
+		}
+		// c.focused is the source of truth for the focus border / status /
+		// keyboard target (FocusedPane reads it). We pass the event through so
+		// tview's own MouseLeftDown->setFocus aligns app focus with applyFocus;
+		// the two stay consistent because both target the pane under the cursor.
+		return event, action
+	}
+	return event, action
 }
 
 func (c *Controller) refreshStatus() {
