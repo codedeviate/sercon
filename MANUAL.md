@@ -1176,9 +1176,11 @@ name and the active keys.
 Panes follow the tail automatically; scroll up (keys or, when enabled,
 the mouse wheel) to pause following, and scroll back to the bottom (or
 press `End`) to resume. Set `{ autoscroll: false }` on a leaf to keep it
-pinned at the top. Pass `{ mouse: true }` at the layout root to enable
-mouse-wheel scrolling (this disables the terminal's native click-drag
-selection; hold Shift/Option to select while mouse mode is on).
+pinned at the top. Pass `{ mouse: true }` at the layout root to enable mouse support: the wheel
+scrolls the pane **under the cursor** (without changing which pane is
+focused), and a left-click focuses the pane under the cursor. This disables
+the terminal's native click-drag selection while active; hold Shift/Option
+to select.
 
 Per-leaf `{ wrap: "char" | "word" | "off" }` controls line wrapping
 (default `"char"`; `"off"` lets long lines scroll horizontally), and

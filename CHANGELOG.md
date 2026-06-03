@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+- TUI mouse mode: a left-click now focuses the pane under the cursor.
+
+### Fixed
+- TUI mouse mode: the wheel now scrolls the pane under the cursor instead of
+  the focused pane, and no longer changes focus while scrolling.
+
 ## [0.35.0] — 2026-06-02
 
 ### Added
