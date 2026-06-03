@@ -65,6 +65,7 @@ jobs:
       - name: Bump + push formula
         if: steps.guard.outputs.skip != 'true'
         run: |
+          set -euo pipefail                        # fail loudly if bump.sh errors (e.g. tag unreachable)
           version="${GITHUB_REF_NAME#v}"           # v0.35.2 -> 0.35.2
           bash scripts/bump.sh sercon "$version"
           if git diff --quiet; then
@@ -72,6 +73,7 @@ jobs:
           else
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -am "sercon ${version}"
-            git push
+            git add Formula/sercon.rb              # scope the commit to just the formula
+            git commit -m "sercon ${version}"
+            git push origin HEAD
           fi
