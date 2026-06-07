@@ -14,6 +14,10 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   (`cookies.get`/`set`/`clear`), web storage (`storage.local`/`session`
   get/set/clear), tab management (`tabs.list`/`new`/`close`/`select`), and
   page diffing (`diff.snapshot`/`screenshot`/`url`).
+- Per-call subprocess timeout for `services.agentBrowser`: `launch({ timeout: <ms> })`
+  (default 30 000 ms, `0` disables) so a wedged `agent-browser` command throws
+  instead of hanging the script. Session `close()` is independently bounded at
+  10 s regardless of this setting.
 
 ## [0.37.0] — 2026-06-07
 

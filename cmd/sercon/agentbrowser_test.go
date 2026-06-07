@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -265,5 +266,20 @@ func TestMergeLaunchOpts(t *testing.T) {
 	// inputs must not be mutated.
 	if _, ok := defaults["userAgent"]; ok {
 		t.Fatalf("mergeLaunchOpts mutated the defaults map")
+	}
+}
+
+func TestCallTimeout(t *testing.T) {
+	// Missing key → default (30 s).
+	if got := callTimeout(map[string]any{}); got != abDefaultCallTimeout {
+		t.Fatalf("missing key: want %s, got %s", abDefaultCallTimeout, got)
+	}
+	// Explicit 0 → disabled (no timeout).
+	if got := callTimeout(map[string]any{"timeout": float64(0)}); got != 0 {
+		t.Fatalf("explicit 0: want 0, got %s", got)
+	}
+	// Positive value → that duration in ms.
+	if got := callTimeout(map[string]any{"timeout": float64(5000)}); got != 5*time.Second {
+		t.Fatalf("5000 ms: want 5s, got %s", got)
 	}
 }

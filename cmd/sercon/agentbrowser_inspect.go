@@ -72,7 +72,7 @@ func (h *abHandle) get(ctx context.Context, call goja.FunctionCall) (any, error)
 	if sel := strArg(call, 1); sel != "" {
 		args = append(args, sel)
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, args...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (h *abHandle) isState(state string) func(context.Context, goja.FunctionCall
 		if sel == "" {
 			return nil, fmt.Errorf("agentBrowser.is%s: selector is required", titleState(state))
 		}
-		out, err := abRunChecked(ctx, h.session, h.global, "is", state, sel)
+		out, err := abRunChecked(ctx, h.session, h.global, h.timeout, "is", state, sel)
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +107,7 @@ func (h *abHandle) evalJS(ctx context.Context, call goja.FunctionCall) (any, err
 	if code == "" {
 		return nil, errors.New("agentBrowser.eval: js code is required")
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, "eval", code)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, "eval", code)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (h *abHandle) snapshot(ctx context.Context, call goja.FunctionCall) (any, e
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, snapshotArgs(optsArgMap(call, 0))...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, snapshotArgs(optsArgMap(call, 0))...)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (h *abHandle) logView(verb string) func(context.Context, goja.FunctionCall)
 		if b, _ := optsArgMap(call, 0)["clear"].(bool); b {
 			args = append(args, "--clear")
 		}
-		out, err := abRunChecked(ctx, h.session, h.global, args...)
+		out, err := abRunChecked(ctx, h.session, h.global, h.timeout, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +153,7 @@ func (h *abHandle) highlight(ctx context.Context, call goja.FunctionCall) (any, 
 	if sel == "" {
 		return nil, errors.New("agentBrowser.highlight: selector is required")
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, "highlight", sel)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, "highlight", sel)
 	if err != nil {
 		return nil, err
 	}

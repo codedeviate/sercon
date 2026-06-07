@@ -43,7 +43,7 @@ func (h *abHandle) runSet(ctx context.Context, setting string, operands ...strin
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, setArgs(setting, operands...)...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, setArgs(setting, operands...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func (h *abHandle) recordStart(ctx context.Context, call goja.FunctionCall) (any
 	if url := strArg(call, 1); url != "" {
 		ops = append(ops, url)
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, recordArgs("start", ops...)...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, recordArgs("start", ops...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (h *abHandle) recordStop(ctx context.Context, _ goja.FunctionCall) (any, er
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, recordArgs("stop")...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, recordArgs("stop")...)
 	if err != nil {
 		return nil, err
 	}
