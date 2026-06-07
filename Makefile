@@ -93,7 +93,8 @@ DEMO_SCRIPTS = \
 	examples/scripts/tui-keys.ts \
 	examples/scripts/agent-browser-core.ts \
 	examples/scripts/agent-browser-capture.ts \
-	examples/scripts/agent-browser-state.ts
+	examples/scripts/agent-browser-state.ts \
+	examples/scripts/agent-browser-advanced.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

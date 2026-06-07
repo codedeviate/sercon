@@ -249,6 +249,21 @@ func TestDiffArgs(t *testing.T) {
 	}
 }
 
+func TestDebugArgs(t *testing.T) {
+	if got := profilerStartArgs(map[string]any{"categories": "v8,blink"}); !reflect.DeepEqual(got, []string{"profiler", "start", "--categories", "v8,blink"}) {
+		t.Fatalf("profiler start = %v", got)
+	}
+	if got := profilerStartArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"profiler", "start"}) {
+		t.Fatalf("profiler start bare = %v", got)
+	}
+	if got := clipboardArgs("write", "hello"); !reflect.DeepEqual(got, []string{"clipboard", "write", "hello"}) {
+		t.Fatalf("clipboard write = %v", got)
+	}
+	if got := clipboardArgs("read", ""); !reflect.DeepEqual(got, []string{"clipboard", "read"}) {
+		t.Fatalf("clipboard read = %v", got)
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}
@@ -281,5 +296,40 @@ func TestCallTimeout(t *testing.T) {
 	// Positive value → that duration in ms.
 	if got := callTimeout(map[string]any{"timeout": float64(5000)}); got != 5*time.Second {
 		t.Fatalf("5000 ms: want 5s, got %s", got)
+	}
+}
+
+func TestReactArgs(t *testing.T) {
+	if got := suspenseArgs(map[string]any{"onlyDynamic": true}); !reflect.DeepEqual(got, []string{"react", "suspense", "--only-dynamic"}) {
+		t.Fatalf("suspense onlyDynamic = %v", got)
+	}
+	if got := suspenseArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"react", "suspense"}) {
+		t.Fatalf("suspense bare = %v", got)
+	}
+}
+
+func TestAdvancedArgs(t *testing.T) {
+	if got := streamEnableArgs(map[string]any{"port": float64(9000)}); !reflect.DeepEqual(got, []string{"stream", "enable", "--port", "9000"}) {
+		t.Fatalf("stream enable port = %v", got)
+	}
+	if got := streamEnableArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"stream", "enable"}) {
+		t.Fatalf("stream enable bare = %v", got)
+	}
+	if got := chatArgs("hello there", map[string]any{"model": "gpt-x"}); !reflect.DeepEqual(got, []string{"chat", "hello there", "--model", "gpt-x"}) {
+		t.Fatalf("chat = %v", got)
+	}
+	if got := batchArgs([]string{"open x", "snapshot"}, map[string]any{"bail": true}); !reflect.DeepEqual(got, []string{"batch", "--bail", "open x", "snapshot"}) {
+		t.Fatalf("batch = %v", got)
+	}
+}
+
+func TestAuthSaveArgs(t *testing.T) {
+	got := authSaveArgs("prod", map[string]any{
+		"url": "https://x/login", "username": "u",
+		"usernameSelector": "#user",
+	})
+	want := []string{"auth", "save", "prod", "--url", "https://x/login", "--username", "u", "--username-selector", "#user", "--password-stdin"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("authSaveArgs = %v, want %v", got, want)
 	}
 }

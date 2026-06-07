@@ -62,6 +62,7 @@ Or pick individual scripts:
 | `agent-browser-core.ts` | `services.agentBrowser.*` — launch/open/fill/get/isVisible/snapshot/close against a `data:` URL; self-skips when the agent-browser CLI is not on PATH. |
 | `agent-browser-capture.ts` | `services.agentBrowser` Phase 2 — `setDefaultOptions`/`defaultOptions`, `set.viewport`, `screenshot` (bytes + file), `pdf` (bytes), and the one-shot `eval` shortcut; self-skips when the CLI is absent. |
 | `agent-browser-state.ts` | `services.agentBrowser` Phase 3 — `network.requests`, `cookies.get`/`set`, `storage.local.set`/`get`, `tabs.new`/`list`/`close`, `diff.snapshot`; uses a `data:` URL; self-skips when the agent-browser CLI is not on PATH. |
+| `agent-browser-advanced.ts` | `services.agentBrowser` Phase 4 — `vitals()`, `cmd(command, ...args)` escape hatch, `batch(cmds)`, and `auth.list()` vault listing; uses a `data:` URL; self-skips when the agent-browser CLI is not on PATH. |
 | `server-http.ts` | `server.http.listen` — minimal HTTP server with routing and middleware (logger); self-tests routes via `net.http.get` then closes. |
 | `server-static.ts` | `server.http.static` — mount a directory tree at a URL prefix; self-tests via `net.http.get` then closes. |
 | `server-ws.ts` | `res.upgradeWebSocket` — upgrade an HTTP request to a WebSocket; iterates frames via `for await`, echoes text frames back; self-tests the handshake via `net.probe.wss` then closes. |

@@ -1153,6 +1153,19 @@ into `.data` for the actual values (e.g. `data.title`, `data.value`,
   `tabs.close(ref?)`, `tabs.select(ref)`
 - **Diff (Phase 3):** `diff.snapshot(opts?)`, `diff.screenshot(opts)`,
   `diff.url(url1, url2)`
+- **Debug/Perf (Phase 4):** `trace.start()`, `trace.stop(path?)`,
+  `profiler.start(opts?)`, `profiler.stop(path?)`, `inspect()`,
+  `clipboard(op, text?)`, `vitals(url?)`, `pushstate(url)`
+- **React DevTools (Phase 4):** `react.tree()`, `react.inspect(id)`,
+  `react.renders.start()`, `react.renders.stop()`,
+  `react.suspense(opts?)` — requires `launch({ enable: "react-devtools" })`
+- **Streaming (Phase 4):** `stream.enable(opts?)`, `stream.disable()`,
+  `stream.status()`
+- **AI (Phase 4):** `chat(message, opts?)` — requires an AI gateway configured
+  in agent-browser
+- **Escape hatch (Phase 4):** `cmd(command, ...args)`, `batch(cmds, opts?)`
+- **Auth login (Phase 4):** `auth.login(name)` — uses a saved auth profile
+  on the current session
 - **Lifecycle:** `session` (read-only name), `close()`
 
 **Capture (Phase 2).** `screenshot` and `pdf` are path-first with opt-in
@@ -1357,6 +1370,167 @@ const cmp = await b.diff.url("https://staging.example.com", "https://prod.exampl
 `diff.snapshot` opts: `baseline?: string` (path to a prior snapshot JSON),
 `selector?: string` (scope to a subtree), `compact?: boolean`,
 `depth?: number`.
+
+**Phase 4: debug/perf, React DevTools, streaming, AI chat, escape hatch, auth vault.**
+
+All Phase-4 groups are handle methods (operate on an open session) unless noted.
+They return the standard `{ success, data, error }` envelope; `batch` returns an
+array of per-command envelopes.
+
+**Debug / perf (`trace.*`, `profiler.*`, `inspect`, `clipboard`, `vitals`, `pushstate`).**
+
+```typescript
+// Chrome DevTools tracing.
+await b.trace.start();
+// ... navigate and interact ...
+await b.trace.stop("/tmp/trace.json");
+
+// V8 CPU profiling (optional category filter).
+await b.profiler.start({ categories: "v8,blink" });
+await b.profiler.stop("/tmp/profile.json");
+
+// Open the Chrome DevTools inspector and get the DevTools URL.
+const devtools = await b.inspect();
+runtime.log("DevTools:", devtools.data?.url);
+
+// Clipboard read/write.
+await b.clipboard("write", "copied text");
+const clip = await b.clipboard("read");
+runtime.log(clip.data?.text);
+
+// Core Web Vitals for the current page (or a given URL).
+const v = await b.vitals();
+runtime.log("LCP:", v.data?.lcp);
+
+// SPA client-side navigation without a full page reload.
+await b.pushstate("/app/dashboard");
+```
+
+`profiler.start` opts: `{ categories?: string }` — a comma-separated list of
+V8/Blink profiling categories.
+
+**React DevTools (`react.*`).**
+
+Requires the session to have been launched with `launch({ enable: "react-devtools" })`.
+agent-browser returns a clear error (surfaced as a throw) when react-devtools
+was not enabled at launch time.
+
+```typescript
+const b = services.agentBrowser.launch({ enable: "react-devtools" });
+await b.open("https://my-react-app.example.com");
+
+// Get the component tree.
+const tree = await b.react.tree();
+runtime.log(JSON.stringify(tree.data).slice(0, 200));
+
+// Inspect a specific fiber node by id (id from tree.data).
+const node = await b.react.inspect("fiber-123");
+
+// Measure re-renders.
+await b.react.renders.start();
+// ... interact ...
+const renders = await b.react.renders.stop();
+runtime.log(JSON.stringify(renders.data));
+
+// List Suspense boundaries (optionally only dynamic ones).
+const suspense = await b.react.suspense({ onlyDynamic: true });
+```
+
+`react.suspense` opts: `{ onlyDynamic?: boolean }` — when true, only
+boundaries that have actually suspended are included.
+
+**Live streaming (`stream.*`).**
+
+```typescript
+// Enable a browser-event stream on a chosen port.
+await b.stream.enable({ port: 9229 });
+
+const status = await b.stream.status();
+runtime.log("streaming:", status.data?.enabled);
+
+await b.stream.disable();
+```
+
+`stream.enable` opts: `{ port?: number }` — selects the streaming port
+(agent-browser picks a default when omitted).
+
+**AI chat (`chat`).**
+
+Requires an AI gateway to be configured in agent-browser; errors cleanly if
+not configured.
+
+```typescript
+// Single-shot natural-language instruction.
+const r = await b.chat("Click the Login button");
+runtime.log("chat ok:", r.success);
+
+// Optionally specify the model.
+const r2 = await b.chat("Fill out the form with test data", { model: "gpt-4o" });
+```
+
+**Escape hatch (`cmd` / `batch`).**
+
+`cmd` is a generic passthrough for any agent-browser subcommand. `batch` runs
+multiple commands in a single round-trip and returns an **array** of
+per-command result envelopes (not the usual single envelope).
+
+```typescript
+// cmd: call any agent-browser subcommand.
+const title = await b.cmd("get", "title");
+runtime.log("title:", title.data?.title);
+
+// batch: multiple commands, one round-trip.
+const results = await b.batch(["get title", "get url"], { bail: false });
+for (const r of results) {
+  runtime.log(r.success, JSON.stringify(r.data));
+}
+```
+
+`batch` opts: `{ bail?: boolean }` — stop at the first failing command and
+return results up to that point.
+
+**Auth vault — namespace (`auth.save`/`list`/`show`/`delete`) + handle (`auth.login`).**
+
+Vault CRUD is session-independent and lives on the namespace
+(`services.agentBrowser.auth.*`). `login` fills a form on a live page
+and is a handle method (`b.auth.login(name)`).
+
+**Passwords are never placed in argv.** `auth.save` feeds the password
+through the subprocess stdin using `--password-stdin`. This means the
+password never appears in `ps` output or shell history.
+
+```typescript
+// Save a login profile (password is sent via stdin, not argv).
+await services.agentBrowser.auth.save("prod", {
+  url: "https://app.example.com/login",
+  username: "admin",
+  password: "s3cret",           // sent via stdin
+  usernameSelector: "#user",
+  passwordSelector: "#pass",
+  submitSelector: "#submit",
+});
+
+// List all saved profiles (returns an envelope; data contains profile names).
+const list = await services.agentBrowser.auth.list();
+runtime.log(JSON.stringify(list.data));
+
+// Show details of a saved profile.
+const info = await services.agentBrowser.auth.show("prod");
+
+// Delete a profile.
+await services.agentBrowser.auth.delete("prod");
+
+// Log in using a saved profile (handle method — requires an open session).
+const b = services.agentBrowser.launch();
+await b.open("https://app.example.com/login");
+await b.auth.login("prod");     // fills the form and submits
+runtime.log("logged in");
+await b.close();
+```
+
+`auth.save` opts: `{ url, username, password, usernameSelector?, passwordSelector?, submitSelector? }`.
+All string opts except `password` map to the corresponding agent-browser flags;
+`password` is stripped from the option object and fed via stdin.
 
 ### `tui`
 
@@ -4746,6 +4920,34 @@ await srv.close();
 
 Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation.
 
+#### services.agentBrowser.auth
+
+Namespace object for the auth vault (session-independent): auth.save, auth.list, auth.show, auth.delete. Passwords are never placed in argv — auth.save sends the password via stdin (--password-stdin).
+
+#### services.agentBrowser.auth.delete
+
+```
+delete(...args: unknown[])
+```
+
+#### services.agentBrowser.auth.list
+
+```
+list(...args: unknown[])
+```
+
+#### services.agentBrowser.auth.save
+
+```
+save(...args: unknown[])
+```
+
+#### services.agentBrowser.auth.show
+
+```
+show(...args: unknown[])
+```
+
 #### services.agentBrowser.available
 
 ```
@@ -4819,7 +5021,7 @@ runtime.log(r.data?.result); // "Hi"
 #### services.agentBrowser.launch
 
 ```
-launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string, timeout?: number }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: "Strict" | "Lax" | "None", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; close(): Promise<any> }
+launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string, timeout?: number }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: "Strict" | "Lax" | "None", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; trace: { start(): Promise<any>; stop(path?: string): Promise<any> }; profiler: { start(opts?: { categories?: string }): Promise<any>; stop(path?: string): Promise<any> }; inspect(): Promise<any>; clipboard(op: "read" | "write" | "copy" | "paste", text?: string): Promise<any>; vitals(url?: string): Promise<any>; pushstate(url: string): Promise<any>; react: { tree(): Promise<any>; inspect(id: string): Promise<any>; renders: { start(): Promise<any>; stop(): Promise<any> }; suspense(opts?: { onlyDynamic?: boolean }): Promise<any> }; stream: { enable(opts?: { port?: number }): Promise<any>; disable(): Promise<any>; status(): Promise<any> }; chat(message: string, opts?: { model?: string }): Promise<any>; cmd(command: string, ...args: string[]): Promise<any>; batch(cmds: string[], opts?: { bail?: boolean }): Promise<any>; auth: { login(name: string): Promise<any> }; close(): Promise<any> }
 ```
 
 Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.
