@@ -296,8 +296,7 @@ func webdriverNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scripten
 	}
 }
 
-// Empty stubs so the package compiles until Tasks 3-5 replace them.
-func (s *wdSession) addNav(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)     {}
+// Empty stubs so the package compiles until Tasks 4-5 replace them.
 func (s *wdSession) addFind(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)    {}
 func (s *wdSession) addPage(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)    {}
 func (s *wdSession) addScript(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)  {}

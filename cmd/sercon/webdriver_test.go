@@ -103,3 +103,16 @@ func TestConnectQuitIntegration(t *testing.T) {
 		t.Fatalf("closeAll should drain sessions")
 	}
 }
+
+// --- Task 3 tests ---
+
+func TestNavMethodNames(t *testing.T) {
+	// jsObject must expose the nav methods (built with a real vm is heavy;
+	// assert the wiring indirectly via a names list the impl exposes).
+	want := []string{"get", "url", "title", "back", "forward", "refresh"}
+	for _, n := range want {
+		if !wdNavMethods[n] {
+			t.Fatalf("nav method %q missing from wdNavMethods", n)
+		}
+	}
+}
