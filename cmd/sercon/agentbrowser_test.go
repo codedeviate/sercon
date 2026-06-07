@@ -142,6 +142,27 @@ func TestSetArgs(t *testing.T) {
 	}
 }
 
+func TestScreenshotArgs(t *testing.T) {
+	got := screenshotArgs(map[string]any{"selector": "#root", "full": true, "format": "jpeg", "quality": float64(80)})
+	want := []string{"screenshot", "#root", "--full", "--screenshot-format", "jpeg", "--screenshot-quality", "80"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("screenshotArgs = %v, want %v", got, want)
+	}
+	if got := screenshotArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"screenshot"}) {
+		t.Fatalf("empty screenshotArgs = %v", got)
+	}
+}
+
+func TestAbCapturePath(t *testing.T) {
+	p, err := abCapturePath(`{"success":true,"data":{"path":"/tmp/shot.png"},"error":null}`)
+	if err != nil || p != "/tmp/shot.png" {
+		t.Fatalf("abCapturePath = %q, %v", p, err)
+	}
+	if _, err := abCapturePath(`{"success":true,"data":{},"error":null}`); err == nil {
+		t.Fatalf("expected error when path missing")
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}

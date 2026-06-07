@@ -322,6 +322,7 @@ func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[str
 	h.addInspect(obj, vm, loop)  // Task 5
 	h.addLocator(obj, vm, loop)  // Task 6
 	h.addSettings(obj, vm, loop) // Phase 2
+	h.addCapture(obj, vm, loop)  // Phase 2
 	return obj
 }
 
