@@ -109,8 +109,12 @@ func wdFreePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port, nil
+	defer func() { _ = l.Close() }()
+	addr, ok := l.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("webdriver: unexpected addr type %T", l.Addr())
+	}
+	return addr.Port, nil
 }
 
 // wdRegistry tracks sessions opened this Run for best-effort quit on Run end.
