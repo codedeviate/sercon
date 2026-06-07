@@ -23,6 +23,16 @@ func strArg(call goja.FunctionCall, i int) string {
 	return v.String()
 }
 
+// shiftCall returns a FunctionCall whose Arguments are call.Arguments[n:],
+// so a namespace wrapper can forward trailing args to a handle method that
+// expects them at position 0. Returns an empty-arg call if n is out of range.
+func shiftCall(call goja.FunctionCall, n int) goja.FunctionCall {
+	if n >= len(call.Arguments) {
+		return goja.FunctionCall{This: call.This}
+	}
+	return goja.FunctionCall{This: call.This, Arguments: call.Arguments[n:]}
+}
+
 // runNav runs a navigation verb against the handle and returns the parsed
 // JSON result object.
 func (h *abHandle) runNav(ctx context.Context, verb string, operands ...string) (any, error) {

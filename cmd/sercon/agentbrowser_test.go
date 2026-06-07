@@ -163,6 +163,20 @@ func TestAbCapturePath(t *testing.T) {
 	}
 }
 
+func TestOneShotNeedsURL(t *testing.T) {
+	reg := &abRegistry{sessions: map[string]struct{}{}, defaults: map[string]any{}}
+	// withEphemeral should error before allocating a session when url is empty.
+	_, err := reg.withEphemeral(context.Background(), "", func(h *abHandle) (any, error) {
+		return nil, nil
+	})
+	if err == nil {
+		t.Fatalf("expected error for empty url")
+	}
+	if len(reg.sessions) != 0 {
+		t.Fatalf("no session should be allocated on empty-url error, got %d", len(reg.sessions))
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}

@@ -219,6 +219,30 @@ func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scrip
 			reg.mu.Unlock()
 			return goja.Undefined()
 		},
+		"screenshot": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			url := strArg(call, 0)
+			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
+				return h.screenshot(ctx, shiftCall(call, 1))
+			})
+		}).Func,
+		"pdf": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			url := strArg(call, 0)
+			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
+				return h.pdf(ctx, shiftCall(call, 1))
+			})
+		}).Func,
+		"snapshot": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			url := strArg(call, 0)
+			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
+				return h.snapshot(ctx, shiftCall(call, 1))
+			})
+		}).Func,
+		"eval": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			url := strArg(call, 0)
+			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
+				return h.evalJS(ctx, shiftCall(call, 1))
+			})
+		}).Func,
 	}
 }
 
@@ -290,6 +314,25 @@ func (r *abRegistry) newHandle(optsArg goja.Value, vm *goja.Runtime) *abHandle {
 		global:  buildGlobalArgs(merged),
 		reg:     r,
 	}
+}
+
+// withEphemeral allocates a throwaway session, opens url, runs fn against a
+// transient handle, and always closes the session afterward (best-effort).
+// Used by the flat one-shot shortcuts. Errors (and skips allocation) when
+// url is empty.
+func (r *abRegistry) withEphemeral(ctx context.Context, url string, fn func(h *abHandle) (any, error)) (any, error) {
+	if url == "" {
+		return nil, errors.New("agentBrowser: url is required")
+	}
+	r.mu.Lock()
+	merged := mergeLaunchOpts(r.defaults, map[string]any{})
+	r.mu.Unlock()
+	h := &abHandle{session: r.allocSession(""), global: buildGlobalArgs(merged), reg: r}
+	defer func() { _, _ = h.close(ctx, goja.FunctionCall{}) }()
+	if _, err := abRunChecked(ctx, h.session, h.global, "open", url); err != nil {
+		return nil, err
+	}
+	return fn(h)
 }
 
 // abHandle is one browser session. global holds the pre-built --flag args
