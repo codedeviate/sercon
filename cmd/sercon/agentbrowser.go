@@ -3,12 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -146,35 +144,23 @@ func abVersion(ctx context.Context, _ goja.FunctionCall) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// parseJSON decodes an agent-browser --json blob into an *Ordered so object
-// results keep stable key order. Empty output decodes to an empty object.
+// parseJSON decodes an agent-browser --json blob into an *Ordered, preserving
+// native source key order via DecodeOrderedJSON. Non-object JSON (array,
+// string, number) and plain text are wrapped under a "result" key. Empty
+// output decodes to an empty object.
 func parseJSON(raw string) (*scriptengine.Ordered, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return scriptengine.NewOrdered(), nil
 	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		// Non-object JSON (string/array) or plain text: wrap under "result".
-		o := scriptengine.NewOrdered()
-		var v any
-		if json.Unmarshal([]byte(raw), &v) == nil {
-			o.Set("result", v)
-		} else {
-			o.Set("result", raw)
-		}
+	v, err := scriptengine.DecodeOrderedJSON([]byte(raw))
+	if err != nil {
+		return scriptengine.NewOrdered().Set("result", raw), nil
+	}
+	if o, ok := v.(*scriptengine.Ordered); ok {
 		return o, nil
 	}
-	o := scriptengine.NewOrdered()
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		o.Set(k, m[k])
-	}
-	return o, nil
+	return scriptengine.NewOrdered().Set("result", v), nil
 }
 
 // agentBrowserNamespace builds the services.agentBrowser member map. It
@@ -182,11 +168,15 @@ func parseJSON(raw string) (*scriptengine.Ordered, error) {
 // closes any session the script left open.
 func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengine.Engine) map[string]any {
 	reg := &abRegistry{sessions: map[string]struct{}{}}
-	e.AddRunCleanup(reg.closeAll)
+	// Only register cleanup for a real Run; vm == nil during d.ts introspection.
+	if vm != nil {
+		e.AddRunCleanup(reg.closeAll)
+	}
 
 	return map[string]any{
 		"available": abAvailable(),
-		"version":   scriptengine.PromisifyAsync(vm, loop, abVersion).Func,
+		// Keep as AsyncBinding (not .Func) so the d.ts emitter renders Promise<string>.
+		"version": scriptengine.PromisifyAsync(vm, loop, abVersion),
 		"launch": func(call goja.FunctionCall) goja.Value {
 			h := reg.newHandle(call.Argument(0), vm)
 			return vm.ToValue(h.jsObject(vm, loop))
@@ -268,6 +258,9 @@ type abHandle struct {
 }
 
 // p wraps an async method as a bare goja callback for use inside jsObject.
+// Handle methods intentionally use .Func here: jsObject returns a raw map
+// handed to vm.ToValue (not a registered namespace), so AsyncBindings are
+// never unwrapped by unwrapAsyncBindings and must be the bare function value.
 func (h *abHandle) p(vm *goja.Runtime, loop *eventloop.EventLoop, work func(context.Context, goja.FunctionCall) (any, error)) func(goja.FunctionCall) goja.Value {
 	return scriptengine.PromisifyAsync(vm, loop, work).Func
 }
