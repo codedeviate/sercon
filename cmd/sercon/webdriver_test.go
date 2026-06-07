@@ -7,6 +7,8 @@ import (
 	"github.com/dop251/goja"
 	"github.com/tebeka/selenium"
 	"github.com/tebeka/selenium/chrome"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 func TestByStrategy(t *testing.T) {
@@ -114,5 +116,30 @@ func TestNavMethodNames(t *testing.T) {
 		if !wdNavMethods[n] {
 			t.Fatalf("nav method %q missing from wdNavMethods", n)
 		}
+	}
+}
+
+// --- Task 4 tests ---
+
+func TestWdDeliverShot(t *testing.T) {
+	data := []byte{1, 2, 3, 4}
+	// no path → bytes
+	o, err := wdDeliverShot(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := o.(*scriptengine.Ordered)
+	if _, ok := res.Get("bytes"); !ok {
+		t.Fatalf("expected bytes key, got %v", res)
+	}
+	// path → write + metadata
+	tmp := t.TempDir() + "/shot.png"
+	o, err = wdDeliverShot(data, tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = o.(*scriptengine.Ordered)
+	if v, _ := res.Get("path"); v != tmp {
+		t.Fatalf("path = %v", v)
 	}
 }
