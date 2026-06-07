@@ -142,28 +142,29 @@ modern CLI; the design + phasing live in
 `~/Development/Starweb/superpowers/sercon/specs/2026-06-07-agent-browser-automation-design.md`
 and the Phase 1 plan alongside it.
 
-**Phase 1 shipped** (merged to master; pending the v0.36.0 cut): the
-subprocess bridge (`abRun`/`abRunChecked`/`parseJSON`/`buildGlobalArgs`),
-synchronous `launch(opts?)` returning a handle, per-Run session tracking with
-best-effort close on Run end (`Engine.AddRunCleanup`), and the core loop —
-navigation (`open`/`back`/`forward`/`reload`/`wait`/`connect`/`close`),
-interaction (`click`/`dblclick`/`hover`/`focus`/`fill`/`type`/`press`/`check`/
-`uncheck`/`select`/`scroll`/`scrollIntoView`/`drag`/`upload`/`download` +
+**Phase 1 shipped (v0.36.0):** the subprocess bridge
+(`abRun`/`abRunChecked`/`parseJSON`/`buildGlobalArgs`), synchronous
+`launch(opts?)` returning a handle, per-Run session tracking with best-effort
+close on Run end (`Engine.AddRunCleanup`), and the core loop — navigation
+(`open`/`back`/`forward`/`reload`/`wait`/`connect`/`close`), interaction
+(`click`/`dblclick`/`hover`/`focus`/`fill`/`type`/`press`/`check`/`uncheck`/
+`select`/`scroll`/`scrollIntoView`/`drag`/`upload`/`download` +
 `keyboard.*`/`mouse.*`), inspection (`get`/`isVisible`/`isEnabled`/`isChecked`/
 `eval`/`snapshot`/`console`/`errors`/`highlight`), and locators (`find`
 one-shot + `locator(spec)` handle). agent-browser wraps every result in a
 `{ success, data, error }` envelope, surfaced verbatim.
 
-**Remaining (each an additive MINOR, its own plan reusing the Task-7 docs
+**Phase 2 shipped (v0.37.0):** capture (`screenshot(path?,opts?)` /
+`pdf(path?)`, path-first with opt-in in-memory bytes returned as a JS
+`number[]`), `set.{viewport,device,geo,offline,headers,credentials,media}`,
+`record.{start,stop}`, the namespace-level defaults bag
+(`defaultOptions`/`setDefaultOptions`/`clearDefaultOptions`) merged into
+`launch()`, and the flat one-shot shortcuts
+(`screenshot(url,…)`/`pdf(url,…)`/`snapshot(url,…)`/`eval(url,js)`).
+
+**Remaining (each an additive MINOR, its own plan reusing the docs
 lockstep):**
 
-- **Phase 2 — Capture + settings + defaults.** `screenshot(path?, opts?)` /
-  `pdf(path?, opts?)` (path-first / opt-in `Uint8Array`), `record.*`,
-  `set.{viewport,device,geo,offline,headers,credentials,media}`, the flat
-  one-shot shortcuts (`screenshot(url,…)`/`pdf(url,…)`/`snapshot(url,…)`/
-  `eval(url,js)`), and the namespace-level defaults bag
-  (`defaultOptions`/`setDefaultOptions`/`clearDefaultOptions`) merged into
-  `launch()`.
 - **Phase 3 — Network + storage + tabs + diff.** `network.{route,unroute,
   requests,har}`, `cookies.{get,set,clear}`, `storage.local/session`,
   `tabs.{list,new,close,select}`, `diff.{snapshot,screenshot,url}`.
