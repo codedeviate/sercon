@@ -798,6 +798,41 @@ if (!services.agentBrowser.available) {
 	note("record.*: start(path.webm, url?), stop(). One-shot shortcuts: agentBrowser.screenshot/pdf/snapshot/eval(url, ...).")
 	fmt.Fprintln(w, "")
 
+	header(52, "Browser state: cookies, storage, tabs, network (services.agentBrowser)")
+	code(`// Phase 3: network interception, cookies, web storage, tab management,
+// and page diffing — all as handle methods on the launch() return value.
+if (!services.agentBrowser.available) {
+  runtime.log("agent-browser not on PATH — skip");
+} else {
+  const html = "data:text/html," + encodeURIComponent("<title>demo</title><h1>Hi</h1>");
+  const b = services.agentBrowser.launch();
+  try {
+    await b.open(html);
+
+    // Tabs: open a second tab, list, then close it.
+    await b.tabs.new(html, { label: "second" });
+    const tabs = await b.tabs.list();
+    runtime.log("tabs:", JSON.stringify(tabs.data?.tabs?.length), "open");
+    await b.tabs.close("second");
+
+    // Network: intercept requests (empty on data: URL, but smoke-tests binding).
+    await b.network.route("**/api/*", { abort: true });
+    const reqs = await b.network.requests({ clear: true });
+    runtime.log("network.requests ok:", reqs.success);
+
+    // Cookies: get the (empty) cookie jar; set needs a real HTTP origin.
+    const jar = await b.cookies.get();
+    runtime.log("cookies:", jar.data?.cookies?.length ?? 0);
+
+    // Diff: snapshot the current page DOM state.
+    const d = await b.diff.snapshot();
+    runtime.log("diff.snapshot ok:", d.success);
+  } finally {
+    await b.close();
+  }
+}`)
+	note("cookies.set + storage.* require a real HTTP origin (data: URLs have no domain). Wrap in try-catch when working with data: URLs. network.har.{start,stop} trace network activity to a HAR file. diff.screenshot compares a saved baseline PNG.")
+
 	header(38, "Server (server.http.listen + routes)")
 	code(`// Bind an HTTP listener. Routes use stdlib http.ServeMux Go 1.22+
 // pattern syntax: "METHOD /path/{param}/{rest...}".
@@ -1040,4 +1075,4 @@ await net.capture.openFile("/tmp/x.pcap", (pkt) => {
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 51
+const exampleCount = 52

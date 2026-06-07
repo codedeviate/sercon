@@ -1141,6 +1141,17 @@ into `.data` for the actual values (e.g. `data.title`, `data.value`,
   `set.credentials(user,pass)`, `set.media(scheme?,reducedMotion?)`
 - **Recording (Phase 2):** `record.start(path.webm, url?)`, `record.stop()`
 - **Capture (Phase 2):** `screenshot(path?,opts?)`, `pdf(path?)`
+- **Network (Phase 3):** `network.route(url, opts?)`, `network.unroute(url?)`,
+  `network.requests(opts?)`, `network.request(id)`,
+  `network.har.start(path?)`, `network.har.stop(path?)`
+- **Cookies (Phase 3):** `cookies.get()`, `cookies.set(name, value, opts?)`,
+  `cookies.clear()`
+- **Storage (Phase 3):** `storage.local.get(key?)`, `storage.local.set(key, value)`,
+  `storage.local.clear()` and matching `storage.session.*`
+- **Tabs (Phase 3):** `tabs.list()`, `tabs.new(url?, opts?)`,
+  `tabs.close(ref?)`, `tabs.select(ref)`
+- **Diff (Phase 3):** `diff.snapshot(opts?)`, `diff.screenshot(opts)`,
+  `diff.url(url1, url2)`
 - **Lifecycle:** `session` (read-only name), `close()`
 
 **Capture (Phase 2).** `screenshot` and `pdf` are path-first with opt-in
@@ -1222,6 +1233,129 @@ if (!services.agentBrowser.available) {
   runtime.log("title:", r.data?.result);  // "sercon demo"
 }
 ```
+
+**Phase 3: network, cookies, storage, tabs, diff.**
+
+All Phase-3 groups are handle methods (operate on an open session) and return
+the standard `{ success, data, error }` envelope.
+
+**Network interception (`network.*`).**
+
+```typescript
+// Block all XHR requests matching a glob pattern.
+await b.network.route("**/api/*", { abort: true });
+
+// Stub a JSON response body instead of blocking.
+await b.network.route("**/data.json", { body: { mock: true } });
+
+// Remove a specific route (or all routes when url is omitted).
+await b.network.unroute("**/api/*");
+
+// Inspect captured requests.
+const reqs = await b.network.requests({ clear: true, method: "POST" });
+runtime.log(JSON.stringify(reqs.data));
+
+// Get a single request by id.
+const req = await b.network.request("req-1");
+
+// Record a HAR trace.
+await b.network.har.start("/tmp/trace.har");
+// ... navigate and interact ...
+await b.network.har.stop();
+```
+
+Route `opts`: `abort?: boolean`, `body?: unknown` (JSON-serialised),
+`resourceType?: string` (e.g. `"xhr"`).
+
+Requests `opts`: `clear?: boolean`, `filter?: string`, `type?: string`,
+`method?: string`, `status?: string`.
+
+**Cookie management (`cookies.*`).**
+
+```typescript
+// Read the current cookie jar.
+const jar = await b.cookies.get();
+runtime.log(jar.data?.cookies);  // array of cookie objects
+
+// Set a cookie (requires a real HTTP origin — not available on data: URLs).
+await b.cookies.set("session_id", "abc123", {
+  domain: ".example.com",
+  httpOnly: true,
+  secure: true,
+  sameSite: "Lax",
+  expires: Math.floor(Date.now() / 1000) + 3600,  // Unix seconds
+});
+
+// Clear all cookies.
+await b.cookies.clear();
+```
+
+`cookies.set` opts: `url?`, `domain?`, `path?`, `httpOnly?`, `secure?`,
+`sameSite?: "Strict" | "Lax" | "None"`, `expires?` (Unix seconds).
+
+> **Note:** `cookies.set` and `storage.*` require a real HTTP origin.
+> They will fail on `data:` URLs — wrap in `try-catch` when testing with
+> data: URLs.
+
+**Web storage (`storage.*`).**
+
+```typescript
+// localStorage round-trip (requires a real HTTP origin).
+await b.storage.local.set("theme", "dark");
+const val = await b.storage.local.get("theme");
+runtime.log(val.data);              // { theme: "dark" } or similar
+await b.storage.local.clear();
+
+// sessionStorage works identically under storage.session.
+await b.storage.session.set("token", "xyz");
+const tok = await b.storage.session.get("token");
+await b.storage.session.clear();
+```
+
+`get(key?)` — omit `key` to get all entries; pass a key to get one.
+
+**Tab management (`tabs.*`).**
+
+```typescript
+// Open a new tab (optionally at a URL, with an optional label).
+await b.tabs.new("https://docs.example.com", { label: "docs" });
+
+// List all open tabs. Refs are t1/t2/… or the user-supplied label.
+const list = await b.tabs.list();
+runtime.log(list.data?.tabs);  // [{ tabId, title, url, active, label, type }]
+
+// Switch the active tab.
+await b.tabs.select("docs");   // by label
+await b.tabs.select("t1");     // by ref
+
+// Close a specific tab (or the current tab when ref is omitted).
+await b.tabs.close("docs");
+```
+
+**Page diffing (`diff.*`).**
+
+```typescript
+// Snapshot the current DOM state (baseline snapshot when no -b given).
+const snap = await b.diff.snapshot();
+
+// Compare against a saved baseline snapshot.
+const delta = await b.diff.snapshot({ baseline: "/tmp/base.json", compact: true });
+runtime.log(delta.data);
+
+// Pixel-level screenshot comparison.
+const px = await b.diff.screenshot({
+  baseline: "/tmp/base.png",
+  output: "/tmp/diff.png",
+  threshold: 0.1,              // 0–1; pixels above this are flagged
+});
+
+// Compare two URLs side-by-side without an open session.
+const cmp = await b.diff.url("https://staging.example.com", "https://prod.example.com");
+```
+
+`diff.snapshot` opts: `baseline?: string` (path to a prior snapshot JSON),
+`selector?: string` (scope to a subtree), `compact?: boolean`,
+`depth?: number`.
 
 ### `tui`
 
@@ -4684,7 +4818,7 @@ runtime.log(r.data?.result); // "Hi"
 #### services.agentBrowser.launch
 
 ```
-launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; close(): Promise<any> }
+launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: "Strict" | "Lax" | "None", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; close(): Promise<any> }
 ```
 
 Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.
