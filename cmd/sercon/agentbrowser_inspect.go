@@ -4,10 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 )
+
+// titleState upper-cases the first rune of s (e.g. "visible" -> "Visible").
+// strings.Title is deprecated; this avoids that dependency.
+func titleState(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
 
 // snapshotArgs builds the snapshot command flags from an options object.
 func snapshotArgs(opts map[string]any) []string {
@@ -78,7 +88,7 @@ func (h *abHandle) isState(state string) func(context.Context, goja.FunctionCall
 		}
 		sel := strArg(call, 0)
 		if sel == "" {
-			return nil, fmt.Errorf("agentBrowser.is%s: selector is required", state)
+			return nil, fmt.Errorf("agentBrowser.is%s: selector is required", titleState(state))
 		}
 		out, err := abRunChecked(ctx, h.session, h.global, "is", state, sel)
 		if err != nil {

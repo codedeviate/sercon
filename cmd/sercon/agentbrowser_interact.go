@@ -9,6 +9,27 @@ import (
 	"github.com/dop251/goja_nodejs/eventloop"
 )
 
+// exportStr coerces a goja.Value export to a string, returning "" for
+// nil/undefined/null exports so callers never see a bare "<nil>".
+func exportStr(v goja.Value) string {
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return ""
+	}
+	ex := v.Export()
+	if ex == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", ex)
+}
+
+// anyStr coerces an arbitrary exported value to a string, returning "" for nil.
+func anyStr(f any) string {
+	if f == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", f)
+}
+
 // interactArgs is the generic verb+operands assembler (mirrors navArgs but
 // kept separate so the two surfaces evolve independently).
 func interactArgs(verb string, operands ...string) []string {
@@ -99,10 +120,10 @@ func (h *abHandle) upload(ctx context.Context, call goja.FunctionCall) (any, err
 		return nil, errors.New("agentBrowser.upload: selector is required")
 	}
 	ops := []string{sel}
-	// files may be a single string or a string[].
+	// files may be a single string or a string[]; elements are assumed to be string paths.
 	if arr, ok := call.Argument(1).Export().([]any); ok {
 		for _, f := range arr {
-			ops = append(ops, fmt.Sprintf("%v", f))
+			ops = append(ops, anyStr(f))
 		}
 	} else {
 		ops = append(ops, strArg(call, 1))
@@ -129,7 +150,7 @@ func (h *abHandle) mouseAction(action string) func(context.Context, goja.Functio
 	return func(ctx context.Context, call goja.FunctionCall) (any, error) {
 		ops := []string{action}
 		for i := 0; i < len(call.Arguments); i++ {
-			ops = append(ops, fmt.Sprintf("%v", call.Argument(i).Export()))
+			ops = append(ops, exportStr(call.Argument(i)))
 		}
 		return h.runVerb(ctx, "mouse", ops...)
 	}

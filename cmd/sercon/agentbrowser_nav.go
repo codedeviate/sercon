@@ -57,7 +57,7 @@ func (h *abHandle) reload(ctx context.Context, _ goja.FunctionCall) (any, error)
 // wait accepts a selector string or a number of milliseconds.
 func (h *abHandle) wait(ctx context.Context, call goja.FunctionCall) (any, error) {
 	arg := call.Argument(0)
-	if arg == nil || goja.IsUndefined(arg) {
+	if arg == nil || goja.IsUndefined(arg) || goja.IsNull(arg) {
 		return nil, errors.New("agentBrowser.wait: selector or ms required")
 	}
 	// goja numbers stringify cleanly (e.g. 500 -> "500").
