@@ -1,0 +1,318 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"sort"
+	"strings"
+	"sync"
+	"sync/atomic"
+
+	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
+)
+
+// agentBrowserBin is the CLI this namespace bridges to.
+const agentBrowserBin = "agent-browser"
+
+// abGlobalFlags maps a launch-option key to its CLI flag. String options
+// emit `--flag value`; bool options emit a bare `--flag` only when true.
+// Only keys here are honoured; unknown keys are ignored.
+var abGlobalFlags = []struct {
+	key  string
+	flag string
+	bool bool
+}{
+	{"headed", "--headed", true},
+	{"ignoreHttpsErrors", "--ignore-https-errors", true},
+	{"profile", "--profile", false},
+	{"proxy", "--proxy", false},
+	{"userAgent", "--user-agent", false},
+	{"device", "--device", false},
+	{"colorScheme", "--color-scheme", false},
+	{"engine", "--engine", false},
+	{"executablePath", "--executable-path", false},
+	{"enable", "--enable", false},
+	{"args", "--args", false},
+}
+
+// buildGlobalArgs turns a launch-options map into ordered CLI global flags.
+// Order follows abGlobalFlags so output is deterministic for tests.
+func buildGlobalArgs(opts map[string]any) []string {
+	var out []string
+	for _, g := range abGlobalFlags {
+		v, ok := opts[g.key]
+		if !ok {
+			continue
+		}
+		if g.bool {
+			if b, _ := v.(bool); b {
+				out = append(out, g.flag)
+			}
+			continue
+		}
+		if s := fmt.Sprintf("%v", v); s != "" {
+			out = append(out, g.flag, s)
+		}
+	}
+	return out
+}
+
+// abRun spawns `agent-browser <global> --json --session <name> <args...>`
+// and returns captured streams + exit code. ctx is the engine's per-Run
+// context (context.Background today, matching git/gh) so cancellation
+// semantics stay identical to the other CLI wrappers.
+func abRun(ctx context.Context, session string, global []string, args ...string) (string, string, int, error) {
+	full := make([]string, 0, len(global)+len(args)+4)
+	full = append(full, global...)
+	full = append(full, "--json")
+	if session != "" {
+		full = append(full, "--session", session)
+	}
+	full = append(full, args...)
+
+	cmd := exec.CommandContext(ctx, agentBrowserBin, full...)
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+	err := cmd.Run()
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("agent-browser: %w", ctxErr)
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return stdoutBuf.String(), stderrBuf.String(), exitErr.ExitCode(), nil
+		}
+		return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("agent-browser: %w", err)
+	}
+	return stdoutBuf.String(), stderrBuf.String(), 0, nil
+}
+
+// abRunChecked is the strict variant: a non-zero exit becomes an error
+// carrying stderr (which surfaces as a JS throw). stdout is returned raw
+// for the caller to parse.
+func abRunChecked(ctx context.Context, session string, global []string, args ...string) (string, error) {
+	if !abAvailable() {
+		return "", errors.New("agent-browser CLI not found on PATH; install it to use services.agentBrowser")
+	}
+	stdout, stderr, code, err := abRun(ctx, session, global, args...)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		msg := strings.TrimSpace(stderr)
+		if msg == "" {
+			msg = strings.TrimSpace(stdout)
+		}
+		if msg != "" {
+			return "", fmt.Errorf("agent-browser %s: exited %d: %s", firstArg(args), code, msg)
+		}
+		return "", fmt.Errorf("agent-browser %s: exited %d", firstArg(args), code)
+	}
+	return stdout, nil
+}
+
+func firstArg(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+	return "?"
+}
+
+// abAvailable reports whether the agent-browser CLI is on PATH.
+func abAvailable() bool {
+	_, err := exec.LookPath(agentBrowserBin)
+	return err == nil
+}
+
+// abVersion returns the CLI version string.
+func abVersion(ctx context.Context, _ goja.FunctionCall) (string, error) {
+	if !abAvailable() {
+		return "", errors.New("agent-browser CLI not found on PATH; install it to use services.agentBrowser")
+	}
+	cmd := exec.CommandContext(ctx, agentBrowserBin, "--version")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("agent-browser --version: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// parseJSON decodes an agent-browser --json blob into an *Ordered so object
+// results keep stable key order. Empty output decodes to an empty object.
+func parseJSON(raw string) (*scriptengine.Ordered, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return scriptengine.NewOrdered(), nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		// Non-object JSON (string/array) or plain text: wrap under "result".
+		o := scriptengine.NewOrdered()
+		var v any
+		if json.Unmarshal([]byte(raw), &v) == nil {
+			o.Set("result", v)
+		} else {
+			o.Set("result", raw)
+		}
+		return o, nil
+	}
+	o := scriptengine.NewOrdered()
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		o.Set(k, m[k])
+	}
+	return o, nil
+}
+
+// agentBrowserNamespace builds the services.agentBrowser member map. It
+// allocates a per-Run registry and registers a best-effort cleanup that
+// closes any session the script left open.
+func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengine.Engine) map[string]any {
+	reg := &abRegistry{sessions: map[string]struct{}{}}
+	e.AddRunCleanup(reg.closeAll)
+
+	return map[string]any{
+		"available": abAvailable(),
+		"version":   scriptengine.PromisifyAsync(vm, loop, abVersion).Func,
+		"launch": func(call goja.FunctionCall) goja.Value {
+			h := reg.newHandle(call.Argument(0), vm)
+			return vm.ToValue(h.jsObject(vm, loop))
+		},
+	}
+}
+
+// abRegistry tracks sessions launched this Run for best-effort cleanup.
+type abRegistry struct {
+	mu       sync.Mutex
+	sessions map[string]struct{}
+	counter  int
+}
+
+// allocSession returns the session name to use: the caller's explicit name
+// when non-empty, else a unique auto id. The chosen name is recorded so
+// closeAll can reach it if the script never closes the handle.
+func (r *abRegistry) allocSession(explicit string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	name := explicit
+	if name == "" {
+		r.counter++
+		name = fmt.Sprintf("sercon-%d-%d", os.Getpid(), r.counter)
+	}
+	r.sessions[name] = struct{}{}
+	return name
+}
+
+// forget drops a session from the cleanup set (called on explicit close).
+func (r *abRegistry) forget(name string) {
+	r.mu.Lock()
+	delete(r.sessions, name)
+	r.mu.Unlock()
+}
+
+// closeAll fires `agent-browser --session <name> close` best-effort for
+// every still-open session. Registered via Engine.AddRunCleanup so it runs
+// after loop.Run returns on every exit path (normal, error, cancel, timeout).
+func (r *abRegistry) closeAll() {
+	if !abAvailable() {
+		return
+	}
+	r.mu.Lock()
+	names := make([]string, 0, len(r.sessions))
+	for n := range r.sessions {
+		names = append(names, n)
+	}
+	r.sessions = map[string]struct{}{}
+	r.mu.Unlock()
+	for _, n := range names {
+		_, _, _, _ = abRun(context.Background(), n, nil, "close")
+	}
+}
+
+// newHandle builds a handle from the launch options argument.
+func (r *abRegistry) newHandle(optsArg goja.Value, vm *goja.Runtime) *abHandle {
+	opts := map[string]any{}
+	if optsArg != nil && !goja.IsUndefined(optsArg) && !goja.IsNull(optsArg) {
+		if m, ok := optsArg.Export().(map[string]any); ok {
+			opts = m
+		}
+	}
+	explicit, _ := opts["session"].(string)
+	return &abHandle{
+		session: r.allocSession(explicit),
+		global:  buildGlobalArgs(opts),
+		reg:     r,
+	}
+}
+
+// abHandle is one browser session. global holds the pre-built --flag args
+// from launch opts (merged over defaults); they are prepended to every call.
+type abHandle struct {
+	session string
+	global  []string
+	reg     *abRegistry
+	closed  atomic.Bool
+}
+
+// p wraps an async method as a bare goja callback for use inside jsObject.
+func (h *abHandle) p(vm *goja.Runtime, loop *eventloop.EventLoop, work func(context.Context, goja.FunctionCall) (any, error)) func(goja.FunctionCall) goja.Value {
+	return scriptengine.PromisifyAsync(vm, loop, work).Func
+}
+
+// jsObject returns the goja-facing handle object. Method groups are added
+// across tasks; Phase 1 wires navigation, interaction, inspection, locator,
+// and close. session is exposed read-only for diagnostics.
+func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+	obj := map[string]any{
+		"session": h.session,
+		"close":   h.p(vm, loop, h.close),
+	}
+	h.addNav(obj, vm, loop)      // Task 3
+	h.addInteract(obj, vm, loop) // Task 4
+	h.addInspect(obj, vm, loop)  // Task 5
+	h.addLocator(obj, vm, loop)  // Task 6
+	return obj
+}
+
+// requireOpen returns an error if the handle was already closed.
+func (h *abHandle) requireOpen() error {
+	if h.closed.Load() {
+		return errors.New("agent-browser: session already closed")
+	}
+	return nil
+}
+
+// close ends the browser session. Idempotent: a second close is a no-op.
+func (h *abHandle) close(ctx context.Context, _ goja.FunctionCall) (any, error) {
+	if h.closed.Swap(true) {
+		return scriptengine.NewOrdered(), nil
+	}
+	h.reg.forget(h.session)
+	_, err := abRunChecked(ctx, h.session, h.global, "close")
+	if err != nil {
+		return nil, err
+	}
+	o := scriptengine.NewOrdered()
+	o.Set("closed", true)
+	return o, nil
+}
+
+// Stub methods for Tasks 3–6. Each later task replaces the matching stub
+// with the real implementation (delete the stub in that task).
+func (h *abHandle) addNav(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)      {}
+func (h *abHandle) addInteract(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {}
+func (h *abHandle) addInspect(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)  {}
+func (h *abHandle) addLocator(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)  {}

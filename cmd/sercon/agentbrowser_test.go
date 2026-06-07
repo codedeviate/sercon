@@ -1,0 +1,79 @@
+package main
+
+import (
+	"context"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/dop251/goja"
+)
+
+func TestBuildGlobalArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		opts map[string]any
+		want []string
+	}{
+		{"empty", map[string]any{}, nil},
+		{"headed", map[string]any{"headed": true}, []string{"--headed"}},
+		{"headed-false-omitted", map[string]any{"headed": false}, nil},
+		{"string-flags", map[string]any{"profile": "Default", "proxy": "http://127.0.0.1:8080"},
+			[]string{"--profile", "Default", "--proxy", "http://127.0.0.1:8080"}},
+		{"userAgent", map[string]any{"userAgent": "x"}, []string{"--user-agent", "x"}},
+		{"unknown-ignored", map[string]any{"nope": "x"}, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := buildGlobalArgs(c.opts)
+			if len(got) == 0 && len(c.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("buildGlobalArgs(%v) = %v, want %v", c.opts, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRegistrySessionIDsUnique(t *testing.T) {
+	reg := &abRegistry{sessions: map[string]struct{}{}}
+	a := reg.allocSession("")
+	b := reg.allocSession("")
+	if a == b {
+		t.Fatalf("expected unique session ids, got %q twice", a)
+	}
+	if !strings.HasPrefix(a, "sercon-") {
+		t.Fatalf("auto id should be prefixed sercon-, got %q", a)
+	}
+	if got := reg.allocSession("custom"); got != "custom" {
+		t.Fatalf("explicit session name should pass through, got %q", got)
+	}
+	// allocSession records open sessions for cleanup.
+	if len(reg.sessions) != 3 {
+		t.Fatalf("expected 3 tracked sessions, got %d", len(reg.sessions))
+	}
+	reg.forget("custom")
+	if _, ok := reg.sessions["custom"]; ok {
+		t.Fatalf("forget should drop the session")
+	}
+}
+
+func skipIfNoAgentBrowser(t *testing.T) {
+	t.Helper()
+	if !abAvailable() {
+		t.Skip("agent-browser CLI not on PATH; skipping integration test")
+	}
+}
+
+func TestLaunchCloseIntegration(t *testing.T) {
+	skipIfNoAgentBrowser(t)
+	reg := &abRegistry{sessions: map[string]struct{}{}}
+	h := &abHandle{session: reg.allocSession(""), reg: reg}
+	if _, err := h.close(context.Background(), goja.FunctionCall{}); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if !h.closed.Load() {
+		t.Fatalf("handle should be marked closed")
+	}
+}

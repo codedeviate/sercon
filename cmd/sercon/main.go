@@ -439,9 +439,10 @@ func registerSurface(e *scriptengine.Engine) error {
 				"http":   scriptengine.PromisifyAsync(vm, loop, execHTTP),
 				"stream": execStreamFn(vm, loop, e),
 			},
-			"git": gitNamespace(vm, loop),
-			"gh":  ghNamespace(vm, loop),
-			"ai":  aiNamespace(vm, loop),
+			"git":          gitNamespace(vm, loop),
+			"gh":           ghNamespace(vm, loop),
+			"ai":           aiNamespace(vm, loop),
+			"agentBrowser": agentBrowserNamespace(vm, loop, e),
 		}
 	}); err != nil {
 		return err
