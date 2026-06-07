@@ -592,5 +592,48 @@ await b.record.start("/tmp/clip.webm");
 await b.record.stop();
 await b.close();`,
 		},
+
+		// webdriver namespace docs
+		"webdriver.available": {
+			Summary: "True when a W3C WebDriver binary (chromedriver or geckodriver) is on PATH. Sync boolean, resolved once per Run. Gate calls on this before using probe or connect.",
+			Returns: "boolean — true if chromedriver or geckodriver is found on PATH.",
+			Example: `if (!services.webdriver.available) {
+  runtime.log("install chromedriver or geckodriver first");
+}`,
+		},
+		"webdriver.probe": {
+			Summary: "Check whether a WebDriver endpoint responds at opts.url/status. Returns { ready, status } on HTTP success or { ready: false, error } on transport failure. Does not throw on network errors.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ url: string }", Desc: "url is required — the base URL of a running WebDriver server (e.g. 'http://127.0.0.1:9515')."},
+			},
+			ReturnType: "Promise<{ ready: boolean; status?: number; error?: string }>",
+			Returns:    "Promise<{ ready, status? } | { ready: false, error }> — ready is true when the endpoint returns HTTP 200; status is the HTTP status code when a response was received; error is the transport error message when the request failed entirely.",
+			Errors:     "Throws if opts.url is missing or empty. Transport failures resolve with { ready: false, error } rather than throwing.",
+			Example: `const r = await services.webdriver.probe({ url: "http://127.0.0.1:9515" });
+runtime.log("ready:", r.ready);`,
+		},
+		"webdriver.connect": {
+			Summary: "Connect to a running WebDriver server (opts.url) or start an installed local chromedriver/geckodriver and dial it. Returns a session handle whose methods drive the browser. Sessions are quit on Run end if the script does not call quit() explicitly.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ browser?: \"chrome\" | \"firefox\", headless?: boolean, url?: string, args?: string[], capabilities?: object }", Optional: true, Desc: "browser selects the driver binary (default 'chrome'). headless defaults to true. url, if given, dials an already-running driver at that base URL instead of starting one. args appends extra browser flags. capabilities is an escape hatch for raw W3C capability overrides merged last."},
+			},
+			ReturnType: "Promise<{ get(url: string): Promise<{ ok: true }>; url(): Promise<string>; title(): Promise<string>; back(): Promise<{ ok: true }>; forward(): Promise<{ ok: true }>; refresh(): Promise<{ ok: true }>; find(by: string, value: string): Promise<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: \"png\" }> }>; findAll(by: string, value: string): Promise<Array<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: \"png\" }> }>>; source(): Promise<string>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: \"png\" }>; executeScript(js: string, args?: unknown[]): Promise<unknown>; executeScriptAsync(js: string, args?: unknown[]): Promise<unknown>; cookies(): Promise<object[]>; setCookie(c: { name: string; value: string; path?: string; domain?: string; secure?: boolean; httpOnly?: boolean; expiry?: number }): Promise<{ ok: true }>; deleteCookie(name: string): Promise<{ ok: true }>; deleteAllCookies(): Promise<{ ok: true }>; setImplicitWait(ms: number): Promise<{ ok: true }>; waitFor(by: string, value: string, opts?: { timeout?: number; visible?: boolean }): Promise<any>; quit(): Promise<{ closed: true }> }>",
+			Returns:    "Promise resolving to a session handle with methods: get(url), url(), title(), back(), forward(), refresh(), find(by, value) → element handle, findAll(by, value) → element handle[], source(), screenshot(path?), executeScript(js, args?), executeScriptAsync(js, args?), cookies(), setCookie(c), deleteCookie(name), deleteAllCookies(), setImplicitWait(ms), waitFor(by, value, opts?), quit(). Locator strategies: css, xpath, id, name, tag, className, linkText, partialLinkText.",
+			Errors:     "Throws if no url is given and the driver binary for the selected browser is not on PATH; if dialing the driver fails (driver not running, wrong port); or if the browser launch fails. Subsequent session method calls throw if the session is already closed.",
+			Example: `if (!services.webdriver.available) {
+  runtime.log("no driver on PATH — skip");
+} else {
+  const d = await services.webdriver.connect({ browser: "chrome", headless: true });
+  try {
+    await d.get("data:text/html,<title>hi</title><h1 id=h>Hello</h1>");
+    runtime.log("title:", await d.title());
+    const el = await d.find("id", "h");
+    runtime.log("text:", await el.text());
+    await d.executeScript("return 1+2", []);
+  } finally {
+    await d.quit();
+  }
+}`,
+		},
 	}
 }

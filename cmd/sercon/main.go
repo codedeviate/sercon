@@ -443,6 +443,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"gh":           ghNamespace(vm, loop),
 			"ai":           aiNamespace(vm, loop),
 			"agentBrowser": agentBrowserNamespace(vm, loop, e),
+			"webdriver":    webdriverNamespace(vm, loop, e),
 		}
 	}); err != nil {
 		return err
@@ -474,7 +475,7 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("net", netDocs())
 	e.SetDocs("db", "Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict.")
 	e.SetMemberDocsStructured("db", dbDocs())
-	e.SetDocs("services", "Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation.")
+	e.SetDocs("services", "Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control.")
 	e.SetMemberDocsStructured("services", servicesDocs())
 	e.SetDocs("tui", "Multi-pane terminal UI: layout, pane, write, focus.")
 	e.SetMemberDocsStructured("tui", tuiDocs())

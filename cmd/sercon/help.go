@@ -1095,10 +1095,40 @@ await net.capture.openFile("/tmp/x.pcap", (pkt) => {
 // await cap.close();`)
 	note("Live open() is Linux/macOS-only and needs raw-socket privileges (Windows rejects); interfaces/openFile/toFile are offline and unprivileged. Optional filter is a tcpdump-like subset (tcp/udp/icmp/ip/ip6, host/port, and/or/not) evaluated post-decode in userspace — not a kernel BPF program; no CIDR/portrange yet; malformed throws. Common-layer decode only (exotic protocols surface as bytes). See MANUAL.md §net.")
 
+	header(54, "Drive a browser via W3C WebDriver (services.webdriver)")
+	code(`// W3C WebDriver client — self-skips when no chromedriver/geckodriver is on PATH.
+// Uses a data: URL so the integration is fully network-free when a driver is installed.
+if (!services.webdriver.available) {
+  runtime.log("no chromedriver/geckodriver on PATH — skipping webdriver demo.");
+} else {
+  const d = await services.webdriver.connect({ browser: "chrome", headless: true });
+  try {
+    await d.get("data:text/html," + encodeURIComponent(
+      "<title>wd demo</title><h1 id=hi>Hello</h1><input id=box>"));
+    runtime.log("title:", await d.title());
+    const h1 = await d.find("id", "hi");
+    runtime.log("h1 text:", await h1.text(), "visible:", await h1.isDisplayed());
+    const box = await d.find("css", "#box");
+    await box.sendKeys("typed by sercon");
+    runtime.log("box value:", await box.getAttribute("value"));
+    runtime.log("eval 6*7:", await d.executeScript("return 6*7", []));
+    const shot = await d.screenshot();
+    runtime.log("screenshot bytes:", new Uint8Array(shot.bytes).length, shot.format);
+  } finally {
+    await d.quit();
+    runtime.log("session quit.");
+  }
+}`)
+	note("services.webdriver.available gates on chromedriver or geckodriver being on PATH.")
+	note("connect(opts?) dials a running driver (opts.url) or starts an installed local one. Sessions quit on Run end.")
+	note("Locator strategies: css, xpath, id, name, tag, className, linkText, partialLinkText.")
+	note("Session: get/url/title/back/forward/refresh/find/findAll/source/screenshot/executeScript/cookies/setCookie/deleteCookie/deleteAllCookies/setImplicitWait/waitFor/quit.")
+	note("Element handles: click/sendKeys/clear/submit/text/getAttribute/cssValue/tagName/isDisplayed/isEnabled/isSelected/find/findAll/screenshot.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 53
+const exampleCount = 54

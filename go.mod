@@ -43,6 +43,7 @@ require (
 	github.com/rivo/tview v0.42.0
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d
 	github.com/sijms/go-ora/v2 v2.9.0
+	github.com/tebeka/selenium v0.9.9
 	github.com/ulikunitz/xz v0.5.15
 	golang.org/x/crypto v0.52.0
 	golang.org/x/image v0.41.0
@@ -59,6 +60,7 @@ require (
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/Azure/go-ntlmssp v0.1.0 // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
+	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cention-sany/utf7 v0.0.0-20170124080048-26cad61bd60a // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect

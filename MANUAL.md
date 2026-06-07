@@ -1083,6 +1083,8 @@ v0.8.0). Members:
 - `services.ai.{providers, send}` — provider-agnostic AI chat client.
 - `services.agentBrowser.*` — headless-Chrome automation via the
   `agent-browser` CLI. See the subsection below.
+- `services.webdriver.*` — W3C WebDriver client (via `tebeka/selenium`).
+  See the subsection below.
 
 #### `services.agentBrowser`
 
@@ -1531,6 +1533,111 @@ await b.close();
 `auth.save` opts: `{ url, username, password, usernameSelector?, passwordSelector?, submitSelector? }`.
 All string opts except `password` map to the corresponding agent-browser flags;
 `password` is stripped from the option object and fed via stdin.
+
+#### `services.webdriver`
+
+W3C WebDriver client backed by [`github.com/tebeka/selenium`](https://github.com/tebeka/selenium)
+(pure Go — no cgo). Drives a real browser via an installed `chromedriver` or
+`geckodriver`; no driver binary is bundled or downloaded.
+
+**Availability gate.** `services.webdriver.available` is a sync boolean —
+true when `chromedriver` or `geckodriver` is found on PATH. Gate all calls
+on this value.
+
+**Connect-or-start model.** `connect(opts?)` is async. When `opts.url` is
+given, it dials the running driver endpoint at that URL. When `opts.url` is
+omitted, it locates the driver binary on PATH, picks an ephemeral port, starts
+the driver as a subprocess, and dials it. The resolved session handle has the
+same surface in both cases. Sessions quit (and any started subprocess is
+stopped) when the Run ends; call `session.quit()` explicitly for deterministic
+teardown.
+
+**Probe.** `probe({ url })` checks whether a WebDriver endpoint is ready
+without opening a session. Returns `{ ready: boolean, status?: number }` on
+HTTP success or `{ ready: false, error: string }` on transport failure; never
+throws on network errors.
+
+Connect options (all optional):
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `browser` | `"chrome" \| "firefox"` | `"chrome"` | Selects the driver binary (`chromedriver` or `geckodriver`). |
+| `headless` | `boolean` | `true` | Run the browser in headless mode. |
+| `url` | `string` | — | Dial an already-running WebDriver server instead of starting one. |
+| `args` | `string[]` | — | Extra browser command-line flags appended to the default set. |
+| `capabilities` | `object` | — | Raw W3C capability overrides merged last (escape hatch). |
+
+**Session handle methods** (all async):
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `get(url)` | `{ ok: true }` | Navigate to a URL. |
+| `url()` | `string` | Current URL. |
+| `title()` | `string` | Current page title. |
+| `back()` / `forward()` / `refresh()` | `{ ok: true }` | Browser history controls. |
+| `find(by, value)` | element handle | Find the first matching element. |
+| `findAll(by, value)` | element handle[] | Find all matching elements. |
+| `source()` | `string` | Current page source HTML. |
+| `screenshot(path?)` | `{ path?, size?, bytes?, format }` | Capture the viewport. No path → `bytes: number[]`; with path → `{ path, size, format }`. |
+| `executeScript(js, args?)` | `unknown` | Run a synchronous script in the page context. |
+| `executeScriptAsync(js, args?)` | `unknown` | Run an async script (callback-resolved). |
+| `cookies()` | `object[]` | Get all cookies. |
+| `setCookie(c)` | `{ ok: true }` | Set a cookie (`{ name, value, path?, domain?, secure?, httpOnly?, expiry? }`). |
+| `deleteCookie(name)` | `{ ok: true }` | Delete a named cookie. |
+| `deleteAllCookies()` | `{ ok: true }` | Clear all cookies. |
+| `setImplicitWait(ms)` | `{ ok: true }` | Set the implicit element-wait timeout. |
+| `waitFor(by, value, opts?)` | element handle | Poll until an element appears (opts: `timeout?` ms, `visible?: boolean`). |
+| `quit()` | `{ closed: true }` | Close the session (idempotent; also called by Run-end cleanup). |
+
+**Locator strategies** (`by` argument): `css`, `xpath`, `id`, `name`, `tag`,
+`className`, `linkText`, `partialLinkText`.
+
+**Element handle methods** (all async):
+
+| Method | Description |
+|--------|-------------|
+| `click()` | Click the element. |
+| `sendKeys(text)` | Type text into the element. |
+| `clear()` | Clear the element's value. |
+| `submit()` | Submit the form. |
+| `text()` | Inner text content. |
+| `getAttribute(name)` | Get an attribute value. |
+| `cssValue(name)` | Get a computed CSS property value. |
+| `tagName()` | Tag name in lower case. |
+| `isDisplayed()` / `isEnabled()` / `isSelected()` | Visibility / state checks. |
+| `find(by, value)` / `findAll(by, value)` | Sub-tree element search. |
+| `screenshot(path?)` | Screenshot the element (scrolls into view). |
+
+**Example:**
+
+```ts
+if (!services.webdriver.available) {
+  runtime.log("no chromedriver/geckodriver on PATH — skip");
+} else {
+  const d = await services.webdriver.connect({ browser: "chrome", headless: true });
+  try {
+    await d.get("data:text/html," + encodeURIComponent(
+      "<title>wd demo</title><h1 id=hi>Hello</h1><input id=box>"));
+    runtime.log("title:", await d.title());
+    const h1 = await d.find("id", "hi");
+    runtime.log("text:", await h1.text(), "visible:", await h1.isDisplayed());
+    const box = await d.find("css", "#box");
+    await box.sendKeys("typed by sercon");
+    runtime.log("value:", await box.getAttribute("value"));
+    runtime.log("eval:", await d.executeScript("return 6*7", []));
+    const shot = await d.screenshot();
+    runtime.log("bytes:", new Uint8Array(shot.bytes).length, shot.format);
+  } finally {
+    await d.quit();
+  }
+}
+```
+
+**Phase-2-deferred.** Window/tab handle switching, frame switching, alert
+handling, action chains (hover/drag/key-chords), file upload, window
+resize/maximize, and returning element handles from `executeScript` are not in
+v1. They share the same session-handle + `s.do` mutex foundation and will be
+added in a follow-on plan.
 
 ### `tui`
 
@@ -4918,7 +5025,7 @@ await srv.close();
 
 ### services
 
-Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation.
+Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control.
 
 #### services.agentBrowser.auth
 
@@ -5500,6 +5607,76 @@ Parsed `git status --porcelain` entries: { path, indexStatus, workingStatus }.
 ```ts
 for (const e of await services.git.status())
   runtime.log(e.indexStatus + e.workingStatus, e.path);
+```
+
+#### services.webdriver.available
+
+```
+available
+```
+
+True when a W3C WebDriver binary (chromedriver or geckodriver) is on PATH. Sync boolean, resolved once per Run. Gate calls on this before using probe or connect.
+
+**Returns:** boolean — true if chromedriver or geckodriver is found on PATH.
+
+```ts
+if (!services.webdriver.available) {
+  runtime.log("install chromedriver or geckodriver first");
+}
+```
+
+#### services.webdriver.connect
+
+```
+connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object }): Promise<unknown>
+```
+
+Connect to a running WebDriver server (opts.url) or start an installed local chromedriver/geckodriver and dial it. Returns a session handle whose methods drive the browser. Sessions are quit on Run end if the script does not call quit() explicitly.
+
+**Parameters**
+
+- `opts` *({ browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object }, optional)* — browser selects the driver binary (default 'chrome'). headless defaults to true. url, if given, dials an already-running driver at that base URL instead of starting one. args appends extra browser flags. capabilities is an escape hatch for raw W3C capability overrides merged last.
+
+**Returns:** Promise resolving to a session handle with methods: get(url), url(), title(), back(), forward(), refresh(), find(by, value) → element handle, findAll(by, value) → element handle[], source(), screenshot(path?), executeScript(js, args?), executeScriptAsync(js, args?), cookies(), setCookie(c), deleteCookie(name), deleteAllCookies(), setImplicitWait(ms), waitFor(by, value, opts?), quit(). Locator strategies: css, xpath, id, name, tag, className, linkText, partialLinkText.
+
+**Throws:** Throws if no url is given and the driver binary for the selected browser is not on PATH; if dialing the driver fails (driver not running, wrong port); or if the browser launch fails. Subsequent session method calls throw if the session is already closed.
+
+```ts
+if (!services.webdriver.available) {
+  runtime.log("no driver on PATH — skip");
+} else {
+  const d = await services.webdriver.connect({ browser: "chrome", headless: true });
+  try {
+    await d.get("data:text/html,<title>hi</title><h1 id=h>Hello</h1>");
+    runtime.log("title:", await d.title());
+    const el = await d.find("id", "h");
+    runtime.log("text:", await el.text());
+    await d.executeScript("return 1+2", []);
+  } finally {
+    await d.quit();
+  }
+}
+```
+
+#### services.webdriver.probe
+
+```
+probe(opts: { url: string }): Promise<Record<string, unknown>>
+```
+
+Check whether a WebDriver endpoint responds at opts.url/status. Returns { ready, status } on HTTP success or { ready: false, error } on transport failure. Does not throw on network errors.
+
+**Parameters**
+
+- `opts` *({ url: string })* — url is required — the base URL of a running WebDriver server (e.g. 'http://127.0.0.1:9515').
+
+**Returns:** Promise<{ ready, status? } | { ready: false, error }> — ready is true when the endpoint returns HTTP 200; status is the HTTP status code when a response was received; error is the transport error message when the request failed entirely.
+
+**Throws:** Throws if opts.url is missing or empty. Transport failures resolve with { ready: false, error } rather than throwing.
+
+```ts
+const r = await services.webdriver.probe({ url: "http://127.0.0.1:9515" });
+runtime.log("ready:", r.ready);
 ```
 
 ### text
