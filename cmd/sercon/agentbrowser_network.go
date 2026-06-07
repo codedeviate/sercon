@@ -4,25 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 )
 
 // routeArgs builds `network route <url> [--abort | --body <json>] [--resource-type <csv>]`.
-func routeArgs(url string, opts map[string]any) []string {
+// When both abort and body are set, abort wins (the CLI's --abort and --body are mutually
+// exclusive); body is ignored.
+func routeArgs(url string, opts map[string]any) ([]string, error) {
 	args := []string{"network", "route", url}
 	if b, _ := opts["abort"].(bool); b {
 		args = append(args, "--abort")
 	} else if body, ok := opts["body"]; ok {
-		if j, err := json.Marshal(body); err == nil {
-			args = append(args, "--body", string(j))
+		j, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("agentBrowser.network.route: body is not JSON-encodable: %w", err)
 		}
+		args = append(args, "--body", string(j))
 	}
 	if rt, _ := opts["resourceType"].(string); rt != "" {
 		args = append(args, "--resource-type", rt)
 	}
-	return args
+	return args, nil
 }
 
 // requestsArgs builds `network requests [flags]`.
@@ -51,7 +56,11 @@ func (h *abHandle) netRoute(ctx context.Context, call goja.FunctionCall) (any, e
 	if url == "" {
 		return nil, errors.New("agentBrowser.network.route: url pattern is required")
 	}
-	return h.runJSON(ctx, routeArgs(url, optsArgMap(call, 1))...)
+	args, err := routeArgs(url, optsArgMap(call, 1))
+	if err != nil {
+		return nil, err
+	}
+	return h.runJSON(ctx, args...)
 }
 
 func (h *abHandle) netUnroute(ctx context.Context, call goja.FunctionCall) (any, error) {

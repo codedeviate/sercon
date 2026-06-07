@@ -9,17 +9,18 @@ import (
 	"github.com/dop251/goja_nodejs/eventloop"
 )
 
-// cookieStringOpts are cookie set options that take a value, in stable order.
+// cookieStringOpts are cookie set options that take a string value, in stable order.
+// expires is handled separately (rendered as an integer) and is NOT in this list.
 var cookieStringOpts = []struct{ key, flag string }{
 	{"url", "--url"},
 	{"domain", "--domain"},
 	{"path", "--path"},
 	{"sameSite", "--sameSite"},
-	{"expires", "--expires"},
 }
 
 // cookieSetArgs builds `cookies set <name> <value> [options]`. String options
-// are emitted first (stable order), then the boolean flags httpOnly/secure.
+// are emitted first (stable order), then expires (as integer), then the boolean
+// flags httpOnly/secure.
 func cookieSetArgs(name, value string, opts map[string]any) []string {
 	args := []string{"cookies", "set", name, value}
 	for _, o := range cookieStringOpts {
@@ -28,6 +29,11 @@ func cookieSetArgs(name, value string, opts map[string]any) []string {
 				args = append(args, o.flag, s)
 			}
 		}
+	}
+	// expires is a Unix-seconds integer; render with %d to avoid scientific
+	// notation (e.g. "1.7e+09") that the CLI would reject.
+	if v, ok := opts["expires"]; ok {
+		args = append(args, "--expires", fmt.Sprintf("%d", numToInt(v)))
 	}
 	if b, _ := opts["httpOnly"].(bool); b {
 		args = append(args, "--httpOnly")

@@ -178,10 +178,16 @@ func TestOneShotNeedsURL(t *testing.T) {
 }
 
 func TestNetworkArgs(t *testing.T) {
-	if got := routeArgs("**/api/*", map[string]any{"abort": true}); !reflect.DeepEqual(got, []string{"network", "route", "**/api/*", "--abort"}) {
+	got, _ := routeArgs("**/api/*", map[string]any{"abort": true})
+	if !reflect.DeepEqual(got, []string{"network", "route", "**/api/*", "--abort"}) {
 		t.Fatalf("route abort = %v", got)
 	}
-	if got := routeArgs("**/d.json", map[string]any{"body": map[string]any{"mock": true}}); !reflect.DeepEqual(got, []string{"network", "route", "**/d.json", "--body", `{"mock":true}`}) {
+	// abort route must not return an error.
+	if _, err := routeArgs("**/api/*", map[string]any{"abort": true}); err != nil {
+		t.Fatalf("route abort error = %v", err)
+	}
+	got, _ = routeArgs("**/d.json", map[string]any{"body": map[string]any{"mock": true}})
+	if !reflect.DeepEqual(got, []string{"network", "route", "**/d.json", "--body", `{"mock":true}`}) {
 		t.Fatalf("route body = %v", got)
 	}
 	if got := requestsArgs(map[string]any{"clear": true, "filter": "api", "method": "GET"}); !reflect.DeepEqual(got, []string{"network", "requests", "--clear", "--filter", "api", "--method", "GET"}) {
@@ -202,6 +208,12 @@ func TestStorageAndCookieArgs(t *testing.T) {
 	want := []string{"cookies", "set", "sid", "abc", "--domain", ".x.com", "--sameSite", "Lax", "--httpOnly"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cookieSetArgs = %v, want %v", got, want)
+	}
+	// expires must be rendered as a plain integer, not scientific notation.
+	gotExp := cookieSetArgs("s", "v", map[string]any{"expires": float64(1700000000)})
+	wantExp := []string{"cookies", "set", "s", "v", "--expires", "1700000000"}
+	if !reflect.DeepEqual(gotExp, wantExp) {
+		t.Fatalf("cookieSetArgs expires = %v, want %v", gotExp, wantExp)
 	}
 	if got := storageArgs("local", "get", "k"); !reflect.DeepEqual(got, []string{"storage", "local", "get", "k"}) {
 		t.Fatalf("storage get = %v", got)
