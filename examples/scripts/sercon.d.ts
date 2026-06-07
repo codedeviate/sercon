@@ -957,7 +957,7 @@ declare const db: {
   };
 };
 
-/** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation. */
+/** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control. */
 declare const services: {
   agentBrowser: {
     /**
@@ -1149,6 +1149,25 @@ declare const services: {
      * @returns Promise<Array<{ path: string, indexStatus: string, workingStatus: string }>> — one entry per changed path; indexStatus / workingStatus are the porcelain v1 X / Y status characters (e.g. "M", "A", "?"). An empty array means a clean tree.
      */
     status(opts?: { cwd?: string }): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>;
+  };
+  webdriver: {
+    /**
+     * True when a W3C WebDriver binary (chromedriver or geckodriver) is on PATH. Sync boolean, resolved once per Run. Gate calls on this before using probe or connect.
+     * @returns boolean — true if chromedriver or geckodriver is found on PATH.
+     */
+    available: boolean;
+    /**
+     * Connect to a running WebDriver server (opts.url) or start an installed local chromedriver/geckodriver and dial it. Returns a session handle whose methods drive the browser. Sessions are quit on Run end if the script does not call quit() explicitly.
+     * @param opts browser selects the driver binary (default 'chrome'). headless defaults to true. url, if given, dials an already-running driver at that base URL instead of starting one. args appends extra browser flags. capabilities is an escape hatch for raw W3C capability overrides merged last.
+     * @returns Promise resolving to a session handle with methods: get(url), url(), title(), back(), forward(), refresh(), find(by, value) → element handle, findAll(by, value) → element handle[], source(), screenshot(path?), executeScript(js, args?), executeScriptAsync(js, args?), cookies(), setCookie(c), deleteCookie(name), deleteAllCookies(), setImplicitWait(ms), waitFor(by, value, opts?), quit(). Locator strategies: css, xpath, id, name, tag, className, linkText, partialLinkText.
+     */
+    connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object }): Promise<unknown>;
+    /**
+     * Check whether a WebDriver endpoint responds at opts.url/status. Returns { ready, status } on HTTP success or { ready: false, error } on transport failure. Does not throw on network errors.
+     * @param opts url is required — the base URL of a running WebDriver server (e.g. 'http://127.0.0.1:9515').
+     * @returns Promise<{ ready, status? } | { ready: false, error }> — ready is true when the endpoint returns HTTP 200; status is the HTTP status code when a response was received; error is the transport error message when the request failed entirely.
+     */
+    probe(opts: { url: string }): Promise<Record<string, unknown>>;
   };
 };
 
