@@ -62,6 +62,14 @@ gap (route-table enumeration) is parked under Deferred.
 
 ### Browser automation — WebDriver / Selenium
 
+> **Promoted to an approved design (2026-06-07):**
+> `~/Development/Starweb/superpowers/sercon/specs/2026-06-07-webdriver-selenium-design.md`.
+> Decisions settled: connect-or-start-installed driver model;
+> `available` (sync, driver-on-PATH) + `probe({url})` (async) feature
+> detection; stateful element handles; v1 = core automation loop (Phase 2
+> advanced deferred). Pending an implementation plan + build. The sketch
+> below is retained as background.
+
 A `db`-style stateful client for the W3C WebDriver protocol, complementing
 the `services.agentBrowser` CLI bridge with a standards-based driver that
 talks to any conforming endpoint (chromedriver, geckodriver, a
