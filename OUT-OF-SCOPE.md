@@ -56,9 +56,41 @@ exception, since `gojq` discards key order internally). `shell_stream(cmd,
 cb)` shipped in v0.28.0 as `services.exec.stream` (line-streaming a
 subprocess's stdout/stderr to a JS callback). `codec.xml` shipped in v0.32.0
 (value ↔ XML via the shared dump IR, `@`-attribute + `#text` convention).
-**No open Moderate items remain** — the networking subsection below is a
-shipped-record whose one residual gap (route-table enumeration) is parked
-under Deferred.
+The one open Moderate item is **WebDriver / Selenium** (below); the
+networking subsection further down is a shipped-record whose one residual
+gap (route-table enumeration) is parked under Deferred.
+
+### Browser automation — WebDriver / Selenium
+
+A `db`-style stateful client for the W3C WebDriver protocol, complementing
+the `services.agentBrowser` CLI bridge with a standards-based driver that
+talks to any conforming endpoint (chromedriver, geckodriver, a
+selenium-server grid, or a cloud provider's hub).
+
+- **Library:** `github.com/tebeka/selenium` — the de-facto pure-Go WebDriver
+  client (no cgo; speaks HTTP/JSON to a driver). It also ships helpers to
+  start/stop a local `chromedriver`/`geckodriver`/`selenium-server`, but we
+  would NOT bundle or auto-download any of those.
+- **Feature-detected, trap when absent.** WebDriver needs a *running* driver
+  or grid — not just a binary on `PATH` — so plain `exec.LookPath` isn't
+  enough. Expose a `services.webdriver.available` (or a probe like
+  `services.webdriver.probe({url})`) that checks for a reachable endpoint /
+  a discoverable driver binary, and make every other binding trap with a
+  clean thrown error when the prerequisite is missing — mirroring the
+  `services.agentBrowser.available` gate. Decide whether "available" means
+  "a driver binary is present" vs "a WebDriver URL responds", or both.
+- **Shape (sketch, settle in brainstorm):** `services.webdriver.connect({url,
+  browser, capabilities})` → a session handle (quit on Run end via
+  `Engine.AddRunCleanup`, like the agentBrowser registry); element handles
+  returned from `find*` and chained (`el.click()`, `el.text()`, `el.sendKeys()`);
+  navigation / script-exec / screenshot / cookies / waits. Element-handle
+  lifetime and the find→act model are the main design calls — reuse the
+  agentBrowser locator decisions where they fit.
+- **Why not Hard:** the Go client is stable and the agentBrowser work is
+  prior art for the stateful-handle + feature-gate + Run-end-cleanup
+  pattern, so the wiring is mechanical-with-design-choices, not from-scratch.
+  The external *runtime* dependency (a live driver/grid) is what the
+  feature-detection trap is for.
 
 ### Networking — clients & raw sockets
 
