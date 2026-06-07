@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -177,6 +178,77 @@ func TestOneShotNeedsURL(t *testing.T) {
 	}
 }
 
+func TestNetworkArgs(t *testing.T) {
+	got, _ := routeArgs("**/api/*", map[string]any{"abort": true})
+	if !reflect.DeepEqual(got, []string{"network", "route", "**/api/*", "--abort"}) {
+		t.Fatalf("route abort = %v", got)
+	}
+	// abort route must not return an error.
+	if _, err := routeArgs("**/api/*", map[string]any{"abort": true}); err != nil {
+		t.Fatalf("route abort error = %v", err)
+	}
+	got, _ = routeArgs("**/d.json", map[string]any{"body": map[string]any{"mock": true}})
+	if !reflect.DeepEqual(got, []string{"network", "route", "**/d.json", "--body", `{"mock":true}`}) {
+		t.Fatalf("route body = %v", got)
+	}
+	if got := requestsArgs(map[string]any{"clear": true, "filter": "api", "method": "GET"}); !reflect.DeepEqual(got, []string{"network", "requests", "--clear", "--filter", "api", "--method", "GET"}) {
+		t.Fatalf("requests = %v", got)
+	}
+}
+
+func TestRunJSONClosedHandle(t *testing.T) {
+	h := &abHandle{session: "x", reg: &abRegistry{sessions: map[string]struct{}{}}}
+	h.closed.Store(true)
+	if _, err := h.runJSON(context.Background(), "anything"); err == nil {
+		t.Fatalf("expected error on a closed handle")
+	}
+}
+
+func TestStorageAndCookieArgs(t *testing.T) {
+	got := cookieSetArgs("sid", "abc", map[string]any{"domain": ".x.com", "httpOnly": true, "sameSite": "Lax"})
+	want := []string{"cookies", "set", "sid", "abc", "--domain", ".x.com", "--sameSite", "Lax", "--httpOnly"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cookieSetArgs = %v, want %v", got, want)
+	}
+	// expires must be rendered as a plain integer, not scientific notation.
+	gotExp := cookieSetArgs("s", "v", map[string]any{"expires": float64(1700000000)})
+	wantExp := []string{"cookies", "set", "s", "v", "--expires", "1700000000"}
+	if !reflect.DeepEqual(gotExp, wantExp) {
+		t.Fatalf("cookieSetArgs expires = %v, want %v", gotExp, wantExp)
+	}
+	if got := storageArgs("local", "get", "k"); !reflect.DeepEqual(got, []string{"storage", "local", "get", "k"}) {
+		t.Fatalf("storage get = %v", got)
+	}
+	if got := storageArgs("session", "clear"); !reflect.DeepEqual(got, []string{"storage", "session", "clear"}) {
+		t.Fatalf("storage clear = %v", got)
+	}
+}
+
+func TestTabArgs(t *testing.T) {
+	if got := tabNewArgs("https://x", ""); !reflect.DeepEqual(got, []string{"tab", "new", "https://x"}) {
+		t.Fatalf("tab new url = %v", got)
+	}
+	if got := tabNewArgs("https://x", "docs"); !reflect.DeepEqual(got, []string{"tab", "new", "--label", "docs", "https://x"}) {
+		t.Fatalf("tab new label = %v", got)
+	}
+	if got := tabNewArgs("", ""); !reflect.DeepEqual(got, []string{"tab", "new"}) {
+		t.Fatalf("tab new bare = %v", got)
+	}
+}
+
+func TestDiffArgs(t *testing.T) {
+	got := diffSnapshotArgs(map[string]any{"baseline": "/b.json", "selector": "#main", "compact": true, "depth": float64(2)})
+	want := []string{"diff", "snapshot", "-b", "/b.json", "-s", "#main", "-c", "-d", "2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("diffSnapshotArgs = %v, want %v", got, want)
+	}
+	got = diffScreenshotArgs(map[string]any{"baseline": "/base.png", "output": "/out.png", "threshold": float64(0.2)})
+	want = []string{"diff", "screenshot", "--baseline", "/base.png", "-o", "/out.png", "-t", "0.2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("diffScreenshotArgs = %v, want %v", got, want)
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}
@@ -194,5 +266,20 @@ func TestMergeLaunchOpts(t *testing.T) {
 	// inputs must not be mutated.
 	if _, ok := defaults["userAgent"]; ok {
 		t.Fatalf("mergeLaunchOpts mutated the defaults map")
+	}
+}
+
+func TestCallTimeout(t *testing.T) {
+	// Missing key → default (30 s).
+	if got := callTimeout(map[string]any{}); got != abDefaultCallTimeout {
+		t.Fatalf("missing key: want %s, got %s", abDefaultCallTimeout, got)
+	}
+	// Explicit 0 → disabled (no timeout).
+	if got := callTimeout(map[string]any{"timeout": float64(0)}); got != 0 {
+		t.Fatalf("explicit 0: want 0, got %s", got)
+	}
+	// Positive value → that duration in ms.
+	if got := callTimeout(map[string]any{"timeout": float64(5000)}); got != 5*time.Second {
+		t.Fatalf("5000 ms: want 5s, got %s", got)
 	}
 }

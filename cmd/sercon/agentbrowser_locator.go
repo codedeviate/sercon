@@ -22,7 +22,7 @@ func (h *abHandle) runFind(ctx context.Context, locator, value, action, text str
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, findArgs(locator, value, action, text)...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, findArgs(locator, value, action, text)...)
 	if err != nil {
 		return nil, err
 	}

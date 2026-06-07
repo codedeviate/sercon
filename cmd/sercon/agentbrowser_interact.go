@@ -41,7 +41,7 @@ func (h *abHandle) runVerb(ctx context.Context, verb string, operands ...string)
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, interactArgs(verb, operands...)...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, interactArgs(verb, operands...)...)
 	if err != nil {
 		return nil, err
 	}

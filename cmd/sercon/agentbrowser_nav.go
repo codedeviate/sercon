@@ -39,7 +39,7 @@ func (h *abHandle) runNav(ctx context.Context, verb string, operands ...string) 
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, navArgs(verb, operands...)...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, navArgs(verb, operands...)...)
 	if err != nil {
 		return nil, err
 	}

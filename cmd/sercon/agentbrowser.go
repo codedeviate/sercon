@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -19,6 +20,15 @@ import (
 
 // agentBrowserBin is the CLI this namespace bridges to.
 const agentBrowserBin = "agent-browser"
+
+// abDefaultCallTimeout bounds a single agent-browser subprocess call so a
+// wedged daemon throws instead of hanging the script. Override per handle via
+// launch({ timeout: <ms> }); 0 disables. abCloseTimeout bounds session close
+// (incl. the Run-end cleanup drain) so teardown can never hang.
+const (
+	abDefaultCallTimeout = 30 * time.Second
+	abCloseTimeout       = 10 * time.Second
+)
 
 // abGlobalFlags maps a launch-option key to its CLI flag. String options
 // emit `--flag value`; bool options emit a bare `--flag` only when true.
@@ -78,9 +88,16 @@ func buildGlobalArgs(opts map[string]any) []string {
 
 // abRun spawns `agent-browser <global> --json --session <name> <args...>`
 // and returns captured streams + exit code. ctx is the engine's per-Run
-// context (context.Background today, matching git/gh) so cancellation
-// semantics stay identical to the other CLI wrappers.
-func abRun(ctx context.Context, session string, global []string, args ...string) (string, string, int, error) {
+// context. When timeout > 0, the call is additionally bounded by that
+// duration; a deadline-exceeded error produces a clear "timed out" message
+// so a wedged daemon is immediately diagnosable.
+func abRun(ctx context.Context, session string, global []string, timeout time.Duration, args ...string) (string, string, int, error) {
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	full := make([]string, 0, len(global)+len(args)+4)
 	full = append(full, global...)
 	full = append(full, "--json")
@@ -96,6 +113,9 @@ func abRun(ctx context.Context, session string, global []string, args ...string)
 	err := cmd.Run()
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
+			if errors.Is(ctxErr, context.DeadlineExceeded) {
+				return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("agent-browser %s: timed out after %s (daemon may be unresponsive)", firstArg(args), timeout)
+			}
 			return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("agent-browser: %w", ctxErr)
 		}
 		var exitErr *exec.ExitError
@@ -109,12 +129,13 @@ func abRun(ctx context.Context, session string, global []string, args ...string)
 
 // abRunChecked is the strict variant: a non-zero exit becomes an error
 // carrying stderr (which surfaces as a JS throw). stdout is returned raw
-// for the caller to parse.
-func abRunChecked(ctx context.Context, session string, global []string, args ...string) (string, error) {
+// for the caller to parse. timeout is forwarded to abRun; 0 means no
+// per-call deadline.
+func abRunChecked(ctx context.Context, session string, global []string, timeout time.Duration, args ...string) (string, error) {
 	if !abAvailable() {
 		return "", errors.New("agent-browser CLI not found on PATH; install it to use services.agentBrowser")
 	}
-	stdout, stderr, code, err := abRun(ctx, session, global, args...)
+	stdout, stderr, code, err := abRun(ctx, session, global, timeout, args...)
 	if err != nil {
 		return "", err
 	}
@@ -136,6 +157,20 @@ func firstArg(args []string) string {
 		return args[0]
 	}
 	return "?"
+}
+
+// callTimeout reads opts["timeout"] (milliseconds) into a Duration. Missing
+// key → abDefaultCallTimeout; explicit 0 → 0 (disabled).
+func callTimeout(opts map[string]any) time.Duration {
+	v, ok := opts["timeout"]
+	if !ok {
+		return abDefaultCallTimeout
+	}
+	ms := numToInt(v) // numToInt is in agentbrowser_inspect.go
+	if ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 // abAvailable reports whether the agent-browser CLI is on PATH.
@@ -291,7 +326,7 @@ func (r *abRegistry) closeAll() {
 	r.sessions = map[string]struct{}{}
 	r.mu.Unlock()
 	for _, n := range names {
-		_, _, _, _ = abRun(context.Background(), n, nil, "close")
+		_, _, _, _ = abRun(context.Background(), n, nil, abCloseTimeout, "close")
 	}
 }
 
@@ -313,6 +348,7 @@ func (r *abRegistry) newHandle(optsArg goja.Value, vm *goja.Runtime) *abHandle {
 		session: r.allocSession(explicit),
 		global:  buildGlobalArgs(merged),
 		reg:     r,
+		timeout: callTimeout(merged),
 	}
 }
 
@@ -327,9 +363,9 @@ func (r *abRegistry) withEphemeral(ctx context.Context, url string, fn func(h *a
 	r.mu.Lock()
 	merged := mergeLaunchOpts(r.defaults, map[string]any{})
 	r.mu.Unlock()
-	h := &abHandle{session: r.allocSession(""), global: buildGlobalArgs(merged), reg: r}
+	h := &abHandle{session: r.allocSession(""), global: buildGlobalArgs(merged), reg: r, timeout: callTimeout(r.defaults)}
 	defer func() { _, _ = h.close(ctx, goja.FunctionCall{}) }()
-	if _, err := abRunChecked(ctx, h.session, h.global, "open", url); err != nil {
+	if _, err := abRunChecked(ctx, h.session, h.global, h.timeout, "open", url); err != nil {
 		return nil, err
 	}
 	return fn(h)
@@ -337,10 +373,12 @@ func (r *abRegistry) withEphemeral(ctx context.Context, url string, fn func(h *a
 
 // abHandle is one browser session. global holds the pre-built --flag args
 // from launch opts (merged over defaults); they are prepended to every call.
+// timeout is the effective per-call deadline (0 = no timeout).
 type abHandle struct {
 	session string
 	global  []string
 	reg     *abRegistry
+	timeout time.Duration
 	closed  atomic.Bool
 }
 
@@ -366,7 +404,26 @@ func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[str
 	h.addLocator(obj, vm, loop)  // Task 6
 	h.addSettings(obj, vm, loop) // Phase 2
 	h.addCapture(obj, vm, loop)  // Phase 2
+	h.addNetwork(obj, vm, loop)  // Phase 3
+	h.addStorage(obj, vm, loop)  // Phase 3
+	h.addTabs(obj, vm, loop)     // Phase 3
+	h.addDiff(obj, vm, loop)     // Phase 3
 	return obj
+}
+
+// runJSON is the shared "verb + operands" runner for Phase-3 handle method
+// groups: it guards requireOpen, runs the args via abRunChecked, and returns
+// the parsed JSON envelope. Phases 1/2 predate this and keep their own
+// runNav/runVerb/runSet helpers.
+func (h *abHandle) runJSON(ctx context.Context, args ...string) (any, error) {
+	if err := h.requireOpen(); err != nil {
+		return nil, err
+	}
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, args...)
+	if err != nil {
+		return nil, err
+	}
+	return parseJSON(out)
 }
 
 // requireOpen returns an error if the handle was already closed.
@@ -378,12 +435,14 @@ func (h *abHandle) requireOpen() error {
 }
 
 // close ends the browser session. Idempotent: a second close is a no-op.
+// Always uses abCloseTimeout regardless of h.timeout so teardown is bounded
+// even when the handle disabled per-call timeouts.
 func (h *abHandle) close(ctx context.Context, _ goja.FunctionCall) (any, error) {
 	if h.closed.Swap(true) {
 		return scriptengine.NewOrdered(), nil
 	}
 	h.reg.forget(h.session)
-	_, err := abRunChecked(ctx, h.session, h.global, "close")
+	_, err := abRunChecked(ctx, h.session, h.global, abCloseTimeout, "close")
 	if err != nil {
 		return nil, err
 	}

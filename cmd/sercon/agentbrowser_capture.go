@@ -101,7 +101,7 @@ func (h *abHandle) screenshot(ctx context.Context, call goja.FunctionCall) (any,
 			opts = m
 		}
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, screenshotArgs(opts)...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, screenshotArgs(opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (h *abHandle) pdf(ctx context.Context, call goja.FunctionCall) (any, error)
 		_ = f.Close()
 		cleanup = target
 	}
-	if _, err := abRunChecked(ctx, h.session, h.global, "pdf", target); err != nil {
+	if _, err := abRunChecked(ctx, h.session, h.global, h.timeout, "pdf", target); err != nil {
 		if cleanup != "" {
 			_ = os.Remove(cleanup)
 		}
