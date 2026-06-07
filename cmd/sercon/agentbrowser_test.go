@@ -89,3 +89,15 @@ func TestNavArgs(t *testing.T) {
 		t.Fatalf("wait args = %v", got)
 	}
 }
+
+func TestInteractArgs(t *testing.T) {
+	if got := interactArgs("click", "#a"); !reflect.DeepEqual(got, []string{"click", "#a"}) {
+		t.Fatalf("click = %v", got)
+	}
+	if got := interactArgs("fill", "#a", "hello"); !reflect.DeepEqual(got, []string{"fill", "#a", "hello"}) {
+		t.Fatalf("fill = %v", got)
+	}
+	if got := interactArgs("scroll", "down", "200"); !reflect.DeepEqual(got, []string{"scroll", "down", "200"}) {
+		t.Fatalf("scroll = %v", got)
+	}
+}
