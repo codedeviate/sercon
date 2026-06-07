@@ -162,12 +162,17 @@ one-shot + `locator(spec)` handle). agent-browser wraps every result in a
 `launch()`, and the flat one-shot shortcuts
 (`screenshot(url,…)`/`pdf(url,…)`/`snapshot(url,…)`/`eval(url,js)`).
 
-**Remaining (each an additive MINOR, its own plan reusing the docs
-lockstep):**
+**Phase 3 shipped (v0.38.0):** network interception/monitoring
+(`network.route`/`unroute`/`requests`/`request`/`har`), cookies
+(`cookies.get`/`set`/`clear`), web storage (`storage.local`/`session`
+get/set/clear), tab management (`tabs.list`/`new`/`close`/`select`), and page
+diffing (`diff.snapshot`/`screenshot`/`url`) — all on a shared `runJSON`
+handle helper. Also added a per-call subprocess timeout
+(`launch({ timeout })`, default 30 s, `0` disables; `close()` bounded at 10 s)
+so a wedged `agent-browser` command throws instead of hanging the script.
 
-- **Phase 3 — Network + storage + tabs + diff.** `network.{route,unroute,
-  requests,har}`, `cookies.{get,set,clear}`, `storage.local/session`,
-  `tabs.{list,new,close,select}`, `diff.{snapshot,screenshot,url}`.
+**Remaining (additive MINOR, its own plan reusing the docs lockstep):**
+
 - **Phase 4 — Remainder.** `trace`/`profiler`/`inspect`/`clipboard`/`vitals`/
   `pushstate`, `react.*` (needs `launch({enable:'react-devtools'})`),
   `stream.*`, namespace-level `auth.*`, `chat(message,{model?})`, and the
