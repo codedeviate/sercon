@@ -123,3 +123,23 @@ func TestFindArgs(t *testing.T) {
 		t.Fatalf("findArgs with text = %v", got)
 	}
 }
+
+func TestMergeLaunchOpts(t *testing.T) {
+	defaults := map[string]any{"headed": true, "proxy": "http://d"}
+	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}
+	got := mergeLaunchOpts(defaults, opts)
+	// opts wins on conflict; union of keys.
+	if got["headed"] != true {
+		t.Fatalf("expected headed from defaults, got %v", got["headed"])
+	}
+	if got["proxy"] != "http://o" {
+		t.Fatalf("expected opts.proxy to win, got %v", got["proxy"])
+	}
+	if got["userAgent"] != "ua" {
+		t.Fatalf("expected userAgent from opts, got %v", got["userAgent"])
+	}
+	// inputs must not be mutated.
+	if _, ok := defaults["userAgent"]; ok {
+		t.Fatalf("mergeLaunchOpts mutated the defaults map")
+	}
+}

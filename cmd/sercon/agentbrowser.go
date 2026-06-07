@@ -41,6 +41,19 @@ var abGlobalFlags = []struct {
 	{"args", "--args", false},
 }
 
+// mergeLaunchOpts returns a new map with defaults overlaid by opts (opts
+// wins on key conflicts). Neither input is mutated.
+func mergeLaunchOpts(defaults, opts map[string]any) map[string]any {
+	out := make(map[string]any, len(defaults)+len(opts))
+	for k, v := range defaults {
+		out[k] = v
+	}
+	for k, v := range opts {
+		out[k] = v
+	}
+	return out
+}
+
 // buildGlobalArgs turns a launch-options map into ordered CLI global flags.
 // Order follows abGlobalFlags so output is deterministic for tests.
 func buildGlobalArgs(opts map[string]any) []string {
@@ -167,7 +180,7 @@ func parseJSON(raw string) (*scriptengine.Ordered, error) {
 // allocates a per-Run registry and registers a best-effort cleanup that
 // closes any session the script left open.
 func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengine.Engine) map[string]any {
-	reg := &abRegistry{sessions: map[string]struct{}{}}
+	reg := &abRegistry{sessions: map[string]struct{}{}, defaults: map[string]any{}}
 	// Only register cleanup for a real Run; vm == nil during d.ts introspection.
 	if vm != nil {
 		e.AddRunCleanup(reg.closeAll)
@@ -181,6 +194,31 @@ func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scrip
 			h := reg.newHandle(call.Argument(0), vm)
 			return vm.ToValue(h.jsObject(vm, loop))
 		},
+		"defaultOptions": func(call goja.FunctionCall) goja.Value {
+			reg.mu.Lock()
+			cp := make(map[string]any, len(reg.defaults))
+			for k, v := range reg.defaults {
+				cp[k] = v
+			}
+			reg.mu.Unlock()
+			return vm.ToValue(cp)
+		},
+		"setDefaultOptions": func(call goja.FunctionCall) goja.Value {
+			m := map[string]any{}
+			if obj, ok := call.Argument(0).Export().(map[string]any); ok {
+				m = obj
+			}
+			reg.mu.Lock()
+			reg.defaults = m
+			reg.mu.Unlock()
+			return goja.Undefined()
+		},
+		"clearDefaultOptions": func(call goja.FunctionCall) goja.Value {
+			reg.mu.Lock()
+			reg.defaults = map[string]any{}
+			reg.mu.Unlock()
+			return goja.Undefined()
+		},
 	}
 }
 
@@ -189,6 +227,7 @@ type abRegistry struct {
 	mu       sync.Mutex
 	sessions map[string]struct{}
 	counter  int
+	defaults map[string]any // namespace-level launch defaults (per Run)
 }
 
 // allocSession returns the session name to use: the caller's explicit name
@@ -232,7 +271,9 @@ func (r *abRegistry) closeAll() {
 	}
 }
 
-// newHandle builds a handle from the launch options argument.
+// newHandle builds a handle from the launch options argument. Per-call opts
+// are merged over the registry's defaults so defaults flow through unless
+// the caller overrides them.
 func (r *abRegistry) newHandle(optsArg goja.Value, vm *goja.Runtime) *abHandle {
 	opts := map[string]any{}
 	if optsArg != nil && !goja.IsUndefined(optsArg) && !goja.IsNull(optsArg) {
@@ -240,10 +281,13 @@ func (r *abRegistry) newHandle(optsArg goja.Value, vm *goja.Runtime) *abHandle {
 			opts = m
 		}
 	}
-	explicit, _ := opts["session"].(string)
+	r.mu.Lock()
+	merged := mergeLaunchOpts(r.defaults, opts)
+	r.mu.Unlock()
+	explicit, _ := merged["session"].(string)
 	return &abHandle{
 		session: r.allocSession(explicit),
-		global:  buildGlobalArgs(opts),
+		global:  buildGlobalArgs(merged),
 		reg:     r,
 	}
 }
