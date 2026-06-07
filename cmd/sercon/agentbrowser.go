@@ -369,6 +369,7 @@ func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[str
 	h.addNetwork(obj, vm, loop)  // Phase 3
 	h.addStorage(obj, vm, loop)  // Phase 3
 	h.addTabs(obj, vm, loop)     // Phase 3
+	h.addDiff(obj, vm, loop)     // Phase 3
 	return obj
 }
 

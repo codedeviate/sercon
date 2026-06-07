@@ -223,6 +223,19 @@ func TestTabArgs(t *testing.T) {
 	}
 }
 
+func TestDiffArgs(t *testing.T) {
+	got := diffSnapshotArgs(map[string]any{"baseline": "/b.json", "selector": "#main", "compact": true, "depth": float64(2)})
+	want := []string{"diff", "snapshot", "-b", "/b.json", "-s", "#main", "-c", "-d", "2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("diffSnapshotArgs = %v, want %v", got, want)
+	}
+	got = diffScreenshotArgs(map[string]any{"baseline": "/base.png", "output": "/out.png", "threshold": float64(0.2)})
+	want = []string{"diff", "screenshot", "--baseline", "/base.png", "-o", "/out.png", "-t", "0.2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("diffScreenshotArgs = %v, want %v", got, want)
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}
