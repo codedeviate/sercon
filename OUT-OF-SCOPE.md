@@ -171,12 +171,18 @@ handle helper. Also added a per-call subprocess timeout
 (`launch({ timeout })`, default 30 s, `0` disables; `close()` bounded at 10 s)
 so a wedged `agent-browser` command throws instead of hanging the script.
 
-**Remaining (additive MINOR, its own plan reusing the docs lockstep):**
+**Phase 4 shipped (v0.39.0) — feature complete:** debug/perf
+(`trace`/`profiler`/`inspect`/`clipboard`/`vitals`/`pushstate`), React DevTools
+(`react.tree`/`inspect`/`renders`/`suspense`, needs
+`launch({ enable: "react-devtools" })`), live streaming
+(`stream.enable`/`disable`/`status`), AI `chat(message, { model })`, the escape
+hatch (`cmd(command, ...args)` / `batch(cmds, { bail })`), and the auth vault
+(namespace `auth.save`/`list`/`show`/`delete` — passwords fed via
+`--password-stdin`, never argv — plus handle `auth.login`).
 
-- **Phase 4 — Remainder.** `trace`/`profiler`/`inspect`/`clipboard`/`vitals`/
-  `pushstate`, `react.*` (needs `launch({enable:'react-devtools'})`),
-  `stream.*`, namespace-level `auth.*`, `chat(message,{model?})`, and the
-  escape hatch `cmd(command,...args)` / `batch(cmds,{bail?})`.
+**The `services.agentBrowser` feature is complete (Phases 1-4, v0.36.0–v0.39.0).**
+New agent-browser subcommands can be reached today via the `cmd()` escape hatch;
+promote a first-class binding here only if one is frequently used.
 
 ## Deferred
 
