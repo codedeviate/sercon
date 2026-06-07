@@ -77,3 +77,15 @@ func TestLaunchCloseIntegration(t *testing.T) {
 		t.Fatalf("handle should be marked closed")
 	}
 }
+
+func TestNavArgs(t *testing.T) {
+	if got := navArgs("open", "https://x"); !reflect.DeepEqual(got, []string{"open", "https://x"}) {
+		t.Fatalf("open args = %v", got)
+	}
+	if got := navArgs("reload"); !reflect.DeepEqual(got, []string{"reload"}) {
+		t.Fatalf("reload args = %v", got)
+	}
+	if got := navArgs("wait", "500"); !reflect.DeepEqual(got, []string{"wait", "500"}) {
+		t.Fatalf("wait args = %v", got)
+	}
+}

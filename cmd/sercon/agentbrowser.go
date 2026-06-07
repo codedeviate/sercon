@@ -303,9 +303,8 @@ func (h *abHandle) close(ctx context.Context, _ goja.FunctionCall) (any, error) 
 	return o, nil
 }
 
-// Stub methods for Tasks 3–6. Each later task replaces the matching stub
+// Stub methods for Tasks 4–6. Each later task replaces the matching stub
 // with the real implementation (delete the stub in that task).
-func (h *abHandle) addNav(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)      {}
 func (h *abHandle) addInteract(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {}
 func (h *abHandle) addInspect(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)  {}
 func (h *abHandle) addLocator(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop)  {}
