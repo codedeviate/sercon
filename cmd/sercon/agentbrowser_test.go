@@ -211,6 +211,18 @@ func TestStorageAndCookieArgs(t *testing.T) {
 	}
 }
 
+func TestTabArgs(t *testing.T) {
+	if got := tabNewArgs("https://x", ""); !reflect.DeepEqual(got, []string{"tab", "new", "https://x"}) {
+		t.Fatalf("tab new url = %v", got)
+	}
+	if got := tabNewArgs("https://x", "docs"); !reflect.DeepEqual(got, []string{"tab", "new", "--label", "docs", "https://x"}) {
+		t.Fatalf("tab new label = %v", got)
+	}
+	if got := tabNewArgs("", ""); !reflect.DeepEqual(got, []string{"tab", "new"}) {
+		t.Fatalf("tab new bare = %v", got)
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}
