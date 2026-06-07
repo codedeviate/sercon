@@ -369,6 +369,21 @@ func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[str
 	return obj
 }
 
+// runJSON is the shared "verb + operands" runner for Phase-3 handle method
+// groups: it guards requireOpen, runs the args via abRunChecked, and returns
+// the parsed JSON envelope. Phases 1/2 predate this and keep their own
+// runNav/runVerb/runSet helpers.
+func (h *abHandle) runJSON(ctx context.Context, args ...string) (any, error) {
+	if err := h.requireOpen(); err != nil {
+		return nil, err
+	}
+	out, err := abRunChecked(ctx, h.session, h.global, args...)
+	if err != nil {
+		return nil, err
+	}
+	return parseJSON(out)
+}
+
 // requireOpen returns an error if the handle was already closed.
 func (h *abHandle) requireOpen() error {
 	if h.closed.Load() {

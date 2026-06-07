@@ -177,6 +177,14 @@ func TestOneShotNeedsURL(t *testing.T) {
 	}
 }
 
+func TestRunJSONClosedHandle(t *testing.T) {
+	h := &abHandle{session: "x", reg: &abRegistry{sessions: map[string]struct{}{}}}
+	h.closed.Store(true)
+	if _, err := h.runJSON(context.Background(), "anything"); err == nil {
+		t.Fatalf("expected error on a closed handle")
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}
