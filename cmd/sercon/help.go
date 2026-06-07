@@ -761,6 +761,43 @@ if (!services.agentBrowser.available) {
 	note("Handle methods: open/back/forward/reload/wait/connect, click/fill/type/press/check/select/scroll/drag, get/isVisible/isEnabled/isChecked/eval/snapshot/console/errors/highlight, find/locator.")
 	fmt.Fprintln(w, "")
 
+	header(51, "Capture & configure a browser (services.agentBrowser Phase 2)")
+	code(`// setDefaultOptions() flows opts into every subsequent launch().
+if (!services.agentBrowser.available) {
+  runtime.log("agent-browser not on PATH — skip");
+} else {
+  const html = "data:text/html," + encodeURIComponent("<title>demo</title><h1>Hi</h1>");
+  services.agentBrowser.setDefaultOptions({ headed: false });
+
+  const b = services.agentBrowser.launch();
+  try {
+    await b.open(html);
+    await b.set.viewport(1280, 800);                    // set.* settings
+
+    // screenshot(path?, opts?) — no path → bytes (number[]); with path → {path,size,format}
+    const shot = await b.screenshot({ full: true });
+    runtime.log("bytes:", new Uint8Array(shot.bytes).length, shot.format);
+
+    const file = await b.screenshot("/tmp/cap.png");
+    runtime.log("file:", JSON.stringify(file));         // { path, size, format }
+
+    const pdf = await b.pdf();                          // pdf() → bytes
+    runtime.log("pdf bytes:", new Uint8Array(pdf.bytes).length);
+  } finally {
+    await b.close();
+  }
+
+  // Flat one-shot shortcut — launch+open+act+close in one call.
+  const r = await services.agentBrowser.eval(html, "document.title");
+  runtime.log("eval:", r.data?.result);                 // "demo"
+
+  services.agentBrowser.clearDefaultOptions();
+}`)
+	note("Capture result: path given → { path, size, format }; no path → { bytes: number[], format } (wrap with new Uint8Array(bytes) for a typed array).")
+	note("set.*: viewport(w,h,scale?), device(name), geo(lat,lng), offline(on?), headers(obj), credentials(user,pass), media(scheme?,reducedMotion?).")
+	note("record.*: start(path.webm, url?), stop(). One-shot shortcuts: agentBrowser.screenshot/pdf/snapshot/eval(url, ...).")
+	fmt.Fprintln(w, "")
+
 	header(38, "Server (server.http.listen + routes)")
 	code(`// Bind an HTTP listener. Routes use stdlib http.ServeMux Go 1.22+
 // pattern syntax: "METHOD /path/{param}/{rest...}".
@@ -1003,4 +1040,4 @@ await net.capture.openFile("/tmp/x.pcap", (pkt) => {
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 50
+const exampleCount = 51

@@ -966,11 +966,56 @@ declare const services: {
      */
     available: boolean;
     /**
+     * Reset the namespace-level launch defaults to an empty object, removing any values set by setDefaultOptions.
+     * @returns void
+     */
+    clearDefaultOptions(...args: unknown[]): unknown;
+    /**
+     * Return a shallow copy of the current namespace-level launch defaults. These are merged (under per-call opts) into every subsequent launch().
+     * @returns object — a plain-object copy of the current defaults map. Empty object when no defaults have been set.
+     */
+    defaultOptions(...args: unknown[]): unknown;
+    /**
+     * One-shot shortcut: launch an ephemeral session, open url, evaluate a JS expression in the page, and close.
+     * @param url URL to open. Required.
+     * @param js JavaScript expression to evaluate in the page context. Required.
+     * @returns Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data.result holds the serialised return value.
+     */
+    eval(url: string, js: string): unknown;
+    /**
      * Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.
      * @param opts Launch flags captured for the lifetime of the handle and threaded into every subprocess call. session names the agent-browser session (auto-generated when omitted).
      * @returns A handle object with a read-only session string and methods: open, back, forward, reload, wait, connect, click, dblclick, hover, focus, fill, type, press, check, uncheck, select, scroll, scrollIntoView, drag, upload, download, keyboard.{type,insertText}, mouse.{move,down,up,wheel}, get, isVisible, isEnabled, isChecked, eval, snapshot, console, errors, highlight, find, locator, close. Every async method resolves to an agent-browser envelope { success: boolean, data: object, error: string|null }; drill into .data for the actual values.
      */
-    launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; close(): Promise<any> };
+    launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; close(): Promise<any> };
+    /**
+     * One-shot shortcut: launch an ephemeral session, open url, capture a PDF, and close.
+     * @param url URL to open. Required.
+     * @param path Output file path. When supplied the PDF is written there and the result has { path, size, format }; when omitted the PDF bytes are returned as a number[] in { bytes, format }.
+     * @returns Promise — path given: { path: string, size: number, format: string }; no path: { bytes: number[], format: string }.
+     */
+    pdf(url: string, path?: string): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>;
+    /**
+     * One-shot shortcut: launch an ephemeral session, open url, capture a screenshot, and close. Equivalent to launch()+open(url)+screenshot(path?,opts?)+close() but in a single call.
+     * @param url URL to open (http/https or data: URI). Required.
+     * @param path Output file path. When supplied the screenshot is written there and the result has { path, size, format }; when omitted the image bytes are returned as a number[] (byte-value array) in { bytes, format }.
+     * @param opts Capture options. selector scopes the capture to an element. full captures the full page. format defaults to png. quality (0–100) applies to jpeg.
+     * @returns Promise — path given: { path: string, size: number, format: string }; no path: { bytes: number[], format: string } where bytes is a plain JS number[] (byte-value array); wrap with new Uint8Array(bytes) to get a typed array.
+     */
+    screenshot(url: string, path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>;
+    /**
+     * Replace the namespace-level launch defaults with the supplied object. Merged (under per-call opts) into every subsequent launch(). Affects only the current Run.
+     * @param opts A plain object of launch option key/value pairs. The entire defaults map is replaced (not merged) with this object.
+     * @returns void
+     */
+    setDefaultOptions(opts: object): unknown;
+    /**
+     * One-shot shortcut: launch an ephemeral session, open url, take an accessibility-tree snapshot, and close.
+     * @param url URL to open. Required.
+     * @param opts Snapshot options forwarded to the handle's snapshot() method.
+     * @returns Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.
+     */
+    snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): unknown;
     /**
      * The agent-browser CLI version string.
      * @returns Promise<string> — the version reported by `agent-browser --version`.
