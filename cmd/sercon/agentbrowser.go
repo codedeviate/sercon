@@ -86,12 +86,10 @@ func buildGlobalArgs(opts map[string]any) []string {
 	return out
 }
 
-// abRun spawns `agent-browser <global> --json --session <name> <args...>`
-// and returns captured streams + exit code. ctx is the engine's per-Run
-// context. When timeout > 0, the call is additionally bounded by that
-// duration; a deadline-exceeded error produces a clear "timed out" message
-// so a wedged daemon is immediately diagnosable.
-func abRun(ctx context.Context, session string, global []string, timeout time.Duration, args ...string) (string, string, int, error) {
+// abRunStdin is the core subprocess runner: assembles `agent-browser <global>
+// --json --session <name> <args...>`, optionally feeds `stdin`, and applies a
+// per-call timeout. abRun is the no-stdin convenience wrapper.
+func abRunStdin(ctx context.Context, session string, global []string, timeout time.Duration, stdin string, args ...string) (string, string, int, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -107,6 +105,9 @@ func abRun(ctx context.Context, session string, global []string, timeout time.Du
 	full = append(full, args...)
 
 	cmd := exec.CommandContext(ctx, agentBrowserBin, full...)
+	if stdin != "" {
+		cmd.Stdin = bytes.NewBufferString(stdin)
+	}
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
@@ -125,6 +126,15 @@ func abRun(ctx context.Context, session string, global []string, timeout time.Du
 		return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("agent-browser: %w", err)
 	}
 	return stdoutBuf.String(), stderrBuf.String(), 0, nil
+}
+
+// abRun spawns `agent-browser <global> --json --session <name> <args...>`
+// and returns captured streams + exit code. ctx is the engine's per-Run
+// context. When timeout > 0, the call is additionally bounded by that
+// duration; a deadline-exceeded error produces a clear "timed out" message
+// so a wedged daemon is immediately diagnosable.
+func abRun(ctx context.Context, session string, global []string, timeout time.Duration, args ...string) (string, string, int, error) {
+	return abRunStdin(ctx, session, global, timeout, "", args...)
 }
 
 // abRunChecked is the strict variant: a non-zero exit becomes an error

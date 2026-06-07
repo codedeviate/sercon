@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
-	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -38,41 +35,6 @@ func authSaveArgs(name string, opts map[string]any) []string {
 	return append(args, "--password-stdin")
 }
 
-// abRunInput is abRun plus a stdin payload. Used so secrets (passwords) reach
-// agent-browser via stdin instead of argv (which is visible to other
-// processes). Mirrors abRun's timeout + ctx handling.
-func abRunInput(ctx context.Context, session string, global []string, timeout time.Duration, stdin string, args ...string) (string, string, int, error) {
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-	full := make([]string, 0, len(global)+len(args)+4)
-	full = append(full, global...)
-	full = append(full, "--json")
-	if session != "" {
-		full = append(full, "--session", session)
-	}
-	full = append(full, args...)
-	cmd := exec.CommandContext(ctx, agentBrowserBin, full...)
-	cmd.Stdin = bytes.NewBufferString(stdin)
-	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
-	err := cmd.Run()
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("agent-browser: %w", ctxErr)
-		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return stdoutBuf.String(), stderrBuf.String(), exitErr.ExitCode(), nil
-		}
-		return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("agent-browser: %w", err)
-	}
-	return stdoutBuf.String(), stderrBuf.String(), 0, nil
-}
-
 // authSave (namespace-level): saves a login profile. Requires url, username,
 // password. Password is fed via stdin. Session-independent (vault is global).
 func authSave() func(context.Context, goja.FunctionCall) (any, error) {
@@ -95,7 +57,7 @@ func authSave() func(context.Context, goja.FunctionCall) (any, error) {
 		if password == "" {
 			return nil, errors.New("agentBrowser.auth.save: opts.password is required")
 		}
-		stdout, stderr, code, err := abRunInput(ctx, "", nil, abDefaultCallTimeout, password+"\n", authSaveArgs(name, opts)...)
+		stdout, stderr, code, err := abRunStdin(ctx, "", nil, abDefaultCallTimeout, password+"\n", authSaveArgs(name, opts)...)
 		if err != nil {
 			return nil, err
 		}
