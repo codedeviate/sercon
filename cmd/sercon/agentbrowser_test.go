@@ -101,3 +101,14 @@ func TestInteractArgs(t *testing.T) {
 		t.Fatalf("scroll = %v", got)
 	}
 }
+
+func TestSnapshotArgs(t *testing.T) {
+	got := snapshotArgs(map[string]any{"interactive": true, "compact": true, "depth": float64(3), "selector": "#root"})
+	want := []string{"snapshot", "-i", "-c", "-d", "3", "-s", "#root"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("snapshotArgs = %v, want %v", got, want)
+	}
+	if got := snapshotArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"snapshot"}) {
+		t.Fatalf("empty snapshotArgs = %v", got)
+	}
+}
