@@ -100,44 +100,45 @@ specific reasons — each its own brainstorm → plan → ship cycle atop the
 
 ### Agent-browser automation
 
-`agent-browser` is recon's headless-Chrome driver. The recon script
-bindings are extensive and worth a dedicated namespace
-(e.g. `services.agentBrowser.*` — the `services.*` bucket already
-holds the external-CLI wrappers like git, gh, ai). All of these
-require the `agent-browser` CLI on `PATH`; gate calls on an
-`agentBrowser.available` boolean and surface a clean error otherwise.
-The hard rating reflects the orchestration scope, not any single call.
+`agent-browser` is recon's headless-Chrome driver, exposed as
+`services.agentBrowser.*` (alongside the other external-CLI wrappers git,
+gh, ai). All calls require the `agent-browser` CLI on `PATH`; they gate on
+the `services.agentBrowser.available` boolean and throw a clean error
+otherwise. The bridge is `os/exec` + `--json` (no Go SDK exists; chromedp
+is a different product). The original entry modelled the surface on the full
+modern CLI; the design + phasing live in
+`~/Development/Starweb/superpowers/sercon/specs/2026-06-07-agent-browser-automation-design.md`
+and the Phase 1 plan alongside it.
 
-- **Navigation** — `open(url, opts?)`, `close()`, `close_all()`,
-  `back()`, `forward()`, `reload()` (script: `agent-browser-navigation.rhai`).
-  **Library:** `os/exec` (stdlib) + JSON request/response; no Go
-  agent-browser SDK exists, so the entire command surface has to be
-  modelled as subprocess calls. (A pure-Go CDP alternative is
-  `github.com/chromedp/chromedp`, but that is a different product, not
-  recon's `agent-browser`.)
-- **Locating** — `find(selector, opts?)` by role / text / label /
-  placeholder / testid (script: `agent-browser-find.rhai`).
-  **Library:** same `os/exec`-based bridge as Navigation; the design
-  work is in exposing the locator handle to JS so subsequent
-  Interaction calls can reference it.
-- **Interaction** — `click`, `dblclick`, `hover`, `fill`, `type_text`,
-  `press`, `keyboard_type`, `keyboard_insert`, `check`, `uncheck`,
-  `scroll`, `scrollintoview`, `focus` (script: `agent-browser-interaction.rhai`).
-  **Library:** subprocess bridge; depends on a working locator handle.
-- **Inspection** — `get(selector, key?)`, `is_visible`, `is_enabled`,
-  `is_checked`, `eval_js(code)` (script: `agent-browser-inspect.rhai`).
-  **Library:** subprocess bridge; `eval_js` in particular needs careful
-  JSON round-tripping.
-- **Capture** — `screenshot()`, `snapshot(include_interactive?)`,
-  `pdf(opts?)` (scripts: `agent-browser-screenshot.rhai`,
-  `agent-browser-snapshot.rhai`, `agent-browser-pdf.rhai`).
-  **Library:** subprocess bridge; binary payloads (`Uint8Array`) over
-  JSON need a base64 hop.
-- **Defaults / escape hatch** — `default_options`, `clear_default_options`,
-  `set_default_options`, `cmd(command, args)` for cookies / storage /
-  tabs / network / console (scripts: `agent-browser-options.rhai`,
-  `agent-browser-cmd.rhai`). **Library:** subprocess bridge plus a
-  persistent options bag held by the namespace.
+**Phase 1 shipped** (merged to master; pending the v0.36.0 cut): the
+subprocess bridge (`abRun`/`abRunChecked`/`parseJSON`/`buildGlobalArgs`),
+synchronous `launch(opts?)` returning a handle, per-Run session tracking with
+best-effort close on Run end (`Engine.AddRunCleanup`), and the core loop —
+navigation (`open`/`back`/`forward`/`reload`/`wait`/`connect`/`close`),
+interaction (`click`/`dblclick`/`hover`/`focus`/`fill`/`type`/`press`/`check`/
+`uncheck`/`select`/`scroll`/`scrollIntoView`/`drag`/`upload`/`download` +
+`keyboard.*`/`mouse.*`), inspection (`get`/`isVisible`/`isEnabled`/`isChecked`/
+`eval`/`snapshot`/`console`/`errors`/`highlight`), and locators (`find`
+one-shot + `locator(spec)` handle). agent-browser wraps every result in a
+`{ success, data, error }` envelope, surfaced verbatim.
+
+**Remaining (each an additive MINOR, its own plan reusing the Task-7 docs
+lockstep):**
+
+- **Phase 2 — Capture + settings + defaults.** `screenshot(path?, opts?)` /
+  `pdf(path?, opts?)` (path-first / opt-in `Uint8Array`), `record.*`,
+  `set.{viewport,device,geo,offline,headers,credentials,media}`, the flat
+  one-shot shortcuts (`screenshot(url,…)`/`pdf(url,…)`/`snapshot(url,…)`/
+  `eval(url,js)`), and the namespace-level defaults bag
+  (`defaultOptions`/`setDefaultOptions`/`clearDefaultOptions`) merged into
+  `launch()`.
+- **Phase 3 — Network + storage + tabs + diff.** `network.{route,unroute,
+  requests,har}`, `cookies.{get,set,clear}`, `storage.local/session`,
+  `tabs.{list,new,close,select}`, `diff.{snapshot,screenshot,url}`.
+- **Phase 4 — Remainder.** `trace`/`profiler`/`inspect`/`clipboard`/`vitals`/
+  `pushstate`, `react.*` (needs `launch({enable:'react-devtools'})`),
+  `stream.*`, namespace-level `auth.*`, `chat(message,{model?})`, and the
+  escape hatch `cmd(command,...args)` / `batch(cmds,{bail?})`.
 
 ## Deferred
 
