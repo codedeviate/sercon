@@ -409,16 +409,16 @@ func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[str
 		"session": h.session,
 		"close":   h.p(vm, loop, h.close),
 	}
-	h.addNav(obj, vm, loop)      // Task 3
-	h.addInteract(obj, vm, loop) // Task 4
-	h.addInspect(obj, vm, loop)  // Task 5
-	h.addLocator(obj, vm, loop)  // Task 6
-	h.addSettings(obj, vm, loop) // Phase 2
-	h.addCapture(obj, vm, loop)  // Phase 2
-	h.addNetwork(obj, vm, loop)  // Phase 3
-	h.addStorage(obj, vm, loop)  // Phase 3
-	h.addTabs(obj, vm, loop)     // Phase 3
-	h.addDiff(obj, vm, loop)     // Phase 3
+	h.addNav(obj, vm, loop)       // Task 3
+	h.addInteract(obj, vm, loop)  // Task 4
+	h.addInspect(obj, vm, loop)   // Task 5
+	h.addLocator(obj, vm, loop)   // Task 6
+	h.addSettings(obj, vm, loop)  // Phase 2
+	h.addCapture(obj, vm, loop)   // Phase 2
+	h.addNetwork(obj, vm, loop)   // Phase 3
+	h.addStorage(obj, vm, loop)   // Phase 3
+	h.addTabs(obj, vm, loop)      // Phase 3
+	h.addDiff(obj, vm, loop)      // Phase 3
 	h.addDebug(obj, vm, loop)     // Phase 4
 	h.addReact(obj, vm, loop)     // Phase 4
 	h.addAdvanced(obj, vm, loop)  // Phase 4
@@ -465,4 +465,3 @@ func (h *abHandle) close(ctx context.Context, _ goja.FunctionCall) (any, error) 
 	o.Set("closed", true)
 	return o, nil
 }
-

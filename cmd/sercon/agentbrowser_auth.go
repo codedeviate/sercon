@@ -22,7 +22,7 @@ var authSaveStringOpts = []struct{ key, flag string }{
 }
 
 // authSaveArgs builds `auth save <name> [string-opts...] --password-stdin`.
-// The password is never placed in argv; it is written to stdin by abRunInput.
+// The password is never placed in argv; it is written to stdin by abRunStdin.
 func authSaveArgs(name string, opts map[string]any) []string {
 	args := []string{"auth", "save", name}
 	for _, o := range authSaveStringOpts {
