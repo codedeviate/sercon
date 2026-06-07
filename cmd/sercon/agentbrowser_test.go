@@ -197,6 +197,20 @@ func TestRunJSONClosedHandle(t *testing.T) {
 	}
 }
 
+func TestStorageAndCookieArgs(t *testing.T) {
+	got := cookieSetArgs("sid", "abc", map[string]any{"domain": ".x.com", "httpOnly": true, "sameSite": "Lax"})
+	want := []string{"cookies", "set", "sid", "abc", "--domain", ".x.com", "--sameSite", "Lax", "--httpOnly"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cookieSetArgs = %v, want %v", got, want)
+	}
+	if got := storageArgs("local", "get", "k"); !reflect.DeepEqual(got, []string{"storage", "local", "get", "k"}) {
+		t.Fatalf("storage get = %v", got)
+	}
+	if got := storageArgs("session", "clear"); !reflect.DeepEqual(got, []string{"storage", "session", "clear"}) {
+		t.Fatalf("storage clear = %v", got)
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}

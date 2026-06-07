@@ -367,6 +367,7 @@ func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[str
 	h.addSettings(obj, vm, loop) // Phase 2
 	h.addCapture(obj, vm, loop)  // Phase 2
 	h.addNetwork(obj, vm, loop)  // Phase 3
+	h.addStorage(obj, vm, loop)  // Phase 3
 	return obj
 }
 
