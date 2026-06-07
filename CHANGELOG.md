@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+- `services.agentBrowser` Phase 4 (final): debug/perf (`trace`, `profiler`,
+  `inspect`, `clipboard`, `vitals`, `pushstate`), React DevTools (`react.tree`/
+  `inspect`/`renders`/`suspense`, with `launch({ enable: "react-devtools" })`),
+  live streaming (`stream.enable`/`disable`/`status`), AI `chat`, the escape
+  hatch (`cmd(command, ...args)` / `batch(cmds, { bail })`), and the auth vault
+  (namespace `auth.save`/`list`/`show`/`delete` with passwords fed via stdin,
+  plus handle `auth.login`).
+
 ## [0.38.0] — 2026-06-07
 
 ### Added

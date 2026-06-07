@@ -833,6 +833,32 @@ if (!services.agentBrowser.available) {
 }`)
 	note("cookies.set + storage.* require a real HTTP origin (data: URLs have no domain). Wrap in try-catch when working with data: URLs. network.har.{start,stop} trace network activity to a HAR file. diff.screenshot compares a saved baseline PNG.")
 
+	header(53, "Browser debug/perf, escape hatch, auth (services.agentBrowser)")
+	code(`// Phase 4: vitals, escape-hatch cmd/batch, auth vault — self-skips when
+// agent-browser is not installed. Uses a network-free data: URL.
+if (!services.agentBrowser.available) {
+  runtime.log("agent-browser not on PATH — skip");
+} else {
+  const html = "data:text/html," + encodeURIComponent("<title>adv</title><h1>hi</h1>");
+  const b = services.agentBrowser.launch({ timeout: 8000 });
+  try {
+    await b.open(html);
+    // Core Web Vitals for the current page.
+    try { const v = await b.vitals(); runtime.log("vitals:", v.success); }
+    catch (e) { runtime.log("vitals skipped"); }
+    // Escape hatch: call any agent-browser command.
+    try { const r = await b.cmd("get", "title"); runtime.log("title:", r.data?.title); }
+    catch (e) { runtime.log("cmd skipped"); }
+    // batch: multiple commands in one round-trip (returns an array).
+    try { const rs = await b.batch(["get title", "get url"]); runtime.log("batch:", rs.length); }
+    catch (e) { runtime.log("batch skipped"); }
+  } finally { await b.close(); }
+  // Auth vault (namespace-level, no session needed).
+  try { const p = await services.agentBrowser.auth.list(); runtime.log("profiles:", p.data); }
+  catch (e) { runtime.log("auth.list skipped"); }
+}`)
+	note("Phase 4 also adds: trace.{start,stop}, profiler.{start,stop}, inspect(), clipboard(op,text?), pushstate(url), react.{tree,inspect,renders,suspense} (needs launch({enable:'react-devtools'})), stream.{enable,disable,status}, chat(msg,opts?) (needs AI gateway), auth.save/show/delete (password via --password-stdin), b.auth.login(name).")
+
 	header(38, "Server (server.http.listen + routes)")
 	code(`// Bind an HTTP listener. Routes use stdlib http.ServeMux Go 1.22+
 // pattern syntax: "METHOD /path/{param}/{rest...}".
@@ -1075,4 +1101,4 @@ await net.capture.openFile("/tmp/x.pcap", (pkt) => {
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 52
+const exampleCount = 53

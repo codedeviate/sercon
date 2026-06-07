@@ -195,7 +195,7 @@ runtime.log(r.output);`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string, timeout?: number }", Optional: true, Desc: "Launch flags captured for the lifetime of the handle and threaded into every subprocess call. session names the agent-browser session (auto-generated when omitted). timeout is the per-call agent-browser subprocess timeout in milliseconds (default 30000, 0 disables); when a call exceeds the limit the Promise rejects with a clear 'timed out' error instead of hanging forever."},
 			},
-			ReturnType: "{ session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: \"dark\" | \"light\", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: \"png\" | \"jpeg\", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: \"Strict\" | \"Lax\" | \"None\", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; close(): Promise<any> }",
+			ReturnType: "{ session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: \"dark\" | \"light\", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: \"png\" | \"jpeg\", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: \"Strict\" | \"Lax\" | \"None\", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; trace: { start(): Promise<any>; stop(path?: string): Promise<any> }; profiler: { start(opts?: { categories?: string }): Promise<any>; stop(path?: string): Promise<any> }; inspect(): Promise<any>; clipboard(op: \"read\" | \"write\" | \"copy\" | \"paste\", text?: string): Promise<any>; vitals(url?: string): Promise<any>; pushstate(url: string): Promise<any>; react: { tree(): Promise<any>; inspect(id: string): Promise<any>; renders: { start(): Promise<any>; stop(): Promise<any> }; suspense(opts?: { onlyDynamic?: boolean }): Promise<any> }; stream: { enable(opts?: { port?: number }): Promise<any>; disable(): Promise<any>; status(): Promise<any> }; chat(message: string, opts?: { model?: string }): Promise<any>; cmd(command: string, ...args: string[]): Promise<any>; batch(cmds: string[], opts?: { bail?: boolean }): Promise<any>; auth: { login(name: string): Promise<any> }; close(): Promise<any> }",
 			Returns:    "A handle object with a read-only session string and methods: open, back, forward, reload, wait, connect, click, dblclick, hover, focus, fill, type, press, check, uncheck, select, scroll, scrollIntoView, drag, upload, download, keyboard.{type,insertText}, mouse.{move,down,up,wheel}, get, isVisible, isEnabled, isChecked, eval, snapshot, console, errors, highlight, find, locator, close. Every async method resolves to an agent-browser envelope { success: boolean, data: object, error: string|null }; drill into .data for the actual values.",
 			Errors:     "launch() itself does not throw for a missing CLI (it allocates only); the first method call throws if agent-browser is not on PATH.",
 			Example: `const b = services.agentBrowser.launch({ headed: false });
@@ -412,6 +412,161 @@ runtime.log("diff.snapshot ok:", snap.success);
 // Compare two URLs side-by-side (no open() needed for diff.url):
 const cmp = await b.diff.url("data:text/html,<h1>a</h1>", "data:text/html,<h1>b</h1>");
 runtime.log("diff.url ok:", cmp.success);
+await b.close();`,
+		},
+
+		// Phase 4 — handle-level debug/perf groups
+		"agentBrowser.trace": {
+			Summary: "Handle sub-object for Chrome DevTools tracing: trace.start() begins a trace, trace.stop(path?) stops it and optionally saves to a file.",
+			Returns: "object — the trace namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Example: `const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>hi</h1>");
+await b.trace.start();
+// ... interact ...
+await b.trace.stop("/tmp/trace.json");
+await b.close();`,
+		},
+		"agentBrowser.profiler": {
+			Summary: "Handle sub-object for V8 CPU profiling: profiler.start(opts?) begins profiling (opts.categories narrows the V8/Blink categories), profiler.stop(path?) stops it.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ categories?: string }", Optional: true, Desc: "categories is a comma-separated list of V8/Blink profiling categories (e.g. 'v8,blink')."},
+			},
+			Returns: "object — the profiler namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Example: `const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>hi</h1>");
+await b.profiler.start({ categories: "v8,blink" });
+// ... interact ...
+await b.profiler.stop("/tmp/profile.json");
+await b.close();`,
+		},
+		"agentBrowser.inspect": {
+			Summary: "Open the Chrome DevTools inspector on the current session and return the DevTools URL.",
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data typically contains { url } for the DevTools connection.",
+			Errors:  "Throws if agent-browser is not on PATH or the session is closed.",
+			Example: `const b = services.agentBrowser.launch();
+await b.open("https://example.com");
+const r = await b.inspect();
+runtime.log("DevTools:", r.data?.url);
+await b.close();`,
+		},
+		"agentBrowser.clipboard": {
+			Summary: "Read from or write to the system clipboard. op is one of 'read', 'write', 'copy', 'paste'.",
+			Params: []scriptengine.Param{
+				{Name: "op", Type: "\"read\" | \"write\" | \"copy\" | \"paste\"", Desc: "Clipboard operation. Required."},
+				{Name: "text", Type: "string", Optional: true, Desc: "Text to write (only used when op is 'write')."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:  "Throws if op is missing or agent-browser is not on PATH.",
+			Example: `await b.clipboard("write", "hello");
+const r = await b.clipboard("read");
+runtime.log(r.data?.text);`,
+		},
+		"agentBrowser.vitals": {
+			Summary: "Collect Core Web Vitals (LCP, FID, CLS, TTFB, etc.) for the current page or a given URL.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Optional: true, Desc: "URL to navigate to before measuring. When omitted, vitals are measured on the currently loaded page."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the Core Web Vitals metrics.",
+			Errors:  "Throws if agent-browser is not on PATH or the session is closed.",
+			Example: `const v = await b.vitals();
+runtime.log("LCP:", v.data?.lcp);`,
+		},
+		"agentBrowser.pushstate": {
+			Summary: "Perform a client-side SPA navigation using history.pushState without a full page reload.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Desc: "The URL to push into the browser history. Required."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:  "Throws if url is missing or agent-browser is not on PATH.",
+			Example: `await b.pushstate("/app/dashboard");`,
+		},
+
+		// Phase 4 — handle-level React DevTools
+		"agentBrowser.react": {
+			Summary: "Handle sub-object for React DevTools integration: react.tree(), react.inspect(id), react.renders.start/stop(), react.suspense(opts?). Requires the session launched with launch({ enable: 'react-devtools' }).",
+			Returns: "object — the react namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>. agent-browser returns a clear error when react-devtools was not enabled at launch time.",
+			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or react-devtools was not enabled at launch.",
+			Example: `const b = services.agentBrowser.launch({ enable: "react-devtools" });
+await b.open("https://react-app.example.com");
+const tree = await b.react.tree();
+runtime.log(JSON.stringify(tree.data).slice(0, 200));
+const suspense = await b.react.suspense({ onlyDynamic: true });
+runtime.log("suspense ok:", suspense.success);
+await b.close();`,
+		},
+
+		// Phase 4 — handle-level stream/chat/cmd/batch
+		"agentBrowser.stream": {
+			Summary: "Handle sub-object for live streaming of browser events: stream.enable(opts?), stream.disable(), stream.status(). Streaming makes page events available over a local WebSocket.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ port?: number }", Optional: true, Desc: "port selects the streaming port (default chosen by agent-browser)."},
+			},
+			Returns: "object — the stream namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Example: `await b.stream.enable({ port: 9229 });
+const status = await b.stream.status();
+runtime.log("streaming:", status.data?.enabled);
+await b.stream.disable();`,
+		},
+		"agentBrowser.chat": {
+			Summary: "Send a single natural-language instruction to the browser session's AI gateway. The AI interprets the message and drives the page. Requires an AI gateway configured in agent-browser; errors cleanly if not configured.",
+			Params: []scriptengine.Param{
+				{Name: "message", Type: "string", Desc: "Natural-language instruction for the AI to execute. Required."},
+				{Name: "opts", Type: "{ model?: string }", Optional: true, Desc: "model selects the AI model (uses the agent-browser default when omitted)."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:  "Throws if message is missing, if agent-browser is not on PATH, or if no AI gateway is configured.",
+			Example: `// Requires agent-browser to have an AI gateway configured.
+const r = await b.chat("Click the Login button");
+runtime.log("chat ok:", r.success);`,
+		},
+		"agentBrowser.cmd": {
+			Summary: "Generic escape hatch: run any agent-browser command with the current session context and return the parsed envelope. Use this for subcommands sercon doesn't model yet.",
+			Params: []scriptengine.Param{
+				{Name: "command", Type: "string", Desc: "The agent-browser subcommand to run (e.g. 'get', 'scroll'). Required."},
+				{Name: "args", Type: "string[]", Desc: "Additional arguments to pass to the subcommand (spread after the command)."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:  "Throws if command is missing or agent-browser is not on PATH.",
+			Example: `const r = await b.cmd("get", "title");
+runtime.log("title via cmd:", r.data?.title);`,
+		},
+		"agentBrowser.batch": {
+			Summary: "Run multiple agent-browser command strings in a single round-trip. Each element of cmds is a full command string (e.g. 'get title'). Returns a JSON array of per-command results, not the usual envelope.",
+			Params: []scriptengine.Param{
+				{Name: "cmds", Type: "string[]", Desc: "Array of full command strings to execute sequentially. Required."},
+				{Name: "opts", Type: "{ bail?: boolean }", Optional: true, Desc: "bail: stop on the first failed command and return results up to that point."},
+			},
+			Returns: "Promise<Array<{ success: boolean, data: object, error: string|null }>> — a JSON array of per-command result envelopes (not the usual single envelope).",
+			Errors:  "Throws if cmds is missing/not an array or agent-browser is not on PATH.",
+			Example: `const results = await b.batch(["get title", "get url"], { bail: false });
+for (const r of results) runtime.log(r.success, r.data);`,
+		},
+
+		// Phase 4 — namespace-level auth vault
+		"agentBrowser.auth": {
+			Summary: "Namespace object for the auth vault (session-independent): auth.save, auth.list, auth.show, auth.delete. Passwords are never placed in argv — auth.save sends the password via stdin (--password-stdin).",
+			Returns: "object — the auth namespace (not callable itself; use sub-methods). auth.list returns an array of profile names; auth.show/delete return an envelope; auth.save returns an envelope. Handle-level auth.login(name) is a separate method on the session handle.",
+			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH, or required fields (name, url, username, password) are missing.",
+			Example: `// Save a login profile (password sent via stdin, never via argv).
+await services.agentBrowser.auth.save("prod", {
+  url: "https://app.example.com/login",
+  username: "admin",
+  password: "s3cret",
+  usernameSelector: "#user",
+  passwordSelector: "#pass",
+});
+
+// List all saved profiles.
+const profiles = await services.agentBrowser.auth.list();
+runtime.log(JSON.stringify(profiles.data));
+
+// Log in using a saved profile (handle method — requires an open session).
+const b = services.agentBrowser.launch();
+await b.open("https://app.example.com/login");
+await b.auth.login("prod");
 await b.close();`,
 		},
 
