@@ -124,6 +124,24 @@ func TestFindArgs(t *testing.T) {
 	}
 }
 
+func TestSetArgs(t *testing.T) {
+	if got := setArgs("viewport", "1920", "1080"); !reflect.DeepEqual(got, []string{"set", "viewport", "1920", "1080"}) {
+		t.Fatalf("viewport = %v", got)
+	}
+	if got := setArgs("offline", "on"); !reflect.DeepEqual(got, []string{"set", "offline", "on"}) {
+		t.Fatalf("offline = %v", got)
+	}
+	if got := recordArgs("start", "/tmp/x.webm"); !reflect.DeepEqual(got, []string{"record", "start", "/tmp/x.webm"}) {
+		t.Fatalf("record start = %v", got)
+	}
+	if got := offlineArg(true); got != "on" {
+		t.Fatalf("offlineArg(true) = %q", got)
+	}
+	if got := offlineArg(false); got != "off" {
+		t.Fatalf("offlineArg(false) = %q", got)
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}
