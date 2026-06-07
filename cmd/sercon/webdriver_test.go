@@ -143,3 +143,12 @@ func TestWdDeliverShot(t *testing.T) {
 		t.Fatalf("path = %v", v)
 	}
 }
+
+// --- Task 5 tests ---
+
+func TestCookieFromArg(t *testing.T) {
+	c := cookieFromMap(map[string]any{"name": "sid", "value": "abc", "path": "/", "secure": true})
+	if c.Name != "sid" || c.Value != "abc" || c.Path != "/" || !c.Secure {
+		t.Fatalf("cookieFromMap = %+v", c)
+	}
+}
