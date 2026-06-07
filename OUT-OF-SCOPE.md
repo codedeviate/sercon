@@ -62,13 +62,20 @@ gap (route-table enumeration) is parked under Deferred.
 
 ### Browser automation — WebDriver / Selenium
 
-> **Promoted to an approved design (2026-06-07):**
-> `~/Development/Starweb/superpowers/sercon/specs/2026-06-07-webdriver-selenium-design.md`.
-> Decisions settled: connect-or-start-installed driver model;
-> `available` (sync, driver-on-PATH) + `probe({url})` (async) feature
-> detection; stateful element handles; v1 = core automation loop (Phase 2
-> advanced deferred). Pending an implementation plan + build. The sketch
-> below is retained as background.
+> **v1 SHIPPED (v0.40.0, 2026-06-07).** `services.webdriver` is live: the
+> connect-or-start-installed driver model, `available` (sync) + `probe({url})`
+> (async) detection, stateful element handles, and the core automation loop
+> (navigation, find/findAll, page source/screenshot, executeScript, cookies,
+> waits). Sessions quit + started drivers stop on Run end; a per-session mutex
+> serialises commands. Files: `cmd/sercon/webdriver*.go`. Design +
+> v1 plan: `~/Development/Starweb/superpowers/sercon/specs/2026-06-07-webdriver-selenium-design.md`
+> and the sibling v1 plan.
+>
+> **Phase 2 remains** (advanced, deferred — its own plan when picked up):
+> window/tab handles + `switchToWindow`, frame switching, alerts, action chains
+> (hover/drag/key-chords), file upload, window resize/maximize, and returning
+> element handles from `executeScript`. The sketch below is retained as
+> background.
 
 A `db`-style stateful client for the W3C WebDriver protocol, complementing
 the `services.agentBrowser` CLI bridge with a standards-based driver that
