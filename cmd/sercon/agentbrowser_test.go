@@ -298,3 +298,12 @@ func TestCallTimeout(t *testing.T) {
 		t.Fatalf("5000 ms: want 5s, got %s", got)
 	}
 }
+
+func TestReactArgs(t *testing.T) {
+	if got := suspenseArgs(map[string]any{"onlyDynamic": true}); !reflect.DeepEqual(got, []string{"react", "suspense", "--only-dynamic"}) {
+		t.Fatalf("suspense onlyDynamic = %v", got)
+	}
+	if got := suspenseArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"react", "suspense"}) {
+		t.Fatalf("suspense bare = %v", got)
+	}
+}
