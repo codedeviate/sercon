@@ -443,6 +443,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"gh":           ghNamespace(vm, loop),
 			"ai":           aiNamespace(vm, loop),
 			"agentBrowser": agentBrowserNamespace(vm, loop, e),
+			"webdriver":    webdriverNamespace(vm, loop, e),
 		}
 	}); err != nil {
 		return err
