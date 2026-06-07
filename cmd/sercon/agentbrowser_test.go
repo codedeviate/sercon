@@ -307,3 +307,18 @@ func TestReactArgs(t *testing.T) {
 		t.Fatalf("suspense bare = %v", got)
 	}
 }
+
+func TestAdvancedArgs(t *testing.T) {
+	if got := streamEnableArgs(map[string]any{"port": float64(9000)}); !reflect.DeepEqual(got, []string{"stream", "enable", "--port", "9000"}) {
+		t.Fatalf("stream enable port = %v", got)
+	}
+	if got := streamEnableArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"stream", "enable"}) {
+		t.Fatalf("stream enable bare = %v", got)
+	}
+	if got := chatArgs("hello there", map[string]any{"model": "gpt-x"}); !reflect.DeepEqual(got, []string{"chat", "hello there", "--model", "gpt-x"}) {
+		t.Fatalf("chat = %v", got)
+	}
+	if got := batchArgs([]string{"open x", "snapshot"}, map[string]any{"bail": true}); !reflect.DeepEqual(got, []string{"batch", "--bail", "open x", "snapshot"}) {
+		t.Fatalf("batch = %v", got)
+	}
+}
