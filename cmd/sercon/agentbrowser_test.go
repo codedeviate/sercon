@@ -112,3 +112,14 @@ func TestSnapshotArgs(t *testing.T) {
 		t.Fatalf("empty snapshotArgs = %v", got)
 	}
 }
+
+func TestFindArgs(t *testing.T) {
+	got := findArgs("role", "button", "click", "")
+	if !reflect.DeepEqual(got, []string{"find", "role", "button", "click"}) {
+		t.Fatalf("findArgs = %v", got)
+	}
+	got = findArgs("text", "Submit", "fill", "hello")
+	if !reflect.DeepEqual(got, []string{"find", "text", "Submit", "fill", "hello"}) {
+		t.Fatalf("findArgs with text = %v", got)
+	}
+}
