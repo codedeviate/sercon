@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+- `services.agentBrowser` — bridge to the `agent-browser` headless-Chrome
+  CLI. Phase 1: `available`/`version`, synchronous `launch(opts?)` handle
+  with best-effort session close on Run end, navigation
+  (open/back/forward/reload/wait/connect), interaction
+  (click/fill/type/press/check/select/scroll/drag/upload/download +
+  keyboard/mouse), inspection (get/is*/eval/snapshot/console/errors/
+  highlight), and locators (find one-shot + locator handle).
+
 ## [0.35.1] — 2026-06-03
 
 ### Added

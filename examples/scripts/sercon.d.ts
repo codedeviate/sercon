@@ -957,8 +957,26 @@ declare const db: {
   };
 };
 
-/** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers. */
+/** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation. */
 declare const services: {
+  agentBrowser: {
+    /**
+     * True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run. Gate calls on this; every binding throws a clean error when the CLI is absent.
+     * @returns boolean — true if `agent-browser` is on PATH.
+     */
+    available: boolean;
+    /**
+     * Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.
+     * @param opts Launch flags captured for the lifetime of the handle and threaded into every subprocess call. session names the agent-browser session (auto-generated when omitted).
+     * @returns An AgentBrowserHandle with methods: open, back, forward, reload, wait, connect, click, dblclick, hover, focus, fill, type, press, check, uncheck, select, scroll, scrollIntoView, drag, upload, download, keyboard.{type,insertText}, mouse.{move,down,up,wheel}, get, isVisible, isEnabled, isChecked, eval, snapshot, console, errors, highlight, find, locator, close, and a read-only session string.
+     */
+    launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }): AgentBrowserHandle;
+    /**
+     * The agent-browser CLI version string.
+     * @returns Promise<string> — the version reported by `agent-browser --version`.
+     */
+    version(...args: unknown[]): Promise<string>;
+  };
   ai: {
     /**
      * Which of claude / codex / copilot / gemini are on PATH, in preference order.

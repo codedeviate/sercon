@@ -1081,6 +1081,93 @@ v0.8.0). Members:
 - `services.gh.{authStatus, prList, repoView}` — thin `gh` CLI
   wrappers.
 - `services.ai.{providers, send}` — provider-agnostic AI chat client.
+- `services.agentBrowser.*` — headless-Chrome automation via the
+  `agent-browser` CLI. See the subsection below.
+
+#### `services.agentBrowser`
+
+Bridge to the [`agent-browser`](https://github.com/codedeviate/agent-browser)
+headless-Chrome CLI. Every call shells out to `agent-browser --json --session
+<name> <command>` and returns the parsed JSON response.
+
+**Availability gate.** `services.agentBrowser.available` is a sync boolean —
+check it before calling anything else. Every binding throws a clean error if
+the CLI is absent.
+
+**Launch model.** `services.agentBrowser.launch(opts?)` is **synchronous**; no
+browser starts until the first command. It returns a handle whose I/O methods
+are all async (Promises). Sessions the script doesn't `close()` are
+best-effort closed when the Run ends.
+
+Launch options (all optional):
+
+| Key | CLI flag | Description |
+|-----|----------|-------------|
+| `session` | `--session` | Name the session (auto-generated when omitted). |
+| `headed` | `--headed` | Run with visible browser window. |
+| `profile` | `--profile` | Browser profile directory. |
+| `proxy` | `--proxy` | Proxy URL. |
+| `userAgent` | `--user-agent` | Custom user-agent string. |
+| `device` | `--device` | Emulate a device (e.g. `"iPhone 12"`). |
+| `colorScheme` | `--color-scheme` | `"light"` or `"dark"`. |
+| `ignoreHttpsErrors` | `--ignore-https-errors` | Skip TLS verification. |
+| `engine` | `--engine` | Browser engine to use. |
+| `executablePath` | `--executable-path` | Path to the browser binary. |
+| `enable` | `--enable` | Enable a browser feature flag. |
+| `args` | `--args` | Extra browser arguments. |
+
+**Response envelope.** Every async method returns a parsed JSON object with
+the envelope `{ success: boolean, data: {...}, error: string | null }`. Drill
+into `.data` for the actual values (e.g. `data.title`, `data.value`,
+`data.visible`).
+
+**Handle method groups:**
+
+- **Navigation:** `open(url)`, `back()`, `forward()`, `reload()`,
+  `wait(msOrSelector)`, `connect(portOrUrl)`
+- **Interaction:** `click(sel)`, `dblclick(sel)`, `hover(sel)`, `focus(sel)`,
+  `fill(sel, text)`, `type(sel, text)`, `press(key)`, `check(sel)`,
+  `uncheck(sel)`, `select(sel, ...values)`, `scroll(dir, px?)`,
+  `scrollIntoView(sel)`, `drag(src, dst)`, `upload(sel, files)`,
+  `download(sel, path)`, `keyboard.{type, insertText}`,
+  `mouse.{move, down, up, wheel}`
+- **Inspection:** `get(what, sel?)`, `isVisible(sel)`, `isEnabled(sel)`,
+  `isChecked(sel)`, `eval(jsCode)`, `snapshot(opts?)`, `console(opts?)`,
+  `errors(opts?)`, `highlight(sel)`
+- **Locators:** `find(locator, value, { action, text? })`,
+  `locator(spec)` — returns a chainable handle bound to a `(locator, value)` spec.
+- **Lifecycle:** `session` (read-only name), `close()`
+
+**Example:**
+
+```typescript
+if (!services.agentBrowser.available) {
+  runtime.log("install agent-browser first");
+} else {
+  const html = "data:text/html," + encodeURIComponent(
+    "<title>sercon demo</title><h1 id=hi>Hello</h1><input id=box>"
+  );
+  const b = services.agentBrowser.launch({ headed: false });
+  try {
+    await b.open(html);
+
+    const titleRes = await b.get("title");
+    runtime.log("title:", titleRes.data?.title);   // "sercon demo"
+
+    await b.fill("#box", "typed by sercon");
+    const valRes = await b.get("value", "#box");
+    runtime.log("value:", valRes.data?.value);     // "typed by sercon"
+
+    const visRes = await b.isVisible("#hi");
+    runtime.log("visible:", visRes.data?.visible); // true
+
+    const snap = await b.snapshot({ compact: true });
+    runtime.log("snap keys:", Object.keys(snap).join(", "));
+  } finally {
+    await b.close();
+  }
+}
+```
 
 ### `tui`
 
@@ -4468,7 +4555,61 @@ await srv.close();
 
 ### services
 
-Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers.
+Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation.
+
+#### services.agentBrowser.available
+
+```
+available
+```
+
+True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run. Gate calls on this; every binding throws a clean error when the CLI is absent.
+
+**Returns:** boolean — true if `agent-browser` is on PATH.
+
+```ts
+if (!services.agentBrowser.available) runtime.log("install agent-browser first");
+```
+
+#### services.agentBrowser.launch
+
+```
+launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }): AgentBrowserHandle
+```
+
+Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.
+
+**Parameters**
+
+- `opts` *({ session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }, optional)* — Launch flags captured for the lifetime of the handle and threaded into every subprocess call. session names the agent-browser session (auto-generated when omitted).
+
+**Returns:** An AgentBrowserHandle with methods: open, back, forward, reload, wait, connect, click, dblclick, hover, focus, fill, type, press, check, uncheck, select, scroll, scrollIntoView, drag, upload, download, keyboard.{type,insertText}, mouse.{move,down,up,wheel}, get, isVisible, isEnabled, isChecked, eval, snapshot, console, errors, highlight, find, locator, close, and a read-only session string.
+
+**Throws:** launch() itself does not throw for a missing CLI (it allocates only); the first method call throws if agent-browser is not on PATH.
+
+```ts
+const b = services.agentBrowser.launch({ headed: false });
+await b.open("https://example.com");
+const title = await b.get("title");
+runtime.log(title.result ?? JSON.stringify(title));
+await b.close();
+```
+
+#### services.agentBrowser.version
+
+```
+version(...args: unknown[]): Promise<string>
+```
+
+The agent-browser CLI version string.
+
+**Returns:** Promise<string> — the version reported by `agent-browser --version`.
+
+**Throws:** Throws if the agent-browser CLI is not on PATH.
+
+```ts
+runtime.log(await services.agentBrowser.version());
+```
 
 #### services.ai.providers
 
