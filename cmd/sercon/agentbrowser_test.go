@@ -249,6 +249,21 @@ func TestDiffArgs(t *testing.T) {
 	}
 }
 
+func TestDebugArgs(t *testing.T) {
+	if got := profilerStartArgs(map[string]any{"categories": "v8,blink"}); !reflect.DeepEqual(got, []string{"profiler", "start", "--categories", "v8,blink"}) {
+		t.Fatalf("profiler start = %v", got)
+	}
+	if got := profilerStartArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"profiler", "start"}) {
+		t.Fatalf("profiler start bare = %v", got)
+	}
+	if got := clipboardArgs("write", "hello"); !reflect.DeepEqual(got, []string{"clipboard", "write", "hello"}) {
+		t.Fatalf("clipboard write = %v", got)
+	}
+	if got := clipboardArgs("read", ""); !reflect.DeepEqual(got, []string{"clipboard", "read"}) {
+		t.Fatalf("clipboard read = %v", got)
+	}
+}
+
 func TestMergeLaunchOpts(t *testing.T) {
 	defaults := map[string]any{"headed": true, "proxy": "http://d"}
 	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}

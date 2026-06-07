@@ -408,6 +408,7 @@ func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[str
 	h.addStorage(obj, vm, loop)  // Phase 3
 	h.addTabs(obj, vm, loop)     // Phase 3
 	h.addDiff(obj, vm, loop)     // Phase 3
+	h.addDebug(obj, vm, loop)    // Phase 4
 	return obj
 }
 
