@@ -65,6 +65,7 @@ func captureFormat(opts map[string]any, def string) string {
 // (returning { path, size, format }) or returns them inline as bytes
 // (returning { bytes, format }). The temp file is always removed.
 func deliverCapture(tempPath, userPath, format string) (any, error) {
+	defer os.Remove(tempPath) //nolint:errcheck // best-effort cleanup
 	data, err := os.ReadFile(tempPath)
 	if err != nil {
 		return nil, fmt.Errorf("agentBrowser: reading capture output: %w", err)
@@ -74,26 +75,14 @@ func deliverCapture(tempPath, userPath, format string) (any, error) {
 		if err := os.WriteFile(userPath, data, 0o644); err != nil {
 			return nil, fmt.Errorf("agentBrowser: writing capture to %s: %w", userPath, err)
 		}
-		_ = os.Remove(tempPath)
 		o.Set("path", userPath)
 		o.Set("size", len(data))
 		o.Set("format", format)
 		return o, nil
 	}
-	_ = os.Remove(tempPath)
 	o.Set("bytes", data) // []byte -> JS binary (see d.ts note in Task 5)
 	o.Set("format", format)
 	return o, nil
-}
-
-// firstStrArg returns the string at idx if it's a non-empty string, else "".
-// Used to read the optional path positional of screenshot/pdf handle methods.
-func firstStrArg(call goja.FunctionCall, idx int) string {
-	v := call.Argument(idx)
-	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
-		return ""
-	}
-	return v.String()
 }
 
 // screenshot captures the page. Signature: screenshot(path?, opts?).
@@ -107,7 +96,7 @@ func (h *abHandle) screenshot(ctx context.Context, call goja.FunctionCall) (any,
 	if m, ok := call.Argument(0).Export().(map[string]any); ok {
 		opts = m
 	} else {
-		userPath = firstStrArg(call, 0)
+		userPath = strArg(call, 0)
 		if m, ok := call.Argument(1).Export().(map[string]any); ok {
 			opts = m
 		}
@@ -129,7 +118,7 @@ func (h *abHandle) pdf(ctx context.Context, call goja.FunctionCall) (any, error)
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	userPath := firstStrArg(call, 0)
+	userPath := strArg(call, 0)
 	target := userPath
 	cleanup := ""
 	if target == "" {

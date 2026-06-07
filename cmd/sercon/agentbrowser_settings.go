@@ -29,8 +29,13 @@ func offlineArg(on bool) string {
 }
 
 // numStr stringifies a JS number argument (goja exports as float64/int64).
+// Returns "" when the argument is absent, undefined, or null.
 func numStr(call goja.FunctionCall, i int) string {
-	return fmt.Sprintf("%v", call.Argument(i).Export())
+	v := call.Argument(i)
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return ""
+	}
+	return fmt.Sprintf("%v", v.Export())
 }
 
 // runSet runs a `set` subcommand and returns the parsed JSON result.
@@ -47,6 +52,9 @@ func (h *abHandle) runSet(ctx context.Context, setting string, operands ...strin
 
 func (h *abHandle) setViewport(ctx context.Context, call goja.FunctionCall) (any, error) {
 	w, hh := numStr(call, 0), numStr(call, 1)
+	if w == "" || hh == "" {
+		return nil, errors.New("agentBrowser.set.viewport: width and height are required")
+	}
 	ops := []string{w, hh}
 	if s := call.Argument(2); s != nil && !goja.IsUndefined(s) {
 		ops = append(ops, fmt.Sprintf("%v", s.Export())) // optional scale
@@ -63,7 +71,11 @@ func (h *abHandle) setDevice(ctx context.Context, call goja.FunctionCall) (any, 
 }
 
 func (h *abHandle) setGeo(ctx context.Context, call goja.FunctionCall) (any, error) {
-	return h.runSet(ctx, "geo", numStr(call, 0), numStr(call, 1))
+	lat, lng := numStr(call, 0), numStr(call, 1)
+	if lat == "" || lng == "" {
+		return nil, errors.New("agentBrowser.set.geo: latitude and longitude are required")
+	}
+	return h.runSet(ctx, "geo", lat, lng)
 }
 
 func (h *abHandle) setOffline(ctx context.Context, call goja.FunctionCall) (any, error) {
@@ -118,11 +130,11 @@ func (h *abHandle) recordStart(ctx context.Context, call goja.FunctionCall) (any
 	if path == "" {
 		return nil, errors.New("agentBrowser.record.start: a .webm output path is required")
 	}
-	ops := []string{"start", path}
+	ops := []string{path}
 	if url := strArg(call, 1); url != "" {
 		ops = append(ops, url)
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, recordArgs(ops[0], ops[1:]...)...)
+	out, err := abRunChecked(ctx, h.session, h.global, recordArgs("start", ops...)...)
 	if err != nil {
 		return nil, err
 	}
