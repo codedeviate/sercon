@@ -322,3 +322,14 @@ func TestAdvancedArgs(t *testing.T) {
 		t.Fatalf("batch = %v", got)
 	}
 }
+
+func TestAuthSaveArgs(t *testing.T) {
+	got := authSaveArgs("prod", map[string]any{
+		"url": "https://x/login", "username": "u",
+		"usernameSelector": "#user",
+	})
+	want := []string{"auth", "save", "prod", "--url", "https://x/login", "--username", "u", "--username-selector", "#user", "--password-stdin"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("authSaveArgs = %v, want %v", got, want)
+	}
+}

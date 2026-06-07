@@ -254,6 +254,7 @@ func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scrip
 			reg.mu.Unlock()
 			return goja.Undefined()
 		},
+		"auth": authNamespace(vm, loop),
 		"screenshot": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			url := strArg(call, 0)
 			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
@@ -408,9 +409,10 @@ func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[str
 	h.addStorage(obj, vm, loop)  // Phase 3
 	h.addTabs(obj, vm, loop)     // Phase 3
 	h.addDiff(obj, vm, loop)     // Phase 3
-	h.addDebug(obj, vm, loop)    // Phase 4
-	h.addReact(obj, vm, loop)    // Phase 4
-	h.addAdvanced(obj, vm, loop) // Phase 4
+	h.addDebug(obj, vm, loop)     // Phase 4
+	h.addReact(obj, vm, loop)     // Phase 4
+	h.addAdvanced(obj, vm, loop)  // Phase 4
+	h.addAuthLogin(obj, vm, loop) // Phase 4
 	return obj
 }
 
