@@ -177,5 +177,104 @@ runtime.log(r.owner, r.defaultBranch);`,
 			Example: `const r = await services.ai.send({ prompt: "Say hi", provider: "claude" });
 runtime.log(r.output);`,
 		},
+
+		// agentBrowser namespace docs
+		"agentBrowser.available": {
+			Summary: "True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run. Gate calls on this; every binding throws a clean error when the CLI is absent.",
+			Returns: "boolean — true if `agent-browser` is on PATH.",
+			Example: `if (!services.agentBrowser.available) runtime.log("install agent-browser first");`,
+		},
+		"agentBrowser.version": {
+			Summary: "The agent-browser CLI version string.",
+			Returns: "Promise<string> — the version reported by `agent-browser --version`.",
+			Errors:  "Throws if the agent-browser CLI is not on PATH.",
+			Example: `runtime.log(await services.agentBrowser.version());`,
+		},
+		"agentBrowser.launch": {
+			Summary: "Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }", Optional: true, Desc: "Launch flags captured for the lifetime of the handle and threaded into every subprocess call. session names the agent-browser session (auto-generated when omitted)."},
+			},
+			ReturnType: "{ session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; close(): Promise<any> }",
+			Returns:    "A handle object with a read-only session string and methods: open, back, forward, reload, wait, connect, click, dblclick, hover, focus, fill, type, press, check, uncheck, select, scroll, scrollIntoView, drag, upload, download, keyboard.{type,insertText}, mouse.{move,down,up,wheel}, get, isVisible, isEnabled, isChecked, eval, snapshot, console, errors, highlight, find, locator, close. Every async method resolves to an agent-browser envelope { success: boolean, data: object, error: string|null }; drill into .data for the actual values.",
+			Errors:     "launch() itself does not throw for a missing CLI (it allocates only); the first method call throws if agent-browser is not on PATH.",
+			Example: `const b = services.agentBrowser.launch({ headed: false });
+await b.open("https://example.com");
+const r = await b.get("title");
+runtime.log(r.data?.title);
+await b.close();`,
+		},
+		"agentBrowser.open": {
+			Summary: "Navigate the browser session to a URL. The URL may be http/https, a data: URI, or any scheme the browser supports.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Desc: "The URL to navigate to. Required."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data typically contains { url, title } after navigation.",
+			Errors:  "Throws if url is missing, if agent-browser is not on PATH, or if navigation fails.",
+			Example: `const b = services.agentBrowser.launch();
+await b.open("https://example.com");
+await b.close();`,
+		},
+		"agentBrowser.click": {
+			Summary: "Click an element matching a CSS selector.",
+			Params: []scriptengine.Param{
+				{Name: "selector", Type: "string", Desc: "CSS selector for the element to click. Required."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:  "Throws if selector is missing, element not found, or agent-browser is not on PATH.",
+			Example: `await b.click("#submit-btn");`,
+		},
+		"agentBrowser.fill": {
+			Summary: "Fill an input element with text.",
+			Params: []scriptengine.Param{
+				{Name: "selector", Type: "string", Desc: "CSS selector for the input element. Required."},
+				{Name: "text", Type: "string", Desc: "Text to fill into the element."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:  "Throws if selector is missing, element not found, or agent-browser is not on PATH.",
+			Example: `await b.fill("#search", "typescript");`,
+		},
+		"agentBrowser.get": {
+			Summary: "Get a page property. what is one of: text, html, value, attr, title, url, count, box, styles, cdp-url. Pass selector as the second argument for element-scoped queries.",
+			Params: []scriptengine.Param{
+				{Name: "what", Type: "string", Desc: "Property name: text, html, value, attr, title, url, count, box, styles, cdp-url. Required."},
+				{Name: "selector", Type: "string", Optional: true, Desc: "CSS selector to scope the query to a specific element."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser wraps results in this envelope; the requested value lives under data (e.g. get(\"title\") → { success, data: { title }, error }, get(\"value\", \"#sel\") → { success, data: { value }, error }).",
+			Errors:  "Throws if what is missing, the selector finds no element, or agent-browser is not on PATH.",
+			Example: `const r = await b.get("title");
+runtime.log(r.data?.title);
+
+const t = await b.get("text", "#main");
+runtime.log(t.data?.text);`,
+		},
+		"agentBrowser.snapshot": {
+			Summary: "Return an accessibility tree snapshot of the current page. Useful for reading page structure without CSS selectors.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ interactive?: boolean, compact?: boolean, depth?: number, selector?: string }", Optional: true, Desc: "interactive: include interactive-only elements (-i). compact: compact output (-c). depth: max tree depth (-d). selector: scope to a subtree (-s selector)."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.",
+			Errors:  "Throws if agent-browser is not on PATH or the snapshot fails.",
+			Example: `const snap = await b.snapshot({ interactive: true });
+runtime.log("snapshot keys:", Object.keys(snap).join(", "));`,
+		},
+		"agentBrowser.find": {
+			Summary: "Locate an element using a semantic locator (role, text, label, etc.) and perform an action in one shot.",
+			Params: []scriptengine.Param{
+				{Name: "locator", Type: "string", Desc: "Locator type: role, text, label, placeholder, alt, title, testid. Required."},
+				{Name: "value", Type: "string", Desc: "Value to match for the given locator type. Required."},
+				{Name: "opts", Type: "{ action: string, text?: string }", Desc: "action is required (e.g. click, fill, hover, check). text is passed as the fill text when action is 'fill' or 'type'."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:  "Throws if locator, value, or opts.action is missing, or if agent-browser is not on PATH.",
+			Example: `await b.find("role", "button", { action: "click" });
+await b.find("text", "Search", { action: "fill", text: "query" });`,
+		},
+		"agentBrowser.close": {
+			Summary: "Close the browser session. Idempotent: a second close is a no-op.",
+			Returns: "Promise<{ closed: boolean }> — { closed: true } on the first call; an empty object on subsequent calls.",
+			Errors:  "Throws if the close command fails (e.g. agent-browser error).",
+			Example: `await b.close();`,
+		},
 	}
 }

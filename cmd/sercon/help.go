@@ -735,6 +735,30 @@ const log = tui.pane("log");
 for (let i = 0; i < 50; i++) log.writeln("line " + i);   // pane follows the tail
 log.writeln("Done. Press any key to close.");
 await tui.waitKey();`)
+
+	header(50, "Drive a headless browser (services.agentBrowser)")
+	code(`// Gate on availability — every method throws cleanly if the CLI is absent.
+if (!services.agentBrowser.available) {
+  runtime.log("install agent-browser to run this demo");
+} else {
+  // launch() is synchronous — no browser starts until the first command.
+  const b = services.agentBrowser.launch({ headed: false });
+  try {
+    // open() / get() / fill() / isVisible() / snapshot() are all async.
+    await b.open("https://example.com");
+    const t = await b.get("title");
+    runtime.log("title:", t.data?.title);          // data envelope: { success, data, error }
+
+    await b.fill("#search", "sercon");             // fill an input
+    const snap = await b.snapshot({ compact: true });   // accessibility tree
+    runtime.log("snap keys:", Object.keys(snap).join(", "));
+  } finally {
+    await b.close();   // idempotent; Run-end cleanup catches any leaks
+  }
+}`)
+	note("agent-browser --json drives headless Chrome; results arrive as { success, data, error } envelopes.")
+	note("launch opts: headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath.")
+	note("Handle methods: open/back/forward/reload/wait/connect, click/fill/type/press/check/select/scroll/drag, get/isVisible/isEnabled/isChecked/eval/snapshot/console/errors/highlight, find/locator.")
 	fmt.Fprintln(w, "")
 
 	header(38, "Server (server.http.listen + routes)")
@@ -979,4 +1003,4 @@ await net.capture.openFile("/tmp/x.pcap", (pkt) => {
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 49
+const exampleCount = 50
