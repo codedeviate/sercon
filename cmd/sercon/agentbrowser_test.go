@@ -177,6 +177,18 @@ func TestOneShotNeedsURL(t *testing.T) {
 	}
 }
 
+func TestNetworkArgs(t *testing.T) {
+	if got := routeArgs("**/api/*", map[string]any{"abort": true}); !reflect.DeepEqual(got, []string{"network", "route", "**/api/*", "--abort"}) {
+		t.Fatalf("route abort = %v", got)
+	}
+	if got := routeArgs("**/d.json", map[string]any{"body": map[string]any{"mock": true}}); !reflect.DeepEqual(got, []string{"network", "route", "**/d.json", "--body", `{"mock":true}`}) {
+		t.Fatalf("route body = %v", got)
+	}
+	if got := requestsArgs(map[string]any{"clear": true, "filter": "api", "method": "GET"}); !reflect.DeepEqual(got, []string{"network", "requests", "--clear", "--filter", "api", "--method", "GET"}) {
+		t.Fatalf("requests = %v", got)
+	}
+}
+
 func TestRunJSONClosedHandle(t *testing.T) {
 	h := &abHandle{session: "x", reg: &abRegistry{sessions: map[string]struct{}{}}}
 	h.closed.Store(true)
