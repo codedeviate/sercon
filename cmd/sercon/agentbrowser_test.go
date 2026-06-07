@@ -123,3 +123,76 @@ func TestFindArgs(t *testing.T) {
 		t.Fatalf("findArgs with text = %v", got)
 	}
 }
+
+func TestSetArgs(t *testing.T) {
+	if got := setArgs("viewport", "1920", "1080"); !reflect.DeepEqual(got, []string{"set", "viewport", "1920", "1080"}) {
+		t.Fatalf("viewport = %v", got)
+	}
+	if got := setArgs("offline", "on"); !reflect.DeepEqual(got, []string{"set", "offline", "on"}) {
+		t.Fatalf("offline = %v", got)
+	}
+	if got := recordArgs("start", "/tmp/x.webm"); !reflect.DeepEqual(got, []string{"record", "start", "/tmp/x.webm"}) {
+		t.Fatalf("record start = %v", got)
+	}
+	if got := offlineArg(true); got != "on" {
+		t.Fatalf("offlineArg(true) = %q", got)
+	}
+	if got := offlineArg(false); got != "off" {
+		t.Fatalf("offlineArg(false) = %q", got)
+	}
+}
+
+func TestScreenshotArgs(t *testing.T) {
+	got := screenshotArgs(map[string]any{"selector": "#root", "full": true, "format": "jpeg", "quality": float64(80)})
+	want := []string{"screenshot", "#root", "--full", "--screenshot-format", "jpeg", "--screenshot-quality", "80"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("screenshotArgs = %v, want %v", got, want)
+	}
+	if got := screenshotArgs(map[string]any{}); !reflect.DeepEqual(got, []string{"screenshot"}) {
+		t.Fatalf("empty screenshotArgs = %v", got)
+	}
+}
+
+func TestAbCapturePath(t *testing.T) {
+	p, err := abCapturePath(`{"success":true,"data":{"path":"/tmp/shot.png"},"error":null}`)
+	if err != nil || p != "/tmp/shot.png" {
+		t.Fatalf("abCapturePath = %q, %v", p, err)
+	}
+	if _, err := abCapturePath(`{"success":true,"data":{},"error":null}`); err == nil {
+		t.Fatalf("expected error when path missing")
+	}
+}
+
+func TestOneShotNeedsURL(t *testing.T) {
+	reg := &abRegistry{sessions: map[string]struct{}{}, defaults: map[string]any{}}
+	// withEphemeral should error before allocating a session when url is empty.
+	_, err := reg.withEphemeral(context.Background(), "", func(h *abHandle) (any, error) {
+		return nil, nil
+	})
+	if err == nil {
+		t.Fatalf("expected error for empty url")
+	}
+	if len(reg.sessions) != 0 {
+		t.Fatalf("no session should be allocated on empty-url error, got %d", len(reg.sessions))
+	}
+}
+
+func TestMergeLaunchOpts(t *testing.T) {
+	defaults := map[string]any{"headed": true, "proxy": "http://d"}
+	opts := map[string]any{"proxy": "http://o", "userAgent": "ua"}
+	got := mergeLaunchOpts(defaults, opts)
+	// opts wins on conflict; union of keys.
+	if got["headed"] != true {
+		t.Fatalf("expected headed from defaults, got %v", got["headed"])
+	}
+	if got["proxy"] != "http://o" {
+		t.Fatalf("expected opts.proxy to win, got %v", got["proxy"])
+	}
+	if got["userAgent"] != "ua" {
+		t.Fatalf("expected userAgent from opts, got %v", got["userAgent"])
+	}
+	// inputs must not be mutated.
+	if _, ok := defaults["userAgent"]; ok {
+		t.Fatalf("mergeLaunchOpts mutated the defaults map")
+	}
+}

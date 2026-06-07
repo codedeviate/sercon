@@ -1136,9 +1136,51 @@ into `.data` for the actual values (e.g. `data.title`, `data.value`,
   `errors(opts?)`, `highlight(sel)`
 - **Locators:** `find(locator, value, { action, text? })`,
   `locator(spec)` — returns a chainable handle bound to a `(locator, value)` spec.
+- **Settings (Phase 2):** `set.viewport(w,h,scale?)`, `set.device(name)`,
+  `set.geo(lat,lng)`, `set.offline(on?)`, `set.headers(obj)`,
+  `set.credentials(user,pass)`, `set.media(scheme?,reducedMotion?)`
+- **Recording (Phase 2):** `record.start(path.webm, url?)`, `record.stop()`
+- **Capture (Phase 2):** `screenshot(path?,opts?)`, `pdf(path?)`
 - **Lifecycle:** `session` (read-only name), `close()`
 
-**Example:**
+**Capture (Phase 2).** `screenshot` and `pdf` are path-first with opt-in
+in-memory bytes:
+
+- `b.screenshot(path?, opts?)` — when `path` is given the image is written to
+  that file and the result is `{ path: string, size: number, format: string }`.
+  When omitted the raw bytes are returned as
+  `{ bytes: number[], format: string }` — a plain JS `number[]` (byte-value
+  array). Convert to a typed array with `new Uint8Array(bytes)`.
+- `b.pdf(path?)` — same path-first model; format is always `"pdf"`.
+- `opts` for `screenshot`: `{ selector?, full?, annotate?, format?: "png"|"jpeg", quality? }`.
+
+**Defaults bag (Phase 2).** A per-Run namespace-level defaults object is
+merged under per-call `launch()` opts so common flags don't need to be
+repeated:
+
+```typescript
+services.agentBrowser.setDefaultOptions({ headed: false, proxy: "http://proxy:3128" });
+const b = services.agentBrowser.launch(); // inherits headed + proxy
+```
+
+- `setDefaultOptions(obj)` — replace the defaults map entirely.
+- `defaultOptions()` — return a shallow copy of the current defaults.
+- `clearDefaultOptions()` — reset to `{}`.
+
+Defaults are scoped to the current Run; they do not persist across `Run`
+calls.
+
+**Flat one-shot shortcuts (Phase 2).** Launch an ephemeral session, open a
+URL, perform one action, and close — without managing a handle:
+
+| Shortcut | Equivalent handle sequence |
+|----------|----------------------------|
+| `agentBrowser.screenshot(url, path?, opts?)` | `launch()+open(url)+screenshot(path?,opts?)+close()` |
+| `agentBrowser.pdf(url, path?)` | `launch()+open(url)+pdf(path?)+close()` |
+| `agentBrowser.snapshot(url, opts?)` | `launch()+open(url)+snapshot(opts?)+close()` |
+| `agentBrowser.eval(url, js)` | `launch()+open(url)+eval(js)+close()` |
+
+**Example (Phase 1 + Phase 2):**
 
 ```typescript
 if (!services.agentBrowser.available) {
@@ -1163,9 +1205,21 @@ if (!services.agentBrowser.available) {
 
     const snap = await b.snapshot({ compact: true });
     runtime.log("snap keys:", Object.keys(snap).join(", "));
+
+    // Phase 2 — settings + capture
+    await b.set.viewport(1280, 800);
+    const shot = await b.screenshot({ full: true });  // bytes path
+    runtime.log("bytes:", new Uint8Array(shot.bytes).length, shot.format);
+
+    const file = await b.screenshot("/tmp/demo.png"); // file path
+    runtime.log("file:", JSON.stringify(file));        // { path, size, format }
   } finally {
     await b.close();
   }
+
+  // One-shot shortcut
+  const r = await services.agentBrowser.eval(html, "document.title");
+  runtime.log("title:", r.data?.result);  // "sercon demo"
 }
 ```
 
@@ -4571,10 +4625,66 @@ True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run.
 if (!services.agentBrowser.available) runtime.log("install agent-browser first");
 ```
 
+#### services.agentBrowser.clearDefaultOptions
+
+```
+clearDefaultOptions(...args: unknown[])
+```
+
+Reset the namespace-level launch defaults to an empty object, removing any values set by setDefaultOptions.
+
+**Returns:** void
+
+**Throws:** Never throws.
+
+```ts
+services.agentBrowser.clearDefaultOptions();
+runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {}
+```
+
+#### services.agentBrowser.defaultOptions
+
+```
+defaultOptions(...args: unknown[])
+```
+
+Return a shallow copy of the current namespace-level launch defaults. These are merged (under per-call opts) into every subsequent launch().
+
+**Returns:** object — a plain-object copy of the current defaults map. Empty object when no defaults have been set.
+
+**Throws:** Never throws.
+
+```ts
+services.agentBrowser.setDefaultOptions({ headed: false });
+runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed":false}
+```
+
+#### services.agentBrowser.eval
+
+```
+eval(url: string, js: string): void
+```
+
+One-shot shortcut: launch an ephemeral session, open url, evaluate a JS expression in the page, and close.
+
+**Parameters**
+
+- `url` *(string)* — URL to open. Required.
+- `js` *(string)* — JavaScript expression to evaluate in the page context. Required.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data.result holds the serialised return value.
+
+**Throws:** Throws if url or js is missing; if agent-browser is not on PATH; on navigation or evaluation failure.
+
+```ts
+const r = await services.agentBrowser.eval("data:text/html,<title>Hi</title>", "document.title");
+runtime.log(r.data?.result); // "Hi"
+```
+
 #### services.agentBrowser.launch
 
 ```
-launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; close(): Promise<any> }
+launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; close(): Promise<any> }
 ```
 
 Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.
@@ -4593,6 +4703,94 @@ await b.open("https://example.com");
 const r = await b.get("title");
 runtime.log(r.data?.title);
 await b.close();
+```
+
+#### services.agentBrowser.pdf
+
+```
+pdf(url: string, path?: string): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
+```
+
+One-shot shortcut: launch an ephemeral session, open url, capture a PDF, and close.
+
+**Parameters**
+
+- `url` *(string)* — URL to open. Required.
+- `path` *(string, optional)* — Output file path. When supplied the PDF is written there and the result has { path, size, format }; when omitted the PDF bytes are returned as a number[] in { bytes, format }.
+
+**Returns:** Promise — path given: { path: string, size: number, format: string }; no path: { bytes: number[], format: string }.
+
+**Throws:** Throws if url is missing; if agent-browser is not on PATH; on navigation, capture, or I/O failure.
+
+```ts
+const pdf = await services.agentBrowser.pdf("data:text/html,<h1>Hi</h1>");
+runtime.log(new Uint8Array(pdf.bytes).length, pdf.format); // e.g. 5678 pdf
+```
+
+#### services.agentBrowser.screenshot
+
+```
+screenshot(url: string, path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
+```
+
+One-shot shortcut: launch an ephemeral session, open url, capture a screenshot, and close. Equivalent to launch()+open(url)+screenshot(path?,opts?)+close() but in a single call.
+
+**Parameters**
+
+- `url` *(string)* — URL to open (http/https or data: URI). Required.
+- `path` *(string, optional)* — Output file path. When supplied the screenshot is written there and the result has { path, size, format }; when omitted the image bytes are returned as a number[] (byte-value array) in { bytes, format }.
+- `opts` *({ selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }, optional)* — Capture options. selector scopes the capture to an element. full captures the full page. format defaults to png. quality (0–100) applies to jpeg.
+
+**Returns:** Promise — path given: { path: string, size: number, format: string }; no path: { bytes: number[], format: string } where bytes is a plain JS number[] (byte-value array); wrap with new Uint8Array(bytes) to get a typed array.
+
+**Throws:** Throws if url is missing; if agent-browser is not on PATH; on navigation, capture, or I/O failure.
+
+```ts
+const shot = await services.agentBrowser.screenshot("data:text/html,<h1>Hi</h1>");
+runtime.log(new Uint8Array(shot.bytes).length, shot.format); // e.g. 12345 png
+```
+
+#### services.agentBrowser.setDefaultOptions
+
+```
+setDefaultOptions(opts: object): void
+```
+
+Replace the namespace-level launch defaults with the supplied object. Merged (under per-call opts) into every subsequent launch(). Affects only the current Run.
+
+**Parameters**
+
+- `opts` *(object)* — A plain object of launch option key/value pairs. The entire defaults map is replaced (not merged) with this object.
+
+**Returns:** void
+
+**Throws:** Never throws.
+
+```ts
+services.agentBrowser.setDefaultOptions({ headed: false, proxy: "http://proxy:3128" });
+const b = services.agentBrowser.launch(); // headed:false + proxy inherited
+```
+
+#### services.agentBrowser.snapshot
+
+```
+snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): void
+```
+
+One-shot shortcut: launch an ephemeral session, open url, take an accessibility-tree snapshot, and close.
+
+**Parameters**
+
+- `url` *(string)* — URL to open. Required.
+- `opts` *({ interactive?: boolean, compact?: boolean, depth?: number, selector?: string }, optional)* — Snapshot options forwarded to the handle's snapshot() method.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.
+
+**Throws:** Throws if url is missing; if agent-browser is not on PATH; on navigation or snapshot failure.
+
+```ts
+const snap = await services.agentBrowser.snapshot("data:text/html,<h1>Hi</h1>", { compact: true });
+runtime.log(JSON.stringify(snap.data).slice(0, 100));
 ```
 
 #### services.agentBrowser.version

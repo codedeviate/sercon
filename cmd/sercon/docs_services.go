@@ -195,7 +195,7 @@ runtime.log(r.output);`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string }", Optional: true, Desc: "Launch flags captured for the lifetime of the handle and threaded into every subprocess call. session names the agent-browser session (auto-generated when omitted)."},
 			},
-			ReturnType: "{ session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; close(): Promise<any> }",
+			ReturnType: "{ session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: \"dark\" | \"light\", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: \"png\" | \"jpeg\", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; close(): Promise<any> }",
 			Returns:    "A handle object with a read-only session string and methods: open, back, forward, reload, wait, connect, click, dblclick, hover, focus, fill, type, press, check, uncheck, select, scroll, scrollIntoView, drag, upload, download, keyboard.{type,insertText}, mouse.{move,down,up,wheel}, get, isVisible, isEnabled, isChecked, eval, snapshot, console, errors, highlight, find, locator, close. Every async method resolves to an agent-browser envelope { success: boolean, data: object, error: string|null }; drill into .data for the actual values.",
 			Errors:     "launch() itself does not throw for a missing CLI (it allocates only); the first method call throws if agent-browser is not on PATH.",
 			Example: `const b = services.agentBrowser.launch({ headed: false });
@@ -248,7 +248,7 @@ runtime.log(r.data?.title);
 const t = await b.get("text", "#main");
 runtime.log(t.data?.text);`,
 		},
-		"agentBrowser.snapshot": {
+		"agentBrowser.handle.snapshot": {
 			Summary: "Return an accessibility tree snapshot of the current page. Useful for reading page structure without CSS selectors.",
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ interactive?: boolean, compact?: boolean, depth?: number, selector?: string }", Optional: true, Desc: "interactive: include interactive-only elements (-i). compact: compact output (-c). depth: max tree depth (-d). selector: scope to a subtree (-s selector)."},
@@ -275,6 +275,104 @@ await b.find("text", "Search", { action: "fill", text: "query" });`,
 			Returns: "Promise<{ closed: boolean }> — { closed: true } on the first call; an empty object on subsequent calls.",
 			Errors:  "Throws if the close command fails (e.g. agent-browser error).",
 			Example: `await b.close();`,
+		},
+
+		// Phase 2 — defaults bag
+		"agentBrowser.defaultOptions": {
+			Summary: "Return a shallow copy of the current namespace-level launch defaults. These are merged (under per-call opts) into every subsequent launch().",
+			Returns: "object — a plain-object copy of the current defaults map. Empty object when no defaults have been set.",
+			Errors:  "Never throws.",
+			Example: `services.agentBrowser.setDefaultOptions({ headed: false });
+runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed":false}`,
+		},
+		"agentBrowser.setDefaultOptions": {
+			Summary: "Replace the namespace-level launch defaults with the supplied object. Merged (under per-call opts) into every subsequent launch(). Affects only the current Run.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "object", Desc: "A plain object of launch option key/value pairs. The entire defaults map is replaced (not merged) with this object."},
+			},
+			Returns: "void",
+			Errors:  "Never throws.",
+			Example: `services.agentBrowser.setDefaultOptions({ headed: false, proxy: "http://proxy:3128" });
+const b = services.agentBrowser.launch(); // headed:false + proxy inherited`,
+		},
+		"agentBrowser.clearDefaultOptions": {
+			Summary: "Reset the namespace-level launch defaults to an empty object, removing any values set by setDefaultOptions.",
+			Returns: "void",
+			Errors:  "Never throws.",
+			Example: `services.agentBrowser.clearDefaultOptions();
+runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {}`,
+		},
+
+		// Phase 2 — namespace-level one-shot shortcuts
+		"agentBrowser.screenshot": {
+			Summary: "One-shot shortcut: launch an ephemeral session, open url, capture a screenshot, and close. Equivalent to launch()+open(url)+screenshot(path?,opts?)+close() but in a single call.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Desc: "URL to open (http/https or data: URI). Required."},
+				{Name: "path", Type: "string", Optional: true, Desc: "Output file path. When supplied the screenshot is written there and the result has { path, size, format }; when omitted the image bytes are returned as a number[] (byte-value array) in { bytes, format }."},
+				{Name: "opts", Type: "{ selector?: string, full?: boolean, annotate?: boolean, format?: \"png\" | \"jpeg\", quality?: number }", Optional: true, Desc: "Capture options. selector scopes the capture to an element. full captures the full page. format defaults to png. quality (0–100) applies to jpeg."},
+			},
+			ReturnType: "Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>",
+			Returns:    "Promise — path given: { path: string, size: number, format: string }; no path: { bytes: number[], format: string } where bytes is a plain JS number[] (byte-value array); wrap with new Uint8Array(bytes) to get a typed array.",
+			Errors:     "Throws if url is missing; if agent-browser is not on PATH; on navigation, capture, or I/O failure.",
+			Example: `const shot = await services.agentBrowser.screenshot("data:text/html,<h1>Hi</h1>");
+runtime.log(new Uint8Array(shot.bytes).length, shot.format); // e.g. 12345 png`,
+		},
+		"agentBrowser.pdf": {
+			Summary: "One-shot shortcut: launch an ephemeral session, open url, capture a PDF, and close.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Desc: "URL to open. Required."},
+				{Name: "path", Type: "string", Optional: true, Desc: "Output file path. When supplied the PDF is written there and the result has { path, size, format }; when omitted the PDF bytes are returned as a number[] in { bytes, format }."},
+			},
+			ReturnType: "Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>",
+			Returns:    "Promise — path given: { path: string, size: number, format: string }; no path: { bytes: number[], format: string }.",
+			Errors:     "Throws if url is missing; if agent-browser is not on PATH; on navigation, capture, or I/O failure.",
+			Example: `const pdf = await services.agentBrowser.pdf("data:text/html,<h1>Hi</h1>");
+runtime.log(new Uint8Array(pdf.bytes).length, pdf.format); // e.g. 5678 pdf`,
+		},
+		"agentBrowser.snapshot": {
+			Summary: "One-shot shortcut: launch an ephemeral session, open url, take an accessibility-tree snapshot, and close.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Desc: "URL to open. Required."},
+				{Name: "opts", Type: "{ interactive?: boolean, compact?: boolean, depth?: number, selector?: string }", Optional: true, Desc: "Snapshot options forwarded to the handle's snapshot() method."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.",
+			Errors:  "Throws if url is missing; if agent-browser is not on PATH; on navigation or snapshot failure.",
+			Example: `const snap = await services.agentBrowser.snapshot("data:text/html,<h1>Hi</h1>", { compact: true });
+runtime.log(JSON.stringify(snap.data).slice(0, 100));`,
+		},
+		"agentBrowser.eval": {
+			Summary: "One-shot shortcut: launch an ephemeral session, open url, evaluate a JS expression in the page, and close.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Desc: "URL to open. Required."},
+				{Name: "js", Type: "string", Desc: "JavaScript expression to evaluate in the page context. Required."},
+			},
+			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data.result holds the serialised return value.",
+			Errors:  "Throws if url or js is missing; if agent-browser is not on PATH; on navigation or evaluation failure.",
+			Example: `const r = await services.agentBrowser.eval("data:text/html,<title>Hi</title>", "document.title");
+runtime.log(r.data?.result); // "Hi"`,
+		},
+
+		// Phase 2 — handle-level set.* and record.*
+		"agentBrowser.set": {
+			Summary: "Namespace object with browser-settings sub-methods on an open handle: set.viewport, set.device, set.geo, set.offline, set.headers, set.credentials, set.media.",
+			Returns: "object — the set namespace (not callable itself; use sub-methods).",
+			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Example: `const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>Test</h1>");
+await b.set.viewport(1920, 1080);
+await b.set.device("iPhone 12");
+await b.close();`,
+		},
+		"agentBrowser.record": {
+			Summary: "Namespace object for video recording on an open handle: record.start(path, url?) and record.stop().",
+			Returns: "object — the record namespace (not callable itself; use sub-methods).",
+			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Example: `const b = services.agentBrowser.launch();
+await b.open("https://example.com");
+await b.record.start("/tmp/clip.webm");
+// ... interact ...
+await b.record.stop();
+await b.close();`,
 		},
 	}
 }
