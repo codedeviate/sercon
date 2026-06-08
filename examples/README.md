@@ -101,6 +101,34 @@ external service self-skip.
 | `advanced/webdriver-login-flow.ts` | Complete WebDriver UI test — drive a login form (fill/submit/wait/assert) + screenshot; self-skips when no chromedriver/geckodriver is on PATH. |
 | `advanced/tui-dashboard.ts` | Live multi-pane `tui` dashboard — streams a bounded subprocess into one pane + periodic status ticks in another; runs a fixed number of cycles then exits. **Manual run** (takes over a real terminal); falls back to prefixed lines in non-TTY; not in `make demo`. |
 
+## DevShop flows (`sws6/`)
+
+Reality-based `services.webdriver` flows against the **internal** dev storefront
+`http://dev-shop.sws.local` — starting points for building UI test flows
+internally. Every script self-skips cleanly when no WebDriver driver is on PATH
+**or** the host is unreachable, so they're safe to run anywhere; they target an
+internal host and are **not** in `make demo` or CI. `sws6/shop.ts` is a shared
+helper module (host/persona/creds/`shopUp()`), not a runnable demo.
+
+The **storefront read flows are fully working and assert real results**. The
+**cart → checkout → payment** flows are honest *templates*: a guest basket is
+client-side only (the site says "Log in to save your basket"), login submits
+but the authenticated state isn't confirmable from the DOM, and the payment
+providers (KCO/Nets/SCO/Qliro) render in iframes with 3DS/ngrok redirects.
+For full automated **purchase + payment**, use the Playwright-based `/devshop`
+skill, which is purpose-built for it; these WebDriver scripts cover the
+storefront/recon half and scaffold the rest.
+
+| Script | Demonstrates |
+| --- | --- |
+| `sws6/search.ts` | Search (`/en/search?q=watch`) → assert results → open the first product. **Verified.** |
+| `sws6/browse-category.ts` | Browse a category (`/en/category/ladies`) → assert the product tiles → open the first. **Verified.** |
+| `sws6/filter-sort.ts` | Change the category sort (`#sort-by-select`, server-side) → assert the listing reorders. **Verified.** |
+| `sws6/login.ts` | Existing-customer login form (`#existing-account-type-radio` → email/password → `.login-action`); submits and reports state. Confirming the authenticated state needs the shop's own logged-in indicator (template). |
+| `sws6/add-to-cart.ts` | Open a product, select all variants (`select.attribute-value-select`), click Buy, poll the header cart count to ≥1. **Verified (client-side add).** |
+| `sws6/view-cart.ts` | Add an item then open `/en/checkout`; reports cart state. Documents that a **guest** basket doesn't persist to checkout (needs login). |
+| `sws6/checkout-payment.ts` | Checkout/payment **template**, provider via `argv` (`kco`\|`sco`\|`nets`\|`qliro`, default `kco`): add → checkout → locate the provider UI → dry-run stop. Per-provider test data embedded; full iframe/3DS payment → use `/devshop`. |
+
 ## Adding a new binding
 
 Bindings are wired in `cmd/sercon/main.go` inside `registerSurface`. The
