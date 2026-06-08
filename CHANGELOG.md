@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Changed
+- Manual: documented the underlying external-tool surface for
+  `services.agentBrowser` and `services.webdriver` so §5 is a self-contained
+  one-stop reference. For agentBrowser, added the argument vocabularies passed
+  through to the CLI — `get` what-values (`text`/`html`/`value`/`attr`/`title`/
+  `url`/`count`/`box`/`styles`/`cdp-url`), the `is*` states, the `find`
+  locators (`role`/`text`/`label`/`placeholder`/`alt`/`title`/`testid`/`first`/
+  `last`/`nth`) and act-verbs, `snapshot` opts, and `@ref` selectors — plus a
+  pointer to the version-matched `agent-browser --help` / `skills` reference and
+  the `cmd()` escape hatch (current for agent-browser 0.27.1). For webdriver,
+  documented the browser-flag (`args`) and W3C `capabilities` surface (standard
+  capability keys, `goog:chromeOptions`/`moz:firefoxOptions` blocks, and the
+  last-wins merge semantics) with a link to the W3C spec.
+
 ## [0.40.0] — 2026-06-07
 
 ### Added

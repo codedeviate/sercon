@@ -1170,6 +1170,51 @@ into `.data` for the actual values (e.g. `data.title`, `data.value`,
   on the current session
 - **Lifecycle:** `session` (read-only name), `close()`
 
+**Argument vocabularies (the agent-browser surface).** The string arguments to
+`get`, the `is*` checks, and `find` are passed through to the `agent-browser`
+CLI verbatim, so the accepted values are agent-browser's, not sercon's. The
+set below is current for **agent-browser 0.27.1** (the version this manual was
+written against — see the authoritative-reference note at the end of this
+section):
+
+- **`get(what, sel?)`** — `what` is one of `text`, `html`, `value`,
+  `attr` (the attribute name goes in the `sel` slot, e.g. `get("attr", "href")`),
+  `title`, `url`, `count`, `box` (bounding box), `styles`, or `cdp-url`. When
+  `sel` is a plain CSS selector it scopes the query; a snapshot `@ref`
+  (see below) targets a specific element; omit it to query the page or the
+  active element. The result is in the `.data` field of the envelope (e.g.
+  `(await b.get("title")).data.title`).
+- **`isVisible(sel)` / `isEnabled(sel)` / `isChecked(sel)`** — map to
+  agent-browser's `is visible|enabled|checked <selector>`. `sel` is required.
+  The boolean lands in `.data` (e.g. `.data.visible`).
+- **`find(locator, value, { action, text? })`** — `locator` is one of `role`,
+  `text`, `label`, `placeholder`, `alt`, `title`, `testid`, `first`, `last`,
+  or `nth`; `value` is the locator's argument (the role/text/etc. to match).
+  `action` is **required** and is an act-style verb — `click`, `dblclick`,
+  `hover`, `focus`, `check`, `uncheck`, `fill`, or `type` (the last two consume
+  `text`). agent-browser's `find` cannot return a handle without acting, so
+  there is no read-only `find`; for read-only matching use `snapshot()`. The
+  chainable `locator(spec)` handle exposes the same verbs as methods.
+- **`snapshot(opts?)`** — `opts` is `{ interactive?: boolean, compact?: boolean,
+  depth?: number, selector?: string }`, mapping to agent-browser's `-i` / `-c`
+  / `-d <n>` / `-s <sel>`. The snapshot is an accessibility tree whose
+  interactive nodes carry refs like `@e2`; **those refs are valid selectors**
+  for `get`, `click`, `fill`, etc. on the same session — the snapshot →
+  act-by-ref loop is agent-browser's intended workflow for AI agents.
+- **`console(opts?)` / `errors(opts?)`** — `opts` is `{ clear?: boolean }`
+  (passes `--clear`); returns captured console logs / page errors.
+
+**Reaching the rest of agent-browser.** sercon binds the commonly-used
+subset; agent-browser ships more (sessions, dashboard, confirmation prompts,
+iOS-simulator and cloud-provider backends, init scripts, …). Any subcommand
+that isn't a first-class binding is reachable through the `cmd(command,
+...args)` escape hatch — `cmd` maps 1:1 onto an `agent-browser <command>
+[args]` invocation. For the **authoritative, version-matched** command and
+flag reference — including data shapes returned in `.data`, which evolve with
+the CLI — run `agent-browser --help`, or the agent-oriented guide
+`agent-browser skills get core --full`. Treat the tables in this manual as a
+convenience snapshot, not a contract: agent-browser owns its own surface.
+
 **Capture (Phase 2).** `screenshot` and `pdf` are path-first with opt-in
 in-memory bytes:
 
@@ -1566,6 +1611,33 @@ Connect options (all optional):
 | `url` | `string` | — | Dial an already-running WebDriver server instead of starting one. |
 | `args` | `string[]` | — | Extra browser command-line flags appended to the default set. |
 | `capabilities` | `object` | — | Raw W3C capability overrides merged last (escape hatch). |
+
+**Browser flags (`args`) and capabilities (the WebDriver surface).** Unlike
+`agentBrowser`, this binding speaks the W3C WebDriver protocol directly (via
+`tebeka/selenium`) rather than wrapping a CLI, so the "external surface" is the
+W3C capability set and the browser's own command-line flags:
+
+- **`args`** are the browser's launch flags, appended *after* the headless flag
+  sercon adds for you (`--headless=new` for Chrome, `-headless` for Firefox
+  when `headless` is true). They land in the vendor capability block
+  (`goog:chromeOptions.args` / `moz:firefoxOptions.args`). Common Chrome flags:
+  `--no-sandbox`, `--disable-gpu`, `--disable-dev-shm-usage`,
+  `--window-size=1280,800`, `--lang=en-US`, `--proxy-server=host:port`. Firefox
+  takes `-width 1280`, `-height 800`, `-private`, etc.
+- **`capabilities`** is an object of top-level **W3C standard capabilities**,
+  merged into the session request *last* (so it overrides sercon's defaults).
+  Standard keys: `browserName`, `browserVersion`, `platformName`,
+  `acceptInsecureCerts` (boolean — accept self-signed/expired TLS),
+  `pageLoadStrategy` (`"normal"` | `"eager"` | `"none"`),
+  `unhandledPromptBehavior` (`"dismiss"` | `"accept"` | `"ignore"` | …),
+  `timeouts` (`{ script, pageLoad, implicit }` in ms), and `proxy`
+  (`{ proxyType, httpProxy, sslProxy, … }`). Vendor blocks go here too —
+  `goog:chromeOptions` and `moz:firefoxOptions` (each `{ args?, binary?,
+  prefs?, … }`). Because the merge is by top-level key, supplying
+  `goog:chromeOptions` wholesale *replaces* the one built from `args`/`headless`
+  — set `args` for additive flags, `capabilities` only when you need full
+  control. See the [W3C WebDriver capabilities](https://www.w3.org/TR/webdriver2/#capabilities)
+  spec for the complete list.
 
 **Session handle methods** (all async):
 
