@@ -228,3 +228,37 @@ func TestAlertMethodNames(t *testing.T) {
 		}
 	}
 }
+
+// --- Phase 2 Task 5 tests ---
+
+func TestRectBody(t *testing.T) {
+	// only width/height given -> x,y are nil (driver keeps them)
+	b := wdRectBody(map[string]any{"width": float64(800), "height": float64(600)})
+	if b["width"] != 800 || b["height"] != 600 {
+		t.Fatalf("rect body w/h = %v", b)
+	}
+	if b["x"] != nil || b["y"] != nil {
+		t.Fatalf("absent x/y should be nil, got %v", b)
+	}
+	// all four given
+	b = wdRectBody(map[string]any{"width": float64(1024), "height": float64(768), "x": float64(10), "y": float64(20)})
+	if b["x"] != 10 || b["y"] != 20 {
+		t.Fatalf("rect body x/y = %v", b)
+	}
+	// empty map -> all four keys present and nil
+	b = wdRectBody(map[string]any{})
+	for _, k := range []string{"width", "height", "x", "y"} {
+		v, ok := b[k]
+		if !ok || v != nil {
+			t.Fatalf("empty rect body[%q] = %v (present=%v), want nil/present", k, v, ok)
+		}
+	}
+}
+
+func TestRectMethodNames(t *testing.T) {
+	for _, n := range []string{"getWindowRect", "setWindowRect", "maximize", "minimize", "fullscreen"} {
+		if !wdRectMethods[n] {
+			t.Fatalf("rect method %q missing from wdRectMethods", n)
+		}
+	}
+}

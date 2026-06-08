@@ -314,3 +314,43 @@ func (s *wdSession) addAlerts(obj map[string]any, vm *goja.Runtime, loop *eventl
 		return s.do(func() (any, error) { return wdOK(s.wd.SetAlertText(text)) })
 	})
 }
+
+// wdRectBody builds the W3C POST /window/rect body. Absent fields are sent as
+// JSON null, which the driver interprets as "leave unchanged".
+func wdRectBody(opts map[string]any) map[string]any {
+	field := func(k string) any {
+		if v, ok := opts[k]; ok {
+			return numToInt(v)
+		}
+		return nil
+	}
+	return map[string]any{"width": field("width"), "height": field("height"), "x": field("x"), "y": field("y")}
+}
+
+// wdRectMethods names the window-rect methods on the session handle (used by
+// tests to assert wiring).
+var wdRectMethods = map[string]bool{
+	"getWindowRect": true, "setWindowRect": true, "maximize": true,
+	"minimize": true, "fullscreen": true,
+}
+
+// addWindowRect wires window sizing/positioning onto the session handle. All
+// five use W3C endpoints (via s.command) and return { x, y, width, height }.
+func (s *wdSession) addWindowRect(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["getWindowRect"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.command("GET", "/window/rect", nil) })
+	})
+	obj["setWindowRect"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		body := wdRectBody(optsArgMap(call, 0))
+		return s.do(func() (any, error) { return s.command("POST", "/window/rect", body) })
+	})
+	obj["maximize"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.command("POST", "/window/maximize", map[string]any{}) })
+	})
+	obj["minimize"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.command("POST", "/window/minimize", map[string]any{}) })
+	})
+	obj["fullscreen"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.command("POST", "/window/fullscreen", map[string]any{}) })
+	})
+}
