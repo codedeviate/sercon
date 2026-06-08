@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+- `services.webdriver` Phase 2: window/tab handles (`windowHandles`/`currentWindow`/
+  `switchToWindow`/`newWindow`/`closeWindow` with auto-switch to a survivor),
+  frame switching (`switchToFrame` by index or element, `switchToParentFrame`,
+  `switchToDefaultContent`), alert handling (`acceptAlert`/`dismissAlert`/
+  `alertText`/`sendAlertText`), window rect (`maximize`/`minimize`/`fullscreen`/
+  `setWindowRect`/`getWindowRect`), real W3C action chains (`hover`/`dragAndDrop`/
+  `keyChord`/`performActions`/`releaseActions`, plus element `hover()`/`dragTo()`),
+  and `executeScript`/`executeScriptAsync` returning element handles (top-level
+  and top-level-array refs). Built on an internal raw-W3C-command primitive,
+  since tebeka/selenium's legacy mouse API is rejected by modern W3C drivers.
+
 ## [0.40.1] — 2026-06-08
 
 ### Fixed
