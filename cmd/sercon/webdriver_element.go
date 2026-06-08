@@ -173,6 +173,79 @@ func (s *wdSession) elementObject(el selenium.WebElement, vm *goja.Runtime, loop
 	}
 }
 
+// wdLegacyElementKey is the legacy Selenium element-reference JSON key used by
+// some drivers (e.g. chromedriver in non-W3C mode) instead of webElementKey.
+const wdLegacyElementKey = "ELEMENT"
+
+// wdIsElementRef reports whether a decoded executeScript result value is an
+// element reference. Accepts both the W3C key (element-6066…) and the legacy
+// "ELEMENT" key returned by some drivers in non-W3C mode.
+func wdIsElementRef(v any) bool {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	if _, ok = m[webElementKey]; ok {
+		return true
+	}
+	_, ok = m[wdLegacyElementKey]
+	return ok
+}
+
+// decodeElement turns an element-ref map back into a tebeka WebElement via the
+// driver's DecodeElement (on the WebDriver interface). Returns nil on failure.
+// DecodeElement expects {"Value": {"element-6066…": "id"}}, so we wrap the ref
+// in a Value envelope and convert the inner values to strings.
+func (s *wdSession) decodeElement(ref map[string]any) selenium.WebElement {
+	inner := make(map[string]string, len(ref))
+	for k, v := range ref {
+		if sv, ok := v.(string); ok {
+			inner[k] = sv
+		}
+	}
+	envelope := struct {
+		Value map[string]string `json:"Value"`
+	}{Value: inner}
+	b, err := json.Marshal(envelope)
+	if err != nil {
+		return nil
+	}
+	we, err := s.wd.DecodeElement(b)
+	if err != nil {
+		return nil
+	}
+	return we
+}
+
+// wrapScriptResult wraps element references in an executeScript result into
+// element handles: a top-level ref, or refs inside a top-level array. Other
+// values (and refs nested deeper) pass through unchanged.
+func (s *wdSession) wrapScriptResult(v any, vm *goja.Runtime, loop *eventloop.EventLoop) any {
+	switch t := v.(type) {
+	case map[string]any:
+		if wdIsElementRef(t) {
+			if we := s.decodeElement(t); we != nil {
+				return s.elementObject(we, vm, loop)
+			}
+		}
+		return v
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			if m, ok := item.(map[string]any); ok && wdIsElementRef(m) {
+				if we := s.decodeElement(m); we != nil {
+					out[i] = s.elementObject(we, vm, loop)
+					continue
+				}
+			}
+			out[i] = item
+		}
+		return out
+	default:
+		return v
+	}
+}
+
 // addFind wires session-level find/findAll (returning element handles).
 func (s *wdSession) addFind(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["find"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {

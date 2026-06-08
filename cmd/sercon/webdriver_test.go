@@ -319,3 +319,20 @@ func TestKeyChordActions(t *testing.T) {
 		t.Fatalf("last action should be keyUp Control (reverse release): %v", acts[3])
 	}
 }
+
+// --- Phase 2 Task 7 tests ---
+
+func TestIsElementRef(t *testing.T) {
+	if !wdIsElementRef(map[string]any{webElementKey: "E1"}) {
+		t.Fatalf("a map with the W3C element key should be an element ref")
+	}
+	if !wdIsElementRef(map[string]any{wdLegacyElementKey: "E2"}) {
+		t.Fatalf("a map with the legacy ELEMENT key should be an element ref")
+	}
+	if wdIsElementRef(map[string]any{"foo": "bar"}) {
+		t.Fatalf("a plain object is not an element ref")
+	}
+	if wdIsElementRef("hello") || wdIsElementRef(float64(42)) {
+		t.Fatalf("scalars are not element refs")
+	}
+}

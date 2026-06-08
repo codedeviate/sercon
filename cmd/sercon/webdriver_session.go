@@ -81,7 +81,7 @@ func (s *wdSession) addPage(obj map[string]any, vm *goja.Runtime, loop *eventloo
 
 // --- executeScript ---
 
-func (s *wdSession) execScript(async bool) func(context.Context, goja.FunctionCall) (any, error) {
+func (s *wdSession) execScript(async bool, vm *goja.Runtime, loop *eventloop.EventLoop) func(context.Context, goja.FunctionCall) (any, error) {
 	return func(_ context.Context, call goja.FunctionCall) (any, error) {
 		js := strArg(call, 0)
 		if js == "" {
@@ -92,17 +92,26 @@ func (s *wdSession) execScript(async bool) func(context.Context, goja.FunctionCa
 			args = arr
 		}
 		return s.do(func() (any, error) {
+			var (
+				res any
+				err error
+			)
 			if async {
-				return s.wd.ExecuteScriptAsync(js, args)
+				res, err = s.wd.ExecuteScriptAsync(js, args)
+			} else {
+				res, err = s.wd.ExecuteScript(js, args)
 			}
-			return s.wd.ExecuteScript(js, args)
+			if err != nil {
+				return nil, err
+			}
+			return s.wrapScriptResult(res, vm, loop), nil
 		})
 	}
 }
 
 func (s *wdSession) addScript(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["executeScript"] = wdAsync(vm, loop, s.execScript(false))
-	obj["executeScriptAsync"] = wdAsync(vm, loop, s.execScript(true))
+	obj["executeScript"] = wdAsync(vm, loop, s.execScript(false, vm, loop))
+	obj["executeScriptAsync"] = wdAsync(vm, loop, s.execScript(true, vm, loop))
 }
 
 // --- cookies ---
