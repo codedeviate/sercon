@@ -80,6 +80,16 @@ Or pick individual scripts:
 Helpers under `helpers/` are sibling-imported by the above; they aren't
 runnable on their own.
 
+## Advanced examples (`advanced/`)
+
+In-depth, end-to-end scripts that compose multiple bindings into realistic
+workflows. Self-contained ones run in `make demo`; ones needing a driver or
+external service self-skip.
+
+| Script | Demonstrates |
+| --- | --- |
+| `advanced/load-resilience.ts` | Resilience / load self-test — starts a loopback HTTP server, drives it at rising concurrency (4/16/32), reports latency p50/p95/max + error rate + throughput per level, and asserts the service stays healthy after the burst. Self-contained and offline; comments show how to repoint `TARGET` at a real endpoint you're authorized to test. |
+
 ## Adding a new binding
 
 Bindings are wired in `cmd/sercon/main.go` inside `registerSurface`. The
