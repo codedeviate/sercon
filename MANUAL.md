@@ -1708,11 +1708,128 @@ if (!services.webdriver.available) {
 }
 ```
 
-**Phase-2-deferred.** Window/tab handle switching, frame switching, alert
-handling, action chains (hover/drag/key-chords), file upload, window
-resize/maximize, and returning element handles from `executeScript` are not in
-v1. They share the same session-handle + `s.do` mutex foundation and will be
-added in a follow-on plan.
+**Phase 2 (v0.41.0).** The session handle gains the following additional async
+methods.
+
+**Phase 2 session methods:**
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `windowHandles()` | `string[]` | All open window/tab handles. |
+| `currentWindow()` | `string` | Handle of the currently focused window/tab. |
+| `switchToWindow(handle)` | `{ ok: true }` | Focus a window/tab by its handle. |
+| `newWindow(type?)` | `{ handle, type }` | Open a new tab (`"tab"`, default) or window (`"window"`). Returns the new handle. |
+| `closeWindow()` | `string[]` | Close the current window/tab; returns the remaining handles and auto-switches to a survivor. |
+| `switchToFrame(target)` | `{ ok: true }` | Switch into a frame by **index** (number) or by passing an **element handle** for the `<iframe>`. A name/id string is not accepted — locate the iframe via `find` and pass the element handle. |
+| `switchToParentFrame()` | `{ ok: true }` | Switch to the parent frame. |
+| `switchToDefaultContent()` | `{ ok: true }` | Switch back to the top-level browsing context. |
+| `acceptAlert()` | `{ ok: true }` | Accept (OK/confirm) the current alert/confirm/prompt dialog. |
+| `dismissAlert()` | `{ ok: true }` | Dismiss (cancel) the current dialog. |
+| `alertText()` | `string` | Get the message text of the current dialog. |
+| `sendAlertText(text)` | `{ ok: true }` | Type into a prompt dialog. |
+| `maximize()` | `{ x, y, width, height }` | Maximize the browser window; returns the new rect. |
+| `minimize()` | `{ x, y, width, height }` | Minimize the browser window; returns the new rect. |
+| `fullscreen()` | `{ x, y, width, height }` | Enter fullscreen; returns the new rect. |
+| `setWindowRect({width?,height?,x?,y?})` | `{ x, y, width, height }` | Set position and/or size. |
+| `getWindowRect()` | `{ x, y, width, height }` | Get the current window rect. |
+| `hover(el)` | `{ ok: true }` | Move the mouse pointer over an element (W3C actions). |
+| `dragAndDrop(src, dst)` | `{ ok: true }` | Drag from `src` element to `dst` element. |
+| `keyChord(...keys)` | `{ ok: true }` | Send a key chord (e.g. `keyChord("Control","a")`). |
+| `performActions(sequence)` | `{ ok: true }` | Send a raw W3C actions array (escape hatch). |
+| `releaseActions()` | `{ ok: true }` | Release any held action state (buttons/keys). |
+
+**Element handle additions (Phase 2):** Every element handle now carries an
+`elementId` string property (the raw W3C element reference id). Two new async
+methods are available: `el.hover()` moves the mouse over the element;
+`el.dragTo(target)` drags the element to a target element handle.
+
+**`executeScript` / `executeScriptAsync` — element handle return values:**
+When a script returns a single W3C element reference, the binding wraps it in
+an element handle automatically. A top-level array of element references is also
+wrapped (each entry becomes an element handle). Nested references (e.g. an
+object with element-reference values) are returned as plain objects — return
+them flat or unwrap manually.
+
+**Caveat — alert `unhandledPromptBehavior`:** chromedriver's default
+`unhandledPromptBehavior` is `"dismiss and notify"`, which may auto-dismiss
+dialogs before your script can interact with them. To inspect alerts manually,
+pass `capabilities: { unhandledPromptBehavior: "ignore" }` in `connect()`.
+With `"ignore"`, the alert is kept open but the renderer is blocked by the
+modal, so any WebDriver command that executes script in the page (including
+`executeScript`) will hang until the alert is dismissed. Trigger alerts via
+`<body onload="alert(...)">` or a synchronous inline script so that `get()`
+completes with the dialog already open — then `alertText()` and `acceptAlert()`
+work without racing against the modal state.
+
+**Caveat — file upload:** For local `<input type="file">`, use
+`el.sendKeys("/absolute/path/to/file")` — this works with both Chrome and
+Firefox. Remote-grid file upload (the `/session/{id}/file` endpoint) is not
+supported by the underlying `tebeka/selenium` library and is out of scope.
+
+**Phase 2 example:**
+
+```ts
+if (!services.webdriver.available) {
+  runtime.log("no chromedriver/geckodriver on PATH — skip");
+} else {
+  const d = await services.webdriver.connect({
+    browser: "chrome",
+    headless: true,
+    capabilities: { unhandledPromptBehavior: "ignore" },
+  });
+  try {
+    // Windows / tabs
+    const nw = await d.newWindow("tab");
+    await d.switchToWindow(nw.handle);
+    runtime.log("open tabs:", (await d.windowHandles()).length);
+    await d.closeWindow();
+
+    // Window rect
+    await d.setWindowRect({ width: 1024, height: 768 });
+    const r = await d.getWindowRect();
+    runtime.log("rect:", r.width + "x" + r.height);
+
+    // Frames
+    await d.get("data:text/html," + encodeURIComponent(
+      "<title>outer</title><iframe srcdoc='<p id=inner>hi</p>'></iframe>"));
+    await d.switchToFrame(0);
+    runtime.log("frame text:", await (await d.find("id", "inner")).text());
+    await d.switchToParentFrame();
+    await d.switchToDefaultContent();
+
+    // Alerts (requires unhandledPromptBehavior: "ignore")
+    // Navigate to a page that fires alert() synchronously on load; get()
+    // blocks until the load event, so the dialog is open when it returns.
+    try {
+      await d.get("data:text/html," + encodeURIComponent(
+        "<body onload=\"alert('hello')\"><title>a</title>"));
+    } catch (_) {
+      // chromedriver may surface an unexpected-alert-open error — the alert
+      // is still live, carry on.
+    }
+    runtime.log("alert:", await d.alertText());
+    await d.acceptAlert();
+
+    // Hover + drag
+    await d.get("about:blank");
+    await d.executeScript(`
+      document.body.innerHTML =
+        '<div id=a style="position:absolute;top:50px;left:50px;width:80px;height:80px"></div>' +
+        '<div id=b style="position:absolute;top:50px;left:200px;width:80px;height:80px"></div>';
+      return 1;`, []);
+    const a = await d.find("id", "a");
+    const b = await d.find("id", "b");
+    await a.hover();
+    await d.dragAndDrop(a, b);
+
+    // executeScript returning an element handle
+    const el = await d.executeScript("return document.getElementById('b')", []);
+    runtime.log("script element tag:", await el.tagName());
+  } finally {
+    await d.quit();
+  }
+}
+```
 
 ### `tui`
 
@@ -5712,7 +5829,7 @@ Connect to a running WebDriver server (opts.url) or start an installed local chr
 
 - `opts` *({ browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object }, optional)* — browser selects the driver binary (default 'chrome'). headless defaults to true. url, if given, dials an already-running driver at that base URL instead of starting one. args appends extra browser flags. capabilities is an escape hatch for raw W3C capability overrides merged last.
 
-**Returns:** Promise resolving to a session handle with methods: get(url), url(), title(), back(), forward(), refresh(), find(by, value) → element handle, findAll(by, value) → element handle[], source(), screenshot(path?), executeScript(js, args?), executeScriptAsync(js, args?), cookies(), setCookie(c), deleteCookie(name), deleteAllCookies(), setImplicitWait(ms), waitFor(by, value, opts?), quit(). Locator strategies: css, xpath, id, name, tag, className, linkText, partialLinkText.
+**Returns:** Promise resolving to a session handle with methods: get(url), url(), title(), back(), forward(), refresh(), find(by, value) → element handle, findAll(by, value) → element handle[], source(), screenshot(path?), executeScript(js, args?), executeScriptAsync(js, args?), cookies(), setCookie(c), deleteCookie(name), deleteAllCookies(), setImplicitWait(ms), waitFor(by, value, opts?), quit(). Phase 2 session methods: windowHandles(), currentWindow(), switchToWindow(handle), newWindow(type?), closeWindow(), switchToFrame(indexOrElement), switchToParentFrame(), switchToDefaultContent(), acceptAlert(), dismissAlert(), alertText(), sendAlertText(text), maximize(), minimize(), fullscreen(), setWindowRect({width?,height?,x?,y?}), getWindowRect(), hover(el), dragAndDrop(src,dst), keyChord(...keys), performActions(sequence), releaseActions(). Element handles also expose hover() and dragTo(target) and carry an elementId string. executeScript/executeScriptAsync return element handles when the script returns an element (or a top-level array of elements). Locator strategies: css, xpath, id, name, tag, className, linkText, partialLinkText.
 
 **Throws:** Throws if no url is given and the driver binary for the selected browser is not on PATH; if dialing the driver fails (driver not running, wrong port); or if the browser launch fails. Subsequent session method calls throw if the session is already closed.
 

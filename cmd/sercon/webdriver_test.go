@@ -152,3 +152,187 @@ func TestCookieFromArg(t *testing.T) {
 		t.Fatalf("cookieFromMap = %+v", c)
 	}
 }
+
+// --- Phase 2 Task 1 tests ---
+
+func TestWdEnvError(t *testing.T) {
+	cases := []struct {
+		name   string
+		value  string
+		status int
+		want   string
+	}{
+		{"error+message", `{"error":"no such alert","message":"no alert open"}`, 400, "no such alert: no alert open"},
+		{"error only", `{"error":"invalid session id"}`, 404, "invalid session id"},
+		{"message only", `{"message":"boom"}`, 500, "boom"},
+		{"empty falls back to status", `{}`, 500, "HTTP 500"},
+		{"null value falls back", `null`, 500, "HTTP 500"},
+	}
+	for _, c := range cases {
+		got := wdEnvError([]byte(c.value), c.status)
+		if got != c.want {
+			t.Fatalf("%s: wdEnvError = %q want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestToStringSlice(t *testing.T) {
+	got := toStringSlice([]any{"a", "b", "c"})
+	if len(got) != 3 || got[0] != "a" || got[2] != "c" {
+		t.Fatalf("toStringSlice = %v", got)
+	}
+	if toStringSlice("not a slice") != nil {
+		t.Fatalf("expected nil for non-slice input")
+	}
+}
+
+// --- Phase 2 Task 2 tests ---
+
+func TestWindowMethodNames(t *testing.T) {
+	for _, n := range []string{"windowHandles", "currentWindow", "switchToWindow", "newWindow", "closeWindow"} {
+		if !wdWindowMethods[n] {
+			t.Fatalf("window method %q missing from wdWindowMethods", n)
+		}
+	}
+}
+
+// --- Phase 2 Task 3 tests ---
+
+func TestFrameBody(t *testing.T) {
+	// index target
+	b, err := wdFrameBody(float64(2))
+	if err != nil || b["id"] != 2 {
+		t.Fatalf("index body = %v, %v", b, err)
+	}
+	// element handle target (map with elementId)
+	b, err = wdFrameBody(map[string]any{"elementId": "E1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, ok := b["id"].(map[string]string)
+	if !ok || ref[webElementKey] != "E1" {
+		t.Fatalf("element body = %v", b)
+	}
+	// bad target (string)
+	if _, err := wdFrameBody("by-name"); err == nil {
+		t.Fatalf("expected error for string frame target")
+	}
+}
+
+// --- Phase 2 Task 4 tests ---
+
+func TestAlertMethodNames(t *testing.T) {
+	for _, n := range []string{"acceptAlert", "dismissAlert", "alertText", "sendAlertText"} {
+		if !wdAlertMethods[n] {
+			t.Fatalf("alert method %q missing from wdAlertMethods", n)
+		}
+	}
+}
+
+// --- Phase 2 Task 5 tests ---
+
+func TestRectBody(t *testing.T) {
+	// only width/height given -> x,y are nil (driver keeps them)
+	b := wdRectBody(map[string]any{"width": float64(800), "height": float64(600)})
+	if b["width"] != 800 || b["height"] != 600 {
+		t.Fatalf("rect body w/h = %v", b)
+	}
+	if b["x"] != nil || b["y"] != nil {
+		t.Fatalf("absent x/y should be nil, got %v", b)
+	}
+	// all four given
+	b = wdRectBody(map[string]any{"width": float64(1024), "height": float64(768), "x": float64(10), "y": float64(20)})
+	if b["x"] != 10 || b["y"] != 20 {
+		t.Fatalf("rect body x/y = %v", b)
+	}
+	// empty map -> all four keys present and nil
+	b = wdRectBody(map[string]any{})
+	for _, k := range []string{"width", "height", "x", "y"} {
+		v, ok := b[k]
+		if !ok || v != nil {
+			t.Fatalf("empty rect body[%q] = %v (present=%v), want nil/present", k, v, ok)
+		}
+	}
+}
+
+func TestRectMethodNames(t *testing.T) {
+	for _, n := range []string{"getWindowRect", "setWindowRect", "maximize", "minimize", "fullscreen"} {
+		if !wdRectMethods[n] {
+			t.Fatalf("rect method %q missing from wdRectMethods", n)
+		}
+	}
+}
+
+// --- Phase 2 Task 6 tests ---
+
+func TestHoverViewport(t *testing.T) {
+	body := wdHoverViewport(150, 250)
+	moves := body["actions"].([]any)[0].(map[string]any)["actions"].([]any)
+	if len(moves) != 2 {
+		t.Fatalf("expected 2 pointer moves (anchor + target), got %d", len(moves))
+	}
+	for i, m := range moves {
+		if m.(map[string]any)["origin"] != "viewport" {
+			t.Fatalf("move %d must use viewport origin, got %v", i, m)
+		}
+	}
+	// second move lands on the target centre; the anchor is a different point
+	// (so the move is non-zero-distance).
+	if moves[1].(map[string]any)["x"] != 150 || moves[1].(map[string]any)["y"] != 250 {
+		t.Fatalf("target move = %v, want (150,250)", moves[1])
+	}
+	if moves[0].(map[string]any)["y"] == moves[1].(map[string]any)["y"] {
+		t.Fatalf("anchor must differ from target so the move fires events")
+	}
+}
+
+func TestDragViewport(t *testing.T) {
+	body := wdDragViewport(10, 20, 300, 400)
+	acts := body["actions"].([]any)[0].(map[string]any)["actions"].([]any)
+	if len(acts) != 5 {
+		t.Fatalf("expected 5 pointer actions (anchor, moveSrc, down, moveDst, up), got %d", len(acts))
+	}
+	if acts[1].(map[string]any)["x"] != 10 || acts[1].(map[string]any)["y"] != 20 {
+		t.Fatalf("second action should move onto src (10,20), got %v", acts[1])
+	}
+	if acts[2].(map[string]any)["type"] != "pointerDown" {
+		t.Fatalf("third action should be pointerDown, got %v", acts[2])
+	}
+	if acts[3].(map[string]any)["x"] != 300 || acts[3].(map[string]any)["y"] != 400 {
+		t.Fatalf("fourth action should move onto dst (300,400), got %v", acts[3])
+	}
+	if acts[4].(map[string]any)["type"] != "pointerUp" {
+		t.Fatalf("fifth action should be pointerUp, got %v", acts[4])
+	}
+}
+
+func TestKeyChordActions(t *testing.T) {
+	body := wdKeyChordActions([]string{"Control", "a"})
+	acts := body["actions"].([]any)[0].(map[string]any)["actions"].([]any)
+	if len(acts) != 4 {
+		t.Fatalf("expected 4 key actions, got %d", len(acts))
+	}
+	if acts[0].(map[string]any)["type"] != "keyDown" || acts[0].(map[string]any)["value"] != "Control" {
+		t.Fatalf("first action should be keyDown Control: %v", acts[0])
+	}
+	if acts[3].(map[string]any)["type"] != "keyUp" || acts[3].(map[string]any)["value"] != "Control" {
+		t.Fatalf("last action should be keyUp Control (reverse release): %v", acts[3])
+	}
+}
+
+// --- Phase 2 Task 7 tests ---
+
+func TestIsElementRef(t *testing.T) {
+	if !wdIsElementRef(map[string]any{webElementKey: "E1"}) {
+		t.Fatalf("a map with the W3C element key should be an element ref")
+	}
+	if !wdIsElementRef(map[string]any{wdLegacyElementKey: "E2"}) {
+		t.Fatalf("a map with the legacy ELEMENT key should be an element ref")
+	}
+	if wdIsElementRef(map[string]any{"foo": "bar"}) {
+		t.Fatalf("a plain object is not an element ref")
+	}
+	if wdIsElementRef("hello") || wdIsElementRef(float64(42)) {
+		t.Fatalf("scalars are not element refs")
+	}
+}

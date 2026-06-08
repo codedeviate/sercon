@@ -81,7 +81,7 @@ func (s *wdSession) addPage(obj map[string]any, vm *goja.Runtime, loop *eventloo
 
 // --- executeScript ---
 
-func (s *wdSession) execScript(async bool) func(context.Context, goja.FunctionCall) (any, error) {
+func (s *wdSession) execScript(async bool, vm *goja.Runtime, loop *eventloop.EventLoop) func(context.Context, goja.FunctionCall) (any, error) {
 	return func(_ context.Context, call goja.FunctionCall) (any, error) {
 		js := strArg(call, 0)
 		if js == "" {
@@ -92,17 +92,26 @@ func (s *wdSession) execScript(async bool) func(context.Context, goja.FunctionCa
 			args = arr
 		}
 		return s.do(func() (any, error) {
+			var (
+				res any
+				err error
+			)
 			if async {
-				return s.wd.ExecuteScriptAsync(js, args)
+				res, err = s.wd.ExecuteScriptAsync(js, args)
+			} else {
+				res, err = s.wd.ExecuteScript(js, args)
 			}
-			return s.wd.ExecuteScript(js, args)
+			if err != nil {
+				return nil, err
+			}
+			return s.wrapScriptResult(res, vm, loop), nil
 		})
 	}
 }
 
 func (s *wdSession) addScript(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["executeScript"] = wdAsync(vm, loop, s.execScript(false))
-	obj["executeScriptAsync"] = wdAsync(vm, loop, s.execScript(true))
+	obj["executeScript"] = wdAsync(vm, loop, s.execScript(false, vm, loop))
+	obj["executeScriptAsync"] = wdAsync(vm, loop, s.execScript(true, vm, loop))
 }
 
 // --- cookies ---
@@ -200,4 +209,157 @@ func visSuffix(v bool) string {
 		return "/visible"
 	}
 	return ""
+}
+
+// wdFrameBody builds the W3C /frame request body from a switchToFrame target:
+// a frame index (number) or an element handle (map carrying elementId). A
+// string is rejected (tebeka would silently treat it as an element-id lookup).
+func wdFrameBody(target any) (map[string]any, error) {
+	switch v := target.(type) {
+	case map[string]any:
+		id, _ := v["elementId"].(string)
+		if id == "" {
+			return nil, errors.New("webdriver.switchToFrame: element handle has no elementId; pass an iframe element from find()")
+		}
+		return map[string]any{"id": map[string]string{webElementKey: id}}, nil
+	case float64:
+		return map[string]any{"id": int(v)}, nil
+	case int64:
+		return map[string]any{"id": int(v)}, nil
+	case int:
+		return map[string]any{"id": v}, nil
+	default:
+		return nil, errors.New("webdriver.switchToFrame: target must be a frame index (number) or an iframe element handle")
+	}
+}
+
+// addFrames wires frame switching onto the session handle (all via W3C /frame).
+func (s *wdSession) addFrames(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["switchToFrame"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		body, err := wdFrameBody(call.Argument(0).Export())
+		if err != nil {
+			return nil, err
+		}
+		return s.do(func() (any, error) { _, e := s.command("POST", "/frame", body); return wdOK(e) })
+	})
+	obj["switchToParentFrame"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { _, e := s.command("POST", "/frame/parent", map[string]any{}); return wdOK(e) })
+	})
+	obj["switchToDefaultContent"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { _, e := s.command("POST", "/frame", map[string]any{"id": nil}); return wdOK(e) })
+	})
+}
+
+// wdWindowMethods names the window/tab methods on the session handle (used by
+// tests to assert wiring).
+var wdWindowMethods = map[string]bool{
+	"windowHandles": true, "currentWindow": true, "switchToWindow": true,
+	"newWindow": true, "closeWindow": true,
+}
+
+// addWindows wires window/tab management onto the session handle.
+func (s *wdSession) addWindows(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["windowHandles"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.wd.WindowHandles() })
+	})
+	obj["currentWindow"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.wd.CurrentWindowHandle() })
+	})
+	obj["switchToWindow"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		h := strArg(call, 0)
+		if h == "" {
+			return nil, errors.New("webdriver.switchToWindow: a window handle is required")
+		}
+		return s.do(func() (any, error) { return wdOK(s.wd.SwitchWindow(h)) })
+	})
+	// newWindow uses the W3C POST /window/new (tebeka has no equivalent). type
+	// is "tab" (default) or "window". Does not switch to the new window.
+	obj["newWindow"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		typ := strArg(call, 0)
+		if typ == "" {
+			typ = "tab"
+		}
+		return s.do(func() (any, error) { return s.command("POST", "/window/new", map[string]any{"type": typ}) })
+	})
+	// closeWindow closes the current window via the W3C DELETE /window (which
+	// returns the remaining handles) then auto-switches to a survivor, since
+	// the browsing context is undefined after a close.
+	obj["closeWindow"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) {
+			v, err := s.command("DELETE", "/window", nil)
+			if err != nil {
+				return nil, err
+			}
+			remaining := toStringSlice(v)
+			if len(remaining) > 0 {
+				if err := s.wd.SwitchWindow(remaining[0]); err != nil {
+					return nil, err
+				}
+			}
+			return remaining, nil
+		})
+	})
+}
+
+// wdAlertMethods names the alert methods on the session handle (used by
+// tests to assert wiring).
+var wdAlertMethods = map[string]bool{
+	"acceptAlert": true, "dismissAlert": true, "alertText": true, "sendAlertText": true,
+}
+
+// addAlerts wires JS alert/confirm/prompt handling onto the session handle.
+func (s *wdSession) addAlerts(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["acceptAlert"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return wdOK(s.wd.AcceptAlert()) })
+	})
+	obj["dismissAlert"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return wdOK(s.wd.DismissAlert()) })
+	})
+	obj["alertText"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.wd.AlertText() })
+	})
+	obj["sendAlertText"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		text := strArg(call, 0)
+		return s.do(func() (any, error) { return wdOK(s.wd.SetAlertText(text)) })
+	})
+}
+
+// wdRectBody builds the W3C POST /window/rect body. Absent fields are sent as
+// JSON null, which the driver interprets as "leave unchanged".
+func wdRectBody(opts map[string]any) map[string]any {
+	field := func(k string) any {
+		if v, ok := opts[k]; ok {
+			return numToInt(v)
+		}
+		return nil
+	}
+	return map[string]any{"width": field("width"), "height": field("height"), "x": field("x"), "y": field("y")}
+}
+
+// wdRectMethods names the window-rect methods on the session handle (used by
+// tests to assert wiring).
+var wdRectMethods = map[string]bool{
+	"getWindowRect": true, "setWindowRect": true, "maximize": true,
+	"minimize": true, "fullscreen": true,
+}
+
+// addWindowRect wires window sizing/positioning onto the session handle. All
+// five use W3C endpoints (via s.command) and return { x, y, width, height }.
+func (s *wdSession) addWindowRect(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["getWindowRect"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.command("GET", "/window/rect", nil) })
+	})
+	obj["setWindowRect"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		body := wdRectBody(optsArgMap(call, 0))
+		return s.do(func() (any, error) { return s.command("POST", "/window/rect", body) })
+	})
+	obj["maximize"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.command("POST", "/window/maximize", map[string]any{}) })
+	})
+	obj["minimize"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.command("POST", "/window/minimize", map[string]any{}) })
+	})
+	obj["fullscreen"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.command("POST", "/window/fullscreen", map[string]any{}) })
+	})
 }
