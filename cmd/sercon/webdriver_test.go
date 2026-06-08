@@ -195,3 +195,26 @@ func TestWindowMethodNames(t *testing.T) {
 		}
 	}
 }
+
+// --- Phase 2 Task 3 tests ---
+
+func TestFrameBody(t *testing.T) {
+	// index target
+	b, err := wdFrameBody(float64(2))
+	if err != nil || b["id"] != 2 {
+		t.Fatalf("index body = %v, %v", b, err)
+	}
+	// element handle target (map with elementId)
+	b, err = wdFrameBody(map[string]any{"elementId": "E1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, ok := b["id"].(map[string]string)
+	if !ok || ref[webElementKey] != "E1" {
+		t.Fatalf("element body = %v", b)
+	}
+	// bad target (string)
+	if _, err := wdFrameBody("by-name"); err == nil {
+		t.Fatalf("expected error for string frame target")
+	}
+}

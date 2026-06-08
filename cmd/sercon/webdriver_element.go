@@ -13,6 +13,9 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
+// webElementKey is the W3C element-reference JSON key.
+const webElementKey = "element-6066-11e4-a52e-4f735466cecf"
+
 // wdDeliverShot returns a screenshot result: { path, size, format } when a path
 // is given (writes the PNG), else { bytes: []byte, format } in memory.
 func wdDeliverShot(data []byte, userPath string) (any, error) {

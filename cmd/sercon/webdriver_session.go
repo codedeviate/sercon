@@ -202,6 +202,45 @@ func visSuffix(v bool) string {
 	return ""
 }
 
+// wdFrameBody builds the W3C /frame request body from a switchToFrame target:
+// a frame index (number) or an element handle (map carrying elementId). A
+// string is rejected (tebeka would silently treat it as an element-id lookup).
+func wdFrameBody(target any) (map[string]any, error) {
+	switch v := target.(type) {
+	case map[string]any:
+		id, _ := v["elementId"].(string)
+		if id == "" {
+			return nil, errors.New("webdriver.switchToFrame: element handle has no elementId; pass an iframe element from find()")
+		}
+		return map[string]any{"id": map[string]string{webElementKey: id}}, nil
+	case float64:
+		return map[string]any{"id": int(v)}, nil
+	case int64:
+		return map[string]any{"id": int(v)}, nil
+	case int:
+		return map[string]any{"id": v}, nil
+	default:
+		return nil, errors.New("webdriver.switchToFrame: target must be a frame index (number) or an iframe element handle")
+	}
+}
+
+// addFrames wires frame switching onto the session handle (all via W3C /frame).
+func (s *wdSession) addFrames(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["switchToFrame"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		body, err := wdFrameBody(call.Argument(0).Export())
+		if err != nil {
+			return nil, err
+		}
+		return s.do(func() (any, error) { _, e := s.command("POST", "/frame", body); return wdOK(e) })
+	})
+	obj["switchToParentFrame"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { _, e := s.command("POST", "/frame/parent", map[string]any{}); return wdOK(e) })
+	})
+	obj["switchToDefaultContent"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { _, e := s.command("POST", "/frame", map[string]any{"id": nil}); return wdOK(e) })
+	})
+}
+
 // wdWindowMethods names the window/tab methods on the session handle (used by
 // tests to assert wiring).
 var wdWindowMethods = map[string]bool{
