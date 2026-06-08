@@ -32,10 +32,10 @@ pure Go, drags in heavy dependencies, or doesn't exist yet).
   `github.com/unidoc/unipdf` is commercial-licensed, MuPDF requires
   cgo, Poppler is C. The realistic implementations are (a) shell out
   to `pdftoppm` / `mutool` and parse output, or (b) accept a cgo
-  dependency. Both conflict with current direction (no-cgo, minimise
-  external CLI dependencies). Re-promote if a trustworthy pure-Go
-  renderer appears, or if we decide to allow optional CLI fallbacks
-  for niche features.
+  dependency. Both conflict with the no-cgo rule. Re-promote if a
+  trustworthy pure-Go renderer appears, or build it on the
+  **External-CLI fallbacks** direction below (`pdftoppm` / `mutool`),
+  which is the more likely path now.
 
 ## Databases
 
@@ -138,6 +138,77 @@ pure-Go prior art:
   demand.
 - **Deeper / exotic decode.** Only common layers map to fields today;
   other protocols surface as `bytes`. Extend `decodePacket` on demand.
+
+## External-CLI fallbacks
+
+A direction shift worth recording: allow **optional, feature-detected
+fallbacks to well-known external commands** for capabilities that have no
+trustworthy pure-Go path. This mirrors the pattern `services.git` /
+`services.gh` / `services.ai` / `services.agentBrowser` already use — gate on
+the binary being on `PATH` (an `available` boolean over `exec.LookPath`) and
+trap with a clean thrown error when it's absent. The static pure-Go binary
+stays fully functional without any of these; they only enrich behaviour when
+the tool is installed.
+
+Candidate tools and what they'd unlock:
+- **poppler-utils** — `pdftoppm` (PDF page → PNG/JPEG), `pdftohtml`,
+  `pdftotext`. Unblocks the deferred `pdf_export_page` plus PDF text/HTML
+  extraction.
+- **LaTeX** — `pdflatex` / `xelatex` / `tectonic` for `.tex` → PDF.
+- **ImageMagick / GraphicsMagick** — `magick` / `convert` for image
+  transforms beyond the pure-Go image stack.
+- **Ghostscript** (`gs`), **pandoc** (document conversion), **ffmpeg**
+  (media) — same opt-in, feature-detected model.
+
+**Design calls to settle:** where these live (a `services.tools.*` /
+`services.pdf.*` namespace vs. per-capability bindings); how strictly to
+validate args (they shell out — no shell injection, no arbitrary paths
+without intent); and whether to expose a generic "run a known tool with
+structured args" escape hatch alongside typed per-tool bindings.
+**Reason it's parked:** it reverses the earlier "minimise external CLI
+dependencies" stance, so it wants an explicit spec + guardrail design before
+building. (The dual-use boundary is lighter here than for the security
+harness below, but the same "intentional, documented" rule applies.)
+
+## Security & resilience testing
+
+For **authorized testing of your own systems** — load, stress, and
+resilience checks (how a service holds up under connection floods,
+slow-loris-style held connections, malformed input, traffic bursts). The
+low-level primitives already exist: `net.tcp` / `net.udp` / `net.icmp`
+clients, the `net.raw` raw-IPv4 engine (v0.34.0), `net.probe.*`,
+`net.capture`, the `server.*` listeners, and the engine's async concurrency —
+so a script can already generate concurrent load by hand. What's missing is a
+**higher-level harness**: controlled request/connection-rate generation
+against a target you operate, ramp / soak / burst profiles, latency and
+error-rate reporting, and resilience assertions.
+
+**Scope guardrail:** explicitly for defensive, authorized self-testing (your
+own infrastructure, staging, CI, or a lab). **Not** attack tooling — no mass
+targeting, no amplification/reflection helpers, no detection evasion. Bake
+the boundary into the spec (e.g. document the authorized-use intent; consider
+a required target-allowlist or explicit confirmation for high-volume modes).
+**Reason it's parked:** dual-use; wants a careful spec that delivers the
+useful load/resilience harness without shipping a weapon.
+
+## Examples & advanced scripts
+
+The current `examples/scripts/` are mostly single-feature demos. Add a
+curated **`examples/scripts/advanced/`** set of in-depth, end-to-end scripts:
+
+- Advanced `server.*` setups — a routed HTTP API with middleware + WebSocket
+  + static mount, a TLS server, an SMTP receiver pipeline.
+- Complete **Selenium / `services.webdriver`** test scripts — multi-page
+  flows with waits, frames/windows/alerts, action chains, and assertion-style
+  end-to-end UI tests.
+- Multi-binding recon/troubleshooting scripts that compose `net`, `db`,
+  `codec`, `crypto`, `services`, and `tui` into realistic workflows.
+
+These should self-skip on missing prerequisites (driver, network) like the
+existing `webdriver*.ts` demos, and stay out of the CI offline subset. If they
+grow their own subdirectory, wire it into `make demo` / `examples/README.md`.
+**Reason it's parked:** straightforward but unwritten — pick up when there's
+time to author and verify a representative set.
 
 ## Tracked code follow-ups
 
