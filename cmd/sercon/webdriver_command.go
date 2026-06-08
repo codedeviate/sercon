@@ -14,8 +14,6 @@ import (
 // It parses the standard { "value": ... } envelope: a non-2xx response or a
 // value carrying error/message becomes a thrown error; otherwise the decoded
 // value is returned (nil for a null/empty value). Callers must hold s.do.
-//
-//nolint:unused // wired by Phase 2 tasks (Task 2+); present here to keep the primitive in its own file
 func (s *wdSession) command(method, path string, body any) (any, error) {
 	var rdr io.Reader
 	if body != nil {

@@ -274,6 +274,7 @@ func (s *wdSession) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[st
 	s.addScript(obj, vm, loop)  // Task 5
 	s.addCookies(obj, vm, loop) // Task 5
 	s.addWaits(obj, vm, loop)   // Task 5
+	s.addWindows(obj, vm, loop) // Phase 2
 	return obj
 }
 

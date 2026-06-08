@@ -185,3 +185,13 @@ func TestToStringSlice(t *testing.T) {
 		t.Fatalf("expected nil for non-slice input")
 	}
 }
+
+// --- Phase 2 Task 2 tests ---
+
+func TestWindowMethodNames(t *testing.T) {
+	for _, n := range []string{"windowHandles", "currentWindow", "switchToWindow", "newWindow", "closeWindow"} {
+		if !wdWindowMethods[n] {
+			t.Fatalf("window method %q missing from wdWindowMethods", n)
+		}
+	}
+}

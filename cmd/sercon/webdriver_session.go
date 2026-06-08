@@ -201,3 +201,54 @@ func visSuffix(v bool) string {
 	}
 	return ""
 }
+
+// wdWindowMethods names the window/tab methods on the session handle (used by
+// tests to assert wiring).
+var wdWindowMethods = map[string]bool{
+	"windowHandles": true, "currentWindow": true, "switchToWindow": true,
+	"newWindow": true, "closeWindow": true,
+}
+
+// addWindows wires window/tab management onto the session handle.
+func (s *wdSession) addWindows(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["windowHandles"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.wd.WindowHandles() })
+	})
+	obj["currentWindow"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.wd.CurrentWindowHandle() })
+	})
+	obj["switchToWindow"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		h := strArg(call, 0)
+		if h == "" {
+			return nil, errors.New("webdriver.switchToWindow: a window handle is required")
+		}
+		return s.do(func() (any, error) { return wdOK(s.wd.SwitchWindow(h)) })
+	})
+	// newWindow uses the W3C POST /window/new (tebeka has no equivalent). type
+	// is "tab" (default) or "window". Does not switch to the new window.
+	obj["newWindow"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		typ := strArg(call, 0)
+		if typ == "" {
+			typ = "tab"
+		}
+		return s.do(func() (any, error) { return s.command("POST", "/window/new", map[string]any{"type": typ}) })
+	})
+	// closeWindow closes the current window via the W3C DELETE /window (which
+	// returns the remaining handles) then auto-switches to a survivor, since
+	// the browsing context is undefined after a close.
+	obj["closeWindow"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) {
+			v, err := s.command("DELETE", "/window", nil)
+			if err != nil {
+				return nil, err
+			}
+			remaining := toStringSlice(v)
+			if len(remaining) > 0 {
+				if err := s.wd.SwitchWindow(remaining[0]); err != nil {
+					return nil, err
+				}
+			}
+			return remaining, nil
+		})
+	})
+}
