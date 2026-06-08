@@ -154,7 +154,10 @@ trap with a clean thrown error when it's absent. The static pure-Go binary
 stays fully functional without any of these; they only enrich behaviour when
 the tool is installed.
 
-Candidate tools and what they'd unlock:
+**Each tool is opt-in per explicit maintainer authorization** — listing one
+here is a candidate, not a green light. Don't wire any of these in without an
+explicit go-ahead for that specific tool. Candidate tools and what they'd
+unlock:
 - **poppler-utils** — `pdftoppm` (PDF page → PNG/JPEG), `pdftohtml`,
   `pdftotext`. Unblocks the deferred `pdf_export_page` plus PDF text/HTML
   extraction.
@@ -169,10 +172,11 @@ Candidate tools and what they'd unlock:
 validate args (they shell out — no shell injection, no arbitrary paths
 without intent); and whether to expose a generic "run a known tool with
 structured args" escape hatch alongside typed per-tool bindings.
-**Reason it's parked:** it reverses the earlier "minimise external CLI
-dependencies" stance, so it wants an explicit spec + guardrail design before
-building. (The dual-use boundary is lighter here than for the security
-harness below, but the same "intentional, documented" rule applies.)
+**Reason it's parked:** the stance is "minimise external-CLI dependencies
+unless the maintainer requests one," so each tool wants an explicit go-ahead
+plus a spec + guardrail design before building. (The dual-use boundary is
+lighter here than for the security harness below, but the same "intentional,
+authorized, documented" rule applies.)
 
 ## Security & resilience testing
 
