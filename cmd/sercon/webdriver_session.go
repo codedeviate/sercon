@@ -291,3 +291,26 @@ func (s *wdSession) addWindows(obj map[string]any, vm *goja.Runtime, loop *event
 		})
 	})
 }
+
+// wdAlertMethods names the alert methods on the session handle (used by
+// tests to assert wiring).
+var wdAlertMethods = map[string]bool{
+	"acceptAlert": true, "dismissAlert": true, "alertText": true, "sendAlertText": true,
+}
+
+// addAlerts wires JS alert/confirm/prompt handling onto the session handle.
+func (s *wdSession) addAlerts(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["acceptAlert"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return wdOK(s.wd.AcceptAlert()) })
+	})
+	obj["dismissAlert"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return wdOK(s.wd.DismissAlert()) })
+	})
+	obj["alertText"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		return s.do(func() (any, error) { return s.wd.AlertText() })
+	})
+	obj["sendAlertText"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		text := strArg(call, 0)
+		return s.do(func() (any, error) { return wdOK(s.wd.SetAlertText(text)) })
+	})
+}

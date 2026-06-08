@@ -218,3 +218,13 @@ func TestFrameBody(t *testing.T) {
 		t.Fatalf("expected error for string frame target")
 	}
 }
+
+// --- Phase 2 Task 4 tests ---
+
+func TestAlertMethodNames(t *testing.T) {
+	for _, n := range []string{"acceptAlert", "dismissAlert", "alertText", "sendAlertText"} {
+		if !wdAlertMethods[n] {
+			t.Fatalf("alert method %q missing from wdAlertMethods", n)
+		}
+	}
+}
