@@ -106,7 +106,8 @@ The spec called for `EnableConsole bool` defaulting to true, which collides with
 
 ## Editing rules of thumb
 
-- Don't add cgo. The README and spec both lock this in; `CGO_ENABLED=0 go build ./...` is a deliverable check.
+- Don't add cgo. The README and spec both lock this in; `CGO_ENABLED=0 go build ./...` is a deliverable check. sercon's own binary stays pure-Go and statically linked, no exceptions.
+- External CLIs are a sanctioned escape valve, not a violation of the above. When a capability has no trustworthy pure-Go path, an **optional, feature-detected fallback to a well-known external command** is the preferred route — it links zero C into our binary (the tool is the user's separately-installed dependency). Follow the established pattern (`services.git` / `services.gh` / `services.ai` / `services.agentBrowser`): gate on the binary being on `PATH` via `exec.LookPath` (expose an `available` boolean), and trap with a clean thrown error when it's absent. The static binary must stay fully functional without any such tool installed — the fallback only enriches behaviour when the tool is present, never a hard runtime requirement. Validate args before shelling out (no shell injection, no arbitrary paths without intent). See `OUT-OF-SCOPE.md` → *External-CLI fallbacks* for the candidate tools and open design calls.
 - Don't introduce package-level state in `pkg/scriptengine` — everything hangs off `Engine`.
 - Errors returned as the second value of a Go binding surface as thrown JS exceptions automatically (via `vm.NewGoError`). Don't swallow them at the binding layer.
 - If you change the registered example surface in `cmd/sercon/main.go`, regenerate the golden in `pkg/scriptengine/testdata/` only if you also touched bindings used by `TestWriteTypes_Golden` (it has its own minimal fixture set, not the CLI's reserved globals).
