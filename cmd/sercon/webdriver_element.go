@@ -76,7 +76,19 @@ func (s *wdSession) elementObject(el selenium.WebElement, vm *goja.Runtime, loop
 			if name == "" {
 				return nil, errors.New("webdriver.getAttribute: name is required")
 			}
-			return s.do(func() (any, error) { return el.GetAttribute(name) })
+			return s.do(func() (any, error) {
+				v, err := el.GetAttribute(name)
+				// W3C "Get Element Attribute" returns null for an absent
+				// attribute; tebeka surfaces that JSON null as the sentinel
+				// error "nil return value". Map it back to JS null instead of
+				// throwing. (geckodriver returns null for attributes Chrome
+				// exposes as live properties, e.g. an input's typed `value` —
+				// read those via executeScript("return arguments[0].value", [el]).)
+				if err != nil && err.Error() == "nil return value" {
+					return nil, nil
+				}
+				return v, err
+			})
 		}),
 		"cssValue": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
 			name := strArg(call, 0)

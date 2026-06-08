@@ -1673,7 +1673,7 @@ W3C capability set and the browser's own command-line flags:
 | `clear()` | Clear the element's value. |
 | `submit()` | Submit the form. |
 | `text()` | Inner text content. |
-| `getAttribute(name)` | Get an attribute value. |
+| `getAttribute(name)` | Get the named HTML **attribute**; returns `null` when the attribute is absent (W3C semantics). This is the *attribute*, not the live DOM *property* — an `<input>`'s typed text lives in its `value` property, not a `value` attribute, so read it with `executeScript` (e.g. `executeScript("return document.querySelector('#box').value")`). Chrome's legacy fallback returns the property; Firefox correctly returns `null`. |
 | `cssValue(name)` | Get a computed CSS property value. |
 | `tagName()` | Tag name in lower case. |
 | `isDisplayed()` / `isEnabled()` / `isSelected()` | Visibility / state checks. |
@@ -1695,7 +1695,10 @@ if (!services.webdriver.available) {
     runtime.log("text:", await h1.text(), "visible:", await h1.isDisplayed());
     const box = await d.find("css", "#box");
     await box.sendKeys("typed by sercon");
-    runtime.log("value:", await box.getAttribute("value"));
+    runtime.log("id attr:", await box.getAttribute("id"));   // "box"
+    // Live input value is a DOM property, not an attribute — read via script
+    // so it works the same on Chrome and Firefox.
+    runtime.log("value:", await d.executeScript("return document.querySelector('#box').value", []));
     runtime.log("eval:", await d.executeScript("return 6*7", []));
     const shot = await d.screenshot();
     runtime.log("bytes:", new Uint8Array(shot.bytes).length, shot.format);

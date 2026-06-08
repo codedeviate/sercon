@@ -220,15 +220,22 @@ func (r *wdRegistry) connect(vm *goja.Runtime, loop *eventloop.EventLoop) func(c
 			if err != nil {
 				return nil, fmt.Errorf("webdriver.connect: %w", err)
 			}
+			// The dial URL must match the url-base each tebeka service
+			// configures: NewChromeDriverService starts chromedriver with
+			// `--url-base=wd/hub`, so it only answers under /wd/hub; geckodriver
+			// is started with no url-base and serves at root. Dialing the wrong
+			// prefix makes chromedriver 404 the POST /session as text/plain,
+			// surfacing as `got content type "text/plain", expected "application/json"`.
 			if browser == "firefox" {
 				svc, err = selenium.NewGeckoDriverService(path, port)
+				url = fmt.Sprintf("http://127.0.0.1:%d", port)
 			} else {
 				svc, err = selenium.NewChromeDriverService(path, port)
+				url = fmt.Sprintf("http://127.0.0.1:%d/wd/hub", port)
 			}
 			if err != nil {
 				return nil, fmt.Errorf("webdriver.connect: starting %s: %w", driver, err)
 			}
-			url = fmt.Sprintf("http://127.0.0.1:%d", port)
 		}
 
 		wd, err := selenium.NewRemote(caps, url)

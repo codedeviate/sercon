@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Fixed
+- `services.webdriver.connect` with no `url` (start an installed local driver)
+  failed for Chrome with `got content type "text/plain", expected
+  "application/json"`. tebeka's `NewChromeDriverService` starts chromedriver
+  with `--url-base=wd/hub`, so it only answers under `/wd/hub`, but the dial URL
+  was built without that prefix — the `POST /session` 404'd as `text/plain`.
+  The dial URL now matches each driver's url-base (`/wd/hub` for chromedriver,
+  root for geckodriver). Firefox was unaffected (geckodriver uses no url-base).
+- `webElement.getAttribute(name)` now returns `null` for an absent attribute
+  instead of throwing `nil return value`. tebeka maps the W3C "attribute
+  absent → JSON null" response to that sentinel error; sercon now restores the
+  DOM `getAttribute`-returns-null semantics. This unbreaks Firefox scripts that
+  read an attribute Chrome would expose as a property (e.g. an input's typed
+  `value` — read live properties via `executeScript`).
+
 ### Changed
 - Manual: documented the underlying external-tool surface for
   `services.agentBrowser` and `services.webdriver` so §5 is a self-contained
