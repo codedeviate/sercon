@@ -152,3 +152,36 @@ func TestCookieFromArg(t *testing.T) {
 		t.Fatalf("cookieFromMap = %+v", c)
 	}
 }
+
+// --- Phase 2 Task 1 tests ---
+
+func TestWdEnvError(t *testing.T) {
+	cases := []struct {
+		name   string
+		value  string
+		status int
+		want   string
+	}{
+		{"error+message", `{"error":"no such alert","message":"no alert open"}`, 400, "no such alert: no alert open"},
+		{"error only", `{"error":"invalid session id"}`, 404, "invalid session id"},
+		{"message only", `{"message":"boom"}`, 500, "boom"},
+		{"empty falls back to status", `{}`, 500, "HTTP 500"},
+		{"null value falls back", `null`, 500, "HTTP 500"},
+	}
+	for _, c := range cases {
+		got := wdEnvError([]byte(c.value), c.status)
+		if got != c.want {
+			t.Fatalf("%s: wdEnvError = %q want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestToStringSlice(t *testing.T) {
+	got := toStringSlice([]any{"a", "b", "c"})
+	if len(got) != 3 || got[0] != "a" || got[2] != "c" {
+		t.Fatalf("toStringSlice = %v", got)
+	}
+	if toStringSlice("not a slice") != nil {
+		t.Fatalf("expected nil for non-slice input")
+	}
+}

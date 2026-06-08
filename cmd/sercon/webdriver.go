@@ -127,11 +127,12 @@ type wdRegistry struct {
 // client is not safe for concurrent HTTP commands). svc is non-nil when this
 // session started a local driver process that must be stopped on quit.
 type wdSession struct {
-	wd     selenium.WebDriver
-	svc    *selenium.Service
-	reg    *wdRegistry
-	mu     sync.Mutex
-	closed atomic.Bool
+	wd      selenium.WebDriver
+	svc     *selenium.Service
+	reg     *wdRegistry
+	baseURL string // <scheme>://host:port[/wd/hub] — for raw s.command requests
+	mu      sync.Mutex
+	closed  atomic.Bool
 }
 
 // do runs fn under the per-session mutex, rejecting a closed session. All
@@ -245,7 +246,7 @@ func (r *wdRegistry) connect(vm *goja.Runtime, loop *eventloop.EventLoop) func(c
 			}
 			return nil, fmt.Errorf("webdriver.connect: %w", err)
 		}
-		s := &wdSession{wd: wd, svc: svc, reg: r}
+		s := &wdSession{wd: wd, svc: svc, reg: r, baseURL: strings.TrimRight(url, "/")}
 		r.track(s)
 		return s.jsObject(vm, loop), nil
 	}
