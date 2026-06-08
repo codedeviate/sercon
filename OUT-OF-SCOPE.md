@@ -201,22 +201,18 @@ useful load/resilience harness without shipping a weapon.
 
 ## Examples & advanced scripts
 
-The current `examples/scripts/` are mostly single-feature demos. Add a
-curated **`examples/scripts/advanced/`** set of in-depth, end-to-end scripts:
+The initial **`examples/scripts/advanced/`** set shipped — 12 in-depth,
+end-to-end scripts (advanced HTTP/HTTPS/SMTP/TCP servers, a load/resilience
+self-test, sqlite ETL, a crypto pipeline, codec interop, packet analysis, a
+host-recon report, a complete WebDriver login flow, and a TUI dashboard). See
+`examples/README.md` → *Advanced examples*.
 
-- Advanced `server.*` setups — a routed HTTP API with middleware + WebSocket
-  + static mount, a TLS server, an SMTP receiver pipeline.
-- Complete **Selenium / `services.webdriver`** test scripts — multi-page
-  flows with waits, frames/windows/alerts, action chains, and assertion-style
-  end-to-end UI tests.
-- Multi-binding recon/troubleshooting scripts that compose `net`, `db`,
-  `codec`, `crypto`, `services`, and `tui` into realistic workflows.
-
-These should self-skip on missing prerequisites (driver, network) like the
-existing `webdriver*.ts` demos, and stay out of the CI offline subset. If they
-grow their own subdirectory, wire it into `make demo` / `examples/README.md`.
-**Reason it's parked:** straightforward but unwritten — pick up when there's
-time to author and verify a representative set.
+What's left here is **growth on demand**, not a standing task: add more
+advanced scripts when a real workflow is worth demonstrating (e.g. a Selenium
+flow exercising more of the Phase 2 surface, a multi-DB join/migration, a
+grid/remote WebDriver example). New ones self-skip on missing prerequisites
+and follow the same wiring (`make demo` / CI offline subset / README). No
+reason parked — just author + verify when the need arises.
 
 ## Tracked code follow-ups
 
