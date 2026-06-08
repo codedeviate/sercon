@@ -57,10 +57,10 @@ exception, since `gojq` discards key order internally). `shell_stream(cmd,
 cb)` shipped in v0.28.0 as `services.exec.stream` (line-streaming a
 subprocess's stdout/stderr to a JS callback). `codec.xml` shipped in v0.32.0
 (value ↔ XML via the shared dump IR, `@`-attribute + `#text` convention).
-The last open Moderate item, **WebDriver / Selenium**, shipped as v1 in
-v0.40.0 (below) — its advanced Phase 2 surface is parked under Deferred. The
-networking subsection further down is a shipped-record whose one residual
-gap (route-table enumeration) is also parked under Deferred.
+The last open Moderate item, **WebDriver / Selenium**, is now feature-complete
+(v1 in v0.40.0, Phase 2 in v0.41.0; shipped-record below). The networking
+subsection further down is a shipped-record whose one residual gap (route-table
+enumeration) is parked under Deferred.
 
 ### Browser automation — WebDriver / Selenium
 
