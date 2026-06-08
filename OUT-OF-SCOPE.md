@@ -11,8 +11,15 @@ and per-version detail in [`CHANGELOG.md`](./CHANGELOG.md).
 
 Library picks honour the project constraints: **pure Go, no cgo; stdlib
 first; trustworthy and maintained; no heavy frameworks** — which is itself the
-reason most items below stay parked (the only viable library needs cgo, isn't
-pure Go, drags in heavy dependencies, or doesn't exist yet).
+reason most items below stay parked (the only viable library isn't pure Go,
+drags in heavy dependencies, or doesn't exist yet).
+
+**Entry rule:** every item must have a viable path that satisfies those
+constraints — a pure-Go implementation (now or plausibly later) **or** an
+optional feature-detected external-CLI fallback (see *External-CLI fallbacks*
+below). A capability whose *only* path is cgo linked into our binary can never
+satisfy no-cgo, so it doesn't belong here — don't add it (or remove it if it
+slipped in).
 
 ## Encoding / decoding / barcodes
 
@@ -27,15 +34,12 @@ pure Go, drags in heavy dependencies, or doesn't exist yet).
 ## Archives & document handling
 
 - **`pdf_export_page(src, page, dest_or_opts?, opts?)`** — Render one
-  PDF page to PNG/JPEG/WEBP (script: `pdf.rhai`).
-  **Reason:** no trustworthy pure-Go PDF renderer exists today —
-  `github.com/unidoc/unipdf` is commercial-licensed, MuPDF requires
-  cgo, Poppler is C. The realistic implementations are (a) shell out
-  to `pdftoppm` / `mutool` and parse output, or (b) accept a cgo
-  dependency. Both conflict with the no-cgo rule. Re-promote if a
-  trustworthy pure-Go renderer appears, or build it on the
-  **External-CLI fallbacks** direction below (`pdftoppm` / `mutool`),
-  which is the more likely path now.
+  PDF page to PNG/JPEG/WEBP. No trustworthy *pure-Go* PDF renderer exists
+  today (`unidoc/unipdf` is commercial-licensed; MuPDF/Poppler are C/cgo, so
+  out). **Viable path:** the **External-CLI fallbacks** direction below —
+  shell out to `pdftoppm` (or `mutool`), feature-detected. **Reason parked:**
+  waits on that fallback mechanism landing first. Re-promote alongside it, or
+  sooner if a pure-Go renderer appears.
 
 ## Databases
 
@@ -44,23 +48,21 @@ The native pure-Go SQL engines have all shipped (`db.sqlite`, `db.postgres`,
 `db.redis` / `db.memcached` / `db.ldap` / `db.dict` — see `HISTORY.md`).
 Adding another `database/sql` engine is now a known, mechanical step (driver
 import + DSN builder onto the shared handle in `cmd/sercon/db_sql.go`), so new
-engines are promoted on demand rather than tracked here. The two parked below
-have a concrete reason to wait.
+engines are promoted on demand rather than tracked here. The one parked below
+has a concrete reason to wait.
 
-- **Snowflake.** Fits the same shared-handle pattern, but its driver
-  `github.com/snowflakedb/gosnowflake` drags in large AWS/Azure/GCS
-  cloud SDKs, which conflicts with the project's "no heavy frameworks"
-  rule. **Reason:** dependency weight, no demand signal. Re-promote if
-  someone needs Snowflake and accepts the transitive-dependency cost.
-- **ODBC connectivity.** A generic ODBC bridge would reach any engine
-  with a system DSN, but the only real Go option,
-  `github.com/alexbrainman/odbc`, links the platform ODBC driver
-  manager (unixODBC on Linux/macOS) via **cgo** — and needs that
-  manager plus a per-engine ODBC driver installed at runtime. That
-  conflicts with the no-cgo constraint on the platforms that matter
-  most here. **Reason:** no pure-Go ODBC implementation exists.
-  Re-promote if one appears, or skip ODBC entirely — the native
-  pure-Go drivers already cover the engines people actually ask for.
+- **Snowflake.** Fits the same shared-handle pattern, and its driver
+  `github.com/snowflakedb/gosnowflake` is pure Go — but it drags in large
+  AWS/Azure/GCS cloud SDKs, conflicting with the "no heavy frameworks"
+  preference (not cgo). **Reason:** dependency weight, no demand signal.
+  Re-promote if someone needs Snowflake and accepts the transitive-dependency
+  cost — or reach it via a `snowsql` external-CLI fallback, which sidesteps
+  the dep weight entirely.
+
+(**ODBC connectivity** was removed: the only Go option,
+`github.com/alexbrainman/odbc`, links unixODBC via **cgo** with no pure-Go
+implementation and no clean CLI fallback — so it can never satisfy no-cgo. The
+native pure-Go drivers already cover the engines people actually ask for.)
 
 ## Networking — clients & raw sockets
 
@@ -117,12 +119,14 @@ The remaining application-protocol servers are parked:
 
 Sniffing shipped in v0.24.0 as `net.capture` (live capture, pcap/pcapng
 read+write, interface enumeration, layer decode — all pure-Go; see
-`HISTORY.md`). The parked pieces, all blocked on the no-cgo rule or missing
-pure-Go prior art:
+`HISTORY.md`). The parked pieces:
 
-- **Windows live capture.** Needs Npcap → **cgo**. **Reason:** breaks the
-  `CGO_ENABLED=0` build + static-binary releases. File read/write + decode
-  already work on Windows; only live sniffing is stubbed out there.
+- **Windows live capture.** The native route (Npcap) needs **cgo**, which is
+  out. File read/write + decode already work on Windows; only live sniffing is
+  stubbed. **Viable path:** an external-CLI fallback — shell out to
+  `dumpcap` / `tshark` (Wireshark) and read the captured pcap with the
+  existing pure-Go reader. **Reason parked:** waits on the External-CLI
+  fallbacks mechanism; Linux/macOS live capture covers the common case today.
 - **Kernel-level BPF filtering.** A post-decode tcpdump-*syntax* `filter`
   shipped in v0.25.0 (a pure-Go predicate evaluated in userspace after
   decode). What remains is true **kernel-level** drop: compiling the
