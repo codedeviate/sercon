@@ -36,6 +36,17 @@ Runtime: [goja](https://github.com/dop251/goja). TypeScript is transpiled
 in-process with [esbuild](https://github.com/evanw/esbuild/tree/main/pkg/api).
 Promises, `setTimeout`, and `require` come from [goja_nodejs](https://github.com/dop251/goja_nodejs).
 
+## Documentation
+
+- [`MANUAL.md`](MANUAL.md) — the full reference: library API, CLI, the reserved
+  script globals, the `server` namespace, and the generated binding reference
+  (§16). Also `sercon --help` and `sercon --examples` from the command line.
+- [`CHANGELOG.md`](CHANGELOG.md) — per-version change log (Keep a Changelog).
+- [`HISTORY.md`](HISTORY.md) — thematic capability history: when each subsystem
+  arrived and how it grew, from v0.1.0 onward.
+- [`OUT-OF-SCOPE.md`](OUT-OF-SCOPE.md) — open backlog: outstanding/parked items,
+  each with the reason it's not done yet.
+
 ## Quickstart
 
 ```
