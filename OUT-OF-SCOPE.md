@@ -24,10 +24,11 @@ buckets are:
 Library picks honour the project constraints: **pure Go, no cgo;
 stdlib first; trustworthy and maintained; no heavy frameworks**.
 
-A bucket with no remaining work is omitted rather than left empty — the
-**Trivial** and **Easy** buckets have shipped out entirely (most recently the
-editor-autocomplete tooling and the SQL engines), so only **Moderate**,
-**Hard**, and **Deferred** carry open items today.
+A bucket with no remaining work keeps a terse shipped-record rather than
+being deleted, so the history stays readable. As of v0.40.0 the
+**Trivial**, **Easy**, **Moderate**, and **Hard** buckets have all shipped
+out — every ranked-by-effort item is done (most recently `services.webdriver`
+v1). The only live backlog now lives in **Deferred**.
 
 A fifth bucket, **Deferred**, lives at the bottom of this file. Items
 land there when there's a concrete reason to put the work down rather
@@ -56,56 +57,28 @@ exception, since `gojq` discards key order internally). `shell_stream(cmd,
 cb)` shipped in v0.28.0 as `services.exec.stream` (line-streaming a
 subprocess's stdout/stderr to a JS callback). `codec.xml` shipped in v0.32.0
 (value ↔ XML via the shared dump IR, `@`-attribute + `#text` convention).
-The one open Moderate item is **WebDriver / Selenium** (below); the
+The last open Moderate item, **WebDriver / Selenium**, shipped as v1 in
+v0.40.0 (below) — its advanced Phase 2 surface is parked under Deferred. The
 networking subsection further down is a shipped-record whose one residual
-gap (route-table enumeration) is parked under Deferred.
+gap (route-table enumeration) is also parked under Deferred.
 
 ### Browser automation — WebDriver / Selenium
 
-> **v1 SHIPPED (v0.40.0, 2026-06-07).** `services.webdriver` is live: the
-> connect-or-start-installed driver model, `available` (sync) + `probe({url})`
-> (async) detection, stateful element handles, and the core automation loop
-> (navigation, find/findAll, page source/screenshot, executeScript, cookies,
-> waits). Sessions quit + started drivers stop on Run end; a per-session mutex
-> serialises commands. Files: `cmd/sercon/webdriver*.go`. Design +
-> v1 plan: `~/Development/Starweb/superpowers/sercon/specs/2026-06-07-webdriver-selenium-design.md`
-> and the sibling v1 plan.
->
-> **Phase 2 remains** (advanced, deferred — its own plan when picked up):
-> window/tab handles + `switchToWindow`, frame switching, alerts, action chains
-> (hover/drag/key-chords), file upload, window resize/maximize, and returning
-> element handles from `executeScript`. The sketch below is retained as
-> background.
+**v1 SHIPPED (v0.40.0, 2026-06-07).** `services.webdriver` — a `db`-style
+stateful client for the W3C WebDriver protocol via `github.com/tebeka/selenium`
+(pure Go, no cgo), complementing the `services.agentBrowser` CLI bridge with a
+standards-based driver that talks to any conforming endpoint (chromedriver,
+geckodriver, a selenium-server grid, or a cloud hub). Live surface: the
+connect-or-start-installed driver model; `available` (sync, driver-on-PATH) +
+`probe({url})` (async) feature detection, with every binding trapping cleanly
+when no driver is reachable; stateful element handles from `find`/`findAll`;
+and the core automation loop — navigation, page source/screenshot,
+executeScript, cookies, waits. Sessions quit + started drivers stop on Run end
+(`Engine.AddRunCleanup`); a per-session mutex serialises commands. Files:
+`cmd/sercon/webdriver*.go`. Design + v1 plan under
+`~/Development/Starweb/superpowers/sercon/`.
 
-A `db`-style stateful client for the W3C WebDriver protocol, complementing
-the `services.agentBrowser` CLI bridge with a standards-based driver that
-talks to any conforming endpoint (chromedriver, geckodriver, a
-selenium-server grid, or a cloud provider's hub).
-
-- **Library:** `github.com/tebeka/selenium` — the de-facto pure-Go WebDriver
-  client (no cgo; speaks HTTP/JSON to a driver). It also ships helpers to
-  start/stop a local `chromedriver`/`geckodriver`/`selenium-server`, but we
-  would NOT bundle or auto-download any of those.
-- **Feature-detected, trap when absent.** WebDriver needs a *running* driver
-  or grid — not just a binary on `PATH` — so plain `exec.LookPath` isn't
-  enough. Expose a `services.webdriver.available` (or a probe like
-  `services.webdriver.probe({url})`) that checks for a reachable endpoint /
-  a discoverable driver binary, and make every other binding trap with a
-  clean thrown error when the prerequisite is missing — mirroring the
-  `services.agentBrowser.available` gate. Decide whether "available" means
-  "a driver binary is present" vs "a WebDriver URL responds", or both.
-- **Shape (sketch, settle in brainstorm):** `services.webdriver.connect({url,
-  browser, capabilities})` → a session handle (quit on Run end via
-  `Engine.AddRunCleanup`, like the agentBrowser registry); element handles
-  returned from `find*` and chained (`el.click()`, `el.text()`, `el.sendKeys()`);
-  navigation / script-exec / screenshot / cookies / waits. Element-handle
-  lifetime and the find→act model are the main design calls — reuse the
-  agentBrowser locator decisions where they fit.
-- **Why not Hard:** the Go client is stable and the agentBrowser work is
-  prior art for the stateful-handle + feature-gate + Run-end-cleanup
-  pattern, so the wiring is mechanical-with-design-choices, not from-scratch.
-  The external *runtime* dependency (a live driver/grid) is what the
-  feature-detection trap is for.
+**Phase 2 is deferred** — see **Deferred → Browser automation** below.
 
 ### Networking — clients & raw sockets
 
@@ -204,6 +177,17 @@ promote a first-class binding here only if one is frequently used.
 Items here aren't ranked by difficulty — they're parked for a stated
 reason. Move them back into Trivial / Easy / Moderate / Hard once the
 reason resolves.
+
+### Browser automation — WebDriver Phase 2
+
+`services.webdriver` v1 shipped in v0.40.0 (see **Moderate** above). The
+advanced surface is deferred to its own brainstorm → plan → ship cycle:
+window/tab handles + `switchToWindow`, frame switching, alert handling, action
+chains (hover / drag / key-chords), file upload, window resize/maximize, and
+returning element handles from `executeScript`. **Reason:** v1 covers the core
+automation loop; the advanced surface is additive and lower-demand. It reuses
+the v1 session-handle + per-session-mutex + Run-end-cleanup foundation, so
+promotion is mechanical-with-design-choices, not from-scratch.
 
 ### Encoding / decoding / barcodes
 
