@@ -1,0 +1,526 @@
+# sercon — Thematic Capability History
+
+This file is the thematic companion to `CHANGELOG.md`. Where the changelog
+gives per-version detail, this document tells the story by subsystem: when
+each capability arrived, how it grew, and what shape it has today. The span
+covered is v0.1.0 (2026-05-25) through v0.41.0 (2026-06-08).
+
+`OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
+
+---
+
+## 1. Engine & language core
+
+### Initial architecture (v0.1.0)
+
+The engine shipped in v0.1.0 as `pkg/scriptengine`. Its core design was set
+from the start: `Engine.Run` creates a fresh `goja.Runtime` (via
+`goja_nodejs/eventloop`) for every call, while a single `*require.Registry`
+is shared across runs as a compiled-bytecode cache. Registrations are
+re-applied inside each loop callback so no globals leak between runs.
+
+Two esbuild transpile modes were established at v0.1.0:
+- **Required modules** use `FormatCommonJS` — straightforward.
+- **Entry scripts** use `FormatESModule`, then `rewriteEntryESMToCJS`
+  line-scans the output, converts `import` to `require()`, and wraps the
+  body in an `async IIFE`. This lets scripts use top-level `await`, which
+  esbuild rejects under CJS.
+
+A TS-aware `require` source loader added `.ts`, `.tsx`, `.js`, `.cjs`,
+`.mjs`, `.json` extension fallbacks and `index.*` directory resolution on
+top of what `goja_nodejs/require` provides natively.
+
+Interrupt-based timeout (`ErrScriptTimeout`) and `context.Context`
+cancellation were both wired through a single watcher goroutine that calls
+`vm.Interrupt` + `loop.Terminate`.
+
+### Event-loop lifetime management (v0.1.0, v0.10.0)
+
+`PromisifyAsync[T]` was designed to solve a subtle problem: `loop.Run`
+exits when `jobCount` drops to zero, which only counts timers — not
+`RunOnLoop` callbacks. Without a sentinel, an async binding loses the race
+against the loop. `PromisifyAsync` parks a 24-hour `SetTimeout` while work
+is in flight and clears it on resolution.
+
+`Engine.HoldRun(reason)` was added in v0.10.0 as a refcounted variant of
+the same pattern for long-lived bindings (servers, listeners) that don't
+have a single Promise to hold the loop open. The returned `release` func is
+idempotent; the engine drains any leaked holds at Run end.
+
+`LoopCallable` (also v0.10.0) wraps a captured `goja.Callable` so it can
+be invoked from any goroutine via `.Call(buildArgs)`. On-loop callers use
+`.CallOnLoop(vm, args...)` to avoid deadlocking `RunOnLoop`.
+
+### Polyfill and `for await` support (v0.10.0)
+
+esbuild's `__forAwait` lowering and user code that does
+`obj[Symbol.asyncIterator] = …` need to agree on the same key. A per-Run
+polyfill installs `Symbol.asyncIterator = Symbol.for("@@asyncIterator")`.
+The same v0.10.0 cut enabled esbuild's `Supported` flag to lower
+`for await (…)` and async generators into forms goja can parse.
+
+### Source-mapped error positions (v0.29.0)
+
+Runtime errors in `.ts` scripts previously reported transpiled-JS
+line/column positions. v0.29.0 attached inline source maps so both
+synchronous throws and async rejections reference TypeScript line numbers.
+The entry-script ESM→CJS rewriter became line-shift-aware. Error strings
+now include the full stack (previously async rejections were message-only).
+
+### `.d.ts` generation (v0.1.0 → v0.5.0 → v0.26.0)
+
+`WriteTypes` shipped in v0.1.0 with cycle protection (visited-set + depth
+cap `maxTypeDepth = 4`) and special cases for `goja.FunctionCall` (→
+`(...args: unknown[])`) and `goja.Value` (→ `unknown`) to prevent runtime
+stack overflows on goja's self-referential types.
+
+v0.4.3 added the `AsyncBinding` carrier so async bindings emit `Promise<T>`
+instead of `(...args)`. The `PromisifyAsync[T]` return type changed from a
+bare callback to `AsyncBinding`. Factory-built registrations were also
+taught to surface `Promise<T>` by invoking factories with `(nil, nil)` at
+d.ts time.
+
+v0.5.0 added `Engine.SetDocs` / `Engine.SetMemberDocs` for JSDoc strings in
+emitted declarations, with a curated doc map in `cmd/sercon/docs.go`.
+
+v0.26.0 replaced the flat doc map with a structured `MemberDoc{Summary,
+Params, ReturnType, Returns, Errors, Example}` model. The emitter now emits
+real signatures with `@param`/`@returns`. A companion `--emit-reference` /
+`Engine.WriteReference` generates a markdown reference spliced into MANUAL.md
+§16 (via `make reference`, which `make manual` runs). All eleven namespaces
+were fully documented in that single cut.
+
+### Module resolution improvements (v0.4.2, v0.5.28, v0.5.29, v0.5.30)
+
+v0.4.2 added `.js` → `.ts` swap (for `package.json` `main` fields pointing
+at compiled output) and `package.json` `source` field preference.
+
+v0.5.28 added `Options.ModuleLoader` — a hook consulted before the
+filesystem, letting embedders serve modules from memory, a network source,
+or an embedded bundle.
+
+v0.5.29 hardened the entry-script ESM→CJS rewriter against interleaved
+comments and irregular whitespace in multi-line imports.
+
+v0.5.30 added `Engine.SetResolveHook` and `Engine.ResetModuleCache` to
+support `--watch` module-graph invalidation.
+
+### Registration kinds
+
+Five `Register*` variants were present from v0.1.0: `Register`,
+`RegisterNamespace`, `RegisterConstructor`, `RegisterFactory`,
+`RegisterNamespaceFactory`. `RegisterConstructor` gained runtime semantics
+(running the Go constructor, coercing JS args, exposing methods) in v0.30.0.
+`export default <expr>` from the entry script resolves as the value
+`Engine.Run` returns (also v0.30.0).
+
+### `Engine.AbortRun` (v0.35.0)
+
+Cancels the in-flight Run via the engine's interrupt path. Added to wire
+the TUI's Ctrl-C handler.
+
+### Stable JSON key order (v0.16.0, v0.20.0, v0.11.2)
+
+`JSON.stringify` of binding results previously shuffled keys run-to-run
+because goja derives JS object property order from Go map iteration (which
+Go randomises). v0.16.0 converted several bindings to json-tagged structs.
+v0.20.0 introduced `scriptengine.Ordered` for bindings whose keys are
+dynamic or conditional. v0.11.2 fixed `text.preg` / `text.preg2` results.
+
+---
+
+## 2. CLI
+
+### Flags and initial shell (v0.1.0 → v0.2.0 → v0.4.4)
+
+v0.1.0 shipped the `sercon` CLI with `-timeout`, `-root`, `-emit-dts`, `-v`
+flags. v0.2.0 added `--help` / `-h` (colourised, auto-disabled without TTY),
+`--examples` (feature walkthrough), and `--version` (engine + dependency
+versions from `runtime/debug`).
+
+v0.4.4 added stdin script support (`-` positional), `Options.Verbose`, the
+`ErrTranspile` sentinel, and a distinct exit-code matrix: `0` (all pass),
+`1` (usage), `2` (transpile error), `3` (timeout/cancel), `4` (JS throw).
+
+### Help paging (v0.15.0)
+
+`--help` and `--examples` pipe through `$PAGER` (falling back to `less
+-FRX`) when stdout is a terminal, like git. `--no-pager` disables it.
+
+### `sercon run` and shebang (v0.13.0)
+
+`sercon run <script> [args...]` runs exactly one script and passes every
+token after the script path as `runtime.argv[2:]`. Scripts can begin with
+a `#!` shebang line (stripped before transpile, line numbers preserved),
+making `#!/usr/bin/env -S sercon run` practical.
+
+### `sercon serve` (v0.10.0, v0.11.0)
+
+`sercon serve script.ts` was introduced alongside the `server` namespace in
+v0.10.0. It adds: structured access log to stderr (`ts remote method path
+status dur_µs`), `--shutdown-timeout` (default 30s), `--port-override`, and
+a `READY listening on tcp/…` line on stdout per listener. SIGTERM exits 0.
+SMTP access logging (per-stage AUTH/MAIL/RCPT/DATA/QUIT) was added in
+v0.11.0.
+
+### `sercon init` (v0.17.0)
+
+Drops `sercon.d.ts` plus a `jsconfig.json` into a directory so any
+TypeScript-language-server editor gives completion and hover docs for the
+reserved globals with no plugin. Existing files are left untouched unless
+`--force`.
+
+### `--emit-dts` / `--emit-reference` (v0.1.0 / v0.26.0)
+
+`-emit-dts <path>` emits the declaration file for the CLI's reserved-global
+surface. `--emit-reference` (v0.26.0) generates the structured markdown
+reference spliced into MANUAL.md §16 via `make reference`.
+
+### `console` global (v0.14.0)
+
+A browser/Node-compatible `console` shim was added: `log`/`info`/`debug` →
+stdout, `warn`/`error` → stderr. This replaced goja's default console
+(which routed everything through Go's logger — timestamped, all on stderr).
+`runtime.log` remains the native stdout logger.
+
+---
+
+## 3. Surface re-architecture (v0.8.0 → v0.9.0)
+
+v0.8.0 grouped the original flat `api.*` bindings into nine category
+buckets: `runtime`, `crypto`, `text`, `format`, `fs`, `net`, `db`, `tools`,
+`ui`. Two leaf renames: `api.net.*` probes → `api.net.probe.*`;
+`api.text.*` charset → `api.text.charset.*`.
+
+v0.9.0 (BREAKING) removed the `api.` wrapper entirely and promoted the
+nine buckets to top-level globals. Three additional renames:
+`tools` → `services`, `format` → `codec`, `ui.tui` → `tui`. The `Sercon`
+global was removed; `Sercon.argv` became `runtime.argv`.
+
+v0.13.1 cleaned up remaining `api_` file-name prefixes and renamed the
+bundled declaration file from `api.d.ts` to `sercon.d.ts`.
+
+---
+
+## 4. Reserved script globals
+
+### `runtime`
+
+Present from v0.1.0 as `api.log`, `api.assert.*`, `api.time.*`,
+`api.env.get`. Promoted to `runtime.*` in v0.9.0.
+
+String utilities (`str.*`, 18 members: trim/pad/base64/html/sprintf/…),
+`path.dirname`/`basename`, and `time.format` arrived as the Trivial bucket
+was worked in the v0.3.x range. `runtime.assert.equal` was fixed to perform
+deep structural comparison (previously reference equality) in v0.19.0.
+`console.*` rendering was fixed to JSON-format objects in v0.19.0.
+`runtime.argv` follows the Node/Bun layout `[programName, scriptPath,
+...userArgs]`, available from v0.6.0.
+
+### `crypto`
+
+**Hash family** (`crypto.hash.*`, nine algorithms: md5/sha1/sha256/sha384/
+sha512/sha3_256/sha3_512/blake3/crc32): shipped in v0.3.1 as `api.hash.*`.
+
+**JWT** (`crypto.jwt.*`): shipped across v0.5.2–v0.5.3. v0.5.2 added
+`sign`/`view`/`validate` for HMAC algorithms (HS256/384/512); v0.5.3 added
+the full asymmetric matrix (RSA RS256/384/512, RSA-PSS PS256/384/512,
+ECDSA ES256/384/512, Ed25519/EdDSA) with bidirectional PEM cross-checks and
+an algorithm-confusion guard (`WithValidMethods`). v0.5.15 added JWK
+(`{"kty":…}`) as a third key-shape alongside raw bytes and PEM.
+
+**Encrypt** (`crypto.encrypt.*`): shipped across v0.5.5–v0.5.8 + v0.5.16.
+v0.5.5 added age X25519 `keygen`/`encrypt`/`decrypt`. v0.5.6 added
+`opts.armored` and auto-detect for armored input. v0.5.7 added `rekey`
+(re-encrypt without exposing plaintext to JS). v0.5.8 added
+`detectBackend` (age vs PGP classifier). v0.5.16 added the PGP backend
+(`keygenPgp`, PGP-routed `encrypt`/`decrypt` via ProtonMail go-crypto)
+completing the two-backend auto-dispatch design.
+
+### `text`
+
+**`text.str.*`** (18 string utility functions): landed in the Trivial bucket
+(v0.3.x range, as `api.str.*`).
+
+**`text.charset.*`** (detect/encode/decode): arrived as v0.4.12 (`api.text.*`),
+backed by `saintfish/chardet` and `golang.org/x/text/encoding/htmlindex`.
+
+**`text.diff`** (`diff.compare`): v0.4.15, backed by `pmezard/go-difflib`.
+Returns `{ identical, binary, added, removed, diff, format }` with a
+unified-diff body.
+
+**`text.jq`** (`jq.query`/`queryAll`): v0.4.16, backed by `itchyny/gojq`
+(full jq filter syntax).
+
+**`text.preg`** (`preg.match`/`matchAll`/`replace`): v0.5.1, PHP-style
+`/pattern/flags` syntax over Go's RE2 engine.
+
+**`text.preg2`** (`preg2.match`/`matchAll`/`replace`): v0.5.13, PCRE-flavoured
+sibling backed by `dlclark/regexp2`, supporting lookahead, lookbehind, and
+backreferences that RE2 cannot do.
+
+### `codec`
+
+**`codec.compression.*`** (nine algorithms: gzip/deflate/zlib/bzip2/zstd/
+brotli/lz4/xz/snappy): v0.4.10, all pure-Go.
+
+**`codec.barcode.*`** (encode ten symbologies → PNG): v0.4.11 (`api.barcode.encode`).
+`barcode.decode` (auto-detect from PNG/JPEG/WebP via `makiuchi-d/gozxing`):
+v0.5.4. `opts.quietZone` on encode (spec-required clear zone for EAN/UPC
+round-trips): v0.5.14.
+
+**`codec.checkdigit.*`** (algos/validate/compute/inspect; Luhn, ISBN-10,
+ISBN-13, EAN-13, EAN-8, UPC-A): v0.4.13.
+
+**`codec.php.*`** / **`codec.perl.*`** (serialize/unserialize, varExport/Dump
+round-trips): v0.12.0, shared dump IR with stable key order and
+cycle detection.
+
+**`codec.xml.*`** (`encode`/`decode` via `@`-prefix attributes and `#text`
+convention): v0.32.0.
+
+### `fs`
+
+**`fs.path.*`** (`dirname`, `basename`): shipped in the Trivial bucket (v0.3.x
+range).
+
+**`fs.archive.*`** (`create`/`extract` for zip/tar/tar.gz with zip-slip
+protection): v0.4.14 (`api.archive.*`), stdlib-only.
+
+### `net`
+
+**`net.http.*`** (`get`/`post`): present from v0.1.0 (as `api.http.*`).
+`net.http.request(method, url, opts?)` with per-call headers/body/timeout/
+retry/redirect control: v0.5.17.
+
+**`net.probe.*`** (TCP connect, DNS, TLS cert inspection): v0.4.6. NTP
+(beevik/ntp) and WHOIS (likexian/whois): v0.4.7. Ping (TCP mode default,
+ICMP opt-in via prometheus-community/pro-bing): v0.5.18. SMTP capability
+probe (EHLO + advertised extensions): v0.5.19. WebSocket handshake probe
+(`wss`): v0.5.20. Aggregate `net.netstatus.check` (fan-out of DNS/TCP/TLS/
+HTTP in parallel): v0.5.21. `net.probe.traceroute` (TTL-stepped ICMP/UDP/TCP
+path trace): v0.33.0. `net.probe.ping` UDP mode (ICMP port-unreachable proof
+of reachability): v0.33.0.
+
+**`net.browser`** (stateful HTTP session with cookie jar and default headers):
+v0.5.22.
+
+**`net.email.*`** (SPF, DMARC): v0.4.8; (MTA-STS, TLS-RPT, BIMI, `email.all`
+aggregator): v0.4.9. Outbound `net.email.send` with MIME composition,
+STARTTLS/TLS/none modes, and per-recipient outcome: v0.11.0.
+
+**`net.tcp`** / **`net.udp`** / **`net.icmp`** client sockets: v0.22.0. Long-lived,
+bidirectional, push/callback read model. `net.icmp.send` gained raw
+non-Echo body mode in v0.27.0.
+
+**`net.capture`** (packet capture via pure-Go gopacket; live on Linux/macOS,
+pcap file read/write, no libpcap): v0.24.0. Tcpdump-syntax filter option:
+v0.25.0.
+
+**`net.raw.*`** (`net.raw.open` full raw IPv4 packet engine with tcpdump
+filter; `net.raw.tcp` one-shot raw TCP probe): v0.34.0. Root/CAP_NET_RAW
+required; Linux + macOS only.
+
+### `db`
+
+**`db.sqlite`** (pure-Go `modernc.org/sqlite`): v0.5.10. Transactions
+(`handle.begin()`): v0.5.11. Prepared statements (`handle.prepare()`):
+v0.5.12.
+
+**`db.redis`** (redis/go-redis, `do` for arbitrary RESP commands): v0.5.23.
+
+**`db.memcached`** (bradfitz/gomemcache, get/set/delete): v0.5.24.
+
+**`db.ldap`** (go-ldap/v3, rootDSE + subtree search): v0.5.25.
+
+**`db.postgres`** / **`db.mysql`** / **`db.mssql`** (pure-Go drivers, shared
+`database/sql` handle with exec/query/queryValue/begin/prepare/close):
+v0.18.0.
+
+**`db.clickhouse`** (clickhouse-go v2) and **`db.oracle`** (go-ora, no cgo):
+v0.21.0.
+
+**`db.dict`** (RFC 2229 DICT protocol, hand-rolled over `net/textproto`):
+v0.5.26 (as `api.dict`).
+
+All multi-engine SQL handles share the same interface: `exec`/`query`/
+`queryValue`/`begin`/`prepare`/`close`; placeholder syntax is driver-native.
+
+### `services`
+
+**`services.exec.shell`** (subprocess runner, `/bin/sh -c` or argv mode,
+non-zero exits resolve as data): v0.4.17. Group-kill on timeout/cancel:
+v0.6.0. `services.exec.stream` (line-by-line streaming with `onLine`
+callback): v0.28.0. `services.exec.shell` gained `{ pty: true }` for
+pseudo-terminal (color/progress) support on Unix: v0.35.0.
+
+**`services.exec.http`** (recon-with-curl-fallback HTTP client): v0.4.18.
+
+**`services.git.*`** (branch/status/add/commit/log/diffStat/runText, all
+accepting `opts.cwd`): v0.4.19.
+
+**`services.gh.*`** (authStatus/prList/repoView): v0.4.20.
+
+**`services.ai`** (`providers`/`send` via claude/codex/copilot/gemini CLIs
+on PATH): v0.5.27.
+
+**`services.agentBrowser`**: see §6 below.
+
+**`services.webdriver`**: see §6 below.
+
+### `tui`
+
+Multi-pane terminal UI backed by tview/tcell. Shipped in v0.7.0 as
+`api.tui.*`, promoted to a top-level global in v0.9.0.
+
+Scripts declare a recursive split-tree layout (`tui.layout`), obtain pane
+handles with `write`/`writeln`/`clear`/`title`, and route subprocess output
+via `exec.shell(cmd, { pane })`. ANSI colors pass through; non-TTY falls
+back to prefixed plain-text lines.
+
+v0.11.1 fixed a double-init bug that left the terminal in raw mode after
+the second TUI run.
+
+v0.35.0 added: `{ pty: true }` shell exec rendering into panes; per-pane
+`wrap` (`"char"` | `"word"` | `"off"`) and `color` (bool) options; pane
+autoscroll with opt-out; `tui.layout({ mouse: true })` for mouse-wheel
+scrolling; `tui.waitKey()` / `tui.onKey(handler)`. Ctrl-C now aborts on a
+single press. Terminal detection was fixed to use `term.IsTerminal` (an
+`os.ModeCharDevice` check misclassified `/dev/null` as interactive).
+
+v0.35.1 added left-click pane focus and fixed scroll-under-cursor
+(previously changed focus while scrolling).
+
+---
+
+## 5. Servers (`server.*`)
+
+### Foundation (v0.10.0)
+
+The `server` namespace and the `sercon serve` subcommand landed together in
+v0.10.0. The engine additions that make long-lived servers possible —
+`LoopCallable` (off-loop callable dispatch) and `Engine.HoldRun` (refcounted
+sentinel to keep the event loop alive) — are covered in §1.
+
+### HTTP / HTTPS (v0.10.0)
+
+`server.http` / `server.https`: stdlib `http.ServeMux` Go 1.22+ pattern
+routing, onion-style middleware, static-file mount helper (`server.http.static`
+wraps `http.FileServer` + `http.StripPrefix`), and WebSocket upgrade
+(`res.upgradeWebSocket`) via async iterator backed by coder/websocket. The
+per-connection goroutine pumps frames via a buffered channel; the JS-side
+async iterator resolves frames on the loop via `LoopCallable`.
+
+### SMTP inbound + email send (v0.11.0)
+
+`server.smtp.listen` (go-smtp backend): per-stage JS callbacks
+(`onMail`/`onRcpt`/`onData`), optional SASL AUTH (PLAIN + LOGIN), STARTTLS,
+enmime message parsing into `{from, to, subject, headers, body.text/html,
+attachments, raw}`.
+
+`net.email.send`: outbound SMTP with in-tree MIME composition, three TLS
+modes, per-recipient outcome capture.
+
+### Raw TCP / UDP (v0.22.0, v0.23.0)
+
+Client sockets (`net.tcp.connect`, `net.udp.open`) shipped in v0.22.0.
+Server-side counterparts (`server.tcp.listen`, `server.udp.listen`) in
+v0.23.0 — the connection handle shape is identical on both sides. Both
+bind synchronously, accept `port: 0`, emit READY lines under `sercon serve`,
+and participate in graceful shutdown.
+
+### ICMP listener (v0.31.0)
+
+`server.icmp.listen` receives all host ICMP traffic (root/CAP_NET_RAW) and
+`reply(opts?)` sends back using the same `net.icmp` send options. Synchronous
+bind, `{ address, close() }` handle.
+
+---
+
+## 6. Browser automation
+
+### `services.agentBrowser` (v0.36.0 – v0.39.0)
+
+A bridge to the `agent-browser` headless-Chrome CLI; no embedded browser —
+the external binary must be on PATH.
+
+- **Phase 1 (v0.36.0):** `available`/`version`; `launch(opts?)` handle with
+  best-effort close on Run end; navigation (open/back/forward/reload/wait/
+  connect); interaction (click/fill/type/press/check/select/scroll/drag/
+  upload/download, keyboard/mouse); inspection (get/is*/eval/snapshot/
+  console/errors/highlight); locators (find one-shot + locator handle).
+- **Phase 2 (v0.37.0):** capture (`screenshot`/`pdf`); `set.*` settings
+  (viewport/device/geo/offline/headers/credentials/media); `record.*` video;
+  `defaultOptions` bag; flat one-shot shortcuts.
+- **Phase 3 (v0.38.0):** network interception/monitoring
+  (`network.route`/`unroute`/`requests`/`request`/`har`); cookies; web
+  storage; tab management; page diffing. Per-call subprocess timeout
+  (default 30 000 ms).
+- **Phase 4 (v0.39.0):** debug/perf (`trace`/`profiler`/`inspect`/
+  `clipboard`/`vitals`/`pushstate`); React DevTools; live streaming; AI
+  `chat`; escape hatch (`cmd(command, ...args)` / `batch(cmds, { bail })`);
+  auth vault (`auth.save`/`list`/`show`/`delete`, `auth.login`).
+
+### `services.webdriver` (v0.40.0 – v0.41.0)
+
+A W3C WebDriver client backed by `github.com/tebeka/selenium` (pure Go).
+No browser bundled; drivers must be installed separately.
+
+- **v0.40.0 (Phase 1):** `available`/`probe({url})` feature detection;
+  `connect(opts?)` attaches to a running driver URL or starts an installed
+  `chromedriver`/`geckodriver`; stateful element handles from `find`/`findAll`;
+  navigation, page source/screenshot, `executeScript`, cookies, waits.
+  Sessions quit on Run end.
+- **v0.40.1:** Fixed Chrome url-base mismatch (`/wd/hub` prefix); fixed
+  `webElement.getAttribute` returning null for absent attributes.
+- **v0.41.0 (Phase 2):** Window/tab handles (`windowHandles`/`currentWindow`/
+  `switchToWindow`/`newWindow`/`closeWindow`); frame switching; alert
+  handling (`acceptAlert`/`dismissAlert`/`alertText`/`sendAlertText`);
+  window rect (`maximize`/`minimize`/`fullscreen`/`setWindowRect`/
+  `getWindowRect`); real W3C action chains (`hover`/`dragAndDrop`/`keyChord`/
+  `performActions`/`releaseActions`); `executeScript`/`executeScriptAsync`
+  returning element handles. Built on an internal raw-W3C-command primitive
+  because tebeka's legacy mouse API is rejected by modern W3C drivers.
+
+---
+
+## 7. Release engineering
+
+### Early flow (v0.1.0 – v0.4.4)
+
+The project had no CI or release automation initially. `make release`
+(slim flags: `-trimpath -ldflags='-s -w'`) was the local build target.
+
+### Goreleaser + CI (v0.4.5)
+
+v0.4.5 added `.github/workflows/ci.yml` (Go matrix: two versions ×
+ubuntu+macOS, with vet/test/lint) and `.github/workflows/release.yml`
+(goreleaser on `v*.*.*` tag push). `.goreleaser.yml` cross-compiles
+darwin-{amd64,arm64} / linux-{amd64,arm64} / windows-amd64 and bundles
+LICENSE/README/CHANGELOG/MANUAL.md/MANUAL.pdf in each archive.
+`make release-prep VERSION=x.y.z` + `make version-check` were added for
+manual release preparation.
+
+### Release-please era (v0.4.21)
+
+v0.4.21 wired `release-please` to automate PR-and-tag from Conventional
+Commits, with version markers in `version.go` and MANUAL.md updated via
+`x-release-please-version` comments.
+
+### Return to manual flow (v0.7.0)
+
+release-please was dropped in v0.7.0 because its state desynced after a
+manual v0.6.0 tag was cut during an unrelated Actions permission issue. The
+`release-please.yml`, `CHANGELOG-AUTO.md`, and config files were removed.
+`make release-prep` (with the next-step checklist) is now the authoritative
+release driver. goreleaser continues to fire on tag push and publishes
+binaries to GitHub Releases.
+
+### Homebrew auto-bump (v0.35.1 era, documented in v0.35.1 CI)
+
+A `homebrew` job was added to `release.yml` (shipped in the CI/homebrew
+branch, merged as part of the v0.35.1 / pre-v0.36.0 period): on release
+it checks out `codedeviate/homebrew-cli` and runs that tap's
+`scripts/bump.sh sercon <version>` to recompute the source-tarball sha256
+and rewrite `Formula/sercon.rb`. Requires a `HOMEBREW_TAP_GITHUB_TOKEN`
+secret; skips cleanly if absent. v0.35.1 was the last hand-bumped version.

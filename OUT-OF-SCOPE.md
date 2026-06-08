@@ -1,195 +1,20 @@
 # Out of scope / backlog
 
-Ideas, follow-ups, and known gaps that aren't implemented yet. Promotion
-from this list to a real issue or commit is the only way these become
-"real" work. Keep entries terse; expand into a spec or plan once picked up.
+Outstanding ideas, follow-ups, and known gaps that are **not implemented**.
+Each entry names the **reason** it's parked, so it's easy to re-promote when
+the situation changes. Promotion from this list to a spec / plan / commit is
+the only way these become "real" work — keep entries terse until then.
 
-This file is organised by **implementation difficulty** at the top level
-and by the original **topical groups** at the second level. Difficulty
-buckets are:
+**Shipped work is not tracked here.** Once an item lands it moves out of this
+file: the thematic capability history lives in [`HISTORY.md`](./HISTORY.md),
+and per-version detail in [`CHANGELOG.md`](./CHANGELOG.md).
 
-- **Trivial** — stdlib or one tiny well-known lib; mostly type
-  conversions and `vm.Set`. A few hours of work.
-- **Easy** — established 3rd-party lib (>1k stars or de facto standard);
-  integration is mechanical: wire to `PromisifyAsync` for I/O, map
-  types, done. Half a day to a day.
-- **Moderate** — established lib BUT non-trivial wiring: stateful handle
-  objects exposed to JS, lifetime concerns, event-loop integration,
-  type-mapping work, or design choices. A day to a few days.
-- **Hard** — substantial design work, missing prior art, requires new
-  abstractions in the engine itself, needs writing-from-scratch in Go,
-  or depends on an external CLI without a stable Go equivalent.
-  Multi-day to weeks.
+Library picks honour the project constraints: **pure Go, no cgo; stdlib
+first; trustworthy and maintained; no heavy frameworks** — which is itself the
+reason most items below stay parked (the only viable library needs cgo, isn't
+pure Go, drags in heavy dependencies, or doesn't exist yet).
 
-Library picks honour the project constraints: **pure Go, no cgo;
-stdlib first; trustworthy and maintained; no heavy frameworks**.
-
-A bucket with no remaining work keeps a terse shipped-record rather than
-being deleted, so the history stays readable. As of v0.40.0 the
-**Trivial**, **Easy**, **Moderate**, and **Hard** buckets have all shipped
-out — every ranked-by-effort item is done (most recently `services.webdriver`
-v1). The only live backlog now lives in **Deferred**.
-
-A fifth bucket, **Deferred**, lives at the bottom of this file. Items
-land there when there's a concrete reason to put the work down rather
-than rank it by effort — no trustworthy pure-Go library exists, the
-feature depends on an external runtime we don't want to require yet,
-the design space is unsettled, or it conflicts with current direction.
-Each Deferred entry names the reason so it's easy to re-promote when
-the situation changes.
-
-## Moderate
-
-Most Moderate items have shipped. The original surface — the `.d.ts`
-JSDoc generator, `text.preg` / `text.preg2`, the full `crypto.jwt` +
-`crypto.encrypt` surfaces, barcode decode + quiet-zone,
-`net.http.request`, the `net.probe` family, `net.netstatus`,
-`net.browser`, `db.sqlite`, `db.redis` / `db.memcached` / `db.ldap` /
-`db.dict`, `services.ai`, the `--watch` CLI flag with module-graph
-invalidation, the `Options.ModuleLoader` hook, and robust import
-parsing — shipped across v0.5.0 – v0.5.30 (re-bucketed under v0.8.0's
-9-category surface and promoted to top-level globals, dropping the
-`api.` prefix, in v0.9.0). Canonical (stable-key-order) JSON for
-object-returning bindings landed later, across v0.16.0 (json-tagged
-structs for fixed-shape results) and v0.20.0 (`scriptengine.Ordered`
-for conditional / dynamic / decoded-JSON keys; `text.jq` is the lone
-exception, since `gojq` discards key order internally). `shell_stream(cmd,
-cb)` shipped in v0.28.0 as `services.exec.stream` (line-streaming a
-subprocess's stdout/stderr to a JS callback). `codec.xml` shipped in v0.32.0
-(value ↔ XML via the shared dump IR, `@`-attribute + `#text` convention).
-The last open Moderate item, **WebDriver / Selenium**, is now feature-complete
-(v1 in v0.40.0, Phase 2 in v0.41.0; shipped-record below). The networking
-subsection further down is a shipped-record whose one residual gap (route-table
-enumeration) is parked under Deferred.
-
-### Browser automation — WebDriver / Selenium
-
-**v1 SHIPPED (v0.40.0, 2026-06-07).** `services.webdriver` — a `db`-style
-stateful client for the W3C WebDriver protocol via `github.com/tebeka/selenium`
-(pure Go, no cgo), complementing the `services.agentBrowser` CLI bridge with a
-standards-based driver that talks to any conforming endpoint (chromedriver,
-geckodriver, a selenium-server grid, or a cloud hub). Live surface: the
-connect-or-start-installed driver model; `available` (sync, driver-on-PATH) +
-`probe({url})` (async) feature detection, with every binding trapping cleanly
-when no driver is reachable; stateful element handles from `find`/`findAll`;
-and the core automation loop — navigation, page source/screenshot,
-executeScript, cookies, waits. Sessions quit + started drivers stop on Run end
-(`Engine.AddRunCleanup`); a per-session mutex serialises commands. Files:
-`cmd/sercon/webdriver*.go`. Design + v1 plan under
-`~/Development/Starweb/superpowers/sercon/`.
-
-**Phase 2 SHIPPED (v0.41.0, 2026-06-08).** The advanced surface, on a small
-raw-W3C-command primitive (`s.command`) for the endpoints tebeka can't reach:
-window/tab handles (`windowHandles`/`currentWindow`/`switchToWindow`/`newWindow`/
-`closeWindow` with auto-switch), frame switching (`switchToFrame` by index or
-element / `switchToParentFrame` / `switchToDefaultContent`), alerts
-(`acceptAlert`/`dismissAlert`/`alertText`/`sendAlertText`), window rect
-(`maximize`/`minimize`/`fullscreen`/`set`/`getWindowRect`), real W3C action
-chains (`hover`/`dragAndDrop`/`keyChord`/`performActions`/`releaseActions` +
-element `hover()`/`dragTo()`), and `executeScript` returning element handles.
-Files: `cmd/sercon/webdriver_actions.go` + the others. Spec + plan + report under
-`~/Development/Starweb/superpowers/sercon/`. **`services.webdriver` is now
-feature-complete.**
-
-### Networking — clients & raw sockets
-
-Read/write client sockets shipped in v0.22.0: `net.tcp.connect`,
-`net.udp.open` (connected + bound), and `net.icmp.open` (raw ICMP,
-needs root / CAP_NET_RAW) — all with a push/callback read model
-(`onData`/`onMessage` + `onClose`/`onError`), on the shared
-`socket_common.go` scaffold. `net.icmp` `send` gained raw (non-Echo)
-message bodies in v0.27.0 (`body` → `icmp.RawBody`, marshalled verbatim,
-for hand-built messages such as destination-unreachable). No open gaps
-remain in this subsection:
-
-- **Interface / address enumeration shipped** as `net.capture.interfaces`
-  (v0.24.0 — stdlib `net.Interfaces`, returning `{ name, addresses, up,
-  loopback }` per interface). A general `net.interfaces` alias outside the
-  capture namespace could wrap the same call on demand. Route-table
-  enumeration is the one piece still missing and is parked under
-  **Deferred → Networking — clients & raw sockets** (no portable stdlib
-  route API).
-
-## Hard
-
-### Networking — servers
-
-The server foundation — `LoopCallable` (loop-bound callback marshalling)
-and `Engine.HoldRun` (long-lived `Run` keep-alive) — shipped in v0.10.0.
-Built on it: HTTP / HTTPS (router, middleware, static-file mount, WebSocket
-upgrade — v0.10.0), SMTP (`server.smtp.listen` plus the outbound
-`net.email.send` sender — v0.11.0), raw TCP / UDP listeners
-(`server.tcp.listen` / `server.udp.listen`, each reusing the v0.22.0 client
-push-socket handle — v0.23.0), and the raw ICMP listener
-(`server.icmp.listen` with `reply()`, root / CAP_NET_RAW — v0.31.0). Nothing
-remains open in this subsection.
-
-Application-protocol servers (IMAP, FTP, POP3) and additional protocols
-(e.g. MQTT) are parked under **Deferred → Networking — servers** with their
-specific reasons — each its own brainstorm → plan → ship cycle atop the
-`server.tcp` accept loop.
-
-### Agent-browser automation
-
-`agent-browser` is recon's headless-Chrome driver, exposed as
-`services.agentBrowser.*` (alongside the other external-CLI wrappers git,
-gh, ai). All calls require the `agent-browser` CLI on `PATH`; they gate on
-the `services.agentBrowser.available` boolean and throw a clean error
-otherwise. The bridge is `os/exec` + `--json` (no Go SDK exists; chromedp
-is a different product). The original entry modelled the surface on the full
-modern CLI; the design + phasing live in
-`~/Development/Starweb/superpowers/sercon/specs/2026-06-07-agent-browser-automation-design.md`
-and the Phase 1 plan alongside it.
-
-**Phase 1 shipped (v0.36.0):** the subprocess bridge
-(`abRun`/`abRunChecked`/`parseJSON`/`buildGlobalArgs`), synchronous
-`launch(opts?)` returning a handle, per-Run session tracking with best-effort
-close on Run end (`Engine.AddRunCleanup`), and the core loop — navigation
-(`open`/`back`/`forward`/`reload`/`wait`/`connect`/`close`), interaction
-(`click`/`dblclick`/`hover`/`focus`/`fill`/`type`/`press`/`check`/`uncheck`/
-`select`/`scroll`/`scrollIntoView`/`drag`/`upload`/`download` +
-`keyboard.*`/`mouse.*`), inspection (`get`/`isVisible`/`isEnabled`/`isChecked`/
-`eval`/`snapshot`/`console`/`errors`/`highlight`), and locators (`find`
-one-shot + `locator(spec)` handle). agent-browser wraps every result in a
-`{ success, data, error }` envelope, surfaced verbatim.
-
-**Phase 2 shipped (v0.37.0):** capture (`screenshot(path?,opts?)` /
-`pdf(path?)`, path-first with opt-in in-memory bytes returned as a JS
-`number[]`), `set.{viewport,device,geo,offline,headers,credentials,media}`,
-`record.{start,stop}`, the namespace-level defaults bag
-(`defaultOptions`/`setDefaultOptions`/`clearDefaultOptions`) merged into
-`launch()`, and the flat one-shot shortcuts
-(`screenshot(url,…)`/`pdf(url,…)`/`snapshot(url,…)`/`eval(url,js)`).
-
-**Phase 3 shipped (v0.38.0):** network interception/monitoring
-(`network.route`/`unroute`/`requests`/`request`/`har`), cookies
-(`cookies.get`/`set`/`clear`), web storage (`storage.local`/`session`
-get/set/clear), tab management (`tabs.list`/`new`/`close`/`select`), and page
-diffing (`diff.snapshot`/`screenshot`/`url`) — all on a shared `runJSON`
-handle helper. Also added a per-call subprocess timeout
-(`launch({ timeout })`, default 30 s, `0` disables; `close()` bounded at 10 s)
-so a wedged `agent-browser` command throws instead of hanging the script.
-
-**Phase 4 shipped (v0.39.0) — feature complete:** debug/perf
-(`trace`/`profiler`/`inspect`/`clipboard`/`vitals`/`pushstate`), React DevTools
-(`react.tree`/`inspect`/`renders`/`suspense`, needs
-`launch({ enable: "react-devtools" })`), live streaming
-(`stream.enable`/`disable`/`status`), AI `chat(message, { model })`, the escape
-hatch (`cmd(command, ...args)` / `batch(cmds, { bail })`), and the auth vault
-(namespace `auth.save`/`list`/`show`/`delete` — passwords fed via
-`--password-stdin`, never argv — plus handle `auth.login`).
-
-**The `services.agentBrowser` feature is complete (Phases 1-4, v0.36.0–v0.39.0).**
-New agent-browser subcommands can be reached today via the `cmd()` escape hatch;
-promote a first-class binding here only if one is frequently used.
-
-## Deferred
-
-Items here aren't ranked by difficulty — they're parked for a stated
-reason. Move them back into Trivial / Easy / Moderate / Hard once the
-reason resolves.
-
-### Encoding / decoding / barcodes
+## Encoding / decoding / barcodes
 
 - **PDF417 decoder.** v0.5.4 shipped what is now `codec.barcode.decode`
   over gozxing, which doesn't cover PDF417 (the encoder still works via
@@ -199,7 +24,7 @@ reason resolves.
   effort with no demand signal. Re-promote if a library appears or
   someone actually needs PDF417 round-tripping.
 
-### Archives & document handling
+## Archives & document handling
 
 - **`pdf_export_page(src, page, dest_or_opts?, opts?)`** — Render one
   PDF page to PNG/JPEG/WEBP (script: `pdf.rhai`).
@@ -212,15 +37,15 @@ reason resolves.
   renderer appears, or if we decide to allow optional CLI fallbacks
   for niche features.
 
-### Databases
+## Databases
 
-The native pure-Go SQL engines have all shipped — `db.sqlite`,
-`db.postgres`, `db.mysql`, `db.mssql`, `db.clickhouse`, `db.oracle`
-(plus the non-SQL `db.redis` / `db.memcached` / `db.ldap` / `db.dict`).
-Adding another `database/sql` engine is now a known, mechanical step
-(driver import + DSN builder onto the shared handle in
-`cmd/sercon/db_sql.go`), so new engines are promoted on demand rather
-than tracked here. The two parked below have a concrete reason to wait.
+The native pure-Go SQL engines have all shipped (`db.sqlite`, `db.postgres`,
+`db.mysql`, `db.mssql`, `db.clickhouse`, `db.oracle`, plus the non-SQL
+`db.redis` / `db.memcached` / `db.ldap` / `db.dict` — see `HISTORY.md`).
+Adding another `database/sql` engine is now a known, mechanical step (driver
+import + DSN builder onto the shared handle in `cmd/sercon/db_sql.go`), so new
+engines are promoted on demand rather than tracked here. The two parked below
+have a concrete reason to wait.
 
 - **Snowflake.** Fits the same shared-handle pattern, but its driver
   `github.com/snowflakedb/gosnowflake` drags in large AWS/Azure/GCS
@@ -237,7 +62,7 @@ than tracked here. The two parked below have a concrete reason to wait.
   Re-promote if one appears, or skip ODBC entirely — the native
   pure-Go drivers already cover the engines people actually ask for.
 
-### Networking — clients & raw sockets
+## Networking — clients & raw sockets
 
 - **Route-table enumeration.** Listing the host's routing table (gateway,
   destination, interface per route) has no portable stdlib API — `net`
@@ -249,13 +74,16 @@ than tracked here. The two parked below have a concrete reason to wait.
   Interface + address enumeration already ships as `net.capture.interfaces`.
   Re-promote when route inspection is actually needed.
 
-### Networking — servers
+## Networking — servers
+
+The server foundation (`LoopCallable` + `Engine.HoldRun`) and the HTTP/HTTPS,
+SMTP, raw TCP/UDP, and raw ICMP listeners have all shipped (see `HISTORY.md`).
+The remaining application-protocol servers are parked:
 
 - **HTTP/3.** stdlib's HTTP server auto-upgrades HTTP/1.1 to HTTP/2
-  over TLS; H2 ships with the v0.10.0 HTTPS listener for free. H3
-  would need `quic-go` and explicit handling. **Reason:** new
-  dependency without a current demand signal. Re-promote when
-  there's a clear request.
+  over TLS; H2 ships with the HTTPS listener for free. H3 would need
+  `quic-go` and explicit handling. **Reason:** new dependency without a
+  current demand signal. Re-promote when there's a clear request.
 - **Let's Encrypt autocert.** `golang.org/x/crypto/acme/autocert`
   brings stateful disk caching, renewal coordination, and a
   side-effecting registration step — useful for production
@@ -277,43 +105,54 @@ than tracked here. The two parked below have a concrete reason to wait.
   **Reason:** no design pressure yet; the per-route try/catch
   pattern covers the common case.
 - **Server-side IMAP, FTP.** Planned as separate sub-spec cycles
-  built on the v0.10.0 `LoopCallable` + `HoldRun` foundation.
-  (Server-side SMTP shipped in v0.11.0 as `server.smtp.listen`,
-  with the outbound `net.email.send` sender.) Each remaining
+  built on the `LoopCallable` + `HoldRun` foundation. Each remaining
   protocol gets its own brainstorm → plan → ship cycle. Promote
-  from Deferred once the spec lands.
+  once the spec lands.
 - **Server-side POP3.** Same foundation as the above, but
   **Reason:** no mature pure-Go POP3 server library exists today.
   Re-promote when one appears or when there's enough demand to
   justify writing one in tree.
 
-### Packet capture
+## Packet capture
 
-Sniffing shipped in v0.24.0 as `net.capture` — live capture
-(`net.capture.open`, promiscuous mode), pcap/pcapng read (`openFile`) +
-write (`toFile`), interface enumeration (`interfaces`), and full
-layer decode (eth/ip/tcp/udp/icmp + payload) — all pure-Go via the
-`gopacket` subset (`layers`/`pcapgo`/`bsdbpf`/`pcapgo.EthernetHandle`),
-never the cgo `gopacket/pcap`. Live capture is Linux (AF_PACKET) + macOS
-(BPF) only and needs root / CAP_NET_RAW / `/dev/bpf`. The parked pieces,
-all blocked on the no-cgo rule or missing pure-Go prior art:
+Sniffing shipped in v0.24.0 as `net.capture` (live capture, pcap/pcapng
+read+write, interface enumeration, layer decode — all pure-Go; see
+`HISTORY.md`). The parked pieces, all blocked on the no-cgo rule or missing
+pure-Go prior art:
 
 - **Windows live capture.** Needs Npcap → **cgo**. **Reason:** breaks the
   `CGO_ENABLED=0` build + static-binary releases. File read/write + decode
   already work on Windows; only live sniffing is stubbed out there.
 - **Kernel-level BPF filtering.** A post-decode tcpdump-*syntax* `filter`
-  shipped in v0.25.0 (`net.capture.open`/`openFile` `filter: "tcp and port
-  80"`) — a pure-Go predicate evaluated in userspace after decode (subset:
-  proto / host / port with src·dst, and·or·not·parens, implicit-and). What
-  remains is true **kernel-level** drop: compiling the expression to a cBPF
-  program (`x/net/bpf` can assemble instructions, but no pure-Go
-  *expression→BPF compiler* exists — we'd write one) and attaching it at the
-  socket. **Reason:** Linux could attach via `afpacket.SetBPF` /
-  `SO_ATTACH_FILTER`, but macOS `bsdbpf` exposes no filter-attach API (would
-  need forking it or raw `BIOCSETF`), so it's Linux-mostly + a from-scratch
-  compiler. Re-promote if high-pps kernel drop is actually needed.
+  shipped in v0.25.0 (a pure-Go predicate evaluated in userspace after
+  decode). What remains is true **kernel-level** drop: compiling the
+  expression to a cBPF program (`x/net/bpf` can assemble instructions, but
+  no pure-Go *expression→BPF compiler* exists — we'd write one) and
+  attaching it at the socket. **Reason:** Linux could attach via
+  `afpacket.SetBPF` / `SO_ATTACH_FILTER`, but macOS `bsdbpf` exposes no
+  filter-attach API (would need forking it or raw `BIOCSETF`), so it's
+  Linux-mostly + a from-scratch compiler. Re-promote if high-pps kernel
+  drop is actually needed.
 - **Filter grammar extensions.** `net X/Y` (CIDR) and `portrange A-B` are
   not in the v0.25.0 subset. Cheap to add to the post-decode evaluator on
   demand.
 - **Deeper / exotic decode.** Only common layers map to fields today;
   other protocols surface as `bytes`. Extend `decodePacket` on demand.
+
+## Tracked code follow-ups
+
+Not features — small known debts noted during implementation, kept here until
+addressed:
+
+- **`s.command` / `net.probe` HTTP has no timeout or request-context
+  cancellation.** A WebDriver driver blocked behind an open alert (or an
+  unreachable endpoint) can hang a command, and the script-level interrupt
+  (`vm.Interrupt` + `loop.Terminate`) doesn't cancel an in-flight Go HTTP
+  request. Thread a cancellable `context` into the `webdriver` raw-command
+  client (and the v1 `probe`) when revisited.
+- **`.d.ts` AsyncBinding `ReturnType` gap.** `dts.go` ignores
+  `MemberDoc.ReturnType` for `PromisifyAsync` bindings, so async bindings
+  (e.g. `services.webdriver.connect`) render as `Promise<unknown>` in the
+  generated `sercon.d.ts`; the rich return type survives only in the §16
+  reference prose and JSDoc. Fixing it touches every async binding's d.ts
+  (golden-test blast radius).
