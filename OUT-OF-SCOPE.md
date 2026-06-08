@@ -78,7 +78,18 @@ executeScript, cookies, waits. Sessions quit + started drivers stop on Run end
 `cmd/sercon/webdriver*.go`. Design + v1 plan under
 `~/Development/Starweb/superpowers/sercon/`.
 
-**Phase 2 is deferred** — see **Deferred → Browser automation** below.
+**Phase 2 SHIPPED (v0.41.0, 2026-06-08).** The advanced surface, on a small
+raw-W3C-command primitive (`s.command`) for the endpoints tebeka can't reach:
+window/tab handles (`windowHandles`/`currentWindow`/`switchToWindow`/`newWindow`/
+`closeWindow` with auto-switch), frame switching (`switchToFrame` by index or
+element / `switchToParentFrame` / `switchToDefaultContent`), alerts
+(`acceptAlert`/`dismissAlert`/`alertText`/`sendAlertText`), window rect
+(`maximize`/`minimize`/`fullscreen`/`set`/`getWindowRect`), real W3C action
+chains (`hover`/`dragAndDrop`/`keyChord`/`performActions`/`releaseActions` +
+element `hover()`/`dragTo()`), and `executeScript` returning element handles.
+Files: `cmd/sercon/webdriver_actions.go` + the others. Spec + plan + report under
+`~/Development/Starweb/superpowers/sercon/`. **`services.webdriver` is now
+feature-complete.**
 
 ### Networking — clients & raw sockets
 
@@ -177,17 +188,6 @@ promote a first-class binding here only if one is frequently used.
 Items here aren't ranked by difficulty — they're parked for a stated
 reason. Move them back into Trivial / Easy / Moderate / Hard once the
 reason resolves.
-
-### Browser automation — WebDriver Phase 2
-
-`services.webdriver` v1 shipped in v0.40.0 (see **Moderate** above). The
-advanced surface is deferred to its own brainstorm → plan → ship cycle:
-window/tab handles + `switchToWindow`, frame switching, alert handling, action
-chains (hover / drag / key-chords), file upload, window resize/maximize, and
-returning element handles from `executeScript`. **Reason:** v1 covers the core
-automation loop; the advanced surface is additive and lower-demand. It reuses
-the v1 session-handle + per-session-mutex + Run-end-cleanup foundation, so
-promotion is mechanical-with-design-choices, not from-scratch.
 
 ### Encoding / decoding / barcodes
 
