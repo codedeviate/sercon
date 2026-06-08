@@ -262,3 +262,60 @@ func TestRectMethodNames(t *testing.T) {
 		}
 	}
 }
+
+// --- Phase 2 Task 6 tests ---
+
+func TestHoverViewport(t *testing.T) {
+	body := wdHoverViewport(150, 250)
+	moves := body["actions"].([]any)[0].(map[string]any)["actions"].([]any)
+	if len(moves) != 2 {
+		t.Fatalf("expected 2 pointer moves (anchor + target), got %d", len(moves))
+	}
+	for i, m := range moves {
+		if m.(map[string]any)["origin"] != "viewport" {
+			t.Fatalf("move %d must use viewport origin, got %v", i, m)
+		}
+	}
+	// second move lands on the target centre; the anchor is a different point
+	// (so the move is non-zero-distance).
+	if moves[1].(map[string]any)["x"] != 150 || moves[1].(map[string]any)["y"] != 250 {
+		t.Fatalf("target move = %v, want (150,250)", moves[1])
+	}
+	if moves[0].(map[string]any)["y"] == moves[1].(map[string]any)["y"] {
+		t.Fatalf("anchor must differ from target so the move fires events")
+	}
+}
+
+func TestDragViewport(t *testing.T) {
+	body := wdDragViewport(10, 20, 300, 400)
+	acts := body["actions"].([]any)[0].(map[string]any)["actions"].([]any)
+	if len(acts) != 5 {
+		t.Fatalf("expected 5 pointer actions (anchor, moveSrc, down, moveDst, up), got %d", len(acts))
+	}
+	if acts[1].(map[string]any)["x"] != 10 || acts[1].(map[string]any)["y"] != 20 {
+		t.Fatalf("second action should move onto src (10,20), got %v", acts[1])
+	}
+	if acts[2].(map[string]any)["type"] != "pointerDown" {
+		t.Fatalf("third action should be pointerDown, got %v", acts[2])
+	}
+	if acts[3].(map[string]any)["x"] != 300 || acts[3].(map[string]any)["y"] != 400 {
+		t.Fatalf("fourth action should move onto dst (300,400), got %v", acts[3])
+	}
+	if acts[4].(map[string]any)["type"] != "pointerUp" {
+		t.Fatalf("fifth action should be pointerUp, got %v", acts[4])
+	}
+}
+
+func TestKeyChordActions(t *testing.T) {
+	body := wdKeyChordActions([]string{"Control", "a"})
+	acts := body["actions"].([]any)[0].(map[string]any)["actions"].([]any)
+	if len(acts) != 4 {
+		t.Fatalf("expected 4 key actions, got %d", len(acts))
+	}
+	if acts[0].(map[string]any)["type"] != "keyDown" || acts[0].(map[string]any)["value"] != "Control" {
+		t.Fatalf("first action should be keyDown Control: %v", acts[0])
+	}
+	if acts[3].(map[string]any)["type"] != "keyUp" || acts[3].(map[string]any)["value"] != "Control" {
+		t.Fatalf("last action should be keyUp Control (reverse release): %v", acts[3])
+	}
+}

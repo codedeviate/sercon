@@ -278,6 +278,7 @@ func (s *wdSession) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[st
 	s.addFrames(obj, vm, loop)  // Phase 2
 	s.addAlerts(obj, vm, loop)      // Phase 2
 	s.addWindowRect(obj, vm, loop) // Phase 2
+	s.addActions(obj, vm, loop)    // Phase 2
 	return obj
 }
 

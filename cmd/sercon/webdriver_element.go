@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,20 @@ import (
 
 // webElementKey is the W3C element-reference JSON key.
 const webElementKey = "element-6066-11e4-a52e-4f735466cecf"
+
+// wdElementID returns the W3C element id for el via tebeka's JSON marshalling
+// (remoteWE.MarshalJSON emits both ELEMENT and element-6066… keys).
+func wdElementID(el selenium.WebElement) string {
+	b, err := json.Marshal(el)
+	if err != nil {
+		return ""
+	}
+	var m map[string]string
+	if json.Unmarshal(b, &m) != nil {
+		return ""
+	}
+	return m[webElementKey]
+}
 
 // wdDeliverShot returns a screenshot result: { path, size, format } when a path
 // is given (writes the PNG), else { bytes: []byte, format } in memory.
@@ -58,6 +73,7 @@ func (s *wdSession) elementObject(el selenium.WebElement, vm *goja.Runtime, loop
 			return s.do(func() (any, error) { return fn() })
 		}
 	}
+	eid := wdElementID(el)
 	return map[string]any{
 		"click": wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
 			return s.do(func() (any, error) { return wdOK(el.Click()) })
@@ -142,6 +158,17 @@ func (s *wdSession) elementObject(el selenium.WebElement, vm *goja.Runtime, loop
 				}
 				return wdDeliverShot(data, path)
 			})
+		}),
+		"elementId": eid,
+		"hover": wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+			return s.do(func() (any, error) { return s.hoverElement(eid) })
+		}),
+		"dragTo": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+			dst, err := wdElementIDArg(call, 0)
+			if err != nil {
+				return nil, err
+			}
+			return s.do(func() (any, error) { return s.dragElement(eid, dst) })
 		}),
 	}
 }
