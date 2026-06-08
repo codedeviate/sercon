@@ -97,7 +97,17 @@ DEMO_SCRIPTS = \
 	examples/scripts/agent-browser-advanced.ts \
 	examples/scripts/webdriver.ts \
 	examples/scripts/webdriver-advanced.ts \
-	examples/scripts/advanced/load-resilience.ts
+	examples/scripts/advanced/load-resilience.ts \
+	examples/scripts/advanced/http-api.ts \
+	examples/scripts/advanced/smtp-pipeline.ts \
+	examples/scripts/advanced/tcp-proxy.ts \
+	examples/scripts/advanced/https-server.ts \
+	examples/scripts/advanced/sqlite-etl.ts \
+	examples/scripts/advanced/crypto-pipeline.ts \
+	examples/scripts/advanced/codec-interop.ts \
+	examples/scripts/advanced/packet-analysis.ts \
+	examples/scripts/advanced/recon-host-report.ts \
+	examples/scripts/advanced/webdriver-login-flow.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

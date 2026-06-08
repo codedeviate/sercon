@@ -89,6 +89,17 @@ external service self-skip.
 | Script | Demonstrates |
 | --- | --- |
 | `advanced/load-resilience.ts` | Resilience / load self-test — starts a loopback HTTP server, drives it at rising concurrency (4/16/32), reports latency p50/p95/max + error rate + throughput per level, and asserts the service stays healthy after the burst. Self-contained and offline; comments show how to repoint `TARGET` at a real endpoint you're authorized to test. |
+| `advanced/http-api.ts` | Full HTTP API on `server.http.listen` — middleware chain (request logger + bearer-token auth → 401 + error-catcher), CRUD over an in-memory store, a `/health` route; self-tests every path (incl. 401/201/404) then closes. Self-contained. |
+| `advanced/smtp-pipeline.ts` | `server.smtp.listen` receive → parse headers/body/attachment → `net.email.send` reply, full loopback round-trip with assertions. Self-contained. |
+| `advanced/tcp-proxy.ts` | A TCP proxy: `server.tcp.listen` relays a client connection to an upstream echo server (also started in-script) via `net.tcp.connect`, both directions; asserts the round-trip. Self-contained. |
+| `advanced/https-server.ts` | `server.https.listen` with an inline self-signed PEM cert+key; verifies the served cert via `net.probe.tls` (skip-verify). Self-contained. |
+| `advanced/sqlite-etl.ts` | `db.sqlite` ETL — schema + bulk insert in a transaction + prepared statements + `GROUP BY` aggregate → export to JSON and `codec.xml`. Self-contained (in CI). |
+| `advanced/crypto-pipeline.ts` | Secure-payload workflow — `hash.sha256` → `jwt` sign (HS256, hash claim) → `encrypt` (age) → base64 transport, then the full reverse + verify; plus wrong-key negative checks. Self-contained (in CI). |
+| `advanced/codec-interop.ts` | Round-trips a value through `codec.php` / `codec.perl` / `codec.xml` / JSON + a `compression` pass, with a per-codec preservation table. Self-contained (in CI). |
+| `advanced/packet-analysis.ts` | Hand-builds Ethernet/IP frames → `net.capture.toFile` → `openFile` → decode → per-protocol counts + top destination ports; asserts the tallies. Self-contained, offline. |
+| `advanced/recon-host-report.ts` | Multi-binding host recon — `net.probe` dns/tcp/tls + HTTP headers → a structured report. Hits the real network; **self-skips cleanly when offline** (not in CI). Edit the target to a host you're authorized to probe. |
+| `advanced/webdriver-login-flow.ts` | Complete WebDriver UI test — drive a login form (fill/submit/wait/assert) + screenshot; self-skips when no chromedriver/geckodriver is on PATH. |
+| `advanced/tui-dashboard.ts` | Live multi-pane `tui` dashboard — streams a bounded subprocess into one pane + periodic status ticks in another; runs a fixed number of cycles then exits. **Manual run** (takes over a real terminal); falls back to prefixed lines in non-TTY; not in `make demo`. |
 
 ## Adding a new binding
 

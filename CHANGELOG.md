@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+- `examples/scripts/advanced/` — a curated set of 12 in-depth, end-to-end
+  example scripts composing multiple bindings into realistic workflows:
+  `load-resilience` (authorized load/resilience self-test), `http-api`
+  (middleware + auth + CRUD + WebSocket-less API), `smtp-pipeline`,
+  `tcp-proxy`, `https-server` (inline self-signed cert), `sqlite-etl`,
+  `crypto-pipeline`, `codec-interop`, `packet-analysis`, `recon-host-report`
+  (self-skips offline), `webdriver-login-flow` (self-skips without a driver),
+  and `tui-dashboard` (manual). Self-contained ones run in `make demo`; the
+  three deterministic ones are also in the CI offline subset.
+
 ## [0.41.0] — 2026-06-08
 
 ### Added
