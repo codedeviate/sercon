@@ -110,7 +110,7 @@ unreachable, so they're safe to run anywhere; they target an internal host and
 are **not** in `make demo`/CI. `sws6/shop.ts` is a shared helper module (host,
 persona, `connectShop()`, env-sourced secrets), not a runnable demo.
 
-**Two things make these work** (both handled by `shop.ts`):
+**Three things make these work:**
 
 1. **Session cookie** — the shop withholds its `swssid` session cookie from the
    default `HeadlessChrome` user-agent, so `connectShop()` spoofs a normal
@@ -120,6 +120,11 @@ persona, `connectShop()`, env-sourced secrets), not a runnable demo.
    `sws6/.env` (gitignored), fill it in, and load it before running:
    `set -a; source examples/scripts/sws6/.env; set +a`. Scripts that need a
    value self-skip with a message when it's unset.
+3. **A longer `-timeout`** — these drive a real headless browser (launch Chrome,
+   load pages, fill forms, poll, quit), which overruns sercon's default 10s
+   per-script timeout. Run them with `-timeout 30s` or they intermittently fail
+   with `script timeout`:
+   `./sercon -timeout 30s examples/scripts/sws6/login.ts`.
 
 All the storefront flows (search, category, sort, login, add-to-cart,
 view-cart) **work end-to-end and assert real results**. `checkout-payment`

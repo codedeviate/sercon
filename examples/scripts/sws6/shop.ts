@@ -8,7 +8,11 @@
 // before running, e.g.:
 //
 //   set -a; source examples/scripts/sws6/.env; set +a
-//   ./sercon examples/scripts/sws6/login.ts
+//   ./sercon -timeout 30s examples/scripts/sws6/login.ts
+//
+// Use `-timeout 30s` (not the 10s default): these scripts drive a real headless
+// browser and a full login/checkout round-trip overruns 10s, surfacing as an
+// intermittent `script timeout` failure. See examples/README.md (sws6/).
 //
 // Anything not set falls back to a safe non-secret default (or empty, which
 // makes the dependent script self-skip with a helpful message).
