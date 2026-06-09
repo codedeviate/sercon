@@ -8,6 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.44.0] — 2026-06-09
+
+### Added
+- `server.http.listen` / `server.https.listen` accept an optional
+  `onError(err, req, res)` handler, invoked when a route handler or
+  middleware throws or rejects, in place of the stock `500 Internal Server
+  Error`. Render any response via the usual `res.*` terminals; the handler
+  may be `async`. If it settles without finalizing a response, or itself
+  throws/rejects, sercon falls back to the stock 500 — a buggy error handler
+  can't wedge the request. `err` carries the original thrown value (so
+  `err.message` matches `throw new Error(...)`). Closes the "Custom error
+  pages / server.http.onError" backlog item.
+
 ## [0.43.0] — 2026-06-09
 
 ### Added

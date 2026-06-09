@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.43.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.44.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-09</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -2044,8 +2044,22 @@ await srv.stopped;    // Promise that resolves when the listener exits
 | `host` | `string` | Default `"0.0.0.0"`. Pass `"127.0.0.1"` for loopback-only. |
 | `routes` | `Record<string, RouteValue>` | Required (may be `{}`). Keys are stdlib `http.ServeMux` patterns. |
 | `use` | `Middleware[]` | Optional global middleware; runs in array order before any per-route middleware. |
+| `onError` | `(err, req, res) => unknown` | Optional error handler; renders a custom response when a handler/middleware throws or rejects. See below. |
 | `cert` | `string` | **HTTPS only.** File path, inline PEM, *or* the literal `"self-signed"` to mint an ephemeral in-process dev cert. |
 | `key`  | `string` | **HTTPS only.** File path *or* inline PEM. Not needed (ignored) when `cert` is `"self-signed"`. |
+
+**Custom error pages (`onError`).** When a handler or middleware throws
+(or returns a rejected Promise) and `onError` is set, it is invoked as
+`onError(err, req, res)` instead of sending the stock
+`500 Internal Server Error`. `err` is the thrown value (an `Error` for a
+plain `throw new Error(...)`); render whatever you like via the usual
+`res.*` terminals (`res.status(500).json({...})`, `res.html(...)`, etc.).
+`onError` may be `async`. If it finishes without finalizing a response, or
+itself throws/rejects, sercon falls back to the stock 500 — a buggy error
+handler can never wedge the request. Without `onError`, behaviour is
+unchanged (stock 500 + a log line); the per-route `try/catch` pattern
+still works and takes precedence (an error you catch never reaches
+`onError`).
 
 **Self-signed dev cert.** `cert: "self-signed"` generates a fresh P-256
 certificate in-process (valid ~1 year), with SANs covering `localhost`,
@@ -5038,14 +5052,14 @@ Network servers: HTTP/HTTPS listeners with routing, middleware, static files, We
 #### server.http.listen
 
 ```
-listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> }
+listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown }): { address: string; stopped: Promise<void>; close(): Promise<void> }
 ```
 
-Bind an HTTP listener: server.http.listen({port, host?, routes, use?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}.
+Bind an HTTP listener: server.http.listen({port, host?, routes, use?, onError?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Optional onError(err, req, res) renders a custom response when a handler/middleware throws or rejects (else a stock 500). Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}.
 
 **Parameters**
 
-- `opts` *({ port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] })* — Listener config. port is required; host defaults to "0.0.0.0". routes maps Go 1.22+ ServeMux patterns ('GET /', 'POST /users/{id}', 'GET /assets/{rest...}') to a handler function or a {use, handler} object for per-route middleware. use is a global middleware chain run before every route. Under `sercon serve`, --port-override replaces port.
+- `opts` *({ port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown })* — Listener config. port is required; host defaults to "0.0.0.0". routes maps Go 1.22+ ServeMux patterns ('GET /', 'POST /users/{id}', 'GET /assets/{rest...}') to a handler function or a {use, handler} object for per-route middleware. use is a global middleware chain run before every route. onError(err, req, res) is invoked when a handler or middleware throws/rejects — render a response with res.* (it may be async); if it doesn't finalize, or itself throws, the stock 500 is sent. Under `sercon serve`, --port-override replaces port.
 
 **Returns:** A server handle (returned synchronously): address is 'tcp/host:port' (resolved, so a port:0 ephemeral bind reports its OS-chosen port); stopped resolves when the server stops (rejects if Serve fails with a non-close error); close() begins a graceful 30s shutdown and resolves with the same stopped Promise.
 
@@ -6613,7 +6627,7 @@ await tui.waitKey();
 
 ---
 
-*This manual covers sercon v0.43.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.44.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

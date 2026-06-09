@@ -93,6 +93,17 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		}
 	}
 
+	// Optional onError handler: (err, req, res) => … invoked when a handler
+	// or middleware throws/rejects, in place of the stock 500.
+	var onError *scriptengine.LoopCallable
+	if v := optsObj.Get("onError"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		fn, ok := goja.AssertFunction(v)
+		if !ok {
+			panic(vm.NewTypeError("server.http.listen: `onError` must be a function"))
+		}
+		onError = scriptengine.NewLoopCallable(loop, fn)
+	}
+
 	// Compile routes into a ServeMux
 	mux := http.NewServeMux()
 	for _, key := range routesObj.Keys() {
@@ -110,7 +121,7 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		chain := append([]*scriptengine.LoopCallable{}, globalMW...)
 		chain = append(chain, perRouteMW...)
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			dispatchHandler(loop, eng, chain, handler, w, r)
+			dispatchHandler(loop, eng, chain, handler, onError, w, r)
 		})
 	}
 
@@ -208,6 +219,30 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	return handle
 }
 
+// errValue recovers the JS value an onError handler should receive for a Go
+// error returned by a handler/middleware call. When the error is a goja
+// exception (the usual case — a JS `throw`), it returns the *original* thrown
+// value, so `err.message` matches what the script threw (rather than goja's
+// "Error: msg\n\tat …" stringification). Otherwise it builds a fresh JS Error.
+func errValue(vm *goja.Runtime, err error) goja.Value {
+	if ex, ok := err.(*goja.Exception); ok {
+		return ex.Value()
+	}
+	return newJSError(vm, err.Error())
+}
+
+// newJSError builds a JS Error object carrying msg, so an onError handler
+// receives `err.message` like a normal thrown Error. Falls back to the bare
+// string if the Error constructor is somehow unavailable.
+func newJSError(vm *goja.Runtime, msg string) goja.Value {
+	if ctor, ok := goja.AssertFunction(vm.Get("Error")); ok {
+		if v, err := ctor(goja.Undefined(), vm.ToValue(msg)); err == nil {
+			return v
+		}
+	}
+	return vm.ToValue(msg)
+}
+
 // loadCert reads cert/key from disk OR from inline PEM strings (detected
 // by the presence of "-----BEGIN").
 func loadCert(certSrc, keySrc string) (tls.Certificate, error) {
@@ -277,6 +312,16 @@ type responseState struct {
 	// to NOT write a regular response (the websocket library owns the
 	// connection after Hijack). Wired by Task 4.
 	upgrade bool
+
+	// failWith routes an unhandled handler/middleware error. When an
+	// onError handler is configured for the listener it is invoked as
+	// (err, req, res) so the script can render a custom response;
+	// otherwise — or if onError itself throws or settles without
+	// finalizing — the stock 500 is emitted via markError. Set
+	// per-dispatch in dispatchHandler after req/res are built (so it can
+	// close over them); nil on the websocket/internal paths. Invoked only
+	// from loop callbacks.
+	failWith func(errVal goja.Value, fallbackMsg string)
 }
 
 func newResponseState() *responseState {
@@ -324,7 +369,7 @@ func (rs *responseState) markError(msg string) {
 // schedules a loop callback that builds req/res, invokes the middleware
 // chain + handler, and waits on res.notify for finalization (either via
 // a terminal call or via the handler-Promise's settlement).
-func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request) {
+func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, onError *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 	// Read body up front; small price for the simpler script API.
 	bodyBytes, _ := io.ReadAll(r.Body)
@@ -339,6 +384,53 @@ func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain 
 	_, err := loopSchedule(loop, func(vm *goja.Runtime) (goja.Value, error) {
 		req := buildRequestObject(vm, r, bodyBytes)
 		res := buildResponseObject(vm, loop, eng, state, w, r)
+
+		// Wire the error router now that req/res exist. With no onError
+		// configured it is exactly markError (stock 500); otherwise it
+		// invokes the JS handler and falls back to markError if that
+		// handler throws or settles without finalizing the response.
+		state.failWith = func(errVal goja.Value, fallbackMsg string) {
+			if onError == nil {
+				state.markError(fallbackMsg)
+				return
+			}
+			result, oerr := onError.CallOnLoop(vm, errVal, req, res)
+			if oerr != nil {
+				state.markError(fallbackMsg)
+				return
+			}
+			// Async onError: bridge its Promise; emit the stock 500 if it
+			// settles (or rejects) without producing a response.
+			if result != nil && !goja.IsUndefined(result) && !goja.IsNull(result) {
+				if _, ok := result.Export().(*goja.Promise); ok {
+					thenVal, terr := vm.RunProgram(bridgeProg)
+					if terr != nil {
+						state.markError(fallbackMsg)
+						return
+					}
+					thenFn, ok := goja.AssertFunction(thenVal)
+					if !ok {
+						state.markError(fallbackMsg)
+						return
+					}
+					onSettle := func(call goja.FunctionCall) goja.Value {
+						if !state.isFinalized() {
+							state.markError(fallbackMsg)
+						}
+						return goja.Undefined()
+					}
+					onReject := func(call goja.FunctionCall) goja.Value {
+						state.markError(fallbackMsg)
+						return goja.Undefined()
+					}
+					_, _ = thenFn(goja.Undefined(), result, vm.ToValue(onSettle), vm.ToValue(onReject))
+					return
+				}
+			}
+			if !state.isFinalized() {
+				state.markError(fallbackMsg)
+			}
+		}
 
 		// Middleware runner. Each level returns a Promise that settles when
 		// that level's chain (and everything beneath it) has finished its
@@ -361,7 +453,7 @@ func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain 
 				// Final layer: invoke the handler.
 				result, err := handler.CallOnLoop(vm, req, res)
 				if err != nil {
-					state.markError(err.Error())
+					state.failWith(errValue(vm, err), err.Error())
 					return rejectedPromise(vm, err)
 				}
 				return propagateResult(vm, result, state)
@@ -371,7 +463,7 @@ func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain 
 			}
 			result, err := chain[idx].CallOnLoop(vm, req, res, vm.ToValue(next))
 			if err != nil {
-				state.markError(err.Error())
+				state.failWith(errValue(vm, err), err.Error())
 				return rejectedPromise(vm, err)
 			}
 			return propagateResult(vm, result, state)
@@ -424,7 +516,12 @@ func bridgeHandlerResult(vm *goja.Runtime, result goja.Value, state *responseSta
 			return goja.Undefined()
 		}
 		onReject := func(call goja.FunctionCall) goja.Value {
-			state.markError(call.Argument(0).String())
+			errVal := call.Argument(0)
+			if state.failWith != nil {
+				state.failWith(errVal, errVal.String())
+			} else {
+				state.markError(errVal.String())
+			}
 			return goja.Undefined()
 		}
 		_, _ = thenFn(goja.Undefined(), vm.ToValue(promise), vm.ToValue(onSettle), vm.ToValue(onReject))

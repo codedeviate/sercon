@@ -96,11 +96,6 @@ The remaining application-protocol servers are parked:
 - **Server-Sent Events (SSE).** Could be a small helper on top of
   `server.http.listen` (set headers, flush on every write). YAGNI
   for now. **Reason:** no asks. Add when someone wants it.
-- **Custom error pages / `server.http.onError(handler)`.** Handler
-  throws today produce a stock `500 Internal Server Error` and a
-  log line. A future hook for custom rendering can be added.
-  **Reason:** no design pressure yet; the per-route try/catch
-  pattern covers the common case.
 - **Server-side IMAP, FTP.** Planned as separate sub-spec cycles
   built on the `LoopCallable` + `HoldRun` foundation. Each remaining
   protocol gets its own brainstorm → plan → ship cycle. Promote
