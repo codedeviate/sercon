@@ -8,6 +8,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.45.0] — 2026-06-09
+
+### Added
+- `net.capture.routes()` — synchronous, unprivileged snapshot of the host's
+  IP routing table: an array of `{ destination, gateway, interface, family,
+  metric }`. `destination` is a CIDR (`0.0.0.0/0` / `::/0` for defaults),
+  `gateway` is the next-hop IP or `""` for directly-connected routes. Pure-Go,
+  no cgo: Linux parses `/proc/net/route` + `/proc/net/ipv6_route`; macOS/BSD
+  read the routing socket via `golang.org/x/net/route`; Windows is stubbed
+  (throws). Sits beside `net.capture.interfaces()`. Closes the
+  "Route-table enumeration" backlog item.
+
 ## [0.44.0] — 2026-06-09
 
 ### Added

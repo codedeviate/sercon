@@ -9,6 +9,13 @@ const ifaces: any[] = net.capture.interfaces();
 const lo = ifaces.find((i) => i.loopback);
 runtime.log("interfaces:", ifaces.length, "loopback:", lo?.name ?? "(none)");
 
+// net.capture.routes() — also offline/unprivileged; the host's IP routing
+// table (Linux /proc/net/route, macOS/BSD routing socket). Find the default.
+const routes: any[] = net.capture.routes();
+const def = routes.find((r) => r.destination === "0.0.0.0/0" || r.destination === "::/0");
+runtime.log("routes:", routes.length, "default via:", def ? `${def.gateway} on ${def.interface}` : "(none)");
+runtime.assert.ok(Array.isArray(routes) && routes.length > 0, "routes() returns the routing table");
+
 // Two hand-built frames over loopback IPv4: a UDP datagram (dst port 9999,
 // payload "hi") and a TCP SYN (dst port 443). (Scripts can't easily
 // synthesise frames at runtime, so we embed the raw bytes; gopacket decodes

@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.44.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.45.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-09</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -913,11 +913,19 @@ peer to dial; a UDP loopback pair is fully self-contained.
 #### Packet capture (`net.capture`)
 
 Packet capture and pcap file I/O, powered by **pure-Go gopacket** (no
-`libpcap`, no cgo). Four bindings:
+`libpcap`, no cgo). Five bindings:
 
 - `net.capture.interfaces()` — **synchronous**; returns an array of
   `{ name, addresses: string[], up, loopback }` for the host's network
   interfaces. Pure-Go (`net.Interfaces`); no privileges, all platforms.
+- `net.capture.routes()` — **synchronous**; returns an array of
+  `{ destination, gateway, interface, family, metric }` for the host's IP
+  routing table. `destination` is a CIDR (`0.0.0.0/0` / `::/0` are the
+  default routes); `gateway` is the next-hop IP or `""` for a
+  directly-connected route; `family` is `"ip"` or `"ip6"`; `metric` is `0`
+  where the platform doesn't report one. Pure-Go, unprivileged: Linux parses
+  `/proc/net/route` + `/proc/net/ipv6_route`; macOS/BSD read the routing
+  socket via `golang.org/x/net/route`. **Windows is unsupported** (throws).
 - `net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…})` —
   start a **live** capture on `iface`. Resolves to a handle `{ iface, link,
   close() }`; the per-frame handler receives a decoded packet object (see
@@ -4320,6 +4328,22 @@ Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) →
 await net.capture.openFile("/tmp/dump.pcap", pkt => runtime.log(pkt.tcp?.dstPort), { filter: "tcp" });
 ```
 
+#### net.capture.routes
+
+```
+routes(): { destination: string; gateway: string; interface: string; family: "ip" | "ip6"; metric: number }[]
+```
+
+List the host's IP routing table synchronously: net.capture.routes() → array of { destination, gateway, interface, family, metric }. Pure-Go, unprivileged: Linux reads /proc/net/route + /proc/net/ipv6_route; macOS/BSD read the routing socket via x/net/route. Windows is unsupported (throws).
+
+**Returns:** { destination: string, gateway: string, interface: string, family: "ip" | "ip6", metric: number }[] — one entry per route. destination is a CIDR ('0.0.0.0/0' for the default route, '::/0' for the IPv6 default); gateway is the next-hop IP or '' for a directly-connected/link route; interface is the outgoing NIC name (best-effort); metric is 0 when the platform doesn't report one (BSD/macOS). Synchronous (not a Promise).
+
+**Throws:** Throws if route enumeration fails or the platform is unsupported (Windows).
+
+```ts
+const def = net.capture.routes().find(r => r.destination === "0.0.0.0/0");\nruntime.log("default via", def?.gateway, "on", def?.interface);
+```
+
 #### net.capture.toFile
 
 ```
@@ -6627,7 +6651,7 @@ await tui.waitKey();
 
 ---
 
-*This manual covers sercon v0.44.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.45.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

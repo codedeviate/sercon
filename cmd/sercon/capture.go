@@ -28,6 +28,7 @@ import (
 func captureNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) map[string]any {
 	return map[string]any{
 		"interfaces": captureInterfacesFn(vm),
+		"routes":     captureRoutesFn(vm),
 		"open":       captureOpenFn(vm, loop, eng),
 		"openFile":   captureOpenFileFn(vm, loop, eng),
 		"toFile":     captureToFileFn(vm, loop, eng),

@@ -365,6 +365,27 @@ func TestCaptureOpen_LoopbackSmoke(t *testing.T) {
 	}
 }
 
+func TestCaptureRoutes_Shape(t *testing.T) {
+	// Linux + macOS/BSD CI runners both have a populated routing table; assert
+	// the call returns entries with the documented shape. (Windows is stubbed
+	// and would throw — CI runs this on ubuntu + macos only.)
+	got := runSocketScript(t, `
+		const rs = net.capture.routes();
+		if (!Array.isArray(rs)) throw new Error("routes() did not return an array");
+		if (rs.length === 0) throw new Error("routing table is empty");
+		const r = rs[0];
+		const okFields = typeof r.destination === "string" && typeof r.gateway === "string" &&
+			typeof r.interface === "string" && (r.family === "ip" || r.family === "ip6") &&
+			typeof r.metric === "number";
+		const anyV4 = rs.some(x => x.family === "ip");
+		__capture(okFields && anyV4 ? "ok:" + rs.length : "bad:" + JSON.stringify(r));
+	`)
+	s, _ := got.(string)
+	if !strings.HasPrefix(s, "ok:") {
+		t.Fatalf("routes(): expected well-formed entries incl. an IPv4 route; got %q", s)
+	}
+}
+
 func TestCaptureInterfaces_ListsLoopback(t *testing.T) {
 	got := runSocketScript(t, `
 		const ifs = net.capture.interfaces();

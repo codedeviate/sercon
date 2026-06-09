@@ -669,6 +669,11 @@ declare const net: {
      */
     openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): unknown;
     /**
+     * List the host's IP routing table synchronously: net.capture.routes() → array of { destination, gateway, interface, family, metric }. Pure-Go, unprivileged: Linux reads /proc/net/route + /proc/net/ipv6_route; macOS/BSD read the routing socket via x/net/route. Windows is unsupported (throws).
+     * @returns { destination: string, gateway: string, interface: string, family: "ip" | "ip6", metric: number }[] — one entry per route. destination is a CIDR ('0.0.0.0/0' for the default route, '::/0' for the IPv6 default); gateway is the next-hop IP or '' for a directly-connected/link route; interface is the outgoing NIC name (best-effort); metric is 0 when the platform doesn't report one (BSD/macOS). Synchronous (not a Promise).
+     */
+    routes(): { destination: string; gateway: string; interface: string; family: "ip" | "ip6"; metric: number }[];
+    /**
      * Write raw frames to a .pcap file: net.capture.toFile(path, { linkType?, snaplen? }) → { write(bytes, { ts? }), close() }. write appends a raw frame (Uint8Array); ts (ms) overrides the timestamp. close() flushes and returns Promise<void>. Offline; no privileges.
      * @param path Path of the .pcap file to create (overwritten if it exists).
      * @param opts snaplen is the pcap global-header snap length (default 262144); linkType is the numeric pcap link-type written into the header (default Ethernet).

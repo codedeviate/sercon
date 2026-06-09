@@ -64,18 +64,6 @@ has a concrete reason to wait.
 implementation and no clean CLI fallback — so it can never satisfy no-cgo. The
 native pure-Go drivers already cover the engines people actually ask for.)
 
-## Networking — clients & raw sockets
-
-- **Route-table enumeration.** Listing the host's routing table (gateway,
-  destination, interface per route) has no portable stdlib API — `net`
-  exposes interfaces and addresses but not routes. The realistic path is
-  per-OS: `golang.org/x/net/route` on BSD/macOS, parsing `/proc/net/route`
-  (or netlink) on Linux, and the IP Helper API on Windows — three distinct
-  implementations behind one binding. **Reason:** no single pure-Go
-  cross-platform route API; the per-OS effort outweighs current demand.
-  Interface + address enumeration already ships as `net.capture.interfaces`.
-  Re-promote when route inspection is actually needed.
-
 ## Networking — servers
 
 The server foundation (`LoopCallable` + `Engine.HoldRun`) and the HTTP/HTTPS,

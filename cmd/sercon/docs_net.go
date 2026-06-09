@@ -212,6 +212,13 @@ else runtime.log("filtered / no answer");`,
 			Errors:     "Throws if interface enumeration fails.",
 			Example:    `for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);`,
 		},
+		"capture.routes": {
+			Summary:    "List the host's IP routing table synchronously: net.capture.routes() → array of { destination, gateway, interface, family, metric }. Pure-Go, unprivileged: Linux reads /proc/net/route + /proc/net/ipv6_route; macOS/BSD read the routing socket via x/net/route. Windows is unsupported (throws).",
+			ReturnType: "{ destination: string; gateway: string; interface: string; family: \"ip\" | \"ip6\"; metric: number }[]",
+			Returns:    "{ destination: string, gateway: string, interface: string, family: \"ip\" | \"ip6\", metric: number }[] — one entry per route. destination is a CIDR ('0.0.0.0/0' for the default route, '::/0' for the IPv6 default); gateway is the next-hop IP or '' for a directly-connected/link route; interface is the outgoing NIC name (best-effort); metric is 0 when the platform doesn't report one (BSD/macOS). Synchronous (not a Promise).",
+			Errors:     "Throws if route enumeration fails or the platform is unsupported (Windows).",
+			Example:    `const def = net.capture.routes().find(r => r.destination === "0.0.0.0/0");\nruntime.log("default via", def?.gateway, "on", def?.interface);`,
+		},
 		"capture.open": {
 			Summary: "Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, net/src net/dst net (CIDR), port/src port/dst port, portrange/src portrange/dst portrange, and/or/not + parens, implicit-and between juxtaposed primaries. A malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo).",
 			Params: []scriptengine.Param{
