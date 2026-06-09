@@ -192,11 +192,6 @@ reason parked — just author + verify when the need arises.
 ## Tracked code follow-ups
 
 Not features — small known debts noted during implementation, kept here until
-addressed:
+addressed.
 
-- **`.d.ts` AsyncBinding `ReturnType` gap.** `dts.go` ignores
-  `MemberDoc.ReturnType` for `PromisifyAsync` bindings, so async bindings
-  (e.g. `services.webdriver.connect`) render as `Promise<unknown>` in the
-  generated `sercon.d.ts`; the rich return type survives only in the §16
-  reference prose and JSDoc. Fixing it touches every async binding's d.ts
-  (golden-test blast radius).
+_(None currently open.)_

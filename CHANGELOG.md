@@ -8,6 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.47.0] — 2026-06-09
+
+### Fixed
+- `.d.ts` generation now honours `MemberDoc.ReturnType` for `PromisifyAsync`
+  (async) bindings. Previously the emitter always wrapped the binding's marker
+  type — usually `Promise<unknown>` — discarding the documented return shape,
+  so async bindings like `services.webdriver.connect`, `net.probe.traceroute`,
+  and others rendered as `Promise<unknown>` in `examples/scripts/sercon.d.ts`
+  even though the rich type was present in the §16 reference. The documented
+  `ReturnType` is now emitted (verbatim when already `Promise<…>`-wrapped,
+  wrapped otherwise); undocumented async bindings still fall back to the
+  marker type. Closes the tracked "`.d.ts` AsyncBinding `ReturnType` gap".
+
 ## [0.46.0] — 2026-06-09
 
 ### Added

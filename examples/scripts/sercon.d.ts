@@ -92,7 +92,7 @@ declare const runtime: {
      * @param ms Delay in milliseconds. Coerced to an integer; non-positive values resolve effectively immediately.
      * @returns Promise<void> — resolves once the delay elapses.
      */
-    sleep(ms: number): Promise<unknown>;
+    sleep(ms: number): Promise<void>;
   };
 };
 
@@ -461,7 +461,7 @@ declare const codec: {
      * @param format Symbology hint (case-insensitive) from decodableFormats. When given, only that reader runs; otherwise every decoder is tried in priority order and the first hit wins.
      * @returns Promise<{ format: string, text: string }> — the detected symbology name and the decoded payload.
      */
-    decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<Record<string, unknown>>;
+    decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<{ format: string, text: string }>;
     /**
      * Render data into a PNG of the chosen format. opts.width / opts.height default to 256x256 (2D) or 400x120 (1D). opts.quietZone (true or px count) pads a white margin — required for EAN/UPC to decode. Async.
      * @param format Symbology (case-insensitive): qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca.
@@ -815,7 +815,7 @@ declare const net: {
      * @param opts protocol selects the probe type (icmp echo, udp to an incrementing high port, or tcp SYN via a TTL-limited connect). port is the udp/tcp target (ignored for icmp). maxHops caps the trace. timeout is the per-probe wait in ms. probes is the number of probes per hop.
      * @returns One entry per hop (TTL 1..n): ttl is the hop number; address is the responding router/host IP (null if every probe at that TTL timed out); rttsMs are the round-trip times of the probes that answered; reached is true on the hop where the destination itself replied (the array ends there or at maxHops).
      */
-    traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string; rttsMs: number[]; reached: boolean }[]>;
+    traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string | null; rttsMs: number[]; reached: boolean }[]>;
     /**
      * Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text.
      * @param domain The domain (or IP / ASN) to look up.
@@ -1166,13 +1166,13 @@ declare const services: {
      * @param opts browser selects the driver binary (default 'chrome'). headless defaults to true. url, if given, dials an already-running driver at that base URL instead of starting one. args appends extra browser flags. capabilities is an escape hatch for raw W3C capability overrides merged last. commandTimeout (ms, default 30000) bounds each low-level WebDriver request so a driver blocked behind an open alert or an unreachable endpoint can't hang the call; 0 or negative disables the per-command deadline. quit()/Run-end also cancel any in-flight command.
      * @returns Promise resolving to a session handle with methods: get(url), url(), title(), back(), forward(), refresh(), find(by, value) → element handle, findAll(by, value) → element handle[], source(), screenshot(path?), executeScript(js, args?), executeScriptAsync(js, args?), cookies(), setCookie(c), deleteCookie(name), deleteAllCookies(), setImplicitWait(ms), waitFor(by, value, opts?), quit(). Phase 2 session methods: windowHandles(), currentWindow(), switchToWindow(handle), newWindow(type?), closeWindow(), switchToFrame(indexOrElement), switchToParentFrame(), switchToDefaultContent(), acceptAlert(), dismissAlert(), alertText(), sendAlertText(text), maximize(), minimize(), fullscreen(), setWindowRect({width?,height?,x?,y?}), getWindowRect(), hover(el), dragAndDrop(src,dst), keyChord(...keys), performActions(sequence), releaseActions(). Element handles also expose hover() and dragTo(target) and carry an elementId string. executeScript/executeScriptAsync return element handles when the script returns an element (or a top-level array of elements). Locator strategies: css, xpath, id, name, tag, className, linkText, partialLinkText.
      */
-    connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<unknown>;
+    connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<{ get(url: string): Promise<{ ok: true }>; url(): Promise<string>; title(): Promise<string>; back(): Promise<{ ok: true }>; forward(): Promise<{ ok: true }>; refresh(): Promise<{ ok: true }>; find(by: string, value: string): Promise<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>; findAll(by: string, value: string): Promise<Array<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>>; source(): Promise<string>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }>; executeScript(js: string, args?: unknown[]): Promise<unknown>; executeScriptAsync(js: string, args?: unknown[]): Promise<unknown>; cookies(): Promise<object[]>; setCookie(c: { name: string; value: string; path?: string; domain?: string; secure?: boolean; httpOnly?: boolean; expiry?: number }): Promise<{ ok: true }>; deleteCookie(name: string): Promise<{ ok: true }>; deleteAllCookies(): Promise<{ ok: true }>; setImplicitWait(ms: number): Promise<{ ok: true }>; waitFor(by: string, value: string, opts?: { timeout?: number; visible?: boolean }): Promise<any>; windowHandles(): Promise<string[]>; currentWindow(): Promise<string>; switchToWindow(handle: string): Promise<{ ok: true }>; newWindow(type?: "tab" | "window"): Promise<{ handle: string; type: string }>; closeWindow(): Promise<string[]>; switchToFrame(target: number | object): Promise<{ ok: true }>; switchToParentFrame(): Promise<{ ok: true }>; switchToDefaultContent(): Promise<{ ok: true }>; acceptAlert(): Promise<{ ok: true }>; dismissAlert(): Promise<{ ok: true }>; alertText(): Promise<string>; sendAlertText(text: string): Promise<{ ok: true }>; maximize(): Promise<{ x: number; y: number; width: number; height: number }>; minimize(): Promise<{ x: number; y: number; width: number; height: number }>; fullscreen(): Promise<{ x: number; y: number; width: number; height: number }>; setWindowRect(rect: { width?: number; height?: number; x?: number; y?: number }): Promise<{ x: number; y: number; width: number; height: number }>; getWindowRect(): Promise<{ x: number; y: number; width: number; height: number }>; hover(el: object): Promise<{ ok: true }>; dragAndDrop(src: object, dst: object): Promise<{ ok: true }>; keyChord(...keys: string[]): Promise<{ ok: true }>; performActions(sequence: unknown[]): Promise<{ ok: true }>; releaseActions(): Promise<{ ok: true }>; quit(): Promise<{ closed: true }> }>;
     /**
      * Check whether a WebDriver endpoint responds at opts.url/status. Returns { ready, status } on HTTP success or { ready: false, error } on transport failure. Does not throw on network errors.
      * @param opts url is required — the base URL of a running WebDriver server (e.g. 'http://127.0.0.1:9515').
      * @returns Promise<{ ready, status? } | { ready: false, error }> — ready is true when the endpoint returns HTTP 200; status is the HTTP status code when a response was received; error is the transport error message when the request failed entirely.
      */
-    probe(opts: { url: string }): Promise<Record<string, unknown>>;
+    probe(opts: { url: string }): Promise<{ ready: boolean; status?: number; error?: string }>;
   };
 };
 
@@ -1200,7 +1200,7 @@ declare const tui: {
    * Resolve with the next keypress (TTY mode). One-shot — await again for the next key. Rejects in non-TTY (fallback) mode.
    * @returns A Promise resolving to the next key descriptor (same shape as onKey's argument). Concurrent waitKey calls resolve FIFO — one keypress resolves the oldest pending call. While a waitKey is pending the TUI stays open (this is the idiomatic "press any key to close" hold). Ctrl-C aborts and is never delivered.
    */
-  waitKey(...args: unknown[]): Promise<Record<string, unknown>>;
+  waitKey(...args: unknown[]): Promise<{ name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }>;
 };
 
 /** Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade. */

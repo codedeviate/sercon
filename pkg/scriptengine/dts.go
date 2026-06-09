@@ -52,6 +52,23 @@ func writeDTS(w io.Writer, regs []registration, docs map[string]MemberDoc) error
 	return bw.err
 }
 
+// asyncReturnType picks the TS return type for a PromisifyAsync binding. A
+// documented MemberDoc.ReturnType wins (it carries the rich resolved shape the
+// AsyncBinding's marker type loses, which would otherwise render as
+// `Promise<unknown>`); it is emitted verbatim when already `Promise<…>`-wrapped
+// and wrapped otherwise. With no doc, it falls back to the marker's
+// TSReturnType wrapped in Promise<…>, preserving the previous behaviour for
+// undocumented async bindings.
+func asyncReturnType(doc MemberDoc, a AsyncBinding) string {
+	if doc.ReturnType != "" {
+		if strings.HasPrefix(doc.ReturnType, "Promise<") {
+			return doc.ReturnType
+		}
+		return "Promise<" + doc.ReturnType + ">"
+	}
+	return "Promise<" + a.TSReturnType + ">"
+}
+
 // sigFromParams renders a TS call signature from a MemberDoc's structured
 // Params. Optional params get a trailing `?` on the name; param types are
 // emitted verbatim from Param.Type (falling back to `unknown` when empty).
@@ -202,11 +219,12 @@ func writeValueDecl(w *errWriter, ctx *typeCtx, name string, value any, doc Memb
 		}
 	}
 	if a, ok := value.(AsyncBinding); ok {
+		ret := asyncReturnType(doc, a)
 		if len(doc.Params) > 0 {
-			w.WriteString("declare function " + name + sigFromParams(doc.Params, "Promise<"+a.TSReturnType+">") + ";\n")
+			w.WriteString("declare function " + name + sigFromParams(doc.Params, ret) + ";\n")
 			return
 		}
-		w.WriteString(fmt.Sprintf("declare function %s(...args: unknown[]): Promise<%s>;\n", name, a.TSReturnType))
+		w.WriteString(fmt.Sprintf("declare function %s(...args: unknown[]): %s;\n", name, ret))
 		return
 	}
 	t := reflect.TypeOf(value)
@@ -263,11 +281,12 @@ func writeMemberObject(w *errWriter, ctx *typeCtx, members map[string]any, path 
 		doc := docs[memberPath]
 		writeMemberJSDoc(w, doc, indent)
 		if a, ok := v.(AsyncBinding); ok {
+			ret := asyncReturnType(doc, a)
 			if len(doc.Params) > 0 {
-				w.WriteString(pad + k + sigFromParams(doc.Params, "Promise<"+a.TSReturnType+">") + ";\n")
+				w.WriteString(pad + k + sigFromParams(doc.Params, ret) + ";\n")
 				continue
 			}
-			w.WriteString(pad + k + "(...args: unknown[]): Promise<" + a.TSReturnType + ">;\n")
+			w.WriteString(pad + k + "(...args: unknown[]): " + ret + ";\n")
 			continue
 		}
 		if nested, ok := v.(map[string]any); ok {
