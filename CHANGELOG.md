@@ -8,6 +8,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.43.0] — 2026-06-09
+
+### Added
+- `server.https.listen` accepts `cert: "self-signed"` to mint an ephemeral
+  P-256 certificate in-process (no openssl, no committed PEM, nothing written
+  to disk; `key` is then optional). SANs cover `localhost` / `127.0.0.1` /
+  `::1` plus the listen host. Self-signed certs fail normal client
+  verification by design — a local-dev convenience, not a production path
+  (own production certs in your supervisor). `examples/scripts/advanced/
+  https-server.ts` now uses it instead of an embedded PEM. Closes the
+  "Self-signed dev certificate generation" backlog item.
+
 ## [0.42.0] — 2026-06-09
 
 ### Added

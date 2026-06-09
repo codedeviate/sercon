@@ -93,11 +93,6 @@ The remaining application-protocol servers are parked:
   **Reason:** sercon is CLI-first and the cert is best owned by
   the supervisor (caddy, traefik, nginx in front). Defer until
   clear demand.
-- **Self-signed dev certificate generation.** A `cert: "self-signed"`
-  magic option for `server.https.listen` would be a convenience for
-  local dev but adds key-management complexity (cache the key, or
-  regenerate every run?). **Reason:** small payoff for the design
-  cost. Users can `openssl req -x509 …` once locally.
 - **Server-Sent Events (SSE).** Could be a small helper on top of
   `server.http.listen` (set headers, flush on every write). YAGNI
   for now. **Reason:** no asks. Add when someone wants it.

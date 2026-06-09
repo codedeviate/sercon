@@ -92,7 +92,7 @@ external service self-skip.
 | `advanced/http-api.ts` | Full HTTP API on `server.http.listen` — middleware chain (request logger + bearer-token auth → 401 + error-catcher), CRUD over an in-memory store, a `/health` route; self-tests every path (incl. 401/201/404) then closes. Self-contained. |
 | `advanced/smtp-pipeline.ts` | `server.smtp.listen` receive → parse headers/body/attachment → `net.email.send` reply, full loopback round-trip with assertions. Self-contained. |
 | `advanced/tcp-proxy.ts` | A TCP proxy: `server.tcp.listen` relays a client connection to an upstream echo server (also started in-script) via `net.tcp.connect`, both directions; asserts the round-trip. Self-contained. |
-| `advanced/https-server.ts` | `server.https.listen` with an inline self-signed PEM cert+key; verifies the served cert via `net.probe.tls` (skip-verify). Self-contained. |
+| `advanced/https-server.ts` | `server.https.listen` with the `cert: "self-signed"` shortcut (ephemeral in-process cert, no files); verifies the served cert via `net.probe.tls` (skip-verify). Self-contained. |
 | `advanced/sqlite-etl.ts` | `db.sqlite` ETL — schema + bulk insert in a transaction + prepared statements + `GROUP BY` aggregate → export to JSON and `codec.xml`. Self-contained (in CI). |
 | `advanced/crypto-pipeline.ts` | Secure-payload workflow — `hash.sha256` → `jwt` sign (HS256, hash claim) → `encrypt` (age) → base64 transport, then the full reverse + verify; plus wrong-key negative checks. Self-contained (in CI). |
 | `advanced/codec-interop.ts` | Round-trips a value through `codec.php` / `codec.perl` / `codec.xml` / JSON + a `compression` pass, with a per-codec preservation table. Self-contained (in CI). |

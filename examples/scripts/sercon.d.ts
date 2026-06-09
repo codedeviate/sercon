@@ -1216,11 +1216,11 @@ declare const server: {
   };
   https: {
     /**
-     * Like server.http.listen plus required cert/key (file paths OR inline PEM strings). No autocert; no self-signed magic.
-     * @param opts Same shape as server.http.listen plus cert and key. Each is either a filesystem path or an inline PEM string (detected by a leading '-----BEGIN'). TLS is pinned to a minimum of TLS 1.2.
+     * Like server.http.listen plus a cert (file path OR inline PEM string) and matching key. Set cert: "self-signed" to mint an ephemeral in-process dev cert (no key needed) instead — covers localhost / 127.0.0.1 / ::1 plus the listen host. No autocert (own production certs in your supervisor).
+     * @param opts Same shape as server.http.listen plus cert and key. cert is a filesystem path, an inline PEM string (detected by a leading '-----BEGIN'), or the literal "self-signed" to generate an ephemeral P-256 cert in-process (key is then ignored). key is required for the path/PEM forms. TLS is pinned to a minimum of TLS 1.2. Self-signed certs fail normal client verification by design — dev only.
      * @returns Same handle shape as server.http.listen; address is 'tcp/host:port'.
      */
-    listen(opts: { port: number; host?: string; cert: string; key: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> };
+    listen(opts: { port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> };
     /**
      * Like server.http.static; same options.
      * @param opts Identical to server.http.static — dir is the root, stripPrefix is removed from the path before lookup, index/etag are accepted but unused.

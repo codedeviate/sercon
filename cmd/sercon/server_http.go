@@ -118,13 +118,26 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	var tlsConfig *tls.Config
 	if isTLS {
 		certVal := optsObj.Get("cert")
-		keyVal := optsObj.Get("key")
-		if certVal == nil || keyVal == nil || goja.IsUndefined(certVal) || goja.IsUndefined(keyVal) {
-			panic(vm.NewTypeError("server.https.listen: `cert` and `key` are required"))
+		if certVal == nil || goja.IsUndefined(certVal) || goja.IsNull(certVal) {
+			panic(vm.NewTypeError(`server.https.listen: ` + "`cert`" + ` is required (a file path, inline PEM, or "self-signed")`))
 		}
-		cert, err := loadCert(certVal.String(), keyVal.String())
-		if err != nil {
-			panic(vm.NewGoError(fmt.Errorf("server.https.listen: %w", err)))
+		var cert tls.Certificate
+		var err error
+		if strings.EqualFold(strings.TrimSpace(certVal.String()), "self-signed") {
+			// Ephemeral dev cert: generated in-process, never written to disk.
+			cert, err = generateSelfSignedCert(selfSignedHosts(host))
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("server.https.listen: self-signed cert: %w", err)))
+			}
+		} else {
+			keyVal := optsObj.Get("key")
+			if keyVal == nil || goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
+				panic(vm.NewTypeError(`server.https.listen: ` + "`key`" + ` is required unless cert is "self-signed"`))
+			}
+			cert, err = loadCert(certVal.String(), keyVal.String())
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("server.https.listen: %w", err)))
+			}
 		}
 		tlsConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},

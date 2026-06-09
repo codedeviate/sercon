@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.42.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.43.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-09</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -2024,6 +2024,13 @@ const srv2 = await server.https.listen({
   routes,
 });
 
+// HTTPS dev shortcut — ephemeral self-signed cert, no key, no files
+const srv3 = await server.https.listen({
+  port: 8443,
+  cert: "self-signed",
+  routes,
+});
+
 srv.address;          // "tcp/0.0.0.0:8080"
 await srv.close();    // graceful: stop accepting, drain, release HoldRun
 await srv.stopped;    // Promise that resolves when the listener exits
@@ -2037,8 +2044,17 @@ await srv.stopped;    // Promise that resolves when the listener exits
 | `host` | `string` | Default `"0.0.0.0"`. Pass `"127.0.0.1"` for loopback-only. |
 | `routes` | `Record<string, RouteValue>` | Required (may be `{}`). Keys are stdlib `http.ServeMux` patterns. |
 | `use` | `Middleware[]` | Optional global middleware; runs in array order before any per-route middleware. |
-| `cert` | `string` | **HTTPS only.** File path *or* inline PEM. |
-| `key`  | `string` | **HTTPS only.** File path *or* inline PEM. |
+| `cert` | `string` | **HTTPS only.** File path, inline PEM, *or* the literal `"self-signed"` to mint an ephemeral in-process dev cert. |
+| `key`  | `string` | **HTTPS only.** File path *or* inline PEM. Not needed (ignored) when `cert` is `"self-signed"`. |
+
+**Self-signed dev cert.** `cert: "self-signed"` generates a fresh P-256
+certificate in-process (valid ~1 year), with SANs covering `localhost`,
+`127.0.0.1`, `::1`, and the listen `host`. The keypair lives only for the
+life of the run and is never written to disk. Self-signed certs fail
+normal client verification by design (`net.probe.tls` skips verification,
+so it still works against them) — this is a local-dev convenience, not a
+production path. For real deployments own the cert in your supervisor
+(caddy / nginx / traefik) in front.
 
 **Route patterns** are stdlib Go 1.22+ `http.ServeMux` syntax:
 `"METHOD /path/{param}/{rest...}"`. The leading method is optional
@@ -5070,24 +5086,24 @@ server.http.listen({
 #### server.https.listen
 
 ```
-listen(opts: { port: number; host?: string; cert: string; key: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> }
+listen(opts: { port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> }
 ```
 
-Like server.http.listen plus required cert/key (file paths OR inline PEM strings). No autocert; no self-signed magic.
+Like server.http.listen plus a cert (file path OR inline PEM string) and matching key. Set cert: "self-signed" to mint an ephemeral in-process dev cert (no key needed) instead — covers localhost / 127.0.0.1 / ::1 plus the listen host. No autocert (own production certs in your supervisor).
 
 **Parameters**
 
-- `opts` *({ port: number; host?: string; cert: string; key: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] })* — Same shape as server.http.listen plus cert and key. Each is either a filesystem path or an inline PEM string (detected by a leading '-----BEGIN'). TLS is pinned to a minimum of TLS 1.2.
+- `opts` *({ port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] })* — Same shape as server.http.listen plus cert and key. cert is a filesystem path, an inline PEM string (detected by a leading '-----BEGIN'), or the literal "self-signed" to generate an ephemeral P-256 cert in-process (key is then ignored). key is required for the path/PEM forms. TLS is pinned to a minimum of TLS 1.2. Self-signed certs fail normal client verification by design — dev only.
 
 **Returns:** Same handle shape as server.http.listen; address is 'tcp/host:port'.
 
-**Throws:** Throws synchronously on the same conditions as server.http.listen, plus if cert/key are missing or the key pair fails to load/parse.
+**Throws:** Throws synchronously on the same conditions as server.http.listen, plus if cert is missing, key is missing for a path/PEM cert, or the key pair fails to load/parse.
 
 ```ts
+// Ephemeral dev cert — no openssl, no files:
 const srv = server.https.listen({
   port: 8443,
-  cert: "/etc/ssl/cert.pem",
-  key: "/etc/ssl/key.pem",
+  cert: "self-signed",
   routes: { "GET /": (req, res) => res.text("secure") },
 });
 ```
@@ -6597,7 +6613,7 @@ await tui.waitKey();
 
 ---
 
-*This manual covers sercon v0.42.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.43.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

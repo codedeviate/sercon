@@ -20,17 +20,17 @@ runtime.log(srv.address);
 await srv.close();`,
 		},
 		"https.listen": {
-			Summary: "Like server.http.listen plus required cert/key (file paths OR inline PEM strings). No autocert; no self-signed magic.",
+			Summary: "Like server.http.listen plus a cert (file path OR inline PEM string) and matching key. Set cert: \"self-signed\" to mint an ephemeral in-process dev cert (no key needed) instead — covers localhost / 127.0.0.1 / ::1 plus the listen host. No autocert (own production certs in your supervisor).",
 			Params: []scriptengine.Param{
-				{Name: "opts", Type: "{ port: number; host?: string; cert: string; key: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }", Desc: "Same shape as server.http.listen plus cert and key. Each is either a filesystem path or an inline PEM string (detected by a leading '-----BEGIN'). TLS is pinned to a minimum of TLS 1.2."},
+				{Name: "opts", Type: "{ port: number; host?: string; cert: string | \"self-signed\"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }", Desc: "Same shape as server.http.listen plus cert and key. cert is a filesystem path, an inline PEM string (detected by a leading '-----BEGIN'), or the literal \"self-signed\" to generate an ephemeral P-256 cert in-process (key is then ignored). key is required for the path/PEM forms. TLS is pinned to a minimum of TLS 1.2. Self-signed certs fail normal client verification by design — dev only."},
 			},
 			ReturnType: "{ address: string; stopped: Promise<void>; close(): Promise<void> }",
 			Returns:    "Same handle shape as server.http.listen; address is 'tcp/host:port'.",
-			Errors:     "Throws synchronously on the same conditions as server.http.listen, plus if cert/key are missing or the key pair fails to load/parse.",
-			Example: `const srv = server.https.listen({
+			Errors:     "Throws synchronously on the same conditions as server.http.listen, plus if cert is missing, key is missing for a path/PEM cert, or the key pair fails to load/parse.",
+			Example: `// Ephemeral dev cert — no openssl, no files:
+const srv = server.https.listen({
   port: 8443,
-  cert: "/etc/ssl/cert.pem",
-  key: "/etc/ssl/key.pem",
+  cert: "self-signed",
   routes: { "GET /": (req, res) => res.text("secure") },
 });`,
 		},
