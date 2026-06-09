@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,7 +25,22 @@ func (s *wdSession) command(method, path string, body any) (any, error) {
 		rdr = bytes.NewReader(b)
 	}
 	url := s.baseURL + "/session/" + s.wd.SessionID() + path
-	req, err := http.NewRequest(method, url, rdr)
+
+	// Bound the request: cancel with the session ctx (so shutdown aborts an
+	// in-flight command), and apply a per-command deadline so a driver blocked
+	// behind an open alert or an unreachable endpoint can't hang forever.
+	// Guards keep directly-constructed sessions (tests) working.
+	base := s.ctx
+	if base == nil {
+		base = context.Background()
+	}
+	reqCtx := base
+	if s.cmdTimeout > 0 {
+		var cancel context.CancelFunc
+		reqCtx, cancel = context.WithTimeout(base, s.cmdTimeout)
+		defer cancel()
+	}
+	req, err := http.NewRequestWithContext(reqCtx, method, url, rdr)
 	if err != nil {
 		return nil, err
 	}

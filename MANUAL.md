@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.45.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.46.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-09</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -1622,6 +1622,7 @@ Connect options (all optional):
 | `url` | `string` | — | Dial an already-running WebDriver server instead of starting one. |
 | `args` | `string[]` | — | Extra browser command-line flags appended to the default set. |
 | `capabilities` | `object` | — | Raw W3C capability overrides merged last (escape hatch). |
+| `commandTimeout` | `number` | `30000` | Per low-level WebDriver request timeout (ms). Bounds each command so a driver blocked behind an open alert or an unreachable endpoint can't hang the call. `0`/negative disables it. `quit()` (and Run-end cleanup) also cancels any in-flight command. |
 
 **Browser flags (`args`) and capabilities (the WebDriver surface).** Unlike
 `agentBrowser`, this binding speaks the W3C WebDriver protocol directly (via
@@ -5877,14 +5878,14 @@ if (!services.webdriver.available) {
 #### services.webdriver.connect
 
 ```
-connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object }): Promise<unknown>
+connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<unknown>
 ```
 
 Connect to a running WebDriver server (opts.url) or start an installed local chromedriver/geckodriver and dial it. Returns a session handle whose methods drive the browser. Sessions are quit on Run end if the script does not call quit() explicitly.
 
 **Parameters**
 
-- `opts` *({ browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object }, optional)* — browser selects the driver binary (default 'chrome'). headless defaults to true. url, if given, dials an already-running driver at that base URL instead of starting one. args appends extra browser flags. capabilities is an escape hatch for raw W3C capability overrides merged last.
+- `opts` *({ browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }, optional)* — browser selects the driver binary (default 'chrome'). headless defaults to true. url, if given, dials an already-running driver at that base URL instead of starting one. args appends extra browser flags. capabilities is an escape hatch for raw W3C capability overrides merged last. commandTimeout (ms, default 30000) bounds each low-level WebDriver request so a driver blocked behind an open alert or an unreachable endpoint can't hang the call; 0 or negative disables the per-command deadline. quit()/Run-end also cancel any in-flight command.
 
 **Returns:** Promise resolving to a session handle with methods: get(url), url(), title(), back(), forward(), refresh(), find(by, value) → element handle, findAll(by, value) → element handle[], source(), screenshot(path?), executeScript(js, args?), executeScriptAsync(js, args?), cookies(), setCookie(c), deleteCookie(name), deleteAllCookies(), setImplicitWait(ms), waitFor(by, value, opts?), quit(). Phase 2 session methods: windowHandles(), currentWindow(), switchToWindow(handle), newWindow(type?), closeWindow(), switchToFrame(indexOrElement), switchToParentFrame(), switchToDefaultContent(), acceptAlert(), dismissAlert(), alertText(), sendAlertText(text), maximize(), minimize(), fullscreen(), setWindowRect({width?,height?,x?,y?}), getWindowRect(), hover(el), dragAndDrop(src,dst), keyChord(...keys), performActions(sequence), releaseActions(). Element handles also expose hover() and dragTo(target) and carry an elementId string. executeScript/executeScriptAsync return element handles when the script returns an element (or a top-level array of elements). Locator strategies: css, xpath, id, name, tag, className, linkText, partialLinkText.
 
@@ -6651,7 +6652,7 @@ await tui.waitKey();
 
 ---
 
-*This manual covers sercon v0.45.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.46.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

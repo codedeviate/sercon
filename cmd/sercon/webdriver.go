@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -133,6 +134,15 @@ type wdSession struct {
 	baseURL string // <scheme>://host:port[/wd/hub] — for raw s.command requests
 	mu      sync.Mutex
 	closed  atomic.Bool
+
+	// ctx is canceled by shutdown(), aborting any in-flight raw s.command
+	// HTTP request (e.g. one blocked behind an open alert or an unreachable
+	// driver). cmdTimeout bounds each raw command. Both are set in connect;
+	// command() guards against the zero values for directly-constructed
+	// sessions (tests).
+	ctx        context.Context
+	cancel     context.CancelFunc
+	cmdTimeout time.Duration
 }
 
 // do runs fn under the per-session mutex, rejecting a closed session. All
@@ -187,6 +197,11 @@ func (r *wdRegistry) closeAll() {
 func (s *wdSession) shutdown() {
 	if s.closed.Swap(true) {
 		return
+	}
+	// Abort any in-flight raw command before tearing down the driver, so a
+	// command blocked on an open alert / dead endpoint unblocks promptly.
+	if s.cancel != nil {
+		s.cancel()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -246,10 +261,46 @@ func (r *wdRegistry) connect(vm *goja.Runtime, loop *eventloop.EventLoop) func(c
 			}
 			return nil, fmt.Errorf("webdriver.connect: %w", err)
 		}
-		s := &wdSession{wd: wd, svc: svc, reg: r, baseURL: strings.TrimRight(url, "/")}
+		ctx, cancel := context.WithCancel(context.Background())
+		s := &wdSession{
+			wd: wd, svc: svc, reg: r,
+			baseURL:    strings.TrimRight(url, "/"),
+			ctx:        ctx,
+			cancel:     cancel,
+			cmdTimeout: wdCommandTimeout(opts),
+		}
 		r.track(s)
 		return s.jsObject(vm, loop), nil
 	}
+}
+
+// wdDefaultCommandTimeout bounds each raw s.command HTTP request unless the
+// caller overrides it via connect's opts.commandTimeout (milliseconds).
+const wdDefaultCommandTimeout = 30 * time.Second
+
+// wdCommandTimeout reads opts.commandTimeout (ms) for the per-command HTTP
+// timeout, falling back to wdDefaultCommandTimeout. A non-positive value
+// disables the timeout (relies on ctx cancellation / driver alone).
+func wdCommandTimeout(opts map[string]any) time.Duration {
+	v, ok := opts["commandTimeout"]
+	if !ok {
+		return wdDefaultCommandTimeout
+	}
+	var ms float64
+	switch t := v.(type) {
+	case float64:
+		ms = t
+	case int64:
+		ms = float64(t)
+	case int:
+		ms = float64(t)
+	default:
+		return wdDefaultCommandTimeout
+	}
+	if ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
 }
 
 // quit closes the session explicitly (de-registers + shutdown).

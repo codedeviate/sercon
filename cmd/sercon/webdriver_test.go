@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/tebeka/selenium"
@@ -10,6 +11,44 @@ import (
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
+
+func TestWDCommandTimeout(t *testing.T) {
+	cases := []struct {
+		opts map[string]any
+		want time.Duration
+	}{
+		{nil, wdDefaultCommandTimeout},
+		{map[string]any{}, wdDefaultCommandTimeout},
+		{map[string]any{"commandTimeout": float64(5000)}, 5 * time.Second},
+		{map[string]any{"commandTimeout": int64(1500)}, 1500 * time.Millisecond},
+		{map[string]any{"commandTimeout": float64(0)}, 0},  // disabled
+		{map[string]any{"commandTimeout": float64(-1)}, 0}, // disabled
+		{map[string]any{"commandTimeout": "nope"}, wdDefaultCommandTimeout},
+	}
+	for i, c := range cases {
+		if got := wdCommandTimeout(c.opts); got != c.want {
+			t.Errorf("case %d: got %v, want %v", i, got, c.want)
+		}
+	}
+}
+
+// TestWDShutdownCancelsCtx verifies shutdown() cancels the session context so
+// an in-flight raw command unblocks promptly.
+func TestWDShutdownCancelsCtx(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &wdSession{
+		reg:    &wdRegistry{sessions: map[*wdSession]struct{}{}},
+		ctx:    ctx,
+		cancel: cancel,
+	}
+	if s.ctx.Err() != nil {
+		t.Fatal("ctx canceled before shutdown")
+	}
+	s.shutdown()
+	if s.ctx.Err() == nil {
+		t.Fatal("shutdown() did not cancel the session ctx")
+	}
+}
 
 func TestByStrategy(t *testing.T) {
 	cases := map[string]string{

@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.46.0] — 2026-06-09
+
+### Added
+- `services.webdriver.connect` accepts `commandTimeout` (ms, default 30000):
+  a per-request deadline on the low-level W3C command client.
+
+### Fixed
+- WebDriver raw commands no longer hang indefinitely. Each `s.command` request
+  now carries a context with the `commandTimeout` deadline, and `quit()` /
+  Run-end cleanup cancels any in-flight command — so a driver blocked behind
+  an open alert or an unreachable endpoint fails promptly instead of wedging
+  the call. (`net.probe.*` already threaded `context.WithTimeout`, so the rest
+  of the tracked "no timeout / no cancellation" follow-up was already covered;
+  the item is now closed.)
+
 ## [0.45.0] — 2026-06-09
 
 ### Added

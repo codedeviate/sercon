@@ -194,12 +194,6 @@ reason parked — just author + verify when the need arises.
 Not features — small known debts noted during implementation, kept here until
 addressed:
 
-- **`s.command` / `net.probe` HTTP has no timeout or request-context
-  cancellation.** A WebDriver driver blocked behind an open alert (or an
-  unreachable endpoint) can hang a command, and the script-level interrupt
-  (`vm.Interrupt` + `loop.Terminate`) doesn't cancel an in-flight Go HTTP
-  request. Thread a cancellable `context` into the `webdriver` raw-command
-  client (and the v1 `probe`) when revisited.
 - **`.d.ts` AsyncBinding `ReturnType` gap.** `dts.go` ignores
   `MemberDoc.ReturnType` for `PromisifyAsync` bindings, so async bindings
   (e.g. `services.webdriver.connect`) render as `Promise<unknown>` in the
