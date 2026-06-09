@@ -18,6 +18,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   (self-skips offline), `webdriver-login-flow` (self-skips without a driver),
   and `tui-dashboard` (manual). Self-contained ones run in `make demo`; the
   three deterministic ones are also in the CI offline subset.
+- `examples/scripts/sws6/` — reality-based `services.webdriver` flows against an
+  internal dev storefront (search, browse-category, filter-sort, login,
+  add-to-cart, view-cart, checkout-payment + a `shop.ts` helper). Secrets
+  (credentials, payment test data) are read from the environment via a
+  gitignored `.env` (see `sws6/.env.example`); `connectShop()` uses a normal
+  desktop UA so the shop issues its session cookie. Self-skip when no driver or
+  host; not in `make demo`/CI (internal host).
 
 ## [0.41.0] — 2026-06-08
 

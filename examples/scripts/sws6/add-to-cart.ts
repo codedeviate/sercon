@@ -17,7 +17,7 @@
 // NOTE: Variant selection is REQUIRED before adding to cart — the Buy button
 // is disabled until all selects have a non-default value in some shop configs.
 
-import { EN, shopUp } from "./shop.ts";
+import { EN, shopUp, connectShop } from "./shop.ts";
 
 const PRODUCT_PATH = "/product/watch-arne-jacobsen";
 const VARIANT_SEL  = "select.attribute-value-select";
@@ -28,7 +28,7 @@ if (!services.webdriver.available) {
 } else if (!(await shopUp())) {
   runtime.log("dev-shop.sws.local unreachable — skipping add-to-cart demo.");
 } else {
-  const d = await services.webdriver.connect({ browser: "chrome", headless: true });
+  const d = await connectShop();
   try {
     await d.get(EN + PRODUCT_PATH);
     // Brief pause to let the page fully render before querying elements.

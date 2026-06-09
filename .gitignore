@@ -5,5 +5,8 @@
 *.out
 .DS_Store
 
+# Local secrets for the sws6 dev-shop scripts (see sws6/.env.example).
+examples/scripts/sws6/.env
+
 # Tracked despite a global ignore rule in ~/.gitignore_global.
 !CLAUDE.md

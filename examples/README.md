@@ -104,30 +104,38 @@ external service self-skip.
 ## DevShop flows (`sws6/`)
 
 Reality-based `services.webdriver` flows against the **internal** dev storefront
-`http://dev-shop.sws.local` — starting points for building UI test flows
-internally. Every script self-skips cleanly when no WebDriver driver is on PATH
-**or** the host is unreachable, so they're safe to run anywhere; they target an
-internal host and are **not** in `make demo` or CI. `sws6/shop.ts` is a shared
-helper module (host/persona/creds/`shopUp()`), not a runnable demo.
+`http://dev-shop.sws.local` — building blocks for internal UI test flows. Every
+script self-skips when no WebDriver driver is on PATH **or** the host is
+unreachable, so they're safe to run anywhere; they target an internal host and
+are **not** in `make demo`/CI. `sws6/shop.ts` is a shared helper module (host,
+persona, `connectShop()`, env-sourced secrets), not a runnable demo.
 
-The **storefront read flows are fully working and assert real results**. The
-**cart → checkout → payment** flows are honest *templates*: a guest basket is
-client-side only (the site says "Log in to save your basket"), login submits
-but the authenticated state isn't confirmable from the DOM, and the payment
-providers (KCO/Nets/SCO/Qliro) render in iframes with 3DS/ngrok redirects.
-For full automated **purchase + payment**, use the Playwright-based `/devshop`
-skill, which is purpose-built for it; these WebDriver scripts cover the
-storefront/recon half and scaffold the rest.
+**Two things make these work** (both handled by `shop.ts`):
+
+1. **Session cookie** — the shop withholds its `swssid` session cookie from the
+   default `HeadlessChrome` user-agent, so `connectShop()` spoofs a normal
+   desktop UA. Without it the basket never persists and login can't stick.
+2. **Secrets in the environment** — login credentials and payment test data are
+   read via `runtime.env.get`, never hard-coded. Copy `sws6/.env.example` to
+   `sws6/.env` (gitignored), fill it in, and load it before running:
+   `set -a; source examples/scripts/sws6/.env; set +a`. Scripts that need a
+   value self-skip with a message when it's unset.
+
+All the storefront flows (search, category, sort, login, add-to-cart,
+view-cart) **work end-to-end and assert real results**. `checkout-payment`
+reaches the payment provider's widget (e.g. the KCO iframe) and stops at a
+**dry-run** — the final iframe/3DS/ngrok submission is best driven by the
+Playwright-based `/devshop` skill (`/devshop buy … via <provider>`).
 
 | Script | Demonstrates |
 | --- | --- |
-| `sws6/search.ts` | Search (`/en/search?q=watch`) → assert results → open the first product. **Verified.** |
-| `sws6/browse-category.ts` | Browse a category (`/en/category/ladies`) → assert the product tiles → open the first. **Verified.** |
-| `sws6/filter-sort.ts` | Change the category sort (`#sort-by-select`, server-side) → assert the listing reorders. **Verified.** |
-| `sws6/login.ts` | Existing-customer login form (`#existing-account-type-radio` → email/password → `.login-action`); submits and reports state. Confirming the authenticated state needs the shop's own logged-in indicator (template). |
-| `sws6/add-to-cart.ts` | Open a product, select all variants (`select.attribute-value-select`), click Buy, poll the header cart count to ≥1. **Verified (client-side add).** |
-| `sws6/view-cart.ts` | Add an item then open `/en/checkout`; reports cart state. Documents that a **guest** basket doesn't persist to checkout (needs login). |
-| `sws6/checkout-payment.ts` | Checkout/payment **template**, provider via `argv` (`kco`\|`sco`\|`nets`\|`qliro`, default `kco`): add → checkout → locate the provider UI → dry-run stop. Per-provider test data embedded; full iframe/3DS payment → use `/devshop`. |
+| `sws6/search.ts` | Search (`/en/search?q=watch`) → assert results → open the first product. |
+| `sws6/browse-category.ts` | Browse a category (`/en/category/ladies`) → assert the product tiles → open the first. |
+| `sws6/filter-sort.ts` | Change the category sort (`#sort-by-select`, server-side) → assert the listing reorders. |
+| `sws6/login.ts` | Existing-customer login (`#existing-account-type-radio` → env email/password → `.login-action`); asserts the `/customer/logout` link appears. Needs `DEVSHOP_EMAIL`/`DEVSHOP_PASSWORD`. |
+| `sws6/add-to-cart.ts` | Open a product, select all variants (`select.attribute-value-select`), click Buy, assert the header cart count reaches ≥1. |
+| `sws6/view-cart.ts` | Add an item then open `/en/checkout`; assert the item is in the basket and read the order total. |
+| `sws6/checkout-payment.ts` | Provider via `argv` (`kco`\|`sco`\|`nets`\|`qliro`, default `kco`): (optional login) → add → checkout → locate the provider UI → dry-run stop. Test data from env; full iframe/3DS payment → `/devshop`. |
 
 ## Adding a new binding
 

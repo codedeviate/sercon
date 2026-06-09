@@ -6,14 +6,14 @@
 //
 // Self-skips cleanly when chromedriver is absent or dev-shop.sws.local is unreachable.
 
-import { BASE, EN, shopUp } from "./shop.ts";
+import { BASE, EN, shopUp, connectShop } from "./shop.ts";
 
 if (!services.webdriver.available) {
   runtime.log("no chromedriver on PATH — skipping sws6/browse-category.");
 } else if (!(await shopUp())) {
   runtime.log("dev-shop.sws.local unreachable — skipping sws6/browse-category.");
 } else {
-  const d = await services.webdriver.connect({ browser: "chrome", headless: true });
+  const d = await connectShop();
   try {
     // ── Navigate to ladies category ───────────────────────────────────────
     await d.get(EN + "/category/ladies");

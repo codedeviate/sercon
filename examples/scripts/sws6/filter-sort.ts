@@ -8,7 +8,7 @@
 //
 // Self-skips cleanly when chromedriver is absent or dev-shop.sws.local is unreachable.
 
-import { EN, shopUp } from "./shop.ts";
+import { EN, shopUp, connectShop } from "./shop.ts";
 
 /** Read the text of the first `n` a.product-info tiles on the current page. */
 async function firstNTileTexts(d: any, n: number): Promise<string[]> {
@@ -38,7 +38,7 @@ if (!services.webdriver.available) {
 } else if (!(await shopUp())) {
   runtime.log("dev-shop.sws.local unreachable — skipping sws6/filter-sort.");
 } else {
-  const d = await services.webdriver.connect({ browser: "chrome", headless: true });
+  const d = await connectShop();
   try {
     // ── Navigate ──────────────────────────────────────────────────────────
     await d.get(EN + "/category/ladies");
