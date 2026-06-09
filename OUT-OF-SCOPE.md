@@ -137,9 +137,6 @@ read+write, interface enumeration, layer decode — all pure-Go; see
   filter-attach API (would need forking it or raw `BIOCSETF`), so it's
   Linux-mostly + a from-scratch compiler. Re-promote if high-pps kernel
   drop is actually needed.
-- **Filter grammar extensions.** `net X/Y` (CIDR) and `portrange A-B` are
-  not in the v0.25.0 subset. Cheap to add to the post-decode evaluator on
-  demand.
 - **Deeper / exotic decode.** Only common layers map to fields today;
   other protocols surface as `bytes`. Extend `decodePacket` on demand.
 

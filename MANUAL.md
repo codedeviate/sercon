@@ -2,8 +2,8 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.41.0</div> <!-- x-release-please-version -->
-<div class="date">2026-06-08</div>
+<div class="version">Version 0.42.0</div> <!-- x-release-please-version -->
+<div class="date">2026-06-09</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
 License · MIT
@@ -967,7 +967,11 @@ string — a **subset of tcpdump syntax**. Supported grammar:
 
 - protocols: `tcp`, `udp`, `icmp`, `ip`, `ip6`;
 - hosts: `host X`, `src host X`, `dst host X` (IPv4 or IPv6 address);
+- networks: `net X/Y`, `src net X/Y`, `dst net X/Y` (IPv4 or IPv6 CIDR
+  prefix, e.g. `net 10.0.0.0/8` or `net 2001:db8::/32`);
 - ports: `port N`, `src port N`, `dst port N`;
+- port ranges: `portrange A-B`, `src portrange A-B`, `dst portrange A-B`
+  (inclusive, e.g. `portrange 8000-8100`);
 - boolean composition: `and`, `or`, `not`, and parentheses;
 - **implicit-and** between juxtaposed primaries — `tcp port 80` is exactly
   `tcp and port 80`.
@@ -980,13 +984,12 @@ The filter is a **userspace, post-decode** predicate — it is **not**
 compiled to a kernel BPF program. It runs on each frame *after* gopacket
 has decoded it, so it saves the JS-callback dispatch and object-conversion
 cost for non-matching packets but does **not** avoid the kernel→userspace
-copy (a real kernel filter would). `net X/Y` (CIDR) and `portrange` are
-**not supported yet**. A malformed expression makes `open` / `openFile`
-**reject**.
+copy (a real kernel filter would). A malformed expression makes
+`open` / `openFile` **reject**.
 
 **Limitations.** No live capture on Windows. The `filter` grammar is the
-tcpdump subset above (no CIDR / `portrange`); for anything beyond it,
-filter inside the callback on the decoded fields. Common-layer decode only
+tcpdump subset above; for anything beyond it, filter inside the callback
+on the decoded fields. Common-layer decode only
 (Ethernet / IPv4 / IPv6 / TCP / UDP / ICMP); exotic protocols surface only
 as raw `bytes`. At high packet rates frames backpressure and drop at the
 kernel, exactly like `tcpdump`.
@@ -4247,11 +4250,11 @@ for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);
 open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, payload?: Uint8Array, bytes: Uint8Array }) => void): void
 ```
 
-Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, port/src port/dst port, and/or/not + parens, implicit-and between juxtaposed primaries. No CIDR (net X/Y) or portrange yet; a malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo).
+Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, net/src net/dst net (CIDR), port/src port/dst port, portrange/src portrange/dst portrange, and/or/not + parens, implicit-and between juxtaposed primaries. A malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo).
 
 **Parameters**
 
-- `opts` *({ iface: string, promisc?: boolean, snaplen?: number, filter?: string })* — iface is the interface name to capture on (required); promisc enables promiscuous mode (default true); snaplen caps the per-packet capture length in bytes (default 262144); filter is an optional tcpdump-like expression (e.g. 'tcp and port 80') applied post-decode in userspace — supports tcp/udp/icmp/ip/ip6, host/src host/dst host, port/src port/dst port, and/or/not + parens; no CIDR or portrange.
+- `opts` *({ iface: string, promisc?: boolean, snaplen?: number, filter?: string })* — iface is the interface name to capture on (required); promisc enables promiscuous mode (default true); snaplen caps the per-packet capture length in bytes (default 262144); filter is an optional tcpdump-like expression (e.g. 'tcp and port 80') applied post-decode in userspace — supports tcp/udp/icmp/ip/ip6, host/net (CIDR), port/portrange, src/dst directions, and/or/not + parens.
 - `onPacket` *((pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, payload?: Uint8Array, bytes: Uint8Array }) => void)* — Called once per matching frame with the decoded packet. ts is epoch ms; layer keys are present only when that layer decoded; bytes is always the raw frame; payload is the application-layer bytes when present.
 
 **Returns:** Promise<{ iface: string, link: string, close(): Promise<void> }> — a live-capture handle. link is the link-type name; close() stops the capture and resolves when the source is torn down. The handler keeps firing until close() is called or the source errors.
@@ -4271,7 +4274,7 @@ await cap.close();
 openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): void
 ```
 
-Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) → Promise<void>. Calls the handler once per decoded packet (same shape as capture.open) and resolves at EOF. Offline; no privileges. opts is an optional trailing arg { filter? } — the 2-arg form still works; filter is the same tcpdump-like expression string as capture.open (post-decode/userspace, not kernel BPF; no CIDR/portrange; malformed → rejects).
+Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) → Promise<void>. Calls the handler once per decoded packet (same shape as capture.open) and resolves at EOF. Offline; no privileges. opts is an optional trailing arg { filter? } — the 2-arg form still works; filter is the same tcpdump-like expression string as capture.open (post-decode/userspace, not kernel BPF; supports host/net CIDR + port/portrange; malformed → rejects).
 
 **Parameters**
 
@@ -6594,7 +6597,7 @@ await tui.waitKey();
 
 ---
 
-*This manual covers sercon v0.41.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.42.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

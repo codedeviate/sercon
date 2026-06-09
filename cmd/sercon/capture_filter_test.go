@@ -85,6 +85,19 @@ func TestCaptureFilter(t *testing.T) {
 		{"tcp and port 80", tcp80, true}, {"tcp port 80", tcp80, true}, // implicit and
 		{"udp or icmp", icmp4, true}, {"not udp", tcp80, true}, {"not udp", udp53, false},
 		{"tcp and (port 80 or port 443)", tcp80, true},
+		// CIDR (net X/Y)
+		{"net 10.0.0.0/8", tcp80, true}, {"net 10.0.0.0/8", udp53, true},
+		{"net 192.168.0.0/16", tcp80, false},
+		{"src net 10.0.0.0/30", tcp80, true}, {"dst net 10.0.0.0/30", tcp80, true},
+		{"src net 10.0.0.3/32", tcp80, false}, {"src net 10.0.0.3/32", udp53, true},
+		{"dst net 8.8.8.0/24", udp53, true},
+		{"net 2001:db8::/32", v6tcp, false}, {"net fe80::/16", v6tcp, true},
+		// portrange
+		{"portrange 70-90", tcp80, true}, {"portrange 70-90", udp53, false},
+		{"portrange 50-60", tcp80, false},
+		{"dst portrange 79-81", tcp80, true}, {"src portrange 79-81", tcp80, false},
+		{"src portrange 1000-2000", tcp80, true}, // src port 1234
+		{"udp portrange 1-100", udp53, true},      // dst port 53
 	}
 	for _, c := range cases {
 		f, err := compileFilter(c.expr)
@@ -98,7 +111,13 @@ func TestCaptureFilter(t *testing.T) {
 }
 
 func TestCaptureFilter_Invalid(t *testing.T) {
-	for _, expr := range []string{"port", "host", "tcp and", "(tcp", "port abc", "blah"} {
+	for _, expr := range []string{
+		"port", "host", "tcp and", "(tcp", "port abc", "blah",
+		"net", "net not-a-cidr", "net 10.0.0.1", // bare IP, no mask
+		"portrange", "portrange 80", "portrange 80-", "portrange -80",
+		"portrange abc-90", "portrange 90-80", // low > high
+		"src net", "dst portrange",
+	} {
 		if _, err := compileFilter(expr); err == nil {
 			t.Errorf("expected error for %q", expr)
 		}

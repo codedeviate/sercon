@@ -66,3 +66,19 @@ await net.capture.openFile(path, (pkt: any) => {
 runtime.assert.equal(udpSeen, 1, "filter 'udp' should select the UDP frame");
 runtime.assert.equal(tcpSeen, 0, "filter 'udp' should drop the TCP frame");
 runtime.log("filtered read ok: filter 'udp' matched 1 packet (tcp dropped)");
+
+// CIDR (net X/Y) and portrange A-B filters. Both frames are 127.0.0.1, so
+// `net 127.0.0.0/8` matches both; a `portrange` narrows by transport port:
+// 9000-10000 selects the UDP frame (dst 9999), 400-500 selects the TCP SYN
+// (dst 443).
+let cidrSeen = 0;
+await net.capture.openFile(path, () => cidrSeen++, { filter: "net 127.0.0.0/8" });
+runtime.assert.equal(cidrSeen, 2, "filter 'net 127.0.0.0/8' should match both loopback frames");
+
+let rangeUdp = 0;
+let rangeTcp = 0;
+await net.capture.openFile(path, () => rangeUdp++, { filter: "portrange 9000-10000" });
+await net.capture.openFile(path, () => rangeTcp++, { filter: "tcp and dst portrange 400-500" });
+runtime.assert.equal(rangeUdp, 1, "portrange 9000-10000 should match the UDP frame (dst 9999)");
+runtime.assert.equal(rangeTcp, 1, "dst portrange 400-500 should match the TCP SYN (dst 443)");
+runtime.log("CIDR + portrange filters ok: net/8 matched 2, portranges matched 1 each");

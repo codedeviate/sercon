@@ -8,7 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.42.0] — 2026-06-09
+
 ### Added
+- `net.capture` filter grammar: `net X/Y` (IPv4/IPv6 CIDR prefix, with
+  optional `src`/`dst`) and `portrange A-B` (inclusive, with optional
+  `src`/`dst`). Both compose with the existing `and`/`or`/`not` + parens
+  and implicit-and. Applies to `capture.open`, `capture.openFile`, and
+  `net.raw.open`'s `filter`. Still a pure-Go, post-decode userspace
+  predicate (not kernel BPF). Closes the "Filter grammar extensions"
+  backlog item.
 - `examples/scripts/advanced/` — a curated set of 12 in-depth, end-to-end
   example scripts composing multiple bindings into realistic workflows:
   `load-resilience` (authorized load/resilience self-test), `http-api`

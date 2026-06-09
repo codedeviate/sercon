@@ -18,12 +18,12 @@ import (
 //
 //	proto      tcp | udp | icmp | ip | ip6
 //	host       [src|dst] host <ip>        (IPv4 or IPv6)
+//	net        [src|dst] net <cidr>       (IPv4 or IPv6 prefix, e.g. 10.0.0.0/8)
 //	port       [src|dst] port <number>
+//	portrange  [src|dst] portrange <lo>-<hi>
 //	boolean    not > and > or, with parentheses
 //	implicit   juxtaposed primaries imply 'and' (tcpdump-style:
 //	           "tcp port 80" == "tcp and port 80")
-//
-// CIDR (net X/Y) and portrange are deliberately out of scope for this cycle.
 
 // captureFilter wraps the root predicate of a compiled filter expression.
 type captureFilter struct {
@@ -107,6 +107,51 @@ func (p portPred) match(pkt gopacket.Packet) bool {
 	}
 }
 
+// netPred matches a source/destination IP against a CIDR prefix. dir is ""
+// (either), "src", or "dst".
+type netPred struct {
+	dir   string
+	ipnet *net.IPNet
+}
+
+func (p netPred) match(pkt gopacket.Packet) bool {
+	src, dst, ok := packetIPs(pkt)
+	if !ok {
+		return false
+	}
+	switch p.dir {
+	case "src":
+		return p.ipnet.Contains(src)
+	case "dst":
+		return p.ipnet.Contains(dst)
+	default:
+		return p.ipnet.Contains(src) || p.ipnet.Contains(dst)
+	}
+}
+
+// portRangePred matches a TCP/UDP source/destination port against an
+// inclusive [lo, hi] range. dir is "" (either), "src", or "dst".
+type portRangePred struct {
+	dir    string
+	lo, hi int
+}
+
+func (p portRangePred) match(pkt gopacket.Packet) bool {
+	src, dst, ok := packetPorts(pkt)
+	if !ok {
+		return false
+	}
+	in := func(n int) bool { return n >= p.lo && n <= p.hi }
+	switch p.dir {
+	case "src":
+		return in(src)
+	case "dst":
+		return in(dst)
+	default:
+		return in(src) || in(dst)
+	}
+}
+
 // andPred / orPred / notPred are the boolean combinators.
 type andPred struct{ a, b predicate }
 
@@ -150,7 +195,8 @@ func packetPorts(pkt gopacket.Packet) (src, dst int, ok bool) {
 // as a value (an IP or a number operand for host/port).
 var keywords = map[string]bool{
 	"tcp": true, "udp": true, "icmp": true, "ip": true, "ip6": true,
-	"host": true, "port": true, "src": true, "dst": true,
+	"host": true, "net": true, "port": true, "portrange": true,
+	"src": true, "dst": true,
 	"and": true, "or": true, "not": true,
 	"(": true, ")": true,
 }
@@ -210,7 +256,8 @@ func (p *parser) eof() bool { return p.pos >= len(p.toks) }
 // to detect implicit 'and' between juxtaposed primaries.
 func startsPrimary(tok string) bool {
 	switch tok {
-	case "(", "not", "tcp", "udp", "icmp", "ip", "ip6", "host", "port", "src", "dst":
+	case "(", "not", "tcp", "udp", "icmp", "ip", "ip6",
+		"host", "net", "port", "portrange", "src", "dst":
 		return true
 	}
 	return false
@@ -343,6 +390,17 @@ func (p *parser) parsePrimary() (predicate, error) {
 			return nil, fmt.Errorf("capture filter: invalid host IP %q", val)
 		}
 		return hostPred{dir: dir, ip: ip}, nil
+	case "net":
+		p.next()
+		val := p.next()
+		if val == "" || keywords[val] {
+			return nil, fmt.Errorf("capture filter: 'net' requires a CIDR operand")
+		}
+		_, ipnet, err := net.ParseCIDR(val)
+		if err != nil {
+			return nil, fmt.Errorf("capture filter: invalid CIDR %q", val)
+		}
+		return netPred{dir: dir, ipnet: ipnet}, nil
 	case "port":
 		p.next()
 		val := p.next()
@@ -354,10 +412,43 @@ func (p *parser) parsePrimary() (predicate, error) {
 			return nil, fmt.Errorf("capture filter: invalid port %q", val)
 		}
 		return portPred{dir: dir, port: n}, nil
+	case "portrange":
+		p.next()
+		val := p.next()
+		if val == "" || keywords[val] {
+			return nil, fmt.Errorf("capture filter: 'portrange' requires a LOW-HIGH operand")
+		}
+		lo, hi, err := parsePortRange(val)
+		if err != nil {
+			return nil, err
+		}
+		return portRangePred{dir: dir, lo: lo, hi: hi}, nil
 	}
 
 	if dir != "" {
-		return nil, fmt.Errorf("capture filter: %q must be followed by 'host' or 'port'", dir)
+		return nil, fmt.Errorf("capture filter: %q must be followed by 'host', 'net', 'port', or 'portrange'", dir)
 	}
 	return nil, fmt.Errorf("capture filter: unexpected token %q", tok)
+}
+
+// parsePortRange parses a "LOW-HIGH" operand (e.g. "80-443") into an
+// inclusive integer range. Both bounds must be present and numeric, and
+// low must not exceed high.
+func parsePortRange(s string) (lo, hi int, err error) {
+	dash := strings.IndexByte(s, '-')
+	if dash <= 0 || dash == len(s)-1 {
+		return 0, 0, fmt.Errorf("capture filter: invalid portrange %q (want LOW-HIGH)", s)
+	}
+	lo, err = strconv.Atoi(s[:dash])
+	if err != nil {
+		return 0, 0, fmt.Errorf("capture filter: invalid portrange low %q", s[:dash])
+	}
+	hi, err = strconv.Atoi(s[dash+1:])
+	if err != nil {
+		return 0, 0, fmt.Errorf("capture filter: invalid portrange high %q", s[dash+1:])
+	}
+	if lo > hi {
+		return 0, 0, fmt.Errorf("capture filter: portrange low %d exceeds high %d", lo, hi)
+	}
+	return lo, hi, nil
 }
