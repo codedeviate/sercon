@@ -45,6 +45,7 @@ require (
 	github.com/sijms/go-ora/v2 v2.9.0
 	github.com/tebeka/selenium v0.9.9
 	github.com/ulikunitz/xz v0.5.15
+	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.52.0
 	golang.org/x/image v0.41.0
 	golang.org/x/net v0.55.0
@@ -66,6 +67,7 @@ require (
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.2 // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
@@ -74,6 +76,7 @@ require (
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
