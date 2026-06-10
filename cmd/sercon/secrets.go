@@ -1,9 +1,19 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
+
+	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
+	"github.com/zalando/go-keyring"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // secrets.go backs runtime.secrets: read/write string credentials in the OS
@@ -59,4 +69,97 @@ func linuxSecretsAvailable(dbusAddr, runtimeDir string) bool {
 		}
 	}
 	return false
+}
+
+// secretsOpTimeout bounds a single keystore call. On macOS go-keyring shells
+// out to `security`, which can block on a Keychain consent dialog in a
+// non-interactive session; the bound makes the op reject cleanly instead of
+// hanging the awaiting script. (The op runs in a PromisifyAsync goroutine, so
+// this never blocks the event loop; on timeout the inner goroutine is
+// abandoned — acceptable for a per-run CLI process.)
+const secretsOpTimeout = 10 * time.Second
+
+// runBounded runs fn with secretsOpTimeout, returning a timeout error if it
+// overruns.
+func runBounded[T any](fn func() (T, error)) (T, error) {
+	type res struct {
+		v   T
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() { v, err := fn(); ch <- res{v, err} }()
+	select {
+	case r := <-ch:
+		return r.v, r.err
+	case <-time.After(secretsOpTimeout):
+		var zero T
+		return zero, fmt.Errorf("timed out after %s (keystore prompt or unreachable backend?)", secretsOpTimeout)
+	}
+}
+
+// secretsGet returns a work func that reads PREFIX+name / account. Resolves to
+// the secret string, or nil (JS null) when the item is absent.
+func secretsGet(prefix string) func(context.Context, goja.FunctionCall) (any, error) {
+	return func(_ context.Context, call goja.FunctionCall) (any, error) {
+		name := call.Argument(0).String()
+		account := call.Argument(1).String()
+		s, err := runBounded(func() (string, error) { return keyring.Get(prefix+name, account) })
+		if errors.Is(err, keyring.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("runtime.secrets.get: %w", err)
+		}
+		return s, nil
+	}
+}
+
+// secretsSet returns a work func that stores/overwrites PREFIX+name / account.
+func secretsSet(prefix string) func(context.Context, goja.FunctionCall) (any, error) {
+	return func(_ context.Context, call goja.FunctionCall) (any, error) {
+		name := call.Argument(0).String()
+		account := call.Argument(1).String()
+		secret := call.Argument(2).String()
+		_, err := runBounded(func() (struct{}, error) {
+			return struct{}{}, keyring.Set(prefix+name, account, secret)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("runtime.secrets.set: %w", err)
+		}
+		return nil, nil
+	}
+}
+
+// secretsDelete returns a work func that removes PREFIX+name / account.
+// Resolves true when an item was removed, false when there was nothing to
+// remove.
+func secretsDelete(prefix string) func(context.Context, goja.FunctionCall) (bool, error) {
+	return func(_ context.Context, call goja.FunctionCall) (bool, error) {
+		name := call.Argument(0).String()
+		account := call.Argument(1).String()
+		_, err := runBounded(func() (struct{}, error) {
+			return struct{}{}, keyring.Delete(prefix+name, account)
+		})
+		if errors.Is(err, keyring.ErrNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("runtime.secrets.delete: %w", err)
+		}
+		return true, nil
+	}
+}
+
+// secretsNamespace builds the runtime.secrets member map. Async get/set/delete
+// via PromisifyAsync (keystore access is blocking I/O); available is a sync
+// advisory bool. Safe for d.ts introspection with (nil, nil): PromisifyAsync
+// captures vm/loop without dereferencing them, and the helpers don't touch vm.
+func secretsNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+	prefix := resolveSecretsPrefix()
+	return map[string]any{
+		"available": secretsAvailable(),
+		"get":       scriptengine.PromisifyAsync(vm, loop, secretsGet(prefix)),
+		"set":       scriptengine.PromisifyAsync(vm, loop, secretsSet(prefix)),
+		"delete":    scriptengine.PromisifyAsync(vm, loop, secretsDelete(prefix)),
+	}
 }
