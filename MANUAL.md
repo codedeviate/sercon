@@ -359,6 +359,7 @@ sercon --examples | --help | --version
 | `--no-pager` | Don't page `--help` / `--examples`. By default, when stdout is a terminal they pipe through `$PAGER` (falling back to `less` with `LESS=FRX`, color preserved); a pipe/redirect, `--no-pager`, or `PAGER=cat` renders directly. |
 | `--version` | Print the engine version (plus goja/esbuild build-info versions). |
 | `--watch` | Re-run on file change under the script root. Debounced 150 ms. Ctrl-C exits. |
+| `--secrets-prefix=P` | Namespace prefix for `runtime.secrets` keystore items. Overrides `$SERCON_SECRETS_PREFIX`; default `sercon/`. |
 
 Each positional argument is either a path to a `.ts` / `.tsx` file or
 `-` to read an entry script from standard input:
@@ -683,6 +684,26 @@ Script-host scaffolding. Members:
   sees its own path), and `argv.slice(2)` is just your args. The
   property is always present; with no `--` it is just
   `[programName, scriptPath]`.
+- **`runtime.secrets`** — read/write string credentials in the OS keystore
+  (macOS Keychain, Linux Secret Service / libsecret, Windows Credential
+  Manager). Pure-Go (no cgo) via `zalando/go-keyring`.
+
+  - `runtime.secrets.available` — `boolean`, advisory: is a keystore backend
+    reachable this run? Gate on it to self-skip on headless boxes.
+  - `runtime.secrets.get(name, account)` — `Promise<string | null>`; `null` when
+    absent.
+  - `runtime.secrets.set(name, account, secret)` — `Promise<void>`.
+  - `runtime.secrets.delete(name, account)` — `Promise<boolean>` (`true` if
+    removed).
+
+  All operations are confined to a **prefix namespace**: the keystore service is
+  `PREFIX + name`, so a script can neither read nor clobber secrets outside it.
+  `PREFIX` resolves from `--secrets-prefix` > `SERCON_SECRETS_PREFIX` > the
+  default `sercon/`. Store a secret once with your OS tools, e.g. macOS
+  `security add-generic-password -s 'sercon/devshop' -a tess -w`, Linux
+  `secret-tool store --label='sercon devshop' service 'sercon/devshop' account tess`.
+  Operations are async and bounded by a 10s timeout (a blocking macOS consent
+  prompt rejects rather than hangs).
 
 ```ts
 runtime.log("hello");

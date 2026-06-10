@@ -1126,10 +1126,24 @@ if (!services.webdriver.available) {
 	note("Session: get/url/title/back/forward/refresh/find/findAll/source/screenshot/executeScript/cookies/setCookie/deleteCookie/deleteAllCookies/setImplicitWait/waitFor/quit.")
 	note("Element handles: click/sendKeys/clear/submit/text/getAttribute/cssValue/tagName/isDisplayed/isEnabled/isSelected/find/findAll/screenshot.")
 
+	header(55, "OS keystore secrets (runtime.secrets)")
+	code(`// runtime.secrets — read/write credentials in the OS keystore (macOS Keychain,
+// Linux Secret Service / libsecret, Windows Credential Manager).
+// Self-skip on headless CI boxes by checking runtime.secrets.available first.
+if (runtime.secrets.available) {
+  await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
+  const pw = await runtime.secrets.get("devshop", "tess@example.com"); // "hunter2"
+  await runtime.secrets.delete("devshop", "tess@example.com");
+}
+// keystore service = prefix + name (default "sercon/"); override with --secrets-prefix`)
+	note("runtime.secrets.available is advisory — false on headless boxes without a keystore daemon.")
+	note("get returns null (not undefined) when the entry is absent; delete returns true if removed.")
+	note("Prefix namespace: service stored as PREFIX+name. Set prefix via --secrets-prefix or $SERCON_SECRETS_PREFIX.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 54
+const exampleCount = 55
