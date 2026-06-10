@@ -219,6 +219,7 @@ func showHelp(w io.Writer) {
 	flagLine("--no-pager", "", "Don't page --help / --examples through $PAGER (default: page when stdout is a terminal; falls back to `less`).")
 	flagLine("--version", "", "Print the engine version (plus goja / esbuild versions) and exit.")
 	flagLine("--watch", "", "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Debounced (150 ms). Ctrl-C exits cleanly. .git / .vscode / node_modules / dotfiles ignored.")
+	flagLine("--secrets-prefix", "P", "Namespace prefix for runtime.secrets keystore items (overrides $SERCON_SECRETS_PREFIX; default \"sercon/\").")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("ARGUMENTS"))

@@ -72,10 +72,12 @@ func run(args []string) int {
 	version := fs.Bool("version", false, "Print the engine version and exit")
 	watch := fs.Bool("watch", false, "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Ctrl-C exits.")
 	noPager := fs.Bool("no-pager", false, "Don't page --help / --examples through $PAGER even on a terminal.")
+	secretsPrefix := fs.String("secrets-prefix", "", "Namespace prefix for runtime.secrets keystore items (overrides SERCON_SECRETS_PREFIX; default \"sercon/\")")
 	fs.Usage = func() { showHelp(os.Stderr) }
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
+	secretsPrefixOverride = *secretsPrefix
 
 	switch {
 	case *helpShort || *helpLong:
@@ -340,7 +342,8 @@ func registerSurface(e *scriptengine.Engine) error {
 			// onto this object after registrations are applied. Registering
 			// here ensures the d.ts emitter surfaces `argv: string[]` with
 			// JSDoc — runtime behaviour is identical to v0.8.x.
-			"argv": []string{},
+			"argv":    []string{},
+			"secrets": secretsNamespace(vm, loop),
 		}
 	}); err != nil {
 		return err
