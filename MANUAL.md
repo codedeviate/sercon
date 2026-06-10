@@ -5012,6 +5012,86 @@ Print one space-separated line of the arguments to stdout. Primitives print raw;
 runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}
 ```
 
+#### runtime.secrets.available
+
+```
+available: boolean
+```
+
+True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows Credential Manager) is plausibly reachable this run. Cheap advisory hint — does not touch the keystore; gate calls on it to self-skip on headless boxes.
+
+**Returns:** boolean — false on a host with no reachable keystore (e.g. a headless Linux box without a D-Bus session). The authoritative signal is whether get/set/delete throw.
+
+**Throws:** Never throws.
+
+```ts
+if (!runtime.secrets.available) runtime.log("no keystore — skipping");
+```
+
+#### runtime.secrets.delete
+
+```
+delete(name: string, account: string): Promise<boolean>
+```
+
+Remove a secret from the OS keystore under prefix + name / account. Async (keystore I/O).
+
+**Parameters**
+
+- `name` *(string)* — Secret name within the sercon prefix namespace (keystore service is prefix+name).
+- `account` *(string)* — Account/user the secret belongs to.
+
+**Returns:** Promise resolving true when an item was removed, false when there was nothing to remove.
+
+**Throws:** Rejects when the keystore backend is unreachable or the delete fails ("runtime.secrets.delete: …"). Bounded by a 10s timeout.
+
+```ts
+const removed = await runtime.secrets.delete("devshop", "tess@example.com");
+```
+
+#### runtime.secrets.get
+
+```
+get(name: string, account: string): Promise<unknown>
+```
+
+Read a string secret from the OS keystore. The keystore service is the configured prefix + name (default "sercon/"), so reads are confined to sercon's namespace. Async (keystore I/O).
+
+**Parameters**
+
+- `name` *(string)* — Secret name within the sercon prefix namespace (the keystore service is prefix+name, e.g. "sercon/devshop").
+- `account` *(string)* — Account/user the secret belongs to (may be an empty string for a single-secret name).
+
+**Returns:** Promise resolving to the stored secret string, or null when no such item exists.
+
+**Throws:** Rejects when the keystore backend is unreachable or the read fails (a clean "runtime.secrets.get: …" error). Bounded by a 10s timeout (a blocking macOS consent prompt rejects rather than hangs).
+
+```ts
+const pw = await runtime.secrets.get("devshop", "tess@example.com");
+```
+
+#### runtime.secrets.set
+
+```
+set(name: string, account: string, secret: string): Promise<unknown>
+```
+
+Store or overwrite a string secret in the OS keystore under prefix + name / account. Async (keystore I/O).
+
+**Parameters**
+
+- `name` *(string)* — Secret name within the sercon prefix namespace (keystore service is prefix+name).
+- `account` *(string)* — Account/user the secret belongs to.
+- `secret` *(string)* — The secret value to store.
+
+**Returns:** Promise resolving when the secret is written.
+
+**Throws:** Rejects when the keystore backend is unreachable or the write fails ("runtime.secrets.set: …"). Bounded by a 10s timeout.
+
+```ts
+await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
+```
+
 #### runtime.time.format
 
 ```

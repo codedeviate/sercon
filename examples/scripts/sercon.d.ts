@@ -73,6 +73,35 @@ declare const runtime: {
    * @returns void — writes a single newline-terminated line to stdout.
    */
   log(args: unknown[]): void;
+  secrets: {
+    /**
+     * True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows Credential Manager) is plausibly reachable this run. Cheap advisory hint — does not touch the keystore; gate calls on it to self-skip on headless boxes.
+     * @returns boolean — false on a host with no reachable keystore (e.g. a headless Linux box without a D-Bus session). The authoritative signal is whether get/set/delete throw.
+     */
+    available: boolean;
+    /**
+     * Remove a secret from the OS keystore under prefix + name / account. Async (keystore I/O).
+     * @param name Secret name within the sercon prefix namespace (keystore service is prefix+name).
+     * @param account Account/user the secret belongs to.
+     * @returns Promise resolving true when an item was removed, false when there was nothing to remove.
+     */
+    delete(name: string, account: string): Promise<boolean>;
+    /**
+     * Read a string secret from the OS keystore. The keystore service is the configured prefix + name (default "sercon/"), so reads are confined to sercon's namespace. Async (keystore I/O).
+     * @param name Secret name within the sercon prefix namespace (the keystore service is prefix+name, e.g. "sercon/devshop").
+     * @param account Account/user the secret belongs to (may be an empty string for a single-secret name).
+     * @returns Promise resolving to the stored secret string, or null when no such item exists.
+     */
+    get(name: string, account: string): Promise<string | null>;
+    /**
+     * Store or overwrite a string secret in the OS keystore under prefix + name / account. Async (keystore I/O).
+     * @param name Secret name within the sercon prefix namespace (keystore service is prefix+name).
+     * @param account Account/user the secret belongs to.
+     * @param secret The secret value to store.
+     * @returns Promise resolving when the secret is written.
+     */
+    set(name: string, account: string, secret: string): Promise<void>;
+  };
   time: {
     /**
      * Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Europe/Stockholm'); default is the host's local zone.

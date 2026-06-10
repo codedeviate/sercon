@@ -76,6 +76,47 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Never throws.",
 			Example:    `const home = runtime.env.get("HOME") ?? "/tmp";`,
 		},
+		"secrets.available": {
+			Summary:    "True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows Credential Manager) is plausibly reachable this run. Cheap advisory hint — does not touch the keystore; gate calls on it to self-skip on headless boxes.",
+			ReturnType: "boolean",
+			Returns:    "boolean — false on a host with no reachable keystore (e.g. a headless Linux box without a D-Bus session). The authoritative signal is whether get/set/delete throw.",
+			Errors:     "Never throws.",
+			Example:    `if (!runtime.secrets.available) runtime.log("no keystore — skipping");`,
+		},
+		"secrets.get": {
+			Summary: "Read a string secret from the OS keystore. The keystore service is the configured prefix + name (default \"sercon/\"), so reads are confined to sercon's namespace. Async (keystore I/O).",
+			Params: []scriptengine.Param{
+				{Name: "name", Type: "string", Desc: "Secret name within the sercon prefix namespace (the keystore service is prefix+name, e.g. \"sercon/devshop\")."},
+				{Name: "account", Type: "string", Desc: "Account/user the secret belongs to (may be an empty string for a single-secret name)."},
+			},
+			ReturnType: "Promise<string | null>",
+			Returns:    "Promise resolving to the stored secret string, or null when no such item exists.",
+			Errors:     "Rejects when the keystore backend is unreachable or the read fails (a clean \"runtime.secrets.get: …\" error). Bounded by a 10s timeout (a blocking macOS consent prompt rejects rather than hangs).",
+			Example:    `const pw = await runtime.secrets.get("devshop", "tess@example.com");`,
+		},
+		"secrets.set": {
+			Summary: "Store or overwrite a string secret in the OS keystore under prefix + name / account. Async (keystore I/O).",
+			Params: []scriptengine.Param{
+				{Name: "name", Type: "string", Desc: "Secret name within the sercon prefix namespace (keystore service is prefix+name)."},
+				{Name: "account", Type: "string", Desc: "Account/user the secret belongs to."},
+				{Name: "secret", Type: "string", Desc: "The secret value to store."},
+			},
+			ReturnType: "Promise<void>",
+			Returns:    "Promise resolving when the secret is written.",
+			Errors:     "Rejects when the keystore backend is unreachable or the write fails (\"runtime.secrets.set: …\"). Bounded by a 10s timeout.",
+			Example:    `await runtime.secrets.set("devshop", "tess@example.com", "hunter2");`,
+		},
+		"secrets.delete": {
+			Summary: "Remove a secret from the OS keystore under prefix + name / account. Async (keystore I/O).",
+			Params: []scriptengine.Param{
+				{Name: "name", Type: "string", Desc: "Secret name within the sercon prefix namespace (keystore service is prefix+name)."},
+				{Name: "account", Type: "string", Desc: "Account/user the secret belongs to."},
+			},
+			ReturnType: "Promise<boolean>",
+			Returns:    "Promise resolving true when an item was removed, false when there was nothing to remove.",
+			Errors:     "Rejects when the keystore backend is unreachable or the delete fails (\"runtime.secrets.delete: …\"). Bounded by a 10s timeout.",
+			Example:    `const removed = await runtime.secrets.delete("devshop", "tess@example.com");`,
+		},
 		"argv": {
 			Summary:    "Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is the program name (sercon), argv[1] is the running script path, and any args after `--` on the command line start at argv[2].",
 			ReturnType: "string[]",
