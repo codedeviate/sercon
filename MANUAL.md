@@ -3016,7 +3016,7 @@ const fmts = codec.barcode.decodableFormats();
 #### codec.barcode.decode
 
 ```
-decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<Record<string, unknown>>
+decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<{ format: string, text: string }>
 ```
 
 Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hint skips the auto-detect walk. EAN/UPC need a quiet zone in the input. Async.
@@ -4750,7 +4750,7 @@ const c = await net.probe.tls("example.com:443"); runtime.log(c.daysRemaining);
 #### net.probe.traceroute
 
 ```
-traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string; rttsMs: number[]; reached: boolean }[]>
+traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string | null; rttsMs: number[]; reached: boolean }[]>
 ```
 
 Trace the network path to a host: net.probe.traceroute(host, opts?) → Promise<hop[]>. Sends probes with increasing TTL and reports each responding router. Needs root / CAP_NET_RAW (intermediate hops are seen via ICMP time-exceeded). opts { protocol?: 'icmp'|'udp'|'tcp' (default 'icmp'), port?: number (udp 33434 / tcp 80), maxHops?: number (30), timeout?: number ms per probe (2000), probes?: number per hop (3) }. IPv4 only.
@@ -5052,7 +5052,7 @@ const removed = await runtime.secrets.delete("devshop", "tess@example.com");
 #### runtime.secrets.get
 
 ```
-get(name: string, account: string): Promise<unknown>
+get(name: string, account: string): Promise<string | null>
 ```
 
 Read a string secret from the OS keystore. The keystore service is the configured prefix + name (default "sercon/"), so reads are confined to sercon's namespace. Async (keystore I/O).
@@ -5073,7 +5073,7 @@ const pw = await runtime.secrets.get("devshop", "tess@example.com");
 #### runtime.secrets.set
 
 ```
-set(name: string, account: string, secret: string): Promise<unknown>
+set(name: string, account: string, secret: string): Promise<void>
 ```
 
 Store or overwrite a string secret in the OS keystore under prefix + name / account. Async (keystore I/O).
@@ -5133,7 +5133,7 @@ const t0 = runtime.time.nowMs();
 #### runtime.time.sleep
 
 ```
-sleep(ms: number): Promise<unknown>
+sleep(ms: number): Promise<void>
 ```
 
 Resolve after `ms` milliseconds. Cancellable via the engine timeout.
@@ -5958,7 +5958,7 @@ if (!services.webdriver.available) {
 #### services.webdriver.connect
 
 ```
-connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<unknown>
+connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<{ get(url: string): Promise<{ ok: true }>; url(): Promise<string>; title(): Promise<string>; back(): Promise<{ ok: true }>; forward(): Promise<{ ok: true }>; refresh(): Promise<{ ok: true }>; find(by: string, value: string): Promise<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>; findAll(by: string, value: string): Promise<Array<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>>; source(): Promise<string>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }>; executeScript(js: string, args?: unknown[]): Promise<unknown>; executeScriptAsync(js: string, args?: unknown[]): Promise<unknown>; cookies(): Promise<object[]>; setCookie(c: { name: string; value: string; path?: string; domain?: string; secure?: boolean; httpOnly?: boolean; expiry?: number }): Promise<{ ok: true }>; deleteCookie(name: string): Promise<{ ok: true }>; deleteAllCookies(): Promise<{ ok: true }>; setImplicitWait(ms: number): Promise<{ ok: true }>; waitFor(by: string, value: string, opts?: { timeout?: number; visible?: boolean }): Promise<any>; windowHandles(): Promise<string[]>; currentWindow(): Promise<string>; switchToWindow(handle: string): Promise<{ ok: true }>; newWindow(type?: "tab" | "window"): Promise<{ handle: string; type: string }>; closeWindow(): Promise<string[]>; switchToFrame(target: number | object): Promise<{ ok: true }>; switchToParentFrame(): Promise<{ ok: true }>; switchToDefaultContent(): Promise<{ ok: true }>; acceptAlert(): Promise<{ ok: true }>; dismissAlert(): Promise<{ ok: true }>; alertText(): Promise<string>; sendAlertText(text: string): Promise<{ ok: true }>; maximize(): Promise<{ x: number; y: number; width: number; height: number }>; minimize(): Promise<{ x: number; y: number; width: number; height: number }>; fullscreen(): Promise<{ x: number; y: number; width: number; height: number }>; setWindowRect(rect: { width?: number; height?: number; x?: number; y?: number }): Promise<{ x: number; y: number; width: number; height: number }>; getWindowRect(): Promise<{ x: number; y: number; width: number; height: number }>; hover(el: object): Promise<{ ok: true }>; dragAndDrop(src: object, dst: object): Promise<{ ok: true }>; keyChord(...keys: string[]): Promise<{ ok: true }>; performActions(sequence: unknown[]): Promise<{ ok: true }>; releaseActions(): Promise<{ ok: true }>; quit(): Promise<{ closed: true }> }>
 ```
 
 Connect to a running WebDriver server (opts.url) or start an installed local chromedriver/geckodriver and dial it. Returns a session handle whose methods drive the browser. Sessions are quit on Run end if the script does not call quit() explicitly.
@@ -5991,7 +5991,7 @@ if (!services.webdriver.available) {
 #### services.webdriver.probe
 
 ```
-probe(opts: { url: string }): Promise<Record<string, unknown>>
+probe(opts: { url: string }): Promise<{ ready: boolean; status?: number; error?: string }>
 ```
 
 Check whether a WebDriver endpoint responds at opts.url/status. Returns { ready, status } on HTTP success or { ready: false, error } on transport failure. Does not throw on network errors.
@@ -6714,7 +6714,7 @@ p.writeln("hello");
 #### tui.waitKey
 
 ```
-waitKey(...args: unknown[]): Promise<Record<string, unknown>>
+waitKey(...args: unknown[]): Promise<{ name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }>
 ```
 
 Resolve with the next keypress (TTY mode). One-shot — await again for the next key. Rejects in non-TTY (fallback) mode.

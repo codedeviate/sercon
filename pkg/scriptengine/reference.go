@@ -165,7 +165,7 @@ func introspectValueFactory(m factoryMarker) (value any) {
 // reflects a simple `name(...)` form, keeping it consistent and shallow.
 func sigForMember(name string, v any, doc MemberDoc) string {
 	if a, ok := v.(AsyncBinding); ok {
-		ret := "Promise<" + a.TSReturnType + ">"
+		ret := asyncReturnType(doc, a)
 		if len(doc.Params) > 0 {
 			return name + sigFromParams(doc.Params, ret)
 		}
