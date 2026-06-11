@@ -64,6 +64,39 @@ has a concrete reason to wait.
 implementation and no clean CLI fallback — so it can never satisfy no-cgo. The
 native pure-Go drivers already cover the engines people actually ask for.)
 
+### Integration tests against real servers (Docker test stack)
+
+The `db.*` tests are unit-level today: `db.sqlite` runs in-memory, and the
+networked engines are exercised only by mock / graceful-degrade demos that
+self-skip when no server is reachable — there is no coverage against a *real*
+server. A local Docker stack (in progress, maintained outside this repo) spins
+up disposable instances on non-default ports for exactly this:
+
+| Engine | sercon binding | Port(s) |
+|--------|----------------|---------|
+| MySQL | `db.mysql` | 13306 |
+| MariaDB | `db.mysql` (MySQL wire protocol — validates the binding against the MariaDB fork) | 13307 |
+| ClickHouse | `db.clickhouse` | 18123 (HTTP) / 19000 (native) |
+| PostgreSQL | `db.postgres` | 15432 |
+| LDAP | `db.ldap` | 13389 (ldap) / 16636 (ldaps) |
+
+**Viable path:** opt-in integration tests gated on a per-engine DSN/host env var
+(e.g. `SERCON_TEST_MYSQL_DSN`, `SERCON_TEST_PG_DSN`, `SERCON_TEST_CLICKHOUSE_DSN`,
+`SERCON_TEST_LDAP_URL`) that **skip** when unset or unreachable — the same
+self-skip discipline the existing graceful-degrade demos use, so `make test` /
+CI stay green without the stack, while pointing the vars at the Docker stack's
+ports runs them for real. Test-only: no new runtime deps, no cgo, nothing ships
+in the binary.
+
+**Oracle stays untested — deliberately.** `db.oracle` is excluded from the
+stack: an Oracle image is massive and licence-encumbered, not worth the CI/dev
+weight. `db.mssql`, `db.redis`, and `db.memcached` aren't in the current stack
+either but could be added later on the same gated pattern.
+
+**Reason parked:** waits on the Docker stack stabilising plus a small spec for
+the env-var/skip convention and the fixtures (schema seed, test accounts).
+Promote once the stack is in place.
+
 ## Networking — servers
 
 The server foundation (`LoopCallable` + `Engine.HoldRun`) and the HTTP/HTTPS,
