@@ -184,7 +184,7 @@ test-integration:
 	SERCON_TEST_LDAP_BINDDN="cn=admin,dc=example,dc=org" \
 	SERCON_TEST_LDAP_PASSWORD="adminpw" \
 	SERCON_TEST_LDAP_BASE="dc=example,dc=org" \
-	$(GO) test ./cmd/sercon/ -run Integration -v -count=1
+	$(GO) test ./cmd/sercon/ -run '^TestIntegration_' -v -count=1
 
 types: build
 	./$(BIN) --emit-dts examples/scripts/sercon.d.ts
