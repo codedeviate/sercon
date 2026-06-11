@@ -8,6 +8,28 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.48.0] — 2026-06-11
+
+### Added
+- `runtime.secrets` — read/write string credentials in the OS keystore (macOS
+  Keychain, Linux Secret Service / libsecret, Windows Credential Manager),
+  pure-Go (no cgo) via `zalando/go-keyring`. `available` (advisory bool),
+  `get(name, account) → Promise<string | null>`, `set(name, account, secret) →
+  Promise<void>`, `delete(name, account) → Promise<boolean>`. All operations
+  are confined to a prefix namespace (keystore service = `PREFIX + name`),
+  with `PREFIX` from `--secrets-prefix` > `SERCON_SECRETS_PREFIX` > default
+  `sercon/`. The sws6 example now prefers the keystore over `DEVSHOP_PASSWORD`.
+- `--secrets-prefix` CLI flag (and `SERCON_SECRETS_PREFIX` env) to set the
+  `runtime.secrets` namespace prefix.
+
+### Fixed
+- `.d.ts` / §16 reference: the §16 binding-reference generator now honours
+  `MemberDoc.ReturnType` for async (`PromisifyAsync`) bindings, completing the
+  v0.47.0 fix (which had covered only the d.ts emitter). Async bindings with a
+  documented return type — e.g. `services.webdriver.connect`,
+  `net.probe.traceroute`, `runtime.secrets.get` — now render their rich
+  `Promise<…>` type in MANUAL.md §16 instead of `Promise<unknown>`.
+
 ## [0.47.0] — 2026-06-09
 
 ### Fixed
