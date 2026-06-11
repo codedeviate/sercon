@@ -1,0 +1,37 @@
+name: integration
+
+# Runs the opt-in db.* integration tests against the dbplayground Docker fleet
+# (github.com/codedeviate/dbplayground) via `make test-integration`, which
+# brings the fleet up (--wait, incl. --profile ldap), runs the
+# `^TestIntegration_` tests with the SERCON_TEST_* vars pointed at it, then
+# tears it down. Separate from ci.yml so the normal build/test matrix isn't
+# slowed by the Docker fleet cycle. ubuntu-only: GitHub's macOS runners have no
+# Docker. Also runnable on demand from the Actions tab.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: db integration (dbplayground)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache: true
+      # make test-integration is self-contained: it fetches dbplayground's
+      # docker-compose.hub.yml, `docker compose up -d --wait --profile ldap`
+      # (Docker + Compose v2 are preinstalled on ubuntu-latest), runs the
+      # integration tests, and tears the fleet down (-v) on exit via a trap.
+      - name: db.* integration tests
+        run: make test-integration
