@@ -9,6 +9,7 @@ make build                                 # debug CLI -> ./sercon
 make release                               # slim release CLI (-trimpath -s -w; ~30% smaller)
 make manual                                # MANUAL.md -> MANUAL.pdf via `recon --md-to-pdf`
 make test                                  # go test ./...
+make test-integration                      # spin up dbplayground, run db.* integration tests, tear down
 make vet                                   # go vet ./...
 make lint                                  # golangci-lint v2 against .golangci.yml (one-shot via go run if not installed)
 make demo                                  # run every success-path script under examples/scripts/ (excludes hang.ts)

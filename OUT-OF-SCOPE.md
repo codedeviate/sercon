@@ -64,55 +64,6 @@ has a concrete reason to wait.
 implementation and no clean CLI fallback — so it can never satisfy no-cgo. The
 native pure-Go drivers already cover the engines people actually ask for.)
 
-### Integration tests against real servers (dbplayground)
-
-The `db.*` tests are unit-level today: `db.sqlite` runs in-memory, and the
-networked engines are exercised only by mock / graceful-degrade demos that
-self-skip when no server is reachable — there is no coverage against a *real*
-server. **dbplayground** (`github.com/codedeviate/dbplayground`) is a
-disposable, multi-engine Docker fleet built for exactly this — see its
-`AGENT.md`. Bring it up with no checkout (GHCR images):
-
-```sh
-curl -fsSL -O https://raw.githubusercontent.com/codedeviate/dbplayground/main/docker-compose.hub.yml
-docker compose -f docker-compose.hub.yml up -d --wait          # + --profile ldap for OpenLDAP
-docker compose -f docker-compose.hub.yml --profile ldap down -v  # teardown
-```
-
-All services listen on `127.0.0.1`. SQL creds: `playground` / `playground`,
-db `testdb` (root `rootpw`); each SQL/OLAP engine is seeded with the same
-`customers` / `products` / `orders` schema (4 rows each, so
-`SELECT count(*) FROM orders` = 4).
-
-| Engine | sercon binding | Port(s) | Notes |
-|--------|----------------|---------|-------|
-| PostgreSQL | `db.postgres` | 15432 | seeded |
-| MySQL | `db.mysql` | 13306 | seeded |
-| MariaDB | `db.mysql` | 13307 | MySQL wire protocol — validates the binding against the fork |
-| ClickHouse | `db.clickhouse` | 18123 (HTTP) / 19000 (native) | seeded |
-| Redis | `db.redis` | 16379 | no auth; seeded demo keys |
-| Valkey | `db.valkey` | 16380 | no auth; seeded demo keys |
-| Memcached | `db.memcached` | 13211 | no auth; always empty |
-| OpenLDAP | `db.ldap` | 13389 (ldap) / 16636 (ldaps) | `--profile ldap`; admin `cn=admin,dc=example,dc=org` / `adminpw`, base `dc=example,dc=org`; users alice/bob, group testers |
-
-**Viable path:** opt-in integration tests gated on a per-engine DSN/URL env var
-(e.g. `SERCON_TEST_PG_DSN`, `SERCON_TEST_MYSQL_DSN`, `SERCON_TEST_MARIADB_DSN`,
-`SERCON_TEST_CLICKHOUSE_DSN`, `SERCON_TEST_REDIS_URL`, `SERCON_TEST_VALKEY_URL`,
-`SERCON_TEST_MEMCACHED_ADDR`, `SERCON_TEST_LDAP_URL`) that **skip** when unset
-or unreachable — the same self-skip discipline the existing graceful-degrade
-demos use, so `make test` / CI stay green without the fleet, while pointing the
-vars at dbplayground's ports runs them for real. Test-only: no new runtime
-deps, no cgo, nothing ships in the binary.
-
-**Oracle stays untested — deliberately.** `db.oracle` is absent from the fleet:
-an Oracle image is massive and licence-encumbered, not worth the CI/dev weight.
-`db.mssql` and `db.dict` aren't in dbplayground either, but could be added later
-on the same gated pattern.
-
-**Reason parked:** wants a small spec for the env-var/skip convention and a
-`make test-integration` (or similar) convenience target. Promote next — the
-fleet now exists.
-
 ## Networking — servers
 
 The server foundation (`LoopCallable` + `Engine.HoldRun`) and the HTTP/HTTPS,

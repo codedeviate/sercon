@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- Opt-in integration tests for the networked `db.*` bindings (postgres, mysql,
+  mariadb, clickhouse, redis, valkey, memcached, ldap) against the
+  [dbplayground](https://github.com/codedeviate/dbplayground) fleet, gated on
+  `SERCON_TEST_*` env vars (unset → skip; set-but-unreachable → fail). New
+  `make test-integration` brings the fleet up, runs them, and tears it down.
+  Test-only — no change to the shipped binary or script API.
+
 ## [0.49.0] — 2026-06-11
 
 ### Added

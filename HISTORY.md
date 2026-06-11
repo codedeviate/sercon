@@ -343,6 +343,12 @@ v0.21.0.
 **`db.dict`** (RFC 2229 DICT protocol, hand-rolled over `net/textproto`):
 v0.5.26 (as `api.dict`).
 
+**Integration tests** (dbplayground): opt-in, env-gated Go tests
+(`SERCON_TEST_*`) exercise the networked engines against the
+`github.com/codedeviate/dbplayground` Docker fleet; `make test-integration`
+manages the fleet lifecycle. Unversioned dev tooling — skips without the fleet,
+so default `go test ./...` stays green.
+
 All multi-engine SQL handles share the same interface: `exec`/`query`/
 `queryValue`/`begin`/`prepare`/`close`; placeholder syntax is driver-native.
 

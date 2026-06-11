@@ -1091,6 +1091,15 @@ passed after the SQL string — write your engine's placeholder syntax:
 pure Go (no cgo). Scripts must `close()` the handle (and commit/rollback
 transactions, close prepared statements) — there is no GC finalizer.
 
+**Integration testing.** The `db.*` tests above are unit-level. To exercise the
+networked bindings against real servers, point the `SERCON_TEST_*` env vars at a
+running database and run the `Integration` tests; unset vars skip, so
+`make test` / CI stay green without any server. `make test-integration` does it
+all against the [dbplayground](https://github.com/codedeviate/dbplayground)
+fleet: it brings the fleet up, runs the tests (postgres / mysql / mariadb /
+clickhouse / redis / valkey / memcached / ldap), and tears it down. Requires
+Docker + Compose v2.
+
 ### `services`
 
 Subprocess and external-CLI / service wrappers (was `tools` in
