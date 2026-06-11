@@ -63,3 +63,51 @@ func TestIntegration_Postgres(t *testing.T) {
 		t.Errorf("orders count = %v, want 4", got)
 	}
 }
+
+func TestIntegration_MySQL(t *testing.T) {
+	dsn := os.Getenv("SERCON_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("SERCON_TEST_MYSQL_DSN not set")
+	}
+	got := runDBIntegrationScript(t, `
+		const h = await db.mysql.open(`+strconv.Quote(dsn)+`);
+		const n = await h.queryValue("SELECT count(*) FROM orders");
+		await h.close();
+		const __result = String(Number(n));
+	`)
+	if got != "4" {
+		t.Errorf("orders count = %v, want 4", got)
+	}
+}
+
+func TestIntegration_MariaDB(t *testing.T) {
+	dsn := os.Getenv("SERCON_TEST_MARIADB_DSN")
+	if dsn == "" {
+		t.Skip("SERCON_TEST_MARIADB_DSN not set")
+	}
+	got := runDBIntegrationScript(t, `
+		const h = await db.mysql.open(`+strconv.Quote(dsn)+`);
+		const n = await h.queryValue("SELECT count(*) FROM orders");
+		await h.close();
+		const __result = String(Number(n));
+	`)
+	if got != "4" {
+		t.Errorf("orders count = %v, want 4", got)
+	}
+}
+
+func TestIntegration_ClickHouse(t *testing.T) {
+	dsn := os.Getenv("SERCON_TEST_CLICKHOUSE_DSN")
+	if dsn == "" {
+		t.Skip("SERCON_TEST_CLICKHOUSE_DSN not set")
+	}
+	got := runDBIntegrationScript(t, `
+		const h = await db.clickhouse.open(`+strconv.Quote(dsn)+`);
+		const n = await h.queryValue("SELECT count(*) FROM orders");
+		await h.close();
+		const __result = String(Number(n));
+	`)
+	if got != "4" {
+		t.Errorf("orders count = %v, want 4", got)
+	}
+}
