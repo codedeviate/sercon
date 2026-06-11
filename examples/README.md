@@ -56,6 +56,7 @@ Or pick individual scripts:
 | `encrypt.ts` | `encrypt.*` — age X25519 keygen / encrypt / decrypt. Single + multi-recipient round-trip, public/private cross-check, binary payloads. |
 | `sqlite.ts` | `sqlite.*` — in-memory SQLite handle: schema, parameterised insert/query/queryValue, mutations with rowsAffected, BLOB round-trip, close. |
 | `redis.ts` | `redis.*` — RESP client (do/ping/close); gracefully degrades without a server. |
+| `valkey.ts` | `valkey.*` — RESP client for Valkey (the Redis fork); same surface as redis, accepts `valkey://` URLs; gracefully degrades without a server. |
 | `memcached.ts` | `memcached.*` — get/set/delete; gracefully degrades without a server. |
 | `ldap.ts` | `ldap.*` — anonymous bind + rootDSE / search; gracefully degrades, hits a public test LDAP (not in CI). |
 | `dict.ts` | `dict.*` — RFC 2229 define / match; gracefully degrades, hits dict.org (not in CI). |

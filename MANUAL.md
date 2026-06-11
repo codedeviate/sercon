@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.48.1</div> <!-- x-release-please-version -->
+<div class="version">Version 0.49.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-11</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -1071,6 +1071,7 @@ Database / KV / directory clients:
 - `db.clickhouse.open(dsn | opts)` — ClickHouse via pure-Go `clickhouse-go` v2 (`opts.secure` for TLS).
 - `db.oracle.open(dsn | opts)` — Oracle via pure-Go `go-ora` (`opts.database` is the service name).
 - `db.redis.open(addr, opts?)` — Redis client.
+- `db.valkey.open(url, opts?)` — Valkey client (the RESP-compatible Redis fork; same `{do, ping, close}` handle, accepts `valkey://` / `valkeys://` as well as `redis://`).
 - `db.memcached.open(addr)` — Memcached client.
 - `db.ldap.open(url, opts?)` — LDAP client (search, bind).
 - `db.dict.{define, match}` — local dictionary lookup / fuzzy match.
@@ -3921,7 +3922,7 @@ const { header, payload } = crypto.jwt.view(tok);
 
 ### db
 
-Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict.
+Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, Valkey, memcached, LDAP, dict.
 
 #### db.clickhouse.open
 
@@ -4172,6 +4173,29 @@ await db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)");
 await db.exec("INSERT INTO t (name) VALUES (?)", "alice");
 const rows = await db.query("SELECT * FROM t WHERE name = ?", "alice");
 await db.close();
+```
+
+#### db.valkey.open
+
+```
+open(url: string): Promise<Record<string, unknown>>
+```
+
+Connect to Valkey (valkey:// or redis://...). Valkey is the RESP-compatible Redis fork, so this is db.redis with the same { do, ping, close } handle; valkey:// / valkeys:// URLs are accepted (normalised to redis:// / rediss://). Pings on open to surface bad addresses.
+
+**Parameters**
+
+- `url` *(string)* — A connection URL: valkey://[:password@]host:port/db (valkeys:// for TLS), or the equivalent redis:// / rediss:// form. Parsed by go-redis's ParseURL after normalising the valkey scheme.
+
+**Returns:** Promise<handle> resolving to { do, ping, close }: do(cmd, ...args) → Promise<any> runs an arbitrary RESP command (the first arg is the command name, the rest its arguments) and returns the reply coerced to a JS value — strings, numbers, arrays, or null; a nil reply (missing key) resolves to null rather than throwing. ping() → Promise<string> ('PONG'). close() → Promise<void>.
+
+**Throws:** open throws if url is empty, the URL fails to parse, or the open-time ping fails (the client is closed on ping failure). do throws on RESP-level errors (WRONGTYPE, unknown command, etc.); a missing-key nil reply is data, not an error.
+
+```ts
+const r = await db.valkey.open("valkey://localhost:6379/0");
+await r.do("SET", "greeting", "hi");
+const v = await r.do("GET", "greeting"); // "hi"
+await r.close();
 ```
 
 ### fs
@@ -6753,7 +6777,7 @@ await tui.waitKey();
 
 ---
 
-*This manual covers sercon v0.48.1. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.49.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

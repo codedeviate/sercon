@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.49.0] — 2026-06-11
+
+### Added
+- `db.valkey` — a client for Valkey, the RESP-compatible open-source Redis
+  fork. Same `open(url) → { do, ping, close }` surface as `db.redis` (it reuses
+  the same pure-Go go-redis client), and additionally accepts the
+  Valkey-idiomatic `valkey://` / `valkeys://` URL schemes (normalised to
+  `redis://` / `rediss://`). Added ahead of Valkey support in the planned
+  Docker DB test stack.
+
 ## [0.48.1] — 2026-06-11
 
 ### Fixed

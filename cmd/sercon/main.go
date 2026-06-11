@@ -428,6 +428,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"clickhouse": clickhouseNamespace(vm, loop),
 			"oracle":     oracleNamespace(vm, loop),
 			"redis":      redisNamespace(vm, loop),
+			"valkey":     valkeyNamespace(vm, loop),
 			"memcached":  memcachedNamespace(vm, loop),
 			"ldap":       ldapNamespace(vm, loop),
 			"dict":       dictNamespace(vm, loop),
@@ -476,7 +477,7 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("fs", fsDocs())
 	e.SetDocs("net", "Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions.")
 	e.SetMemberDocsStructured("net", netDocs())
-	e.SetDocs("db", "Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict.")
+	e.SetDocs("db", "Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, Valkey, memcached, LDAP, dict.")
 	e.SetMemberDocsStructured("db", dbDocs())
 	e.SetDocs("services", "Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control.")
 	e.SetMemberDocsStructured("services", servicesDocs())

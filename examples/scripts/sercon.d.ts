@@ -896,7 +896,7 @@ declare const net: {
   };
 };
 
-/** Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, memcached, LDAP, dict. */
+/** Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, Valkey, memcached, LDAP, dict. */
 declare const db: {
   clickhouse: {
     /**
@@ -988,6 +988,14 @@ declare const db: {
      * @returns Promise<handle> resolving to the shared SQL handle object: exec(sql, ...params) → Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql, ...params) → Promise<object[]> (one ordered object per row, keyed by column name in column order); queryValue(sql, ...params) → Promise<any> (first column of the first row, or null when no rows match); begin() → Promise<tx> ({ exec, query, queryValue, commit, rollback }); prepare(sql) → Promise<stmt> ({ exec, query, queryValue, close }); close() → Promise<void>. SQLite uses ? positional placeholders. UTF-8 byte columns scan to strings; genuinely binary bytes surface as Uint8Array.
      */
     open(path: string): Promise<Record<string, unknown>>;
+  };
+  valkey: {
+    /**
+     * Connect to Valkey (valkey:// or redis://...). Valkey is the RESP-compatible Redis fork, so this is db.redis with the same { do, ping, close } handle; valkey:// / valkeys:// URLs are accepted (normalised to redis:// / rediss://). Pings on open to surface bad addresses.
+     * @param url A connection URL: valkey://[:password@]host:port/db (valkeys:// for TLS), or the equivalent redis:// / rediss:// form. Parsed by go-redis's ParseURL after normalising the valkey scheme.
+     * @returns Promise<handle> resolving to { do, ping, close }: do(cmd, ...args) → Promise<any> runs an arbitrary RESP command (the first arg is the command name, the rest its arguments) and returns the reply coerced to a JS value — strings, numbers, arrays, or null; a nil reply (missing key) resolves to null rather than throwing. ping() → Promise<string> ('PONG'). close() → Promise<void>.
+     */
+    open(url: string): Promise<Record<string, unknown>>;
   };
 };
 

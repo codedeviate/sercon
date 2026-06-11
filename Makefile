@@ -79,6 +79,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/encrypt.ts \
 	examples/scripts/sqlite.ts \
 	examples/scripts/redis.ts \
+	examples/scripts/valkey.ts \
 	examples/scripts/memcached.ts \
 	examples/scripts/ldap.ts \
 	examples/scripts/dict.ts \
