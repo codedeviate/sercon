@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.48.1] — 2026-06-11
+
+### Fixed
+- `runtime.secrets.get/set/delete` now validate their arguments: a missing or
+  empty `name`, a missing `account` (pass `""` for a single-secret name), or a
+  missing `secret` (set) rejects with a clear error instead of silently keying
+  the literal keystore service `"<prefix>undefined"`. An explicit empty
+  `account` remains valid.
+
 ## [0.48.0] — 2026-06-11
 
 ### Added

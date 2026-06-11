@@ -97,12 +97,32 @@ func runBounded[T any](fn func() (T, error)) (T, error) {
 	}
 }
 
+// secretArgs validates and extracts (name, account) from a get/delete/set
+// call. name must be a present, non-empty string (it forms the keystore
+// service together with the prefix); account must be present but may be an
+// empty string for a single-secret name. Without this, a missing argument
+// would stringify to the literal "undefined" and silently mis-key the
+// keystore. The returned error becomes a thrown JS exception (the promise
+// rejects). op names the binding for the message (e.g. "get").
+func secretArgs(call goja.FunctionCall, op string) (name, account string, err error) {
+	nameArg := call.Argument(0)
+	if goja.IsUndefined(nameArg) || goja.IsNull(nameArg) || nameArg.String() == "" {
+		return "", "", fmt.Errorf("runtime.secrets.%s: name is required (a non-empty string)", op)
+	}
+	if len(call.Arguments) < 2 || goja.IsUndefined(call.Argument(1)) || goja.IsNull(call.Argument(1)) {
+		return "", "", fmt.Errorf("runtime.secrets.%s: account is required (pass \"\" for a single-secret name)", op)
+	}
+	return nameArg.String(), call.Argument(1).String(), nil
+}
+
 // secretsGet returns a work func that reads PREFIX+name / account. Resolves to
 // the secret string, or nil (JS null) when the item is absent.
 func secretsGet(prefix string) func(context.Context, goja.FunctionCall) (any, error) {
 	return func(_ context.Context, call goja.FunctionCall) (any, error) {
-		name := call.Argument(0).String()
-		account := call.Argument(1).String()
+		name, account, err := secretArgs(call, "get")
+		if err != nil {
+			return nil, err
+		}
 		s, err := runBounded(func() (string, error) { return keyring.Get(prefix+name, account) })
 		if errors.Is(err, keyring.ErrNotFound) {
 			return nil, nil
@@ -117,10 +137,15 @@ func secretsGet(prefix string) func(context.Context, goja.FunctionCall) (any, er
 // secretsSet returns a work func that stores/overwrites PREFIX+name / account.
 func secretsSet(prefix string) func(context.Context, goja.FunctionCall) (any, error) {
 	return func(_ context.Context, call goja.FunctionCall) (any, error) {
-		name := call.Argument(0).String()
-		account := call.Argument(1).String()
+		name, account, err := secretArgs(call, "set")
+		if err != nil {
+			return nil, err
+		}
+		if len(call.Arguments) < 3 || goja.IsUndefined(call.Argument(2)) || goja.IsNull(call.Argument(2)) {
+			return nil, fmt.Errorf("runtime.secrets.set: secret is required (a string)")
+		}
 		secret := call.Argument(2).String()
-		_, err := runBounded(func() (struct{}, error) {
+		_, err = runBounded(func() (struct{}, error) {
 			return struct{}{}, keyring.Set(prefix+name, account, secret)
 		})
 		if err != nil {
@@ -135,9 +160,11 @@ func secretsSet(prefix string) func(context.Context, goja.FunctionCall) (any, er
 // remove.
 func secretsDelete(prefix string) func(context.Context, goja.FunctionCall) (bool, error) {
 	return func(_ context.Context, call goja.FunctionCall) (bool, error) {
-		name := call.Argument(0).String()
-		account := call.Argument(1).String()
-		_, err := runBounded(func() (struct{}, error) {
+		name, account, err := secretArgs(call, "delete")
+		if err != nil {
+			return false, err
+		}
+		_, err = runBounded(func() (struct{}, error) {
 			return struct{}{}, keyring.Delete(prefix+name, account)
 		})
 		if errors.Is(err, keyring.ErrNotFound) {

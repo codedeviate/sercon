@@ -91,7 +91,7 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "Promise<string | null>",
 			Returns:    "Promise resolving to the stored secret string, or null when no such item exists.",
-			Errors:     "Rejects when the keystore backend is unreachable or the read fails (a clean \"runtime.secrets.get: …\" error). Bounded by a 10s timeout (a blocking macOS consent prompt rejects rather than hangs).",
+			Errors:     "Rejects if name is missing/empty or account is missing (pass \"\" for a single-secret name), when the keystore backend is unreachable, or the read fails (a clean \"runtime.secrets.get: …\" error). Bounded by a 10s timeout (a blocking macOS consent prompt rejects rather than hangs).",
 			Example:    `const pw = await runtime.secrets.get("devshop", "tess@example.com");`,
 		},
 		"secrets.set": {
@@ -103,7 +103,7 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "Promise<void>",
 			Returns:    "Promise resolving when the secret is written.",
-			Errors:     "Rejects when the keystore backend is unreachable or the write fails (\"runtime.secrets.set: …\"). Bounded by a 10s timeout.",
+			Errors:     "Rejects if name is missing/empty, account is missing (pass \"\" for a single-secret name), or secret is missing; when the keystore backend is unreachable; or the write fails (\"runtime.secrets.set: …\"). Bounded by a 10s timeout.",
 			Example:    `await runtime.secrets.set("devshop", "tess@example.com", "hunter2");`,
 		},
 		"secrets.delete": {
@@ -114,7 +114,7 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "Promise<boolean>",
 			Returns:    "Promise resolving true when an item was removed, false when there was nothing to remove.",
-			Errors:     "Rejects when the keystore backend is unreachable or the delete fails (\"runtime.secrets.delete: …\"). Bounded by a 10s timeout.",
+			Errors:     "Rejects if name is missing/empty or account is missing (pass \"\" for a single-secret name), when the keystore backend is unreachable, or the delete fails (\"runtime.secrets.delete: …\"). Bounded by a 10s timeout.",
 			Example:    `const removed = await runtime.secrets.delete("devshop", "tess@example.com");`,
 		},
 		"argv": {

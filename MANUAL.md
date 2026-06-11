@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.48.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.48.1</div> <!-- x-release-please-version -->
 <div class="date">2026-06-11</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -5064,7 +5064,7 @@ Remove a secret from the OS keystore under prefix + name / account. Async (keyst
 
 **Returns:** Promise resolving true when an item was removed, false when there was nothing to remove.
 
-**Throws:** Rejects when the keystore backend is unreachable or the delete fails ("runtime.secrets.delete: …"). Bounded by a 10s timeout.
+**Throws:** Rejects if name is missing/empty or account is missing (pass "" for a single-secret name), when the keystore backend is unreachable, or the delete fails ("runtime.secrets.delete: …"). Bounded by a 10s timeout.
 
 ```ts
 const removed = await runtime.secrets.delete("devshop", "tess@example.com");
@@ -5085,7 +5085,7 @@ Read a string secret from the OS keystore. The keystore service is the configure
 
 **Returns:** Promise resolving to the stored secret string, or null when no such item exists.
 
-**Throws:** Rejects when the keystore backend is unreachable or the read fails (a clean "runtime.secrets.get: …" error). Bounded by a 10s timeout (a blocking macOS consent prompt rejects rather than hangs).
+**Throws:** Rejects if name is missing/empty or account is missing (pass "" for a single-secret name), when the keystore backend is unreachable, or the read fails (a clean "runtime.secrets.get: …" error). Bounded by a 10s timeout (a blocking macOS consent prompt rejects rather than hangs).
 
 ```ts
 const pw = await runtime.secrets.get("devshop", "tess@example.com");
@@ -5107,7 +5107,7 @@ Store or overwrite a string secret in the OS keystore under prefix + name / acco
 
 **Returns:** Promise resolving when the secret is written.
 
-**Throws:** Rejects when the keystore backend is unreachable or the write fails ("runtime.secrets.set: …"). Bounded by a 10s timeout.
+**Throws:** Rejects if name is missing/empty, account is missing (pass "" for a single-secret name), or secret is missing; when the keystore backend is unreachable; or the write fails ("runtime.secrets.set: …"). Bounded by a 10s timeout.
 
 ```ts
 await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
@@ -6753,7 +6753,7 @@ await tui.waitKey();
 
 ---
 
-*This manual covers sercon v0.48.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.48.1. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
