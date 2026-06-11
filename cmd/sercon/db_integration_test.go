@@ -85,6 +85,8 @@ func TestIntegration_MariaDB(t *testing.T) {
 	if dsn == "" {
 		t.Skip("SERCON_TEST_MARIADB_DSN not set")
 	}
+	// MariaDB speaks the MySQL wire protocol; db.mysql.open accepts MariaDB DSNs
+	// (there is no separate db.mariadb binding).
 	got := runDBIntegrationScript(t, `
 		const h = await db.mysql.open(`+strconv.Quote(dsn)+`);
 		const n = await h.queryValue("SELECT count(*) FROM orders");
@@ -109,5 +111,72 @@ func TestIntegration_ClickHouse(t *testing.T) {
 	`)
 	if got != "4" {
 		t.Errorf("orders count = %v, want 4", got)
+	}
+}
+
+func TestIntegration_Redis(t *testing.T) {
+	url := os.Getenv("SERCON_TEST_REDIS_URL")
+	if url == "" {
+		t.Skip("SERCON_TEST_REDIS_URL not set")
+	}
+	got := runDBIntegrationScript(t, `
+		const r = await db.redis.open(`+strconv.Quote(url)+`);
+		const pong = await r.ping();
+		await r.close();
+		const __result = pong;
+	`)
+	if got != "PONG" {
+		t.Errorf("ping = %v, want PONG", got)
+	}
+}
+
+func TestIntegration_Valkey(t *testing.T) {
+	url := os.Getenv("SERCON_TEST_VALKEY_URL")
+	if url == "" {
+		t.Skip("SERCON_TEST_VALKEY_URL not set")
+	}
+	got := runDBIntegrationScript(t, `
+		const r = await db.valkey.open(`+strconv.Quote(url)+`);
+		const pong = await r.ping();
+		await r.close();
+		const __result = pong;
+	`)
+	if got != "PONG" {
+		t.Errorf("ping = %v, want PONG", got)
+	}
+}
+
+func TestIntegration_Memcached(t *testing.T) {
+	addr := os.Getenv("SERCON_TEST_MEMCACHED_ADDR")
+	if addr == "" {
+		t.Skip("SERCON_TEST_MEMCACHED_ADDR not set")
+	}
+	got := runDBIntegrationScript(t, `
+		const mc = await db.memcached.open(`+strconv.Quote(addr)+`);
+		await mc.set("sercon:integration", "ok");
+		const __result = await mc.get("sercon:integration");
+	`)
+	if got != "ok" {
+		t.Errorf("memcached round-trip = %v, want ok", got)
+	}
+}
+
+func TestIntegration_LDAP(t *testing.T) {
+	url := os.Getenv("SERCON_TEST_LDAP_URL")
+	if url == "" {
+		t.Skip("SERCON_TEST_LDAP_URL not set")
+	}
+	bindDN := envOr("SERCON_TEST_LDAP_BINDDN", "cn=admin,dc=example,dc=org")
+	password := envOr("SERCON_TEST_LDAP_PASSWORD", "adminpw")
+	base := envOr("SERCON_TEST_LDAP_BASE", "dc=example,dc=org")
+	got := runDBIntegrationScript(t, `
+		const l = await db.ldap.open(`+strconv.Quote(url)+`, { bindDN: `+strconv.Quote(bindDN)+`, password: `+strconv.Quote(password)+` });
+		const entries = await l.search(`+strconv.Quote(base)+`, "(uid=alice)");
+		await l.close();
+		const __result = String(Array.isArray(entries) ? entries.length : -1);
+	`)
+	s, _ := got.(string)
+	if n, _ := strconv.Atoi(s); n < 1 {
+		t.Errorf("ldap search returned %q entries, want >= 1", s)
 	}
 }
