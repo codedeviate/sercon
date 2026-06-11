@@ -346,8 +346,12 @@ v0.5.26 (as `api.dict`).
 **Integration tests** (dbplayground): opt-in, env-gated Go tests
 (`SERCON_TEST_*`) exercise the networked engines against the
 `github.com/codedeviate/dbplayground` Docker fleet; `make test-integration`
-manages the fleet lifecycle. Unversioned dev tooling — skips without the fleet,
-so default `go test ./...` stays green.
+manages the fleet lifecycle. A dedicated CI workflow
+(`.github/workflows/integration.yml`) runs `make test-integration` on push / PR
+to master (and on demand via `workflow_dispatch`), separate from the `ci.yml`
+build/test matrix so the Docker fleet cycle doesn't slow normal runs.
+Unversioned dev tooling — skips without the fleet, so default `go test ./...`
+stays green.
 
 All multi-engine SQL handles share the same interface: `exec`/`query`/
 `queryValue`/`begin`/`prepare`/`close`; placeholder syntax is driver-native.
