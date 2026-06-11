@@ -37,7 +37,7 @@ GOLANGCI_VERSION  ?= v2.12.2
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 
-.PHONY: build release manual reference test vet lint demo types release-prep version-check clean
+.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -160,6 +160,31 @@ demo: build
 	@# ceiling only matters for ai.ts.
 	@./$(BIN) -timeout 90s $(DEMO_SCRIPTS)
 	@echo "All example scripts passed. (hang.ts is the timeout demo — run separately.)"
+
+# Opt-in integration tests against the dbplayground fleet
+# (github.com/codedeviate/dbplayground). Brings the fleet up, runs the
+# `Integration` tests with the SERCON_TEST_* vars pointed at it, then tears it
+# down (-v) on exit — even on test failure. Requires Docker + Compose v2.
+# Pin a fleet version with DBP_TAG (default latest).
+test-integration:
+	@command -v docker >/dev/null 2>&1 || { echo "test-integration: docker is required"; exit 1; }
+	@set -e; \
+	tmp=$$(mktemp -d); \
+	trap 'docker compose -f $$tmp/dc.yml --profile ldap down -v >/dev/null 2>&1 || true; rm -rf $$tmp' EXIT; \
+	curl -fsSL -o $$tmp/dc.yml https://raw.githubusercontent.com/codedeviate/dbplayground/main/docker-compose.hub.yml; \
+	docker compose -f $$tmp/dc.yml --profile ldap up -d --wait; \
+	SERCON_TEST_PG_DSN="postgresql://playground:playground@127.0.0.1:15432/testdb?sslmode=disable" \
+	SERCON_TEST_MYSQL_DSN="playground:playground@tcp(127.0.0.1:13306)/testdb" \
+	SERCON_TEST_MARIADB_DSN="playground:playground@tcp(127.0.0.1:13307)/testdb" \
+	SERCON_TEST_CLICKHOUSE_DSN="clickhouse://playground:playground@127.0.0.1:19000/testdb" \
+	SERCON_TEST_REDIS_URL="redis://127.0.0.1:16379/0" \
+	SERCON_TEST_VALKEY_URL="valkey://127.0.0.1:16380/0" \
+	SERCON_TEST_MEMCACHED_ADDR="127.0.0.1:13211" \
+	SERCON_TEST_LDAP_URL="ldap://127.0.0.1:13389" \
+	SERCON_TEST_LDAP_BINDDN="cn=admin,dc=example,dc=org" \
+	SERCON_TEST_LDAP_PASSWORD="adminpw" \
+	SERCON_TEST_LDAP_BASE="dc=example,dc=org" \
+	$(GO) test ./cmd/sercon/ -run Integration -v -count=1
 
 types: build
 	./$(BIN) --emit-dts examples/scripts/sercon.d.ts
