@@ -15,7 +15,7 @@
 // session cookie (swssid) from the HeadlessChrome UA, so without it login
 // can't stick. See shop.ts.
 
-import { EN, loginCreds, haveCreds, LOGOUT_SEL, shopUp, connectShop } from "./shop.ts";
+import { EN, loginCreds, haveCreds, resolvePassword, LOGOUT_SEL, shopUp, connectShop } from "./shop.ts";
 
 if (!services.webdriver.available) {
   runtime.log("no chromedriver on PATH — skipping login demo.");
@@ -48,7 +48,8 @@ if (!services.webdriver.available) {
     runtime.log("filled email:", loginCreds.email);
 
     const passwordField = await d.find("css", "#login-password-field");
-    await passwordField.sendKeys(loginCreds.password);
+    const password = await resolvePassword();
+    await passwordField.sendKeys(password);
     runtime.log("filled password: ***");
 
     // ── Step 4: submit ───────────────────────────────────────────────────────

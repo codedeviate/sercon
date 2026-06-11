@@ -61,6 +61,20 @@ export function haveCreds(): boolean {
   return !!(loginCreds.email && loginCreds.password);
 }
 
+/**
+ * Resolve the login password, preferring the OS keystore over the env var.
+ * Reads runtime.secrets.get("devshop", <email>) when a keystore backend is
+ * available, else falls back to DEVSHOP_PASSWORD. Store the secret once, e.g.
+ * on macOS: security add-generic-password -s 'sercon/devshop' -a "$DEVSHOP_EMAIL" -w
+ */
+export async function resolvePassword(): Promise<string> {
+  if (runtime.secrets.available) {
+    const pw = await runtime.secrets.get("devshop", loginCreds.email);
+    if (pw) return pw;
+  }
+  return loginCreds.password;
+}
+
 /** Fictional buyer persona. Names/address are obvious placeholders; the
  *  contact fields come from the environment so a real address/email isn't
  *  committed. */

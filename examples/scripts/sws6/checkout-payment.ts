@@ -26,7 +26,7 @@
 //   ./sercon examples/scripts/sws6/checkout-payment.ts -- qliro
 // runtime.argv = ["sercon", scriptPath, ...userArgs] — provider is argv[2].
 
-import { EN, loginCreds, haveCreds, paymentData, shopUp, connectShop } from "./shop.ts";
+import { EN, loginCreds, haveCreds, resolvePassword, paymentData, shopUp, connectShop } from "./shop.ts";
 
 // Per-provider DOM hints (which element/iframe marks the provider on the page).
 const PROVIDERS: Record<string, { label: string; optionSelector: string; iframeSelector: string; fields: string }> = {
@@ -85,7 +85,8 @@ if (!services.webdriver.available) {
         await (await d.find("css", "#existing-account-type-radio")).click();
         await runtime.time.sleep(800);
         await (await d.find("css", "#login-email-field")).sendKeys(loginCreds.email);
-        await (await d.find("css", "#login-password-field")).sendKeys(loginCreds.password);
+        const password = await resolvePassword();
+        await (await d.find("css", "#login-password-field")).sendKeys(password);
         await (await d.find("css", "button.login-action")).click();
         await runtime.time.sleep(2000);
         const li = await d.executeScript(`return !!document.querySelector('a[href*="/customer/logout"]')`, []);
