@@ -3,6 +3,7 @@
 [![GitHub](https://img.shields.io/badge/github-codedeviate%2Fsercon-181717?logo=github)](https://github.com/codedeviate/sercon)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?logo=opensourceinitiative)](LICENSE)
 [![Go 1.25+](https://img.shields.io/badge/go-1.25%2B-00ADD8?logo=go)](https://go.dev)
+[![ci](https://github.com/codedeviate/sercon/actions/workflows/ci.yml/badge.svg)](https://github.com/codedeviate/sercon/actions/workflows/ci.yml)
 [![integration](https://github.com/codedeviate/sercon/actions/workflows/integration.yml/badge.svg)](https://github.com/codedeviate/sercon/actions/workflows/integration.yml)
 <br/>
 [![Latest release](https://img.shields.io/github/v/release/codedeviate/sercon?logo=semanticrelease&label=release&color=blue)](https://github.com/codedeviate/sercon/releases)
