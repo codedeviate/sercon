@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.49.1] — 2026-06-11
+
 ### Added
 - Opt-in integration tests for the networked `db.*` bindings (postgres, mysql,
   mariadb, clickhouse, redis, valkey, memcached, ldap) against the
@@ -15,7 +17,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   `SERCON_TEST_*` env vars (unset → skip; set-but-unreachable → fail). New
   `make test-integration` brings the fleet up, runs them, and tears it down. A
   CI workflow (`.github/workflows/integration.yml`) runs it on push / PR to
-  master. Test-only — no change to the shipped binary or script API.
+  master, with `ci` + `integration` status badges in the README. Test/CI-only —
+  the shipped binary and script API are unchanged from 0.49.0.
 
 ## [0.49.0] — 2026-06-11
 
