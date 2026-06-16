@@ -8,6 +8,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.51.2] — 2026-06-16
+
+### Docs
+- `HISTORY.md`: record the v0.51.0 `runtime.clipboard` capability in §4
+  (`runtime`) and advance the span line to v0.51.1.
+
 ## [0.51.1] — 2026-06-16
 
 ### Docs
