@@ -3,10 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.41.0 (2026-06-08), plus the v0.50.0
-(2026-06-16) additions folded into the relevant sections. The intervening
-v0.42–v0.49 releases are not yet woven in here — see `CHANGELOG.md` for their
-per-version detail.
+covered is v0.1.0 (2026-05-25) through v0.50.1 (2026-06-16).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -93,6 +90,14 @@ real signatures with `@param`/`@returns`. A companion `--emit-reference` /
 §16 (via `make reference`, which `make manual` runs). All eleven namespaces
 were fully documented in that single cut.
 
+v0.47.0 made the d.ts emitter honour `MemberDoc.ReturnType` for
+`PromisifyAsync` (async) bindings — previously it always wrapped the marker
+type (usually `Promise<unknown>`), discarding the documented shape. v0.48.0
+extended the same fix to the §16 reference generator, so async bindings with a
+documented return type (e.g. `services.webdriver.connect`,
+`net.probe.traceroute`, `runtime.secrets.get`) render their rich `Promise<…>`
+type in both the d.ts and MANUAL.md.
+
 ### Module resolution improvements (v0.4.2, v0.5.28, v0.5.29, v0.5.30)
 
 v0.4.2 added `.js` → `.ts` swap (for `package.json` `main` fields pointing
@@ -144,6 +149,9 @@ versions from `runtime/debug`).
 v0.4.4 added stdin script support (`-` positional), `Options.Verbose`, the
 `ErrTranspile` sentinel, and a distinct exit-code matrix: `0` (all pass),
 `1` (usage), `2` (transpile error), `3` (timeout/cancel), `4` (JS throw).
+
+v0.48.0 added `--secrets-prefix` (and the `SERCON_SECRETS_PREFIX` env) to set
+the `runtime.secrets` keystore namespace prefix (see §4 `runtime`).
 
 ### Help paging (v0.15.0)
 
@@ -219,6 +227,16 @@ deep structural comparison (previously reference equality) in v0.19.0.
 `console.*` rendering was fixed to JSON-format objects in v0.19.0.
 `runtime.argv` follows the Node/Bun layout `[programName, scriptPath,
 ...userArgs]`, available from v0.6.0.
+
+`runtime.secrets` (v0.48.0) reads/writes string credentials in the OS keystore
+(macOS Keychain, Linux Secret Service / libsecret, Windows Credential Manager),
+pure-Go via `zalando/go-keyring` (no cgo): `available` (advisory bool),
+`get(name, account)`, `set(name, account, secret)`, `delete(name, account)`.
+All operations are confined to a prefix namespace (keystore service =
+`PREFIX + name`), where `PREFIX` comes from `--secrets-prefix` >
+`SERCON_SECRETS_PREFIX` > the default `sercon/`. v0.48.1 added argument
+validation so a missing/empty `name`, `account`, or `secret` rejects with a
+clear error instead of silently keying `"<prefix>undefined"`.
 
 ### `crypto`
 
@@ -318,7 +336,15 @@ non-Echo body mode in v0.27.0.
 
 **`net.capture`** (packet capture via pure-Go gopacket; live on Linux/macOS,
 pcap file read/write, no libpcap): v0.24.0. Tcpdump-syntax filter option:
-v0.25.0. Deeper decode (v0.50.0): the decoded packet object gained `arp`
+v0.25.0. Filter grammar extended in v0.42.0 with `net X/Y` (IPv4/IPv6 CIDR,
+optional `src`/`dst`) and `portrange A-B` (inclusive, optional `src`/`dst`),
+composing with `and`/`or`/`not` + parens across `capture.open`,
+`capture.openFile`, and `net.raw.open` — still a post-decode userspace
+predicate, not kernel BPF. `net.capture.routes()` (v0.45.0) is a synchronous,
+unprivileged snapshot of the host IP routing table (`{ destination, gateway,
+interface, family, metric }`) beside `net.capture.interfaces()`: Linux parses
+`/proc/net/route` + `/proc/net/ipv6_route`, macOS/BSD read the routing socket
+via `x/net/route`, Windows is stubbed. Deeper decode (v0.50.0): the decoded packet object gained `arp`
 (operation + sender/target MAC & IP), `vlan` (802.1Q id/priority/drop/inner
 type), and `dns` (id/qr/opcode/rcode + `questions[]`/`answers[]` with
 type-aware `data`) layers, plus `tcp.window`/`tcp.checksum` and a parsed
@@ -337,6 +363,11 @@ required; Linux + macOS only.
 v0.5.12.
 
 **`db.redis`** (redis/go-redis, `do` for arbitrary RESP commands): v0.5.23.
+
+**`db.valkey`** (v0.49.0): a client for Valkey, the RESP-compatible Redis fork.
+Same `open(url) → { do, ping, close }` surface as `db.redis` (reuses the same
+pure-Go go-redis client) and additionally accepts the `valkey://` / `valkeys://`
+URL schemes (normalised to `redis://` / `rediss://`).
 
 **`db.memcached`** (bradfitz/gomemcache, get/set/delete): v0.5.24.
 
@@ -430,6 +461,18 @@ wraps `http.FileServer` + `http.StripPrefix`), and WebSocket upgrade
 per-connection goroutine pumps frames via a buffered channel; the JS-side
 async iterator resolves frames on the loop via `LoopCallable`.
 
+v0.43.0 added `cert: "self-signed"` to `server.https.listen`: an ephemeral
+in-process P-256 cert (no openssl, no committed PEM, nothing written to disk;
+`key` then optional), SANs covering `localhost` / `127.0.0.1` / `::1` plus the
+listen host — a local-dev convenience, not a production path.
+
+v0.44.0 added an optional `onError(err, req, res)` handler to
+`server.http.listen` / `server.https.listen`, invoked when a route handler or
+middleware throws/rejects in place of the stock 500. It may be `async` and
+renders via the usual `res.*` terminals; if it settles without finalizing, or
+itself throws, sercon falls back to the stock 500, so a buggy error handler
+can't wedge the request. `err` carries the original thrown value.
+
 ### Server-Sent Events (v0.50.0)
 
 `res.sse(opts?)` added a one-way `text/event-stream` streaming mode to the
@@ -515,6 +558,11 @@ No browser bundled; drivers must be installed separately.
   `performActions`/`releaseActions`); `executeScript`/`executeScriptAsync`
   returning element handles. Built on an internal raw-W3C-command primitive
   because tebeka's legacy mouse API is rejected by modern W3C drivers.
+- **v0.46.0:** `connect` gained `commandTimeout` (ms, default 30000) — a
+  per-request deadline on the low-level W3C command client. Each raw command
+  now carries a context with that deadline, and `quit()` / Run-end cleanup
+  cancels any in-flight command, so a driver blocked behind an open alert or
+  an unreachable endpoint fails promptly instead of wedging the call.
 
 ---
 
