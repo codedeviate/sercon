@@ -81,9 +81,6 @@ The remaining application-protocol servers are parked:
   **Reason:** sercon is CLI-first and the cert is best owned by
   the supervisor (caddy, traefik, nginx in front). Defer until
   clear demand.
-- **Server-Sent Events (SSE).** Could be a small helper on top of
-  `server.http.listen` (set headers, flush on every write). YAGNI
-  for now. **Reason:** no asks. Add when someone wants it.
 - **Server-side IMAP, FTP.** Planned as separate sub-spec cycles
   built on the `LoopCallable` + `HoldRun` foundation. Each remaining
   protocol gets its own brainstorm → plan → ship cycle. Promote
@@ -115,8 +112,11 @@ read+write, interface enumeration, layer decode — all pure-Go; see
   filter-attach API (would need forking it or raw `BIOCSETF`), so it's
   Linux-mostly + a from-scratch compiler. Re-promote if high-pps kernel
   drop is actually needed.
-- **Deeper / exotic decode.** Only common layers map to fields today;
-  other protocols surface as `bytes`. Extend `decodePacket` on demand.
+- **Deeper / exotic decode.** ARP, VLAN (802.1Q), DNS, and enriched TCP
+  (window/checksum/options) now map to structured fields (see `HISTORY.md` /
+  `CHANGELOG.md`). Remaining protocols (DHCPv4/v6, SCTP, GRE, deeper TLS/HTTP)
+  still surface as `bytes` — extend `decodePacket` on demand following the same
+  additive pattern.
 
 ## External-CLI fallbacks
 
