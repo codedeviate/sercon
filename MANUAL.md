@@ -715,12 +715,20 @@ Script-host scaffolding. Members:
     when empty).
   - `runtime.clipboard.write(text)` — `Promise<void>`; replace the clipboard
     text.
+  - `runtime.clipboard.imageAvailable` — `boolean`, cheap advisory: true when a
+    PNG image backend is usable on this host. Gated separately from
+    `available` (text).
+  - `runtime.clipboard.readImage()` — `Promise<Uint8Array | null>`; the
+    clipboard image as PNG bytes, or `null` when no image is present.
+  - `runtime.clipboard.writeImage(png)` — `Promise<void>`; set the clipboard
+    image from PNG bytes (validated by signature; non-PNG rejects).
 
   Backends: macOS `pbcopy`/`pbpaste`, Linux `wl-clipboard` (Wayland) or
   `xclip`/`xsel` (X11), Windows `clip` + PowerShell `Get-Clipboard`. When none
   is installed the calls throw a clean error and `available` is `false`; the
-  binary itself stays fully functional. Text only — image/RTF/HTML are out of
-  scope.
+  binary itself stays fully functional. Image is PNG-only and feature-detected
+  separately (`imageAvailable`); macOS image read needs `pngpaste`, Linux needs
+  `wl-clipboard` or `xclip` (not `xsel`). RTF/HTML/non-PNG are out of scope.
 
 ```ts
 runtime.log("hello");
@@ -5114,6 +5122,22 @@ True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-cl
 if (!runtime.clipboard.available) runtime.log("no clipboard — skipping");
 ```
 
+#### runtime.clipboard.imageAvailable
+
+```
+imageAvailable: boolean
+```
+
+True when a PNG image clipboard backend is usable on this host (macOS pngpaste; Linux wl-clipboard or xclip — not xsel; Windows PowerShell). Cheap advisory; does not touch the clipboard.
+
+**Returns:** boolean — false when no image backend is installed (e.g. macOS without pngpaste). Gate readImage/writeImage on it.
+
+**Throws:** Never throws.
+
+```ts
+if (runtime.clipboard.imageAvailable) { /* … */ }
+```
+
 #### runtime.clipboard.read
 
 ```
@@ -5128,6 +5152,22 @@ Read the host OS system clipboard as UTF-8 text. Async (shells out to the platfo
 
 ```ts
 const text = await runtime.clipboard.read();
+```
+
+#### runtime.clipboard.readImage
+
+```
+readImage(...args: unknown[]): Promise<Uint8Array | null>
+```
+
+Read the host clipboard image as PNG bytes. Async (shells out). Resolves null when the clipboard holds no image.
+
+**Returns:** Promise resolving to the clipboard image as PNG bytes, or null when no image is present.
+
+**Throws:** Rejects when no image backend is available (see imageAvailable) or the underlying command fails / times out (~5s).
+
+```ts
+const png = await runtime.clipboard.readImage();
 ```
 
 #### runtime.clipboard.write
@@ -5148,6 +5188,26 @@ Replace the host OS system clipboard with the given text. Async (shells out to t
 
 ```ts
 await runtime.clipboard.write("copied from sercon");
+```
+
+#### runtime.clipboard.writeImage
+
+```
+writeImage(png: Uint8Array): Promise<void>
+```
+
+Set the host clipboard image from PNG bytes. Async (shells out). The input must be a PNG (validated by signature) — other formats reject.
+
+**Parameters**
+
+- `png` *(Uint8Array)* — PNG image bytes (must begin with the PNG signature).
+
+**Returns:** Promise resolving when the clipboard image is set.
+
+**Throws:** Rejects when the data is not a PNG, no image backend is available, or the command fails / times out (~5s).
+
+```ts
+await runtime.clipboard.writeImage(pngBytes);
 ```
 
 #### runtime.env.get

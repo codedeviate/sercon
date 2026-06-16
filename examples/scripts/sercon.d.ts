@@ -66,16 +66,32 @@ declare const runtime: {
      */
     available: boolean;
     /**
+     * True when a PNG image clipboard backend is usable on this host (macOS pngpaste; Linux wl-clipboard or xclip — not xsel; Windows PowerShell). Cheap advisory; does not touch the clipboard.
+     * @returns boolean — false when no image backend is installed (e.g. macOS without pngpaste). Gate readImage/writeImage on it.
+     */
+    imageAvailable: boolean;
+    /**
      * Read the host OS system clipboard as UTF-8 text. Async (shells out to the platform clipboard tool). An empty clipboard resolves with "".
      * @returns Promise resolving to the clipboard text ("" when the clipboard is empty or holds no text).
      */
     read(...args: unknown[]): Promise<string>;
+    /**
+     * Read the host clipboard image as PNG bytes. Async (shells out). Resolves null when the clipboard holds no image.
+     * @returns Promise resolving to the clipboard image as PNG bytes, or null when no image is present.
+     */
+    readImage(...args: unknown[]): Promise<Uint8Array | null>;
     /**
      * Replace the host OS system clipboard with the given text. Async (shells out to the platform clipboard tool); text is passed via stdin (no shell-injection risk).
      * @param text The text to place on the clipboard (non-string values are String()-coerced).
      * @returns Promise resolving when the clipboard has been set.
      */
     write(text: string): Promise<void>;
+    /**
+     * Set the host clipboard image from PNG bytes. Async (shells out). The input must be a PNG (validated by signature) — other formats reject.
+     * @param png PNG image bytes (must begin with the PNG signature).
+     * @returns Promise resolving when the clipboard image is set.
+     */
+    writeImage(png: Uint8Array): Promise<void>;
   };
   env: {
     /**

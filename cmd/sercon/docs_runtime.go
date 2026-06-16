@@ -141,6 +141,30 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Rejects when no clipboard backend is on PATH or the underlying command fails / times out (~5s).",
 			Example:    `await runtime.clipboard.write("copied from sercon");`,
 		},
+		"clipboard.imageAvailable": {
+			Summary:    "True when a PNG image clipboard backend is usable on this host (macOS pngpaste; Linux wl-clipboard or xclip — not xsel; Windows PowerShell). Cheap advisory; does not touch the clipboard.",
+			ReturnType: "boolean",
+			Returns:    "boolean — false when no image backend is installed (e.g. macOS without pngpaste). Gate readImage/writeImage on it.",
+			Errors:     "Never throws.",
+			Example:    `if (runtime.clipboard.imageAvailable) { /* … */ }`,
+		},
+		"clipboard.readImage": {
+			Summary:    "Read the host clipboard image as PNG bytes. Async (shells out). Resolves null when the clipboard holds no image.",
+			ReturnType: "Promise<Uint8Array | null>",
+			Returns:    "Promise resolving to the clipboard image as PNG bytes, or null when no image is present.",
+			Errors:     "Rejects when no image backend is available (see imageAvailable) or the underlying command fails / times out (~5s).",
+			Example:    `const png = await runtime.clipboard.readImage();`,
+		},
+		"clipboard.writeImage": {
+			Summary: "Set the host clipboard image from PNG bytes. Async (shells out). The input must be a PNG (validated by signature) — other formats reject.",
+			Params: []scriptengine.Param{
+				{Name: "png", Type: "Uint8Array", Desc: "PNG image bytes (must begin with the PNG signature)."},
+			},
+			ReturnType: "Promise<void>",
+			Returns:    "Promise resolving when the clipboard image is set.",
+			Errors:     "Rejects when the data is not a PNG, no image backend is available, or the command fails / times out (~5s).",
+			Example:    `await runtime.clipboard.writeImage(pngBytes);`,
+		},
 		"argv": {
 			Summary:    "Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is the program name (sercon), argv[1] is the running script path, and any args after `--` on the command line start at argv[2].",
 			ReturnType: "string[]",

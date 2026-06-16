@@ -158,10 +158,13 @@ authorized, documented" rule applies.)
 (Windows) — now back `runtime.clipboard` (text), feature-detected on PATH with a
 clean thrown error and `available: false` when none is installed.
 
-- **Clipboard image (PNG).** `runtime.clipboard` (text) shipped via an
-  external-CLI fallback. Image read/write is parked: macOS has no built-in
-  image-read CLI (needs `pngpaste`), while Linux (`wl-paste`/`xclip -t
-  image/png`) and Windows (PowerShell) are feasible. Re-promote on demand.
+- **Clipboard image (PNG).** Shipped — `runtime.clipboard` now does both text
+  and PNG image I/O (`imageAvailable`, `readImage()`, `writeImage(png)`).
+  Backends: macOS `pngpaste` (read) + `osascript` (write), Linux
+  `wl-paste`/`xclip -t image/png`, Windows PowerShell; feature-detected with a
+  clean thrown error when no image backend is present. Residual (still parked):
+  non-PNG formats (JPEG/TIFF), RTF/HTML/file-list clipboard, clipboard
+  watching. Re-promote on demand.
 
 ## Security & resilience testing
 

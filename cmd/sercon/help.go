@@ -1164,8 +1164,14 @@ server.http.listen({
 if (runtime.clipboard.available) {
   await runtime.clipboard.write("copied from sercon");
   runtime.log("clipboard:", await runtime.clipboard.read());
+}
+// PNG image I/O is gated separately by imageAvailable.
+if (runtime.clipboard.imageAvailable) {
+  await runtime.clipboard.writeImage(pngBytes); // Uint8Array, PNG-only
+  const png = await runtime.clipboard.readImage(); // Uint8Array | null
 }`)
 	note("External-CLI fallback: macOS pbcopy/pbpaste, Linux wl-clipboard or xclip/xsel, Windows clip + PowerShell. Throws a clean error when none is installed; the static binary stays fully functional without them.")
+	note("Image is PNG-only and feature-detected separately (imageAvailable): macOS image read needs pngpaste, Linux needs wl-clipboard or xclip (not xsel), Windows uses PowerShell.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

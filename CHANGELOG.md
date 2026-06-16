@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `runtime.clipboard` image (PNG) support: `imageAvailable` (advisory),
+  `readImage(): Promise<Uint8Array | null>`, `writeImage(png): Promise<void>`
+  (PNG validated on write). Backends: macOS `pngpaste` (read) + `osascript`
+  (write), Linux `wl-clipboard`/`xclip` (`-t image/png`), Windows PowerShell.
+  Feature-detected; throws cleanly when no image backend is present. macOS image
+  read requires `pngpaste`.
+
 ## [0.51.2] — 2026-06-16
 
 ### Docs

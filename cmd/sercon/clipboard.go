@@ -235,12 +235,12 @@ func writeTempPNG(png []byte) (string, error) {
 		return "", err
 	}
 	if _, err := f.Write(png); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(f.Name())
+		_ = os.Remove(f.Name())
 		return "", err
 	}
 	return f.Name(), nil
@@ -252,7 +252,7 @@ func darwinWriteImagePNG(ctx context.Context, png []byte) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	script := fmt.Sprintf("set the clipboard to (read (POSIX file %q) as «class PNGf»)", path)
 	cmd := exec.CommandContext(ctx, "osascript", "-e", script) //nolint:gosec
 	var errb bytes.Buffer
@@ -270,7 +270,7 @@ func winReadImagePNG(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	ps := fmt.Sprintf(`Add-Type -AssemblyName System.Windows.Forms,System.Drawing; `+
 		`$img=[System.Windows.Forms.Clipboard]::GetImage(); `+
 		`if ($img -ne $null) { $img.Save(%q,[System.Drawing.Imaging.ImageFormat]::Png) }`, path)
@@ -293,7 +293,7 @@ func winWriteImagePNG(ctx context.Context, png []byte) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	ps := fmt.Sprintf(`Add-Type -AssemblyName System.Windows.Forms,System.Drawing; `+
 		`$img=[System.Drawing.Image]::FromFile(%q); `+
 		`[System.Windows.Forms.Clipboard]::SetImage($img)`, path)
