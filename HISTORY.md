@@ -3,7 +3,10 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.41.0 (2026-06-08).
+covered is v0.1.0 (2026-05-25) through v0.41.0 (2026-06-08), plus the v0.50.0
+(2026-06-16) additions folded into the relevant sections. The intervening
+v0.42–v0.49 releases are not yet woven in here — see `CHANGELOG.md` for their
+per-version detail.
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -315,7 +318,13 @@ non-Echo body mode in v0.27.0.
 
 **`net.capture`** (packet capture via pure-Go gopacket; live on Linux/macOS,
 pcap file read/write, no libpcap): v0.24.0. Tcpdump-syntax filter option:
-v0.25.0.
+v0.25.0. Deeper decode (v0.50.0): the decoded packet object gained `arp`
+(operation + sender/target MAC & IP), `vlan` (802.1Q id/priority/drop/inner
+type), and `dns` (id/qr/opcode/rcode + `questions[]`/`answers[]` with
+type-aware `data`) layers, plus `tcp.window`/`tcp.checksum` and a parsed
+`tcp.options` object (mss/windowScale/sackPermitted/timestamps). All additive
+— keys appear only when that layer decodes — and shared by the `net.raw`
+handlers.
 
 **`net.raw.*`** (`net.raw.open` full raw IPv4 packet engine with tcpdump
 filter; `net.raw.tcp` one-shot raw TCP probe): v0.34.0. Root/CAP_NET_RAW
@@ -420,6 +429,21 @@ wraps `http.FileServer` + `http.StripPrefix`), and WebSocket upgrade
 (`res.upgradeWebSocket`) via async iterator backed by coder/websocket. The
 per-connection goroutine pumps frames via a buffered channel; the JS-side
 async iterator resolves frames on the loop via `LoopCallable`.
+
+### Server-Sent Events (v0.50.0)
+
+`res.sse(opts?)` added a one-way `text/event-stream` streaming mode to the
+HTTP/HTTPS listener, alongside the existing WebSocket upgrade. Unlike
+`res.upgradeWebSocket` (which hijacks the connection), SSE keeps writing to the
+same `http.ResponseWriter`, so the request dispatcher parks on a new
+`streamDone` channel until the stream closes — otherwise net/http would finish
+the response. A dedicated pump goroutine owns the writer (the single-threaded
+loop never writes to the socket); `send()` formats frames on the loop and the
+pump writes + flushes + acks. The handle exposes `send(data)` (a string, or
+`{event, data, id, retry}` with object data JSON-encoded), `close()`, and a
+`closed` Promise that resolves on close or client disconnect; `opts` carry
+`keepAlive` (periodic `: ping` comments) and `retry`. The loop is kept alive
+via `Engine.HoldRun`, the same as WebSocket.
 
 ### SMTP inbound + email send (v0.11.0)
 
