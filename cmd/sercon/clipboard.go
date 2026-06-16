@@ -199,11 +199,185 @@ func clipboardImageAvailable() bool {
 	return ok
 }
 
+// runCapturePNG runs argv capturing stdout as PNG bytes. A non-zero exit with
+// empty stdout means "no image on the clipboard" → (nil, nil); a non-zero exit
+// WITH stdout, or any other failure, is an error.
+func runCapturePNG(ctx context.Context, argv []string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // fixed clipboard argv
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		if out.Len() == 0 {
+			return nil, nil // no image present
+		}
+		return nil, fmt.Errorf("%s: %w%s", argv[0], err, stderrSuffix(errb.String()))
+	}
+	return out.Bytes(), nil
+}
+
+// feedPNGStdin runs argv with png on stdin.
+func feedPNGStdin(ctx context.Context, argv []string, png []byte) error {
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // fixed clipboard argv
+	cmd.Stdin = bytes.NewReader(png)
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s: %w%s", argv[0], err, stderrSuffix(errb.String()))
+	}
+	return nil
+}
+
+// writeTempPNG writes png to a temp .png file and returns its path; caller removes it.
+func writeTempPNG(png []byte) (string, error) {
+	f, err := os.CreateTemp("", "sercon-clip-*.png")
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.Write(png); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+// darwinWriteImagePNG sets the macOS clipboard image from PNG bytes via osascript.
+func darwinWriteImagePNG(ctx context.Context, png []byte) error {
+	path, err := writeTempPNG(png)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(path)
+	script := fmt.Sprintf("set the clipboard to (read (POSIX file %q) as «class PNGf»)", path)
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script) //nolint:gosec
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("osascript: %w%s", err, stderrSuffix(errb.String()))
+	}
+	return nil
+}
+
+// winReadImagePNG reads the Windows clipboard image and returns PNG bytes (nil
+// if the clipboard holds no image).
+func winReadImagePNG(ctx context.Context) ([]byte, error) {
+	path, err := writeTempPNG(nil) // create an empty temp file path to receive the PNG
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(path)
+	ps := fmt.Sprintf(`Add-Type -AssemblyName System.Windows.Forms,System.Drawing; `+
+		`$img=[System.Windows.Forms.Clipboard]::GetImage(); `+
+		`if ($img -ne $null) { $img.Save(%q,[System.Drawing.Imaging.ImageFormat]::Png) }`, path)
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-STA", "-Command", ps) //nolint:gosec
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("powershell: %w%s", err, stderrSuffix(errb.String()))
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return nil, nil // no image
+	}
+	return data, nil
+}
+
+// winWriteImagePNG sets the Windows clipboard image from PNG bytes.
+func winWriteImagePNG(ctx context.Context, png []byte) error {
+	path, err := writeTempPNG(png)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(path)
+	ps := fmt.Sprintf(`Add-Type -AssemblyName System.Windows.Forms,System.Drawing; `+
+		`$img=[System.Drawing.Image]::FromFile(%q); `+
+		`[System.Windows.Forms.Clipboard]::SetImage($img)`, path)
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-STA", "-Command", ps) //nolint:gosec
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("powershell: %w%s", err, stderrSuffix(errb.String()))
+	}
+	return nil
+}
+
+// clipImageReadOp backs runtime.clipboard.readImage(). Resolves to PNG bytes
+// ([]byte → Uint8Array) or null when the clipboard holds no image.
+func clipImageReadOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+	strat, ok, reason := resolveClipboardImageBackend()
+	if !ok {
+		return nil, fmt.Errorf("%s", reason)
+	}
+	runCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
+	defer cancel()
+	var (
+		data []byte
+		err  error
+	)
+	switch strat.kind {
+	case "wl", "xclip":
+		data, err = runCapturePNG(runCtx, strat.readArgv)
+	case "darwin":
+		data, err = runCapturePNG(runCtx, []string{"pngpaste", "-"})
+	case "windows":
+		data, err = winReadImagePNG(runCtx)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("runtime.clipboard.readImage: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, nil // null: no image on clipboard
+	}
+	return data, nil
+}
+
+// clipImageWriteOp backs runtime.clipboard.writeImage(png). Validates PNG magic.
+func clipImageWriteOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+	strat, ok, reason := resolveClipboardImageBackend()
+	if !ok {
+		return nil, fmt.Errorf("%s", reason)
+	}
+	png, isBytes := call.Argument(0).Export().([]byte)
+	if !isBytes {
+		return nil, fmt.Errorf("runtime.clipboard.writeImage: expected a Uint8Array of PNG bytes")
+	}
+	if !isPNG(png) {
+		return nil, fmt.Errorf("runtime.clipboard.writeImage: data is not a PNG (bad signature)")
+	}
+	runCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
+	defer cancel()
+	switch strat.kind {
+	case "wl", "xclip":
+		return nil, errImagePrefix(feedPNGStdin(runCtx, strat.writeArgv, png))
+	case "darwin":
+		return nil, errImagePrefix(darwinWriteImagePNG(runCtx, png))
+	case "windows":
+		return nil, errImagePrefix(winWriteImagePNG(runCtx, png))
+	}
+	return nil, nil
+}
+
+// errImagePrefix tags a write error with the binding name (nil passes through).
+func errImagePrefix(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("runtime.clipboard.writeImage: %w", err)
+}
+
 // clipboardNamespace builds the runtime.clipboard member map.
 func clipboardNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"available": clipboardAvailable(),
-		"read":      scriptengine.PromisifyAsync(vm, loop, clipReadOp),
-		"write":     scriptengine.PromisifyAsync(vm, loop, clipWriteOp),
+		"available":      clipboardAvailable(),
+		"imageAvailable": clipboardImageAvailable(),
+		"read":           scriptengine.PromisifyAsync(vm, loop, clipReadOp),
+		"write":          scriptengine.PromisifyAsync(vm, loop, clipWriteOp),
+		"readImage":      scriptengine.PromisifyAsync(vm, loop, clipImageReadOp),
+		"writeImage":     scriptengine.PromisifyAsync(vm, loop, clipImageWriteOp),
 	}
 }
