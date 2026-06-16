@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.51.0] — 2026-06-16
+
 ### Added
 - `runtime.clipboard` — host OS system clipboard text I/O: `available`
   (advisory), `read(): Promise<string>`, `write(text): Promise<void>`. An
