@@ -184,8 +184,17 @@ own infrastructure, staging, CI, or a lab). **Not** attack tooling — no mass
 targeting, no amplification/reflection helpers, no detection evasion. Bake
 the boundary into the spec (e.g. document the authorized-use intent; consider
 a required target-allowlist or explicit confirmation for high-volume modes).
-**Reason it's parked:** dual-use; wants a careful spec that delivers the
-useful load/resilience harness without shipping a weapon.
+
+**Shipped:** the **HTTP** slice of this harness — `net.load.http(opts)`,
+a worker-pool HTTP load/resilience self-test returning latency percentiles +
+error rate, with the dual-use guardrail baked in (public targets refused
+without `confirm:true`; loopback/private always allowed; concurrency hard-capped
+at 1000; plain HTTP client loop — no raw packets / spoofing / amplification).
+
+**Still parked:** TCP/UDP connection-flood and slow-loris-style held-connection
+generators (more weapon-shaped), and ramp / soak / burst **stage** profiles
+(compose multiple `net.load.http` calls for now). **Reason still parked:**
+dual-use; each wants the same careful spec treatment the HTTP slice got.
 
 ## Examples & advanced scripts
 

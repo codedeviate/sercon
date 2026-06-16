@@ -9,6 +9,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 ## [Unreleased]
 
 ### Added
+- `net.load.http(opts)` — an authorized HTTP load / resilience self-test
+  harness: worker-pool load at a given `concurrency` for a `requests` count or
+  `duration`, optional `rps` cap, returning a report (`sent`/`completed`/`failed`,
+  achieved `rps`, `errorRate`, latency `min/mean/p50/p90/p95/p99/max`,
+  `statusCounts`, `errors`). Dual-use guardrail: public targets are refused
+  unless `confirm:true` (loopback/private hosts always allowed); concurrency
+  capped at 1000. Defensive self-testing only. New `load.ts` example.
 - `runtime.clipboard` image (PNG) support: `imageAvailable` (advisory),
   `readImage(): Promise<Uint8Array | null>`, `writeImage(png): Promise<void>`
   (PNG validated on write). Backends: macOS `pngpaste` (read) + `osascript`

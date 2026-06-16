@@ -820,6 +820,14 @@ declare const net: {
      */
     open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): unknown;
   };
+  load: {
+    /**
+     * Authorized HTTP load / resilience self-test: drive a target with a worker pool at a given concurrency for a fixed `requests` count or `duration` (exactly one required), optional client-side `rps` cap, and return a latency/error report. Dual-use guardrail: public targets are refused unless `confirm:true` (loopback/private/localhost hosts are always allowed); concurrency is capped at 1000. Defensive self-testing only — no raw packets, spoofing, or amplification.
+     * @param opts url is the http/https target (required). method defaults to GET. headers/body set the request. concurrency is the number of parallel workers (default 10, clamped to [1,1000]). Provide exactly one of requests (total requests to send) or duration (run time in ms). rps caps client-side throughput (req/s, 0 = unlimited). timeout is the per-request timeout in ms (default 10000). confirm:true asserts you are authorized and is required to target a public host.
+     * @returns Promise<LoadReport> — durationMs is the wall-clock of the run; sent is requests started; completed got an HTTP response (any status); failed is transport errors/timeouts; rps is achieved throughput (completed/sec); errorRate is (failed + 5xx)/sent in [0,1]; latency is milliseconds over completed requests; statusCounts maps status code → count; errors maps transport error kind (timeout/refused/dns/reset/canceled/error) → count. A 4xx/5xx is a recorded response, not a failure.
+     */
+    http(opts: { url: string, method?: string, headers?: Record<string, string>, body?: string, concurrency?: number, requests?: number, duration?: number, rps?: number, timeout?: number, confirm?: boolean }): Promise<{ target: string, method: string, concurrency: number, durationMs: number, sent: number, completed: number, failed: number, rps: number, errorRate: number, latency: { min: number, mean: number, p50: number, p90: number, p95: number, p99: number, max: number }, statusCounts: Record<string, number>, errors: Record<string, number> }>;
+  };
   netstatus: {
     /**
      * Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws.

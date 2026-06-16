@@ -93,6 +93,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/server-tcp.ts \
 	examples/scripts/server-icmp.ts \
 	examples/scripts/net-sockets.ts \
+	examples/scripts/load.ts \
 	examples/scripts/capture-file.ts \
 	examples/scripts/tui-keys.ts \
 	examples/scripts/agent-browser-core.ts \

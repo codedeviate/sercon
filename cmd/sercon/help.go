@@ -1173,10 +1173,23 @@ if (runtime.clipboard.imageAvailable) {
 	note("External-CLI fallback: macOS pbcopy/pbpaste, Linux wl-clipboard or xclip/xsel, Windows clip + PowerShell. Throws a clean error when none is installed; the static binary stays fully functional without them.")
 	note("Image is PNG-only and feature-detected separately (imageAvailable): macOS image read needs pngpaste, Linux needs wl-clipboard or xclip (not xsel), Windows uses PowerShell.")
 
+	header(58, "HTTP load self-test (net.load.http)")
+	code(`// Authorized HTTP load / resilience self-test: a worker pool drives a
+// target at a chosen concurrency for a fixed request count (or duration),
+// returning latency percentiles + an error rate. Loopback/private hosts are
+// always allowed; public targets require confirm:true (authorized use only).
+const report = await net.load.http({
+  url: "http://127.0.0.1:8080/",
+  requests: 200,
+  concurrency: 10,
+});
+runtime.log("rps:", report.rps, "p95 ms:", report.latency.p95, "errorRate:", report.errorRate);`)
+	note("Dual-use guardrail: refuses public hosts without confirm:true; concurrency capped at 1000. HTTP-only — no raw packets / spoofing.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 57
+const exampleCount = 58

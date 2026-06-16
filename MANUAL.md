@@ -906,6 +906,9 @@ Network clients and probes:
   (live + pcap file I/O), pure-Go gopacket.
 - `net.raw.{open, tcp}` — craft & send raw IPv4 packets (TCP flags / UDP /
   arbitrary IP protocol) and receive replies (needs privileges).
+- `net.load.http(opts)` — authorized HTTP load / resilience self-test
+  (worker-pool, latency percentiles + error rate; public hosts need
+  `confirm:true`).
 
 **Raw sockets (`net.tcp` / `net.udp` / `net.icmp`)** are long-lived,
 bidirectional client sockets with a *push / callback* read model — unlike
@@ -1091,6 +1094,73 @@ bindings:
 > To probe silently, add a host firewall rule dropping the outbound RST
 > (`iptables -A OUTPUT -p tcp --tcp-flags RST RST -j DROP`, or the `pf`
 > equivalent). sercon does not modify your firewall.
+
+#### HTTP load / resilience self-test (`net.load`)
+
+`net.load.http(opts)` is an **authorized HTTP load / resilience self-test
+harness**: a worker pool drives a target you operate at a chosen
+concurrency, and the call resolves with a latency/error report. It is a
+**defensive** tool — for staging / CI / lab self-tests — not a flooding
+weapon: it is a plain HTTP client loop with **no raw packets, source
+spoofing, amplification, or randomized-target fan-out**.
+
+> **Authorized-use guardrail.** A target whose host resolves to loopback,
+> a private/ULA range, link-local, the unspecified address, or `localhost`
+> runs unconditionally (it's your own infra). Any **public** host is
+> **refused unless you pass `confirm: true`** — throwing
+> `net.load.http: refusing to load-test public host <h> without confirm:true (authorized self-testing only)`.
+> `confirm: true` is the script author asserting they are authorized to
+> load-test that host. Concurrency is hard-capped at **1000** (values above
+> throw); the default is a conservative **10**.
+
+```ts
+net.load.http({
+  url: string,              // http/https target (required)
+  method?: string,          // default "GET"
+  headers?: Record<string, string>,
+  body?: string,
+  concurrency?: number,     // parallel workers; default 10, capped at 1000
+  requests?: number,        // total requests to send …
+  duration?: number,        // … OR run for this many ms (exactly one required)
+  rps?: number,             // optional client-side rate cap (req/s; 0 = unlimited)
+  timeout?: number,         // per-request ms; default 10000
+  confirm?: boolean,        // required true to target a public host
+}): Promise<LoadReport>
+```
+
+- Provide **exactly one** of `requests` (> 0) or `duration` (> 0 ms); giving
+  neither or both throws.
+- A 4xx/5xx is a normal **recorded** response (it counts in `statusCounts`),
+  not a thrown error; only transport failures (no response) count as
+  `failed`. `errorRate` is `(failed + 5xx) / sent`.
+
+The report:
+
+```ts
+interface LoadReport {
+  target: string;
+  method: string;
+  concurrency: number;
+  durationMs: number;        // wall-clock of the run
+  sent: number;              // requests started
+  completed: number;         // got an HTTP response (any status)
+  failed: number;            // transport errors / timeouts (no response)
+  rps: number;               // achieved throughput (completed / durationSec)
+  errorRate: number;         // (failed + 5xx) / sent, 0..1
+  latency: {                 // milliseconds, over completed requests
+    min: number; mean: number; p50: number; p90: number;
+    p95: number; p99: number; max: number;
+  };
+  statusCounts: Record<string, number>;  // e.g. { "200": 990, "503": 10 }
+  errors: Record<string, number>;         // transport error kind → count
+}
+```
+
+Latency percentiles are nearest-rank over the completed-request latencies.
+Transport `errors` are bucketed by kind (`timeout`, `refused`, `dns`,
+`reset`, `canceled`, `error`). The run honours the engine's cancellation
+(Run end / `--timeout` aborts in-flight requests). See
+`examples/scripts/load.ts`.
 
 ### `db`
 
@@ -4732,6 +4802,26 @@ p.onMessage(ev => runtime.log(ev.address, ev.type));
 await p.send({ to: "8.8.8.8", id: 1, seq: 1, payload: "ping" });
 // raw (non-Echo) body — e.g. a hand-built destination-unreachable:
 await p.send({ to: "8.8.8.8", type: 3, code: 1, body: new Uint8Array([0, 0, 0, 0]) });
+```
+
+#### net.load.http
+
+```
+http(opts: { url: string, method?: string, headers?: Record<string, string>, body?: string, concurrency?: number, requests?: number, duration?: number, rps?: number, timeout?: number, confirm?: boolean }): Promise<{ target: string, method: string, concurrency: number, durationMs: number, sent: number, completed: number, failed: number, rps: number, errorRate: number, latency: { min: number, mean: number, p50: number, p90: number, p95: number, p99: number, max: number }, statusCounts: Record<string, number>, errors: Record<string, number> }>
+```
+
+Authorized HTTP load / resilience self-test: drive a target with a worker pool at a given concurrency for a fixed `requests` count or `duration` (exactly one required), optional client-side `rps` cap, and return a latency/error report. Dual-use guardrail: public targets are refused unless `confirm:true` (loopback/private/localhost hosts are always allowed); concurrency is capped at 1000. Defensive self-testing only — no raw packets, spoofing, or amplification.
+
+**Parameters**
+
+- `opts` *({ url: string, method?: string, headers?: Record<string, string>, body?: string, concurrency?: number, requests?: number, duration?: number, rps?: number, timeout?: number, confirm?: boolean })* — url is the http/https target (required). method defaults to GET. headers/body set the request. concurrency is the number of parallel workers (default 10, clamped to [1,1000]). Provide exactly one of requests (total requests to send) or duration (run time in ms). rps caps client-side throughput (req/s, 0 = unlimited). timeout is the per-request timeout in ms (default 10000). confirm:true asserts you are authorized and is required to target a public host.
+
+**Returns:** Promise<LoadReport> — durationMs is the wall-clock of the run; sent is requests started; completed got an HTTP response (any status); failed is transport errors/timeouts; rps is achieved throughput (completed/sec); errorRate is (failed + 5xx)/sent in [0,1]; latency is milliseconds over completed requests; statusCounts maps status code → count; errors maps transport error kind (timeout/refused/dns/reset/canceled/error) → count. A 4xx/5xx is a recorded response, not a failure.
+
+**Throws:** Rejects if `url` is missing or not http/https, if neither or both of `requests`/`duration` are given, if `concurrency` exceeds the 1000 cap, or if the target host is public and `confirm:true` is not set.
+
+```ts
+const r = await net.load.http({ url: "http://127.0.0.1:8080/", requests: 200, concurrency: 10 }); runtime.log(r.rps, r.latency.p95, r.errorRate);
 ```
 
 #### net.netstatus.check
