@@ -313,6 +313,15 @@ type responseState struct {
 	// connection after Hijack). Wired by Task 4.
 	upgrade bool
 
+	// stream is set by res.sse(): the response is a long-lived
+	// text/event-stream written incrementally by a pump goroutine. Unlike
+	// upgrade (WebSocket hijack), the connection is NOT hijacked, so
+	// dispatchHandler must stay parked on streamDone until the stream
+	// closes, or net/http closes the connection. writeResponse is skipped
+	// (upgrade is also set so its short-circuit fires).
+	stream     bool
+	streamDone chan struct{}
+
 	// failWith routes an unhandled handler/middleware error. When an
 	// onError handler is configured for the listener it is invoked as
 	// (err, req, res) so the script can render a custom response;
@@ -476,7 +485,18 @@ func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain 
 	}
 
 	<-state.notify
-	writeResponse(w, state)
+	state.mu.Lock()
+	stream := state.stream
+	streamDone := state.streamDone
+	state.mu.Unlock()
+	if stream {
+		// SSE: keep this http handler goroutine alive so net/http does not
+		// finish the response. The pump goroutine in server_sse.go owns w
+		// and closes streamDone on stream close / client disconnect.
+		<-streamDone
+	} else {
+		writeResponse(w, state)
+	}
 	if serveAccessLogger != nil {
 		serveAccessLogger(r.RemoteAddr, r.Method, r.URL.Path, state.status, time.Since(startTime))
 	}
@@ -794,6 +814,17 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 			opts = call.Argument(0)
 		}
 		return upgradeWebSocketImpl(vm, loop, eng, state, w, r, opts)
+	})
+
+	// sse — start a Server-Sent Events stream. Writes text/event-stream
+	// headers, parks the dispatcher on streamDone, and returns a handle
+	// with send / close / closed. See server_sse.go.
+	_ = res.Set("sse", func(call goja.FunctionCall) goja.Value {
+		var opts goja.Value
+		if len(call.Arguments) > 0 {
+			opts = call.Argument(0)
+		}
+		return sseImpl(vm, loop, eng, state, w, r, opts)
 	})
 
 	_ = res.Set("redirect", func(call goja.FunctionCall) goja.Value {

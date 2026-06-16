@@ -70,6 +70,7 @@ Or pick individual scripts:
 | `server-http.ts` | `server.http.listen` — minimal HTTP server with routing and middleware (logger); self-tests routes via `net.http.get` then closes. |
 | `server-static.ts` | `server.http.static` — mount a directory tree at a URL prefix; self-tests via `net.http.get` then closes. |
 | `server-ws.ts` | `res.upgradeWebSocket` — upgrade an HTTP request to a WebSocket; iterates frames via `for await`, echoes text frames back; self-tests the handshake via `net.probe.wss` then closes. |
+| `server-sse.ts` | `res.sse` — one-way Server-Sent Events (`text/event-stream`) stream; sends a string event, two named JSON events with ids, then closes server-side; self-tests the accumulated frames via `net.http.request`. |
 | `server-smtp.ts` | SMTP server (`server.smtp.listen`) + outbound sender (`net.email.send`) round-trip; binds a port, sends a message to itself, captures it in `onData`, asserts subject + body. |
 | `server-tcp.ts` | Raw TCP server (`server.tcp.listen`) + `net.tcp.connect` client echo round-trip; binds an ephemeral port, echoes bytes from the connection handler, asserts the echo matches, then closes. Fully offline. |
 | `server-icmp.ts` | `server.icmp.listen` — raw ICMP listener with reply(); needs root, so the demo handles the privilege rejection and exits 0. |
