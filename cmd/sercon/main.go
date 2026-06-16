@@ -416,6 +416,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"icmp":      icmpNamespace(vm, loop, e),
 			"capture":   captureNamespace(vm, loop, e),
 			"raw":       rawNamespace(vm, loop, e),
+			"load":      loadNamespace(vm, loop),
 		}
 	}); err != nil {
 		return err
