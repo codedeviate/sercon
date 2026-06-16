@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.50.1] — 2026-06-16
+
+### Docs
+- `HISTORY.md`: record the v0.50.0 capabilities — `res.sse()` in §5 (Servers)
+  and the ARP/VLAN/DNS + TCP-options decode enrichment in the §4 `net.capture`
+  entry. The header notes that v0.42–v0.49 are not yet woven in (see this
+  changelog for their per-version detail).
+
 ## [0.50.0] — 2026-06-16
 
 ### Added
