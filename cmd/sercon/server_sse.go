@@ -54,11 +54,18 @@ type sseFrame struct {
 }
 
 // sseStream tracks one open SSE response.
+//
+// events is never closed: a send() runs from an off-loop goroutine, and
+// sending on a closed channel panics (a select send-case on a closed channel
+// fires rather than blocking). Instead, explicit close() closes quit, which
+// the pump selects on to exit; senders select on done (closed by the pump on
+// exit) to reject. So nothing ever sends on a closed channel.
 type sseStream struct {
-	events  chan sseFrame // formatted frames headed for the pump
-	done    chan struct{} // == responseState.streamDone; closed once the pump exits
-	once    sync.Once     // guards the events-channel close (teardown)
-	release func()        // HoldRun release (idempotent)
+	events    chan sseFrame // formatted frames headed for the pump (never closed)
+	done      chan struct{} // == responseState.streamDone; closed once the pump exits
+	quit      chan struct{} // closed by close() to ask the pump to stop
+	closeOnce sync.Once     // guards close(quit)
+	release   func()        // HoldRun release (idempotent)
 }
 
 // buildSSEEvent converts the JS send() argument into an sseEvent. A string
@@ -146,13 +153,14 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 	st := &sseStream{
 		events:  make(chan sseFrame, 64),
 		done:    streamDone,
+		quit:    make(chan struct{}),
 		release: eng.HoldRun(fmt.Sprintf("sse %s", r.RemoteAddr)),
 	}
 
 	closedPromise, closedResolve, _ := vm.NewPromise()
 
 	teardown := func() {
-		st.once.Do(func() { close(st.events) })
+		st.closeOnce.Do(func() { close(st.quit) })
 	}
 
 	// Pump goroutine: sole owner of w after this point. Writes frames and
@@ -179,10 +187,7 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 		}
 		for {
 			select {
-			case f, ok := <-st.events:
-				if !ok {
-					return // teardown
-				}
+			case f := <-st.events:
 				_, err := w.Write(f.data)
 				if err == nil {
 					flusher.Flush()
@@ -196,6 +201,8 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 					return
 				}
 				flusher.Flush()
+			case <-st.quit:
+				return // explicit close()
 			case <-r.Context().Done():
 				return // client disconnected
 			}
@@ -217,6 +224,9 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 		frame := sseFrame{data: formatSSEEvent(ev), ack: make(chan error, 1)}
 		promise, resolve, reject := vm.NewPromise()
 		go func() {
+			rejectClosed := func() {
+				loop.RunOnLoop(func(vm *goja.Runtime) { _ = reject(vm.NewTypeError("res.sse: stream closed")) })
+			}
 			select {
 			case st.events <- frame:
 				select {
@@ -229,10 +239,12 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 						}
 					})
 				case <-st.done:
-					loop.RunOnLoop(func(vm *goja.Runtime) { _ = reject(vm.NewTypeError("res.sse: stream closed")) })
+					rejectClosed()
 				}
+			case <-st.quit:
+				rejectClosed()
 			case <-st.done:
-				loop.RunOnLoop(func(vm *goja.Runtime) { _ = reject(vm.NewTypeError("res.sse: stream closed")) })
+				rejectClosed()
 			}
 		}()
 		return vm.ToValue(promise)
