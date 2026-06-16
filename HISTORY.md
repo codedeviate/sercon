@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.50.1 (2026-06-16).
+covered is v0.1.0 (2026-05-25) through v0.51.1 (2026-06-16).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -256,6 +256,20 @@ All operations are confined to a prefix namespace (keystore service =
 `SERCON_SECRETS_PREFIX` > the default `sercon/`. v0.48.1 added argument
 validation so a missing/empty `name`, `account`, or `secret` rejects with a
 clear error instead of silently keying `"<prefix>undefined"`.
+
+`runtime.clipboard` (v0.51.0) reads/writes the host OS system clipboard text:
+`available` (advisory bool), `read() → Promise<string>` (`""` when empty),
+`write(text) → Promise<void>`. It is the first sanctioned *host* clipboard
+binding and an **external-CLI fallback** — no pure-Go, no-cgo library covers
+every platform — feature-detected on PATH per the `services.git`/`gh`/`ai`
+precedent: macOS `pbcopy`/`pbpaste`, Linux `wl-clipboard` (Wayland) or
+`xclip`/`xsel` (X11), Windows `clip` + PowerShell `Get-Clipboard`. The backend
+is resolved by a pure `clipboardBackend(goos, wayland, look)` function (so it is
+unit-tested without touching the environment); writes feed text via stdin and
+every subprocess is bounded by a ~5s timeout. When no backend is installed the
+ops throw a clean error and `available` is `false`; the static binary stays
+fully functional. Text only — image (PNG) support is parked (macOS has no
+built-in image-read CLI; see `OUT-OF-SCOPE.md`).
 
 ### `crypto`
 
