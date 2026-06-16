@@ -8,6 +8,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.51.1] — 2026-06-16
+
+### Docs
+- `MANUAL.md` §4: harmonize the `runtime.clipboard` entry with `runtime.secrets`
+  — bullet + nested member sub-bullets instead of a `####` subheading. No API
+  change; the code example remains in the §16 reference / `sercon.d.ts`.
+
 ## [0.51.0] — 2026-06-16
 
 ### Added
