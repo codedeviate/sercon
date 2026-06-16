@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `runtime.clipboard` — host OS system clipboard text I/O: `available`
+  (advisory), `read(): Promise<string>`, `write(text): Promise<void>`. An
+  external-CLI fallback (macOS `pbcopy`/`pbpaste`, Linux `wl-clipboard` or
+  `xclip`/`xsel`, Windows `clip` + PowerShell), feature-detected on PATH; throws
+  cleanly and reports `available: false` when no backend is installed. Text
+  only; image support is deferred (see OUT-OF-SCOPE.md). New `clipboard.ts`
+  example.
+
 ## [0.50.2] — 2026-06-16
 
 ### Docs

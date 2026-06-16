@@ -59,6 +59,24 @@ declare const runtime: {
      */
     ok(cond: unknown, msg?: string): void;
   };
+  clipboard: {
+    /**
+     * True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-clipboard or xclip/xsel; Windows clip + PowerShell). Cheap, side-effect-free advisory — does not touch the clipboard; gate calls on it to self-skip on headless boxes.
+     * @returns boolean — false when no clipboard CLI is installed (e.g. a headless server). The authoritative signal is whether read/write throw.
+     */
+    available: boolean;
+    /**
+     * Read the host OS system clipboard as UTF-8 text. Async (shells out to the platform clipboard tool). An empty clipboard resolves with "".
+     * @returns Promise resolving to the clipboard text ("" when the clipboard is empty or holds no text).
+     */
+    read(...args: unknown[]): Promise<string>;
+    /**
+     * Replace the host OS system clipboard with the given text. Async (shells out to the platform clipboard tool); text is passed via stdin (no shell-injection risk).
+     * @param text The text to place on the clipboard (non-string values are String()-coerced).
+     * @returns Promise resolving when the clipboard has been set.
+     */
+    write(text: string): Promise<void>;
+  };
   env: {
     /**
      * Read an environment variable. Returns undefined when unset (not empty string).

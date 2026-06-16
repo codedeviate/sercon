@@ -1158,10 +1158,19 @@ server.http.listen({
 });`)
 	note("The dispatcher parks until the stream closes (the connection isn't hijacked); a pump goroutine owns the writer and flushes each event. keepAlive sends ': ping' comments to defeat idle-proxy timeouts.")
 
+	header(57, "Host clipboard (runtime.clipboard)")
+	code(`// Read/write the host OS system clipboard text. available gates it
+// (false on headless boxes); read()/write() are async.
+if (runtime.clipboard.available) {
+  await runtime.clipboard.write("copied from sercon");
+  runtime.log("clipboard:", await runtime.clipboard.read());
+}`)
+	note("External-CLI fallback: macOS pbcopy/pbpaste, Linux wl-clipboard or xclip/xsel, Windows clip + PowerShell. Throws a clean error when none is installed; the static binary stays fully functional without them.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 56
+const exampleCount = 57

@@ -153,6 +153,16 @@ plus a spec + guardrail design before building. (The dual-use boundary is
 lighter here than for the security harness below, but the same "intentional,
 authorized, documented" rule applies.)
 
+**Already wired (authorized):** the clipboard tools — `pbcopy`/`pbpaste`
+(macOS), `xclip`/`xsel`/`wl-clipboard` (Linux), `clip`/PowerShell `Get-Clipboard`
+(Windows) — now back `runtime.clipboard` (text), feature-detected on PATH with a
+clean thrown error and `available: false` when none is installed.
+
+- **Clipboard image (PNG).** `runtime.clipboard` (text) shipped via an
+  external-CLI fallback. Image read/write is parked: macOS has no built-in
+  image-read CLI (needs `pngpaste`), while Linux (`wl-paste`/`xclip -t
+  image/png`) and Windows (PowerShell) are feasible. Re-promote on demand.
+
 ## Security & resilience testing
 
 For **authorized testing of your own systems** — load, stress, and

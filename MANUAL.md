@@ -705,6 +705,27 @@ Script-host scaffolding. Members:
   Operations are async and bounded by a 10s timeout (a blocking macOS consent
   prompt rejects rather than hangs).
 
+#### `runtime.clipboard` — host system clipboard (text)
+
+- `runtime.clipboard.available` — `boolean`, cheap advisory (no clipboard
+  access): true when a backend is on PATH.
+- `runtime.clipboard.read()` — `Promise<string>`; the clipboard text (`""` when
+  empty).
+- `runtime.clipboard.write(text)` — `Promise<void>`; replace the clipboard text.
+
+An **external-CLI fallback** (no pure-Go/no-cgo clipboard library covers every
+platform): macOS `pbcopy`/`pbpaste`, Linux `wl-clipboard` (Wayland) or
+`xclip`/`xsel` (X11), Windows `clip` + PowerShell `Get-Clipboard`. When none is
+installed the calls throw a clean error and `available` is `false`; the binary
+itself stays fully functional. Text only — image/RTF/HTML are out of scope.
+
+```ts
+if (runtime.clipboard.available) {
+  await runtime.clipboard.write("copied from sercon");
+  const text = await runtime.clipboard.read();
+}
+```
+
 ```ts
 runtime.log("hello");
 runtime.assert.equal(2 + 2, 4);
@@ -5079,6 +5100,58 @@ Throw when cond is falsy. Optional msg appears in the error.
 
 ```ts
 runtime.assert.ok(user.id, "user must have an id");
+```
+
+#### runtime.clipboard.available
+
+```
+available: boolean
+```
+
+True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-clipboard or xclip/xsel; Windows clip + PowerShell). Cheap, side-effect-free advisory — does not touch the clipboard; gate calls on it to self-skip on headless boxes.
+
+**Returns:** boolean — false when no clipboard CLI is installed (e.g. a headless server). The authoritative signal is whether read/write throw.
+
+**Throws:** Never throws.
+
+```ts
+if (!runtime.clipboard.available) runtime.log("no clipboard — skipping");
+```
+
+#### runtime.clipboard.read
+
+```
+read(...args: unknown[]): Promise<string>
+```
+
+Read the host OS system clipboard as UTF-8 text. Async (shells out to the platform clipboard tool). An empty clipboard resolves with "".
+
+**Returns:** Promise resolving to the clipboard text ("" when the clipboard is empty or holds no text).
+
+**Throws:** Rejects when no clipboard backend is on PATH (a clean "runtime.clipboard: no clipboard backend …" message) or the underlying command fails / times out (~5s).
+
+```ts
+const text = await runtime.clipboard.read();
+```
+
+#### runtime.clipboard.write
+
+```
+write(text: string): Promise<void>
+```
+
+Replace the host OS system clipboard with the given text. Async (shells out to the platform clipboard tool); text is passed via stdin (no shell-injection risk).
+
+**Parameters**
+
+- `text` *(string)* — The text to place on the clipboard (non-string values are String()-coerced).
+
+**Returns:** Promise resolving when the clipboard has been set.
+
+**Throws:** Rejects when no clipboard backend is on PATH or the underlying command fails / times out (~5s).
+
+```ts
+await runtime.clipboard.write("copied from sercon");
 ```
 
 #### runtime.env.get

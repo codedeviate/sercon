@@ -117,6 +117,30 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Rejects if name is missing/empty or account is missing (pass \"\" for a single-secret name), when the keystore backend is unreachable, or the delete fails (\"runtime.secrets.delete: …\"). Bounded by a 10s timeout.",
 			Example:    `const removed = await runtime.secrets.delete("devshop", "tess@example.com");`,
 		},
+		"clipboard.available": {
+			Summary:    "True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-clipboard or xclip/xsel; Windows clip + PowerShell). Cheap, side-effect-free advisory — does not touch the clipboard; gate calls on it to self-skip on headless boxes.",
+			ReturnType: "boolean",
+			Returns:    "boolean — false when no clipboard CLI is installed (e.g. a headless server). The authoritative signal is whether read/write throw.",
+			Errors:     "Never throws.",
+			Example:    `if (!runtime.clipboard.available) runtime.log("no clipboard — skipping");`,
+		},
+		"clipboard.read": {
+			Summary:    "Read the host OS system clipboard as UTF-8 text. Async (shells out to the platform clipboard tool). An empty clipboard resolves with \"\".",
+			ReturnType: "Promise<string>",
+			Returns:    "Promise resolving to the clipboard text (\"\" when the clipboard is empty or holds no text).",
+			Errors:     "Rejects when no clipboard backend is on PATH (a clean \"runtime.clipboard: no clipboard backend …\" message) or the underlying command fails / times out (~5s).",
+			Example:    `const text = await runtime.clipboard.read();`,
+		},
+		"clipboard.write": {
+			Summary: "Replace the host OS system clipboard with the given text. Async (shells out to the platform clipboard tool); text is passed via stdin (no shell-injection risk).",
+			Params: []scriptengine.Param{
+				{Name: "text", Type: "string", Desc: "The text to place on the clipboard (non-string values are String()-coerced)."},
+			},
+			ReturnType: "Promise<void>",
+			Returns:    "Promise resolving when the clipboard has been set.",
+			Errors:     "Rejects when no clipboard backend is on PATH or the underlying command fails / times out (~5s).",
+			Example:    `await runtime.clipboard.write("copied from sercon");`,
+		},
 		"argv": {
 			Summary:    "Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is the program name (sercon), argv[1] is the running script path, and any args after `--` on the command line start at argv[2].",
 			ReturnType: "string[]",
