@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.50.2] — 2026-06-16
+
+### Docs
+- `HISTORY.md`: backfill the v0.42–v0.49 capabilities into their subsystem
+  sections — `net.capture` filter grammar + `routes()`, `server.https`
+  self-signed cert, `server.http`/`https` `onError`, webdriver `commandTimeout`,
+  the d.ts/§16 async `ReturnType` fix, `runtime.secrets` + `--secrets-prefix`,
+  and `db.valkey`. The header span now reads through v0.50.1 with no
+  coverage-gap caveat.
+
 ## [0.50.1] — 2026-06-16
 
 ### Docs
