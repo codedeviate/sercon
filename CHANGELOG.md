@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.50.0] — 2026-06-16
+
 ### Added
 - `res.sse(opts?)` on the HTTP/HTTPS listener: a one-way Server-Sent Events
   (`text/event-stream`) stream with `send()` (a string, or
