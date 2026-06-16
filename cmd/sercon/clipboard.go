@@ -141,6 +141,64 @@ func stderrSuffix(s string) string {
 	return ": " + s
 }
 
+// pngSignature is the full 8-byte PNG signature (barcode_decode.go already has
+// a 4-byte pngMagic for format sniffing; clipboard write validation wants the
+// complete signature).
+var pngSignature = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+
+// isPNG reports whether b begins with the PNG signature.
+func isPNG(b []byte) bool { return len(b) >= 8 && bytes.Equal(b[:8], pngSignature) }
+
+// imageStrategy describes how PNG clipboard ops run on this host. For wl/xclip
+// the argv slices stream PNG via stdout (read) / stdin (write); darwin and
+// windows use kind-specific code paths (temp file + osascript / PowerShell).
+type imageStrategy struct {
+	kind      string
+	readArgv  []string
+	writeArgv []string
+}
+
+// clipboardImageBackend resolves the PNG image strategy, or ok=false + reason.
+// Pure: goos / wayland / look are injected for testing.
+func clipboardImageBackend(goos string, wayland bool, look func(string) bool) (imageStrategy, bool, string) {
+	switch goos {
+	case "darwin":
+		if look("pngpaste") && look("osascript") {
+			return imageStrategy{kind: "darwin"}, true, ""
+		}
+		return imageStrategy{}, false, "runtime.clipboard: image read needs pngpaste (e.g. `brew install pngpaste`)"
+	case "linux":
+		if wayland && look("wl-copy") && look("wl-paste") {
+			return imageStrategy{kind: "wl",
+				readArgv:  []string{"wl-paste", "--type", "image/png"},
+				writeArgv: []string{"wl-copy", "--type", "image/png"}}, true, ""
+		}
+		if look("xclip") {
+			return imageStrategy{kind: "xclip",
+				readArgv:  []string{"xclip", "-selection", "clipboard", "-t", "image/png", "-o"},
+				writeArgv: []string{"xclip", "-selection", "clipboard", "-t", "image/png", "-i"}}, true, ""
+		}
+		return imageStrategy{}, false, "runtime.clipboard: image needs wl-clipboard or xclip (xsel cannot handle images)"
+	case "windows":
+		if look("powershell") {
+			return imageStrategy{kind: "windows"}, true, ""
+		}
+		return imageStrategy{}, false, "runtime.clipboard: image needs PowerShell"
+	default:
+		return imageStrategy{}, false, fmt.Sprintf("runtime.clipboard: image unsupported on %q", goos)
+	}
+}
+
+func resolveClipboardImageBackend() (imageStrategy, bool, string) {
+	return clipboardImageBackend(runtime.GOOS, os.Getenv("WAYLAND_DISPLAY") != "", lookPath)
+}
+
+// clipboardImageAvailable reports whether PNG read+write are usable on PATH.
+func clipboardImageAvailable() bool {
+	_, ok, _ := resolveClipboardImageBackend()
+	return ok
+}
+
 // clipboardNamespace builds the runtime.clipboard member map.
 func clipboardNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
