@@ -2168,6 +2168,15 @@ type Response = {
   redirect(loc: string, code?: number): Response;  // default 302
   // Upgrade (WebSocket):
   upgradeWebSocket(opts?: { readBuffer?: number }): Promise<WebSocket>;
+  // Stream (Server-Sent Events):
+  sse(opts?: { keepAlive?: number; retry?: number }): SSEStream;
+};
+
+type SSEStream = {
+  send(data: string | { data: unknown; event?: string; id?: string; retry?: number }): Promise<void>;
+  close(): Promise<void>;
+  readonly closed: Promise<void>;   // resolves on close OR client disconnect
+  readonly remote: string;
 };
 ```
 
@@ -2333,6 +2342,45 @@ by goja. esbuild's `Supported` flag lowers both during transpile
 (see CHANGELOG), and every Run installs `Symbol.asyncIterator =
 Symbol.for("@@asyncIterator")` so the lowered helper and user code
 agree on the same iteration key.
+
+#### Server-Sent Events (`res.sse`)
+
+`res.sse(opts?)` starts a one-way `text/event-stream` response: the
+handler holds the connection open and pushes events until it (or the
+client) closes the stream.
+
+```ts
+"GET /events": (req, res) => {
+  const stream = res.sse({ keepAlive: 15000 });
+  let n = 0;
+  const t = setInterval(() => stream.send({ event: "tick", data: { n: n++ } }), 1000);
+  stream.closed.then(() => clearInterval(t));   // stop on client disconnect
+  return stream.closed;                          // keep the handler alive
+},
+```
+
+**Options.** `keepAlive` (ms) sends `: ping` comment frames at that
+interval to defeat idle-proxy timeouts (off by default). `retry` (ms)
+emits a one-time `retry:` line telling the client its reconnect delay.
+
+**`send(data)`.** `data` is a string (→ a single `data:` line) or an
+object `{ event?, data, id?, retry? }`. Object `data` is JSON-encoded;
+string `data` is passed through, and multi-line string data becomes
+one `data:` line per source line (per the SSE grammar). The returned
+Promise resolves once the frame is flushed to the socket, and rejects
+if the stream is already closed.
+
+**`close()`** ends the stream and resolves once it is torn down.
+**`closed`** is a Promise that resolves on `close()` **or** when the
+client disconnects — use it to stop timers/producers.
+
+**Mechanics.** Unlike `upgradeWebSocket`, SSE does **not** hijack the
+connection — it keeps writing to the same `http.ResponseWriter`. So the
+request's dispatcher goroutine parks until the stream closes (otherwise
+net/http would finish the response). A dedicated pump goroutine owns
+the writer and flushes each event; the event loop never writes to the
+socket directly. The listener's `HoldRun` keeps the loop alive while
+streams are open, exactly like WebSocket.
 
 ### 6.6 Lifecycle
 
@@ -5214,7 +5262,7 @@ Network servers: HTTP/HTTPS listeners with routing, middleware, static files, We
 listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown }): { address: string; stopped: Promise<void>; close(): Promise<void> }
 ```
 
-Bind an HTTP listener: server.http.listen({port, host?, routes, use?, onError?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Optional onError(err, req, res) renders a custom response when a handler/middleware throws or rejects (else a stock 500). Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}.
+Bind an HTTP listener: server.http.listen({port, host?, routes, use?, onError?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Optional onError(err, req, res) renders a custom response when a handler/middleware throws or rejects (else a stock 500). Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}. Handlers can also call res.sse(opts?) to start a one-way Server-Sent Events stream — returns a handle with send(data) (string → `data:`; or {event,data,id,retry} with object data JSON-encoded), close(), and a `closed` Promise (resolves on close or client disconnect); opts: {keepAlive?: ms, retry?: ms}.
 
 **Parameters**
 

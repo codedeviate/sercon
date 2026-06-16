@@ -1140,10 +1140,28 @@ if (runtime.secrets.available) {
 	note("get returns null (not undefined) when the entry is absent; delete returns true if removed.")
 	note("Prefix namespace: service stored as PREFIX+name. Set prefix via --secrets-prefix or $SERCON_SECRETS_PREFIX.")
 
+	header(56, "Server-Sent Events (res.sse)")
+	code(`// res.sse starts a one-way text/event-stream. send() takes a
+// string (-> data:) or {event, data, id, retry}; object data is
+// JSON-encoded. close() ends it; ` + "`closed`" + ` resolves on close/disconnect.
+server.http.listen({
+  port: 8080,
+  routes: {
+    "GET /events": (req, res) => {
+      const s = res.sse({ keepAlive: 15000 });
+      let n = 0;
+      const t = setInterval(() => s.send({ event: "tick", data: { n: n++ } }), 1000);
+      s.closed.then(() => clearInterval(t));
+      return s.closed;
+    },
+  },
+});`)
+	note("The dispatcher parks until the stream closes (the connection isn't hijacked); a pump goroutine owns the writer and flushes each event. keepAlive sends ': ping' comments to defeat idle-proxy timeouts.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 55
+const exampleCount = 56

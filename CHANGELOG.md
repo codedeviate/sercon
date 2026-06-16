@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `res.sse(opts?)` on the HTTP/HTTPS listener: a one-way Server-Sent Events
+  (`text/event-stream`) stream with `send()` (a string, or
+  `{event, data, id, retry}` with object data JSON-encoded), `close()`, a
+  `closed` Promise (resolves on close or client disconnect), and optional
+  `keepAlive` / `retry`. Unlike `res.upgradeWebSocket` the connection isn't
+  hijacked, so the request dispatcher parks until the stream closes; a pump
+  goroutine owns the writer and flushes each event. New `server-sse.ts` example.
+
 ## [0.49.1] — 2026-06-11
 
 ### Added
