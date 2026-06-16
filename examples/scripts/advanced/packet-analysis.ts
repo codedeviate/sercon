@@ -159,6 +159,66 @@ runtime.assert.equal(filteredUdp, 3, "filter 'udp' should pass 3 frames");
 runtime.assert.equal(filteredTcp, 0, "filter 'udp' should drop TCP frames");
 runtime.log("filter check: 'udp' passed", filteredUdp, "UDP frames, blocked", filteredTcp, "TCP frames");
 
+// ── extended decode: ARP + DNS ────────────────────────────────────────────────
+// The decoder also surfaces ARP and DNS as structured fields. Build one of
+// each, round-trip through a second pcap, and assert the new layers.
+
+// ARP request: who-has 10.0.0.2, tell 10.0.0.1 (sender 02:00:00:00:00:01).
+function makeARPFrame(): Uint8Array {
+  const frame: number[] = [
+    // Ethernet: dst=broadcast, src=02:..:01, type=ARP(0x0806)
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06,
+    // ARP payload (28 bytes)
+    0x00, 0x01,                                     // htype = Ethernet
+    0x08, 0x00,                                     // ptype = IPv4
+    0x06, 0x04,                                     // hlen, plen
+    0x00, 0x01,                                     // operation = request
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x01,             // sender MAC
+    0x0a, 0x00, 0x00, 0x01,                         // sender IP 10.0.0.1
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,             // target MAC (unknown)
+    0x0a, 0x00, 0x00, 0x02,                         // target IP 10.0.0.2
+  ];
+  return new Uint8Array(frame);
+}
+
+// DNS query for "example.com" A — carried over UDP/53 (reuses makeUDPFrame).
+// Message: header(12) + question(name 13B + qtype 2 + qclass 2).
+const dnsMessage: number[] = [
+  0x12, 0x34,                                       // id
+  0x01, 0x00,                                       // flags: RD
+  0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,   // qd=1, an/ns/ar=0
+  0x07, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65,   // "example"
+  0x03, 0x63, 0x6f, 0x6d, 0x00,                     // "com", root
+  0x00, 0x01,                                       // qtype = A
+  0x00, 0x01,                                       // qclass = IN
+];
+
+const extraPath = "/tmp/sercon-packet-analysis-extra.pcap";
+const w2 = net.capture.toFile(extraPath, { snaplen: 65536 });
+w2.write(makeARPFrame(), { ts: 1700000001000 });
+w2.write(makeUDPFrame(6, 12345, 53, dnsMessage), { ts: 1700000001001 });
+await w2.close();
+
+let sawArp: any = null;
+let sawDns: any = null;
+await net.capture.openFile(extraPath, (pkt: any) => {
+  if (pkt.arp) sawArp = pkt.arp;
+  if (pkt.dns) sawDns = pkt.dns;
+});
+
+runtime.assert.ok(sawArp, "ARP frame decoded an arp layer");
+runtime.assert.equal(sawArp.operation, "request", "ARP operation is request");
+runtime.assert.equal(sawArp.senderIp, "10.0.0.1", "ARP sender IP");
+runtime.assert.equal(sawArp.targetIp, "10.0.0.2", "ARP target IP");
+runtime.log("ARP:", sawArp.operation, sawArp.senderIp, "→", sawArp.targetIp);
+
+runtime.assert.ok(sawDns, "DNS frame decoded a dns layer");
+runtime.assert.equal(sawDns.questions[0].name, "example.com", "DNS question name");
+runtime.assert.equal(sawDns.questions[0].type, "A", "DNS question type");
+runtime.log("DNS: query", sawDns.questions[0].name, sawDns.questions[0].type);
+
 runtime.log("PASS");
 
 // ── live capture reference (NOT run here) ────────────────────────────────────
