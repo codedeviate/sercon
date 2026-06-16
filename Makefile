@@ -110,7 +110,11 @@ examples/scripts/server-sse.ts \
 	examples/scripts/advanced/codec-interop.ts \
 	examples/scripts/advanced/packet-analysis.ts \
 	examples/scripts/advanced/recon-host-report.ts \
-	examples/scripts/advanced/webdriver-login-flow.ts
+	examples/scripts/advanced/webdriver-login-flow.ts \
+	examples/scripts/advanced/webdriver-actions.ts \
+	examples/scripts/advanced/webdriver-grid.ts \
+	examples/scripts/advanced/sqlite-migration.ts \
+	examples/scripts/advanced/sse-stream.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

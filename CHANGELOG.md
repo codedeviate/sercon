@@ -17,6 +17,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   hijacked, so the request dispatcher parks until the stream closes; a pump
   goroutine owns the writer and flushes each event. New `server-sse.ts` example.
 
+### Docs
+- Four new advanced example scripts: `advanced/sse-stream.ts` (live metrics
+  over `res.sse`), `advanced/sqlite-migration.ts` (idempotent versioned
+  migration + three-table JOIN/aggregation), `advanced/webdriver-actions.ts`
+  (raw W3C `performActions` pointer + key sequences), and
+  `advanced/webdriver-grid.ts` (remote / Selenium Grid WebDriver via
+  `connect({url})`). The first two run in `make demo` (the migration also in
+  CI); the WebDriver pair self-skips without a driver / grid URL.
+
 ## [0.49.1] — 2026-06-11
 
 ### Added

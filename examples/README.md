@@ -102,6 +102,10 @@ external service self-skip.
 | `advanced/packet-analysis.ts` | Hand-builds Ethernet/IP frames → `net.capture.toFile` → `openFile` → decode → per-protocol counts + top destination ports; asserts the tallies. Self-contained, offline. |
 | `advanced/recon-host-report.ts` | Multi-binding host recon — `net.probe` dns/tcp/tls + HTTP headers → a structured report. Hits the real network; **self-skips cleanly when offline** (not in CI). Edit the target to a host you're authorized to probe. |
 | `advanced/webdriver-login-flow.ts` | Complete WebDriver UI test — drive a login form (fill/submit/wait/assert) + screenshot; self-skips when no chromedriver/geckodriver is on PATH. |
+| `advanced/webdriver-actions.ts` | Low-level W3C input via `performActions` — a pointer sequence (viewport coords) that clicks a fixed box, then a key sequence that types into a focused input; plus best-effort cookies. Complements the helper-based `webdriver-advanced.ts`. Self-skips without a driver. |
+| `advanced/webdriver-grid.ts` | Drive a **remote** WebDriver / Selenium Grid endpoint via `connect({url, capabilities})`, gated on `SERCON_WEBDRIVER_GRID_URL` + `services.webdriver.probe`; self-skips cleanly when the env var is unset or the endpoint isn't ready. |
+| `advanced/sqlite-migration.ts` | Idempotent versioned schema migration (a `schema_version` gate, v1 create + v2 `ALTER TABLE`/lookup) then a three-table JOIN (`orders ⋈ customers ⋈ regions`) with `GROUP BY` aggregation; asserts per-region totals and per-tier counts. Self-contained (in CI). |
+| `advanced/sse-stream.ts` | Live-metrics stream over `res.sse` — pushes JSON `tick` events on a timer plus a named `alert`, stops the timer via `stream.closed`, and closes after N ticks; self-tests the accumulated `text/event-stream` via a buffered `net.http.request`. Self-contained, offline. |
 | `advanced/tui-dashboard.ts` | Live multi-pane `tui` dashboard — streams a bounded subprocess into one pane + periodic status ticks in another; runs a fixed number of cycles then exits. **Manual run** (takes over a real terminal); falls back to prefixed lines in non-TTY; not in `make demo`. |
 
 ## DevShop flows (`sws6/`)
