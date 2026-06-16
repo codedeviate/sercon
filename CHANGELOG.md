@@ -33,6 +33,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   `advanced/webdriver-grid.ts` (remote / Selenium Grid WebDriver via
   `connect({url})`). The first two run in `make demo` (the migration also in
   CI); the WebDriver pair self-skips without a driver / grid URL.
+- Network-dependent demos are now resilient to a flaky/offline network: a new
+  shared `examples/scripts/helpers/netskip.ts` recognises transport/DNS/TLS and
+  proxy-HTML failure signatures, and the external-host demos (`async`,
+  `net-probe`, `exec-http`, `email-auth`, `http-request`, `browser`) self-skip
+  (exit 0) on those while re-throwing genuine errors — so `make demo` stays
+  green when the network is unreachable but still catches real regressions.
 
 ## [0.49.1] — 2026-06-11
 
