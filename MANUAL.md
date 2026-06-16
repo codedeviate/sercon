@@ -976,20 +976,27 @@ The **decoded packet object** passed to the `open` / `openFile` handlers:
 {
   ts, length, captureLength, link,     // always present
   eth?:  { src, dst, type },
+  vlan?: { id, priority, drop, type }, // 802.1Q tag; `type` is the inner ethertype
+  arp?:  { operation, senderMac, senderIp, targetMac, targetIp }, // operation: "request"|"reply"
   ip?:   { version, src, dst, protocol, ttl },
-  tcp?:  { srcPort, dstPort, seq, ack,
-           flags: { syn, ack, fin, rst, psh, urg } },
+  tcp?:  { srcPort, dstPort, seq, ack, window, checksum,
+           flags: { syn, ack, fin, rst, psh, urg },
+           options?: { mss?, windowScale?, sackPermitted?, timestamps?: { val, ecr } } },
   udp?:  { srcPort, dstPort, length },
   icmp?: { type, code },
+  dns?:  { id, qr, opcode, rcode,
+           questions: { name, type }[],
+           answers:   { name, type, data }[] }, // data rendered by type (A/AAAA→IP, CNAME→name, …)
   payload?: Uint8Array,                // application-layer bytes, if any
   bytes:    Uint8Array,                // the full raw frame (always present)
 }
 ```
 
-Layer keys (`eth` / `ip` / `tcp` / `udp` / `icmp` / `payload`) are present
-**only when that layer decodes** — a truncated or unrecognised frame still
-yields the always-present `ts` / `length` / `captureLength` / `link` /
-`bytes`.
+Layer keys (`eth` / `vlan` / `arp` / `ip` / `tcp` / `udp` / `icmp` / `dns` /
+`payload`) are present **only when that layer decodes** — a truncated or
+unrecognised frame still yields the always-present `ts` / `length` /
+`captureLength` / `link` / `bytes`. `tcp.options` is present only when the
+segment carries recognised options.
 
 **Filtering.** Both `open` and `openFile` accept an optional `filter`
 string — a **subset of tcpdump syntax**. Supported grammar:
@@ -4388,15 +4395,15 @@ for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);
 #### net.capture.open
 
 ```
-open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, payload?: Uint8Array, bytes: Uint8Array }) => void): void
+open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, vlan?: { id: number, priority: number, drop: boolean, type: string }, arp?: { operation: string, senderMac: string, senderIp: string, targetMac: string, targetIp: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, window: number, checksum: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean }, options?: { mss?: number, windowScale?: number, sackPermitted?: boolean, timestamps?: { val: number, ecr: number } } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, dns?: { id: number, qr: boolean, opcode: string, rcode: string, questions: { name: string, type: string }[], answers: { name: string, type: string, data: string }[] }, payload?: Uint8Array, bytes: Uint8Array }) => void): void
 ```
 
-Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, ip?, tcp?, udp?, icmp?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, net/src net/dst net (CIDR), port/src port/dst port, portrange/src portrange/dst portrange, and/or/not + parens, implicit-and between juxtaposed primaries. A malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo).
+Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, vlan?, arp?, ip?, tcp?, udp?, icmp?, dns?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, net/src net/dst net (CIDR), port/src port/dst port, portrange/src portrange/dst portrange, and/or/not + parens, implicit-and between juxtaposed primaries. A malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo).
 
 **Parameters**
 
 - `opts` *({ iface: string, promisc?: boolean, snaplen?: number, filter?: string })* — iface is the interface name to capture on (required); promisc enables promiscuous mode (default true); snaplen caps the per-packet capture length in bytes (default 262144); filter is an optional tcpdump-like expression (e.g. 'tcp and port 80') applied post-decode in userspace — supports tcp/udp/icmp/ip/ip6, host/net (CIDR), port/portrange, src/dst directions, and/or/not + parens.
-- `onPacket` *((pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, payload?: Uint8Array, bytes: Uint8Array }) => void)* — Called once per matching frame with the decoded packet. ts is epoch ms; layer keys are present only when that layer decoded; bytes is always the raw frame; payload is the application-layer bytes when present.
+- `onPacket` *((pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, vlan?: { id: number, priority: number, drop: boolean, type: string }, arp?: { operation: string, senderMac: string, senderIp: string, targetMac: string, targetIp: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, window: number, checksum: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean }, options?: { mss?: number, windowScale?: number, sackPermitted?: boolean, timestamps?: { val: number, ecr: number } } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, dns?: { id: number, qr: boolean, opcode: string, rcode: string, questions: { name: string, type: string }[], answers: { name: string, type: string, data: string }[] }, payload?: Uint8Array, bytes: Uint8Array }) => void)* — Called once per matching frame with the decoded packet. ts is epoch ms; layer keys (eth/vlan/arp/ip/tcp/udp/icmp/dns) are present only when that layer decoded; bytes is always the raw frame; payload is the application-layer bytes when present.
 
 **Returns:** Promise<{ iface: string, link: string, close(): Promise<void> }> — a live-capture handle. link is the link-type name; close() stops the capture and resolves when the source is torn down. The handler keeps firing until close() is called or the source errors.
 
@@ -4412,7 +4419,7 @@ await cap.close();
 #### net.capture.openFile
 
 ```
-openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): void
+openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, vlan?: object, arp?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, dns?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): void
 ```
 
 Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) → Promise<void>. Calls the handler once per decoded packet (same shape as capture.open) and resolves at EOF. Offline; no privileges. opts is an optional trailing arg { filter? } — the 2-arg form still works; filter is the same tcpdump-like expression string as capture.open (post-decode/userspace, not kernel BPF; supports host/net CIDR + port/portrange; malformed → rejects).
@@ -4420,7 +4427,7 @@ Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) →
 **Parameters**
 
 - `path` *(string)* — Path to a .pcap or .pcapng file; the format is auto-detected from the magic bytes.
-- `onPacket` *((pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, payload?: Uint8Array, bytes: Uint8Array }) => void)* — Called once per decoded packet (same shape as capture.open's handler).
+- `onPacket` *((pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, vlan?: object, arp?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, dns?: object, payload?: Uint8Array, bytes: Uint8Array }) => void)* — Called once per decoded packet (same shape as capture.open's handler).
 - `opts` *({ filter?: string }, optional)* — filter is the same tcpdump-like expression as capture.open, applied post-decode in userspace; omit (2-arg form) to deliver every packet.
 
 **Returns:** Promise<void> — resolves at end-of-file after dispatching every (matching) packet to the handler.

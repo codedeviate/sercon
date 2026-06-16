@@ -17,6 +17,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   hijacked, so the request dispatcher parks until the stream closes; a pump
   goroutine owns the writer and flushes each event. New `server-sse.ts` example.
 
+- Deeper packet decode in `net.capture` / `net.raw` handlers: the decoded
+  packet object now surfaces `arp` (operation + sender/target MAC & IP), `vlan`
+  (802.1Q id/priority/drop/inner-type), and `dns` (id, qr, opcode, rcode,
+  `questions[]`, `answers[]` with type-aware `data`) as structured fields, and
+  the `tcp` layer gains `window`, `checksum`, and a parsed `options` object
+  (`mss`, `windowScale`, `sackPermitted`, `timestamps`). All additive — keys
+  appear only when that layer decodes. `packet-analysis.ts` exercises ARP + DNS.
+
 ### Docs
 - Four new advanced example scripts: `advanced/sse-stream.ts` (live metrics
   over `res.sse`), `advanced/sqlite-migration.ts` (idempotent versioned
