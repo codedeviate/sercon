@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.52.0] — 2026-06-16
+
 ### Added
 - `net.load.http(opts)` — an authorized HTTP load / resilience self-test
   harness: worker-pool load at a given `concurrency` for a `requests` count or
