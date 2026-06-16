@@ -122,6 +122,15 @@ Five `Register*` variants were present from v0.1.0: `Register`,
 `export default <expr>` from the entry script resolves as the value
 `Engine.Run` returns (also v0.30.0).
 
+### Per-Run options and reset (v0.3.0)
+
+`Engine.Run` / `Engine.RunFile` became variadic in their options argument,
+taking zero or more `RunOption` values. `WithScriptRoot(dir)` overrides the
+module-resolution root for a single Run without mutating the engine. A
+companion `Engine.Reset()` clears every registered binding, letting a
+long-lived engine be reconfigured and reused across unrelated workloads. These
+are embedder-facing (library) APIs, not reachable from a `.ts` script.
+
 ### `Engine.AbortRun` (v0.35.0)
 
 Cancels the in-flight Run via the engine's interrupt path. Added to wire
@@ -164,6 +173,16 @@ the `runtime.secrets` keystore namespace prefix (see §4 `runtime`).
 token after the script path as `runtime.argv[2:]`. Scripts can begin with
 a `#!` shebang line (stripped before transpile, line numbers preserved),
 making `#!/usr/bin/env -S sercon run` practical.
+
+### `--watch` live re-run (v0.5.9)
+
+`--watch` re-runs the entry script on file changes after the initial run. The
+watcher walks the script root recursively at startup (picking up newly created
+dirs), filters on source extensions (`.ts`/`.tsx`/`.js`/`.jsx`/`.json`),
+ignores dot-prefixed paths (`.git`, …), and debounces events over 150 ms before
+re-running. It pairs with the engine-side `Engine.SetResolveHook` /
+`Engine.ResetModuleCache` (v0.5.30) that invalidate the module graph between
+runs (see §1).
 
 ### `sercon serve` (v0.10.0, v0.11.0)
 
