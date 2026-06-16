@@ -397,3 +397,157 @@ func TestCaptureInterfaces_ListsLoopback(t *testing.T) {
 		t.Fatalf("interfaces(): expected a loopback iface with name+addresses; got %q", got)
 	}
 }
+
+// ── decode coverage for the extended layer set (ARP/VLAN/DNS/TCP options) ──
+
+func ethCI(frame []byte) gopacket.CaptureInfo {
+	return gopacket.CaptureInfo{Timestamp: time.Now(), CaptureLength: len(frame), Length: len(frame)}
+}
+
+func TestDecodePacket_ARP(t *testing.T) {
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{FixLengths: true}
+	arp := &layers.ARP{
+		AddrType:          layers.LinkTypeEthernet,
+		Protocol:          layers.EthernetTypeIPv4,
+		HwAddressSize:     6,
+		ProtAddressSize:   4,
+		Operation:         layers.ARPRequest,
+		SourceHwAddress:   []byte(mustMAC("00:11:22:33:44:55")),
+		SourceProtAddress: net.IPv4(10, 0, 0, 1).To4(),
+		DstHwAddress:      []byte{0, 0, 0, 0, 0, 0},
+		DstProtAddress:    net.IPv4(10, 0, 0, 2).To4(),
+	}
+	if err := gopacket.SerializeLayers(buf, opts,
+		&layers.Ethernet{SrcMAC: mustMAC("00:11:22:33:44:55"), DstMAC: mustMAC("ff:ff:ff:ff:ff:ff"), EthernetType: layers.EthernetTypeARP},
+		arp); err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	frame := buf.Bytes()
+	m := decodePacket(frame, layers.LinkTypeEthernet, ethCI(frame)).ToMap()
+	a, ok := m["arp"].(map[string]any)
+	if !ok {
+		t.Fatalf("no arp layer: %#v", m)
+	}
+	if a["operation"] != "request" {
+		t.Fatalf("arp.operation = %v, want request", a["operation"])
+	}
+	if a["senderIp"] != "10.0.0.1" || a["targetIp"] != "10.0.0.2" {
+		t.Fatalf("arp ips = %v / %v", a["senderIp"], a["targetIp"])
+	}
+}
+
+func TestDecodePacket_VLAN(t *testing.T) {
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}
+	ip := &layers.IPv4{Version: 4, TTL: 64, Protocol: layers.IPProtocolUDP, SrcIP: net.IPv4(10, 0, 0, 1), DstIP: net.IPv4(10, 0, 0, 2)}
+	udp := &layers.UDP{SrcPort: 1234, DstPort: 4242}
+	_ = udp.SetNetworkLayerForChecksum(ip)
+	if err := gopacket.SerializeLayers(buf, opts,
+		&layers.Ethernet{SrcMAC: mustMAC("00:11:22:33:44:55"), DstMAC: mustMAC("66:77:88:99:aa:bb"), EthernetType: layers.EthernetTypeDot1Q},
+		&layers.Dot1Q{Priority: 3, VLANIdentifier: 42, Type: layers.EthernetTypeIPv4},
+		ip, udp, gopacket.Payload([]byte("hi"))); err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	frame := buf.Bytes()
+	m := decodePacket(frame, layers.LinkTypeEthernet, ethCI(frame)).ToMap()
+	v, ok := m["vlan"].(map[string]any)
+	if !ok {
+		t.Fatalf("no vlan layer: %#v", m)
+	}
+	if v["id"] != 42 {
+		t.Fatalf("vlan.id = %v, want 42", v["id"])
+	}
+	if _, ok := m["udp"].(map[string]any); !ok {
+		t.Fatalf("inner udp did not decode through the vlan tag: %#v", m)
+	}
+}
+
+func TestDecodePacket_TCPOptions(t *testing.T) {
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}
+	ip := &layers.IPv4{Version: 4, TTL: 64, Protocol: layers.IPProtocolTCP, SrcIP: net.IPv4(10, 0, 0, 1), DstIP: net.IPv4(10, 0, 0, 2)}
+	tcp := &layers.TCP{
+		SrcPort: 1234, DstPort: 80, SYN: true, Window: 65535,
+		Options: []layers.TCPOption{
+			{OptionType: layers.TCPOptionKindMSS, OptionLength: 4, OptionData: []byte{0x05, 0xb4}}, // 1460
+			{OptionType: layers.TCPOptionKindWindowScale, OptionLength: 3, OptionData: []byte{7}},
+		},
+	}
+	_ = tcp.SetNetworkLayerForChecksum(ip)
+	if err := gopacket.SerializeLayers(buf, opts,
+		&layers.Ethernet{SrcMAC: mustMAC("00:11:22:33:44:55"), DstMAC: mustMAC("66:77:88:99:aa:bb"), EthernetType: layers.EthernetTypeIPv4},
+		ip, tcp); err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	frame := buf.Bytes()
+	m := decodePacket(frame, layers.LinkTypeEthernet, ethCI(frame)).ToMap()
+	tc, ok := m["tcp"].(map[string]any)
+	if !ok {
+		t.Fatalf("no tcp layer: %#v", m)
+	}
+	if tc["window"] != 65535 {
+		t.Fatalf("tcp.window = %v, want 65535", tc["window"])
+	}
+	to, ok := tc["options"].(map[string]any)
+	if !ok {
+		t.Fatalf("no tcp.options: %#v", tc)
+	}
+	if to["mss"] != 1460 {
+		t.Fatalf("tcp.options.mss = %v, want 1460", to["mss"])
+	}
+	if to["windowScale"] != 7 {
+		t.Fatalf("tcp.options.windowScale = %v, want 7", to["windowScale"])
+	}
+}
+
+func buildDNSFrame(t *testing.T, dns *layers.DNS) []byte {
+	t.Helper()
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}
+	ip := &layers.IPv4{Version: 4, TTL: 64, Protocol: layers.IPProtocolUDP, SrcIP: net.IPv4(10, 0, 0, 1), DstIP: net.IPv4(10, 0, 0, 2)}
+	udp := &layers.UDP{SrcPort: 12345, DstPort: 53}
+	_ = udp.SetNetworkLayerForChecksum(ip)
+	if err := gopacket.SerializeLayers(buf, opts,
+		&layers.Ethernet{SrcMAC: mustMAC("00:11:22:33:44:55"), DstMAC: mustMAC("66:77:88:99:aa:bb"), EthernetType: layers.EthernetTypeIPv4},
+		ip, udp, dns); err != nil {
+		t.Fatalf("serialize: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestDecodePacket_DNS(t *testing.T) {
+	// Query.
+	q := &layers.DNS{ID: 0x1234, OpCode: layers.DNSOpCodeQuery,
+		Questions: []layers.DNSQuestion{{Name: []byte("example.com"), Type: layers.DNSTypeA, Class: layers.DNSClassIN}}}
+	frame := buildDNSFrame(t, q)
+	m := decodePacket(frame, layers.LinkTypeEthernet, ethCI(frame)).ToMap()
+	d, ok := m["dns"].(map[string]any)
+	if !ok {
+		t.Fatalf("no dns layer: %#v", m)
+	}
+	qs, ok := d["questions"].([]any)
+	if !ok || len(qs) != 1 {
+		t.Fatalf("dns.questions = %#v", d["questions"])
+	}
+	q0 := qs[0].(map[string]any)
+	if q0["name"] != "example.com" || q0["type"] != "A" {
+		t.Fatalf("question = %v/%v", q0["name"], q0["type"])
+	}
+
+	// Response with an A answer.
+	r := &layers.DNS{ID: 0x1234, QR: true,
+		Questions: []layers.DNSQuestion{{Name: []byte("example.com"), Type: layers.DNSTypeA, Class: layers.DNSClassIN}},
+		Answers: []layers.DNSResourceRecord{{Name: []byte("example.com"), Type: layers.DNSTypeA, Class: layers.DNSClassIN, TTL: 300, IP: net.IPv4(93, 184, 216, 34)}}}
+	frame = buildDNSFrame(t, r)
+	m = decodePacket(frame, layers.LinkTypeEthernet, ethCI(frame)).ToMap()
+	d = m["dns"].(map[string]any)
+	ans, ok := d["answers"].([]any)
+	if !ok || len(ans) != 1 {
+		t.Fatalf("dns.answers = %#v", d["answers"])
+	}
+	a0 := ans[0].(map[string]any)
+	if a0["data"] != "93.184.216.34" {
+		t.Fatalf("answer.data = %v, want 93.184.216.34", a0["data"])
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -478,6 +479,30 @@ func decodePacketFrom(pkt gopacket.Packet, data []byte, link layers.LinkType, ci
 			Set("type", l.EthernetType.String()))
 	}
 
+	if l, _ := pkt.Layer(layers.LayerTypeDot1Q).(*layers.Dot1Q); l != nil {
+		o.Set("vlan", scriptengine.NewOrdered().
+			Set("id", int(l.VLANIdentifier)).
+			Set("priority", int(l.Priority)).
+			Set("drop", l.DropEligible).
+			Set("type", l.Type.String()))
+	}
+
+	if l, _ := pkt.Layer(layers.LayerTypeARP).(*layers.ARP); l != nil {
+		op := fmt.Sprintf("%d", l.Operation)
+		switch l.Operation {
+		case layers.ARPRequest:
+			op = "request"
+		case layers.ARPReply:
+			op = "reply"
+		}
+		o.Set("arp", scriptengine.NewOrdered().
+			Set("operation", op).
+			Set("senderMac", net.HardwareAddr(l.SourceHwAddress).String()).
+			Set("senderIp", net.IP(l.SourceProtAddress).String()).
+			Set("targetMac", net.HardwareAddr(l.DstHwAddress).String()).
+			Set("targetIp", net.IP(l.DstProtAddress).String()))
+	}
+
 	if l, _ := pkt.Layer(layers.LayerTypeIPv4).(*layers.IPv4); l != nil {
 		o.Set("ip", scriptengine.NewOrdered().
 			Set("version", 4).
@@ -495,18 +520,45 @@ func decodePacketFrom(pkt gopacket.Packet, data []byte, link layers.LinkType, ci
 	}
 
 	if l, _ := pkt.Layer(layers.LayerTypeTCP).(*layers.TCP); l != nil {
-		o.Set("tcp", scriptengine.NewOrdered().
+		tcp := scriptengine.NewOrdered().
 			Set("srcPort", int(l.SrcPort)).
 			Set("dstPort", int(l.DstPort)).
 			Set("seq", l.Seq).
 			Set("ack", l.Ack).
+			Set("window", int(l.Window)).
+			Set("checksum", int(l.Checksum)).
 			Set("flags", scriptengine.NewOrdered().
 				Set("syn", l.SYN).
 				Set("ack", l.ACK).
 				Set("fin", l.FIN).
 				Set("rst", l.RST).
 				Set("psh", l.PSH).
-				Set("urg", l.URG)))
+				Set("urg", l.URG))
+		opts := scriptengine.NewOrdered()
+		for _, opt := range l.Options {
+			switch opt.OptionType {
+			case layers.TCPOptionKindMSS:
+				if len(opt.OptionData) == 2 {
+					opts.Set("mss", int(binary.BigEndian.Uint16(opt.OptionData)))
+				}
+			case layers.TCPOptionKindWindowScale:
+				if len(opt.OptionData) == 1 {
+					opts.Set("windowScale", int(opt.OptionData[0]))
+				}
+			case layers.TCPOptionKindSACKPermitted:
+				opts.Set("sackPermitted", true)
+			case layers.TCPOptionKindTimestamps:
+				if len(opt.OptionData) == 8 {
+					opts.Set("timestamps", scriptengine.NewOrdered().
+						Set("val", binary.BigEndian.Uint32(opt.OptionData[0:4])).
+						Set("ecr", binary.BigEndian.Uint32(opt.OptionData[4:8])))
+				}
+			}
+		}
+		if opts.Len() > 0 {
+			tcp.Set("options", opts)
+		}
+		o.Set("tcp", tcp)
 	}
 
 	if l, _ := pkt.Layer(layers.LayerTypeUDP).(*layers.UDP); l != nil {
@@ -526,10 +578,67 @@ func decodePacketFrom(pkt gopacket.Packet, data []byte, link layers.LinkType, ci
 			Set("code", int(l.TypeCode.Code())))
 	}
 
+	if l, _ := pkt.Layer(layers.LayerTypeDNS).(*layers.DNS); l != nil {
+		dns := scriptengine.NewOrdered().
+			Set("id", int(l.ID)).
+			Set("qr", l.QR).
+			Set("opcode", l.OpCode.String()).
+			Set("rcode", l.ResponseCode.String())
+		qs := make([]any, 0, len(l.Questions))
+		for _, q := range l.Questions {
+			qs = append(qs, scriptengine.NewOrdered().
+				Set("name", string(q.Name)).
+				Set("type", q.Type.String()))
+		}
+		dns.Set("questions", qs)
+		ans := make([]any, 0, len(l.Answers))
+		for _, rr := range l.Answers {
+			ans = append(ans, scriptengine.NewOrdered().
+				Set("name", string(rr.Name)).
+				Set("type", rr.Type.String()).
+				Set("data", dnsAnswerData(rr)))
+		}
+		dns.Set("answers", ans)
+		o.Set("dns", dns)
+	}
+
 	if app := pkt.ApplicationLayer(); app != nil && len(app.Payload()) > 0 {
 		o.Set("payload", app.Payload()) // []byte → Uint8Array
 	}
 
 	o.Set("bytes", data)
 	return o
+}
+
+// dnsAnswerData renders a DNS resource record's value as a string, switching
+// on the record type. Unknown / unparsed types fall back to a hex dump of the
+// raw record data so nothing is silently dropped. All field reads are safe on
+// the zero value, so a malformed record yields "" rather than panicking.
+func dnsAnswerData(rr layers.DNSResourceRecord) string {
+	switch rr.Type {
+	case layers.DNSTypeA, layers.DNSTypeAAAA:
+		if rr.IP != nil {
+			return rr.IP.String()
+		}
+	case layers.DNSTypeCNAME:
+		return string(rr.CNAME)
+	case layers.DNSTypeNS:
+		return string(rr.NS)
+	case layers.DNSTypePTR:
+		return string(rr.PTR)
+	case layers.DNSTypeMX:
+		return string(rr.MX.Name)
+	case layers.DNSTypeSOA:
+		return string(rr.SOA.MName)
+	case layers.DNSTypeTXT:
+		parts := make([]string, 0, len(rr.TXTs))
+		for _, t := range rr.TXTs {
+			parts = append(parts, string(t))
+		}
+		return strings.Join(parts, " ")
+	}
+	if len(rr.Data) > 0 {
+		return fmt.Sprintf("%x", rr.Data)
+	}
+	return ""
 }
