@@ -705,26 +705,22 @@ Script-host scaffolding. Members:
   Operations are async and bounded by a 10s timeout (a blocking macOS consent
   prompt rejects rather than hangs).
 
-#### `runtime.clipboard` — host system clipboard (text)
+- **`runtime.clipboard`** — read/write the host OS system clipboard text. An
+  external-CLI fallback (no pure-Go, no-cgo library covers every platform).
 
-- `runtime.clipboard.available` — `boolean`, cheap advisory (no clipboard
-  access): true when a backend is on PATH.
-- `runtime.clipboard.read()` — `Promise<string>`; the clipboard text (`""` when
-  empty).
-- `runtime.clipboard.write(text)` — `Promise<void>`; replace the clipboard text.
+  - `runtime.clipboard.available` — `boolean`, cheap advisory (no clipboard
+    access): true when a backend is on PATH. Gate on it to self-skip on
+    headless boxes.
+  - `runtime.clipboard.read()` — `Promise<string>`; the clipboard text (`""`
+    when empty).
+  - `runtime.clipboard.write(text)` — `Promise<void>`; replace the clipboard
+    text.
 
-An **external-CLI fallback** (no pure-Go/no-cgo clipboard library covers every
-platform): macOS `pbcopy`/`pbpaste`, Linux `wl-clipboard` (Wayland) or
-`xclip`/`xsel` (X11), Windows `clip` + PowerShell `Get-Clipboard`. When none is
-installed the calls throw a clean error and `available` is `false`; the binary
-itself stays fully functional. Text only — image/RTF/HTML are out of scope.
-
-```ts
-if (runtime.clipboard.available) {
-  await runtime.clipboard.write("copied from sercon");
-  const text = await runtime.clipboard.read();
-}
-```
+  Backends: macOS `pbcopy`/`pbpaste`, Linux `wl-clipboard` (Wayland) or
+  `xclip`/`xsel` (X11), Windows `clip` + PowerShell `Get-Clipboard`. When none
+  is installed the calls throw a clean error and `available` is `false`; the
+  binary itself stays fully functional. Text only — image/RTF/HTML are out of
+  scope.
 
 ```ts
 runtime.log("hello");
