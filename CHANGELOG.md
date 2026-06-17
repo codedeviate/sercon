@@ -8,6 +8,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Fixed
+- `runtime.clipboard` write hung on Linux. `xclip` / `wl-copy` fork a daemon to
+  own the X11/Wayland selection, and that child inherited our captured-stderr
+  **pipe**, so `cmd.Wait()` blocked until the (never-exiting) daemon closed it —
+  every `write()` / `writeImage()` stalled until the timeout. Route clipboard
+  write subprocesses' stdout/stderr to `os.DevNull` (an `*os.File`, so `os/exec`
+  spawns no copier goroutine and `Wait` returns when the parent exits). Verified
+  end-to-end on Linux in Docker: X11 (`xclip` under Xvfb) and Wayland (`wl-copy`
+  under headless sway) both round-trip text **and** PNG images. macOS
+  (`pbcopy`/`pngpaste`/`osascript`) unaffected and re-verified.
+
 ## [0.52.1] — 2026-06-17
 
 ### Fixed

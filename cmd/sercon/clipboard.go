@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -118,14 +119,33 @@ func clipWriteOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 	text := call.Argument(0).String() // JS String() coercion
 	runCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, writeArgv[0], writeArgv[1:]...) //nolint:gosec // fixed platform clipboard argv
-	cmd.Stdin = strings.NewReader(text)
-	var errb bytes.Buffer
-	cmd.Stderr = &errb
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("runtime.clipboard.write: %s: %w%s", writeArgv[0], err, stderrSuffix(errb.String()))
+	if err := feedStdinWrite(runCtx, writeArgv, strings.NewReader(text)); err != nil {
+		return nil, fmt.Errorf("runtime.clipboard.write: %w", err)
 	}
 	return nil, nil
+}
+
+// feedStdinWrite runs a clipboard WRITE command, feeding the payload on stdin.
+// It routes the child's stdout/stderr to os.DevNull rather than capturing them
+// into a pipe: xclip and wl-copy FORK a background process to own the X/Wayland
+// selection, and that daemon inherits any captured pipe's write end — so a
+// pipe-backed Stderr would make cmd.Wait block until the (never-exiting) daemon
+// closed it. Writing to a *os.File (DevNull) means os/exec spawns no copier
+// goroutine, so Wait returns when the parent process exits. (pbcopy / osascript
+// don't fork, but DevNull is correct for them too; the trade-off is that a rare
+// write failure surfaces only the exit error, not the tool's stderr text.)
+func feedStdinWrite(ctx context.Context, argv []string, stdin io.Reader) error {
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // fixed platform clipboard argv
+	cmd.Stdin = stdin
+	if devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0); err == nil {
+		cmd.Stdout = devnull
+		cmd.Stderr = devnull
+		defer func() { _ = devnull.Close() }()
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s: %w", argv[0], err)
+	}
+	return nil
 }
 
 // stderrSuffix renders a truncated ": <stderr>" suffix for error messages, or
@@ -217,15 +237,11 @@ func runCapturePNG(ctx context.Context, argv []string) ([]byte, error) {
 }
 
 // feedPNGStdin runs argv with png on stdin.
+// feedPNGStdin writes png to the clipboard via argv on stdin. Uses
+// feedStdinWrite so the forking xclip/wl-copy daemon can't hang cmd.Wait
+// (see feedStdinWrite).
 func feedPNGStdin(ctx context.Context, argv []string, png []byte) error {
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // fixed clipboard argv
-	cmd.Stdin = bytes.NewReader(png)
-	var errb bytes.Buffer
-	cmd.Stderr = &errb
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s: %w%s", argv[0], err, stderrSuffix(errb.String()))
-	}
-	return nil
+	return feedStdinWrite(ctx, argv, bytes.NewReader(png))
 }
 
 // writeTempPNG writes png to a temp .png file and returns its path; caller removes it.
