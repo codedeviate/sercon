@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Fixed
+- `examples/scripts/clipboard.ts`: the image round-trip used a 1×1 PNG, which
+  fails on macOS — the clipboard re-encodes via CoreGraphics, and
+  `CGImageDestinationFinalize` can't produce a PNG from a degenerate 1×1 image
+  (so `pngpaste` read nothing). Use a real 16×16 PNG instead. Verified end-to-end
+  on macOS with `pngpaste`: `writeImage` → `readImage` returns a valid PNG. The
+  `runtime.clipboard.readImage`/`writeImage` bindings themselves were correct.
+
 ## [0.52.0] — 2026-06-16
 
 ### Added
