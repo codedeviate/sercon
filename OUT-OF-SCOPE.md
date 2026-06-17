@@ -216,4 +216,10 @@ reason parked — just author + verify when the need arises.
 Not features — small known debts noted during implementation, kept here until
 addressed.
 
-_(None currently open.)_
+- **Verify the Windows `runtime.clipboard` paths.** The Windows text
+  (`clip` / PowerShell `Get-Clipboard`) and image (`Set-Clipboard` /
+  `Get-Clipboard -Format Image` via temp PNG) paths are implemented to the
+  documented contracts but have **not been executed** — macOS and Linux (X11 +
+  Wayland) are verified end-to-end, Windows is not. Windows isn't a focus right
+  now; re-promote when a Windows host/CI runner is available to round-trip text
+  + PNG (watch for PowerShell `-STA` and the temp-file marshalling).
