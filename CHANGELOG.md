@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.52.1] — 2026-06-17
+
 ### Fixed
 - `examples/scripts/clipboard.ts`: the image round-trip used a 1×1 PNG, which
   fails on macOS — the clipboard re-encodes via CoreGraphics, and
