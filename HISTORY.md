@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.51.1 (2026-06-16).
+covered is v0.1.0 (2026-05-25) through v0.52.2 (2026-06-17).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -268,8 +268,20 @@ is resolved by a pure `clipboardBackend(goos, wayland, look)` function (so it is
 unit-tested without touching the environment); writes feed text via stdin and
 every subprocess is bounded by a ~5s timeout. When no backend is installed the
 ops throw a clean error and `available` is `false`; the static binary stays
-fully functional. Text only — image (PNG) support is parked (macOS has no
-built-in image-read CLI; see `OUT-OF-SCOPE.md`).
+fully functional.
+
+PNG **image** support followed in v0.52.0: `imageAvailable` (advisory),
+`readImage() → Promise<Uint8Array | null>` (`null` when the clipboard holds no
+image), `writeImage(png) → Promise<void>` (PNG-validated on write). Backends:
+macOS reads via `pngpaste` (not built-in) and writes via `osascript`+a temp
+file; Linux uses `wl-copy`/`wl-paste` or `xclip -t image/png` (not `xsel`, which
+has no image support); Windows uses PowerShell. v0.52.1 fixed the example's
+degenerate 1×1 sample (macOS CoreGraphics can't finalize a PNG from it). v0.52.2
+fixed a Linux write hang: `xclip`/`wl-copy` fork a daemon to own the selection,
+and the inherited captured-stderr pipe blocked `cmd.Wait()` forever — clipboard
+writes now route the child's std streams to `os.DevNull` (an `*os.File`, so
+`os/exec` spawns no copier goroutine). Verified end-to-end across macOS, Linux
+X11 (Xvfb), and Linux Wayland (headless sway) for both text and PNG.
 
 ### `crypto`
 
@@ -388,6 +400,18 @@ handlers.
 **`net.raw.*`** (`net.raw.open` full raw IPv4 packet engine with tcpdump
 filter; `net.raw.tcp` one-shot raw TCP probe): v0.34.0. Root/CAP_NET_RAW
 required; Linux + macOS only.
+
+**`net.load.http`** (v0.52.0): an authorized HTTP load / resilience self-test
+harness. A worker pool over a shared `*http.Client` drives a target at a given
+`concurrency` for a `requests` count or `duration` (optional `rps` cap),
+returning a report — `sent`/`completed`/`failed`, achieved `rps`, `errorRate`,
+latency `min/mean/p50/p90/p95/p99/max` (pure nearest-rank `percentiles`),
+`statusCounts`, `errors`. It is **defensive-only**: a dual-use guardrail refuses
+public targets unless `confirm:true` (loopback/private always allowed, via a
+pure `classifyTarget`), concurrency is capped at 1000, and there are no
+amplification/spoofing/evasion helpers — just a plain HTTP client loop. TCP/UDP
+flood generators and ramp/soak/burst stage profiles are deliberately out of
+scope (see `OUT-OF-SCOPE.md`).
 
 ### `db`
 
