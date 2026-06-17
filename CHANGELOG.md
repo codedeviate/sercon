@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.52.2] — 2026-06-17
+
 ### Fixed
 - `runtime.clipboard` write hung on Linux. `xclip` / `wl-copy` fork a daemon to
   own the X11/Wayland selection, and that child inherited our captured-stderr
