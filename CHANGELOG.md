@@ -8,6 +8,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.52.4] — 2026-06-17
+
+### Docs
+- `OUT-OF-SCOPE.md`: track verifying the Windows `runtime.clipboard` paths
+  (text + image) as a follow-up — implemented but not yet executed (macOS and
+  Linux X11/Wayland are verified end-to-end). Windows isn't a focus right now.
+
 ## [0.52.3] — 2026-06-17
 
 ### Docs
