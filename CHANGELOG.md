@@ -8,6 +8,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.52.3] — 2026-06-17
+
+### Docs
+- `HISTORY.md`: record the v0.52.0 `runtime.clipboard` PNG image support (and the
+  v0.52.1/v0.52.2 fixes) and `net.load.http` in §4; advance the span line to
+  v0.52.2.
+
 ## [0.52.2] — 2026-06-17
 
 ### Fixed
