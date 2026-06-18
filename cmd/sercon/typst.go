@@ -1,14 +1,25 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
+
+const typstTimeout = 60 * time.Second
 
 // typstAvailable reports whether the typst CLI is on PATH.
 func typstAvailable() bool {
@@ -124,4 +135,190 @@ func optStringSlice(opts map[string]any, key string) []string {
 		}
 	}
 	return out
+}
+
+// runTypst executes `typst <argv...>` and returns stdout, mapping a non-zero
+// exit (with trimmed stderr), missing binary, or context error to a clean error.
+func runTypst(ctx context.Context, argv []string) (string, error) {
+	if !typstAvailable() {
+		return "", errors.New("typst not found on PATH (install from https://typst.app or `brew install typst`)")
+	}
+	cmd := exec.CommandContext(ctx, "typst", argv...) //nolint:gosec // fixed binary + validated args
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		msg := strings.TrimSpace(stderr.String())
+		if len(msg) > 500 {
+			msg = msg[:500]
+		}
+		if msg != "" {
+			return "", fmt.Errorf("typst failed: %w: %s", err, msg)
+		}
+		return "", fmt.Errorf("typst failed: %w", err)
+	}
+	return stdout.String(), nil
+}
+
+func typstVersionOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, err := runTypst(runCtx, []string{"--version"})
+	if err != nil {
+		return nil, fmt.Errorf("services.typst.version: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func typstFontsOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+	runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	out, err := runTypst(runCtx, []string{"fonts"})
+	if err != nil {
+		return nil, fmt.Errorf("services.typst.fonts: %w", err)
+	}
+	seen := map[string]bool{}
+	families := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.TrimSpace(line)
+		if f == "" || seen[f] {
+			continue
+		}
+		seen[f] = true
+		families = append(families, f)
+	}
+	sort.Strings(families)
+	return families, nil
+}
+
+// resolveTypstInput validates input/source and returns the input path to use,
+// plus a cleanup func (non-nil temp dir when source was written or tmp needed).
+func resolveTypstInput(opts map[string]any, needTmpOut bool) (inputPath, tmpDir string, cleanup func(), err error) {
+	input := optString(opts, "input", "")
+	source := optString(opts, "source", "")
+	if verr := validateTypstInput(input, source); verr != nil {
+		return "", "", func() {}, verr
+	}
+	cleanup = func() {}
+	if source != "" || needTmpOut {
+		d, derr := os.MkdirTemp("", "sercon-typst-*")
+		if derr != nil {
+			return "", "", func() {}, derr
+		}
+		tmpDir = d
+		cleanup = func() { _ = os.RemoveAll(d) }
+	}
+	inputPath = input
+	if source != "" {
+		inputPath = filepath.Join(tmpDir, "main.typ")
+		if werr := os.WriteFile(inputPath, []byte(source), 0o600); werr != nil {
+			cleanup()
+			return "", "", func() {}, werr
+		}
+	}
+	return inputPath, tmpDir, cleanup, nil
+}
+
+func typstCompileOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+	opts, _ := firstArgMap(call)
+	if opts == nil {
+		opts = map[string]any{}
+	}
+	format := strings.ToLower(optString(opts, "format", ""))
+	output := optString(opts, "output", "")
+	if format == "" {
+		if output != "" {
+			f, ferr := inferTypstFormat(output)
+			if ferr != nil {
+				return nil, fmt.Errorf("services.typst.compile: %w", ferr)
+			}
+			format = f
+		} else {
+			format = "pdf"
+		}
+	}
+	if format != "pdf" && format != "png" && format != "svg" {
+		return nil, fmt.Errorf("services.typst.compile: invalid format %q (pdf|png|svg)", format)
+	}
+	if output == "" && format != "pdf" {
+		return nil, errors.New("services.typst.compile: png/svg require an output path (use {p} in the path for multi-page docs)")
+	}
+
+	returnBytes := output == ""
+	inputPath, tmpDir, cleanup, err := resolveTypstInput(opts, returnBytes)
+	if err != nil {
+		return nil, fmt.Errorf("services.typst.compile: %w", err)
+	}
+	defer cleanup()
+
+	outputPath := output
+	if returnBytes {
+		outputPath = filepath.Join(tmpDir, "out.pdf")
+	}
+
+	spec := compileSpec{
+		inputPath: inputPath, outputPath: outputPath, format: format,
+		root: optString(opts, "root", ""), inputs: optStringMap(opts, "inputs"),
+		ppi: optInt(opts, "ppi", 0), fontPaths: optStringSlice(opts, "fontPaths"),
+	}
+	runCtx, cancel := context.WithTimeout(ctx, optMillis(opts, "timeout", typstTimeout))
+	defer cancel()
+	if _, rerr := runTypst(runCtx, buildCompileArgs(spec)); rerr != nil {
+		return nil, fmt.Errorf("services.typst.compile: %w", rerr)
+	}
+	if returnBytes {
+		data, derr := os.ReadFile(outputPath)
+		if derr != nil {
+			return nil, fmt.Errorf("services.typst.compile: read output: %w", derr)
+		}
+		return scriptengine.NewOrdered().Set("format", format).Set("bytes", data), nil
+	}
+	return scriptengine.NewOrdered().Set("format", format).Set("path", output), nil
+}
+
+func typstQueryOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+	opts, _ := firstArgMap(call)
+	if opts == nil {
+		opts = map[string]any{}
+	}
+	selector := optString(opts, "selector", "")
+	if selector == "" {
+		return nil, errors.New("services.typst.query: `selector` is required (e.g. \"<label>\" or \"heading\")")
+	}
+	inputPath, _, cleanup, err := resolveTypstInput(opts, false)
+	if err != nil {
+		return nil, fmt.Errorf("services.typst.query: %w", err)
+	}
+	defer cleanup()
+
+	spec := querySpec{
+		inputPath: inputPath, selector: selector,
+		field: optString(opts, "field", ""), one: optBool(opts, "one", false),
+		root: optString(opts, "root", ""), inputs: optStringMap(opts, "inputs"),
+	}
+	runCtx, cancel := context.WithTimeout(ctx, optMillis(opts, "timeout", typstTimeout))
+	defer cancel()
+	out, rerr := runTypst(runCtx, buildQueryArgs(spec))
+	if rerr != nil {
+		return nil, fmt.Errorf("services.typst.query: %w", rerr)
+	}
+	val, jerr := scriptengine.DecodeOrderedJSON([]byte(out))
+	if jerr != nil {
+		return nil, fmt.Errorf("services.typst.query: parse JSON: %w", jerr)
+	}
+	return val, nil
+}
+
+// typstNamespace builds the services.typst member map.
+func typstNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+	return map[string]any{
+		"available": typstAvailable(),
+		"version":   scriptengine.PromisifyAsync(vm, loop, typstVersionOp),
+		"fonts":     scriptengine.PromisifyAsync(vm, loop, typstFontsOp),
+		"compile":   scriptengine.PromisifyAsync(vm, loop, typstCompileOp),
+		"query":     scriptengine.PromisifyAsync(vm, loop, typstQueryOp),
+	}
 }

@@ -450,6 +450,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"ai":           aiNamespace(vm, loop),
 			"agentBrowser": agentBrowserNamespace(vm, loop, e),
 			"webdriver":    webdriverNamespace(vm, loop, e),
+			"typst":        typstNamespace(vm, loop),
 		}
 	}); err != nil {
 		return err
