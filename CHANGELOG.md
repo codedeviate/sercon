@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-06-18
+
 ### Added
 - `services.typst` — external-CLI binding to the Typst compiler (feature-detected
   via `available`): `version()`, `fonts()`, `compile(opts)` (inline `source` or a
