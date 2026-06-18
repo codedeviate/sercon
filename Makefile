@@ -103,6 +103,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/agent-browser-advanced.ts \
 	examples/scripts/webdriver.ts \
 	examples/scripts/webdriver-advanced.ts \
+	examples/scripts/typst.ts \
 	examples/scripts/advanced/load-resilience.ts \
 	examples/scripts/advanced/http-api.ts \
 	examples/scripts/advanced/smtp-pipeline.ts \
