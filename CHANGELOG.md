@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.53.0] — 2026-06-18
+
 ### Added
 - `image` — a new top-level global for image I/O and manipulation. Decode
   PNG/JPEG/GIF/TIFF/BMP/WebP (and rasterize an SVG subset), a chainable,
@@ -16,6 +18,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   `grayscale`/`invert`/`overlay`/`paste`), and encode via `bytes(format)` /
   `save(path)` (PNG/JPEG/GIF/TIFF/BMP/WebP). Pure-Go (imaging + x/image +
   nativewebp + oksvg). New `image.ts` example.
+
+### Fixed
+- `make manual`: recon 0.101.0 changed the `--md-to-pdf` default engine to
+  typst, which rejects `--unsafe-html` (needed for MANUAL.md's HTML cover /
+  page-breaks) — breaking the manual render and every release cut. Pin
+  `--pdf-engine chrome` to restore the Chrome render path.
 
 ## [0.52.4] — 2026-06-17
 
