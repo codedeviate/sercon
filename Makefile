@@ -135,6 +135,7 @@ reference: build
 
 manual: reference
 	$(RECON) --md-to-pdf MANUAL.md -o MANUAL.pdf \
+		--pdf-engine chrome \
 		--gfm --unsafe-html --page-break-on-h1 \
 		--doc-title "sercon User Manual" \
 		--doc-author "Thomas Bjork" \
