@@ -1186,10 +1186,22 @@ const report = await net.load.http({
 runtime.log("rps:", report.rps, "p95 ms:", report.latency.p95, "errorRate:", report.errorRate);`)
 	note("Dual-use guardrail: refuses public hosts without confirm:true; concurrency capped at 1000. HTTP-only — no raw packets / spoofing.")
 
+	header(59, "Images (image.decode → transform → encode)")
+	code(`// Decode PNG/JPEG/GIF/TIFF/BMP/WebP (or rasterize an SVG subset), then
+// chain synchronous, immutable transforms; each op returns a fresh handle.
+const im = image.open("avatar.png");          // sniffs format from magic bytes
+const thumb = im.resize(128, 0)                // 0 height → preserve aspect
+               .grayscale()
+               .blur(0.5);
+runtime.log("thumb:", thumb.width + "x" + thumb.height);
+thumb.save("thumb.webp");                       // webp encode is lossless
+const png = im.crop(0, 0, 64, 64).bytes("png"); // → Uint8Array`)
+	note("Pure-Go (imaging + x/image + nativewebp + oksvg). resize(0,…)/(…,0) keeps aspect; webp encode is lossless (quality ignored); SVG is rasterize-in only; GIF decode is first-frame.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 58
+const exampleCount = 59

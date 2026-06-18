@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `image` — a new top-level global for image I/O and manipulation. Decode
+  PNG/JPEG/GIF/TIFF/BMP/WebP (and rasterize an SVG subset), a chainable,
+  synchronous `Image` handle (`resize`/`fit`/`thumbnail`/`crop`/`rotate*`/
+  `flip*`/`brightness`/`contrast`/`gamma`/`saturation`/`sharpen`/`blur`/
+  `grayscale`/`invert`/`overlay`/`paste`), and encode via `bytes(format)` /
+  `save(path)` (PNG/JPEG/GIF/TIFF/BMP/WebP). Pure-Go (imaging + x/image +
+  nativewebp + oksvg). New `image.ts` example.
+
 ## [0.52.4] — 2026-06-17
 
 ### Docs

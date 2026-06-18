@@ -490,6 +490,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("services", servicesDocs())
 	e.SetDocs("tui", "Multi-pane terminal UI: layout, pane, write, focus.")
 	e.SetMemberDocsStructured("tui", tuiDocs())
+	e.SetDocs("image", "Image decode/encode (PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in) and a chainable Image handle: resize/crop/rotate/flip/adjust/filter/compose.")
+	e.SetMemberDocsStructured("image", imageDocs())
 	e.SetDocs("server", "Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.")
 	e.SetMemberDocsStructured("server", serverDocs())
 	e.SetDocs("console", "Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.")

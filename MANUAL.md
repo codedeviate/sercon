@@ -407,7 +407,7 @@ runs, after the ESM→CJS rewrite + async IIFE wrapper) and every
 module-resolution event, so debugging an unexpected resolve target or a
 mis-rewritten import is straightforward.
 
-The CLI registers ten reserved top-level globals; see the next section.
+The CLI registers eleven reserved top-level globals; see the next section.
 
 ### `--watch`: re-run on file change
 
@@ -598,13 +598,13 @@ sercon serve --shutdown-timeout 10s server.ts
 
 ## 5. Reserved globals (script surface)
 
-sercon scripts get ten reserved top-level globals. Use them directly —
+sercon scripts get eleven reserved top-level globals. Use them directly —
 there is no enclosing namespace. The full per-binding reference is the
 generated `examples/scripts/sercon.d.ts`; this section is the at-a-glance
 prose.
 
 **Reserved names:** `runtime`, `crypto`, `text`, `codec`, `fs`, `net`,
-`db`, `server`, `services`, `tui`. User code can shadow these with a
+`db`, `server`, `services`, `tui`, `image`. User code can shadow these with a
 local `let`/`const`/`var` per normal JavaScript scoping — sercon does
 not intervene at runtime. `server` (added in v0.10.0) covers inbound
 listeners — see [section 6](#6-servers) for the long-form treatment.
@@ -619,7 +619,7 @@ internally.
 
 ### `console` (browser/Node compatibility)
 
-Beyond the ten reserved globals, sercon provides a `console` global so
+Beyond the eleven reserved globals, sercon provides a `console` global so
 scripts pasted from a browser or Node run unchanged:
 
 | Method | Stream |
@@ -2096,6 +2096,68 @@ is a no-op in non-TTY (fallback) mode.
 - No runtime layout mutation, no input panes (`tui.input`),
   no snapshot-to-normal-screen on exit. The alt screen is restored at
   script end and the usual `PASS`/`FAIL` line prints.
+
+### `image`
+
+Image I/O and manipulation, all pure-Go and synchronous. Decode a raster
+image (PNG/JPEG/GIF/TIFF/BMP/WebP) or rasterize an SVG subset, then chain
+transforms on the returned **Image handle**. Each transform returns a
+*fresh* handle (immutable chaining); the source is never mutated.
+
+**Module functions**
+
+| Function | Returns | Notes |
+|---|---|---|
+| `image.open(path)` | `Image` | Read + decode a file; format sniffed from magic bytes, not the extension. |
+| `image.decode(bytes)` | `Image` | Decode in-memory `Uint8Array` image bytes. |
+| `image.rasterizeSVG(src, { width, height })` | `Image` | Rasterize an SVG (subset) to a raster image at the given pixel size. `src` is a path or `Uint8Array`; both dimensions required (> 0). |
+
+**Handle properties** (read-only): `width`, `height`, `format` (the decoded
+source format string, or `"svg"` for a rasterized SVG).
+
+**Handle methods** (each returns a fresh `Image` unless noted):
+
+| Method | Effect |
+|---|---|
+| `resize(w, h, { filter? })` | Resize; a `0` dimension preserves aspect ratio. Filter ∈ `lanczos` (default), `nearest`, `linear`, `box`, `catmullrom`. |
+| `fit(w, h)` | Scale to fit within `w×h`, preserving aspect (no crop). |
+| `thumbnail(w, h)` | Scale + centre-crop to exactly `w×h`. |
+| `crop(x, y, w, h)` | Crop a rectangle (bounds-checked). |
+| `rotate(deg)` | Rotate CCW by an arbitrary angle; corners filled transparent. |
+| `rotate90()` / `rotate180()` / `rotate270()` | Lossless quarter-turns (CCW). |
+| `flipH()` / `flipV()` | Mirror horizontally / vertically. |
+| `brightness(pct)` / `contrast(pct)` / `saturation(pct)` | Adjust by a percentage in `[-100, 100]`. |
+| `gamma(g)` | Gamma correction (`<1` darkens, `>1` brightens). |
+| `sharpen(sigma)` / `blur(sigma)` | Unsharp-mask / Gaussian blur. |
+| `grayscale()` / `invert()` | Desaturate / photographic negative. |
+| `overlay(other, x, y, opacity?)` | Alpha-blend another handle on top. |
+| `paste(other, x, y)` | Paste another handle (no blend). |
+| `bytes(format, { quality? })` | Encode → `Uint8Array`. |
+| `save(path, { format?, quality? })` | Encode + write to disk (format inferred from the extension if not given). Returns `void`. |
+
+**Encode formats:** `png`, `jpeg`, `gif`, `tiff`, `bmp`, `webp`.
+
+**Worth knowing:**
+
+- `resize` with a `0` width *or* `0` height computes the missing dimension
+  to preserve the aspect ratio.
+- `quality` (1..100, default 90) applies to **JPEG** only. **WebP encode is
+  lossless** (via `nativewebp`), so the `quality` option is accepted for API
+  symmetry but ignored.
+- **SVG is rasterize-in only** — there is no SVG *output*; `rasterizeSVG`
+  renders a *subset* of SVG to a raster image you then encode as PNG/etc.
+- **GIF decode is first-frame** — animation is not preserved.
+
+```ts
+const im = image.open("avatar.png");
+const thumb = im.resize(128, 0).grayscale().blur(0.5);
+thumb.save("thumb.webp");                       // lossless webp
+const png = im.crop(0, 0, 64, 64).bytes("png"); // → Uint8Array
+```
+
+Pure-Go stack: `disintegration/imaging` + `golang.org/x/image`
+(webp/tiff/bmp decode) + `HugoSmits86/nativewebp` (webp encode) +
+`srwiley/oksvg`+`rasterx` (SVG). No cgo.
 
 ## 6. Servers
 
@@ -4445,6 +4507,71 @@ Directory portion of a path. POSIX-style; trailing slashes are stripped.
 
 ```ts
 const d = fs.path.dirname("/var/log/app.log"); // "/var/log"
+```
+
+### image
+
+Image decode/encode (PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in) and a chainable Image handle: resize/crop/rotate/flip/adjust/filter/compose.
+
+#### image.decode
+
+```
+decode(data: Uint8Array): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
+```
+
+Decode in-memory image bytes into a chainable Image handle. The format is sniffed from the magic bytes (PNG/JPEG/GIF/TIFF/BMP/WebP); GIF decodes the first frame only.
+
+**Parameters**
+
+- `data` *(Uint8Array)* — The raw, encoded image bytes (e.g. from net.http, fs, or a clipboard read).
+
+**Returns:** Image — a handle exposing read-only width/height/format and chainable transform methods.
+
+**Throws:** Throws a TypeError if data is not a Uint8Array, or ("image.decode: …") if the bytes are not a recognised/decodable image.
+
+```ts
+const im = image.decode(pngBytes);
+```
+
+#### image.open
+
+```
+open(path: string): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
+```
+
+Read an image file from disk and decode it into a chainable Image handle. The format is sniffed from the file's magic bytes (PNG/JPEG/GIF/TIFF/BMP/WebP), not the extension. GIF decodes the first frame only.
+
+**Parameters**
+
+- `path` *(string)* — Filesystem path to the image file to read and decode.
+
+**Returns:** Image — a handle exposing read-only width/height/format and chainable transform methods.
+
+**Throws:** Throws ("image.open: …") if the file cannot be read, or ("image.decode: …") if the bytes are not a recognised/decodable image.
+
+```ts
+const im = image.open("avatar.jpg");
+```
+
+#### image.rasterizeSVG
+
+```
+rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
+```
+
+Rasterize an SVG (a supported subset) to a raster Image at the requested pixel size. SVG is rasterize-IN only — there is no SVG output; the result is a raster image you then encode as PNG/JPEG/etc. The accepts a path string or in-memory SVG bytes.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — An SVG file path (string) or the raw SVG document bytes (Uint8Array).
+- `opts` *({ width: number; height: number })* — Target raster size in pixels; both width and height are required and must be > 0.
+
+**Returns:** Image — a raster handle (format reported as "svg") sized to opts.width × opts.height.
+
+**Throws:** Throws a TypeError if src is neither a string nor Uint8Array, or if width/height are missing/non-positive; throws ("image: svg parse: …") on a malformed/unsupported SVG.
+
+```ts
+const im = image.rasterizeSVG("logo.svg", { width: 256, height: 256 });
 ```
 
 ### net

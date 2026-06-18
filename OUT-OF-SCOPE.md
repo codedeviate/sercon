@@ -137,6 +137,11 @@ unlock:
   `pdftotext`. Unblocks the deferred `pdf_export_page` plus PDF text/HTML
   extraction.
 - **LaTeX** — `pdflatex` / `xelatex` / `tectonic` for `.tex` → PDF.
+- **Typst** — `typst compile` (`.typ` → PDF/PNG/SVG), feature-detected on PATH.
+  A modern, fast typesetting alternative to LaTeX. Note: the `typst-as-lib`
+  (Rust) embedding path can't be linked under our no-cgo constraint, so a
+  pure-Go in-process Typst is not on the table — the external `typst` binary is
+  the only viable route, same opt-in/feature-detected model as the others.
 - **ImageMagick / GraphicsMagick** — `magick` / `convert` for image
   transforms beyond the pure-Go image stack.
 - **Ghostscript** (`gs`), **pandoc** (document conversion), **ffmpeg**
@@ -165,6 +170,20 @@ clean thrown error and `available: false` when none is installed.
   clean thrown error when no image backend is present. Residual (still parked):
   non-PNG formats (JPEG/TIFF), RTF/HTML/file-list clipboard, clipboard
   watching. Re-promote on demand.
+
+- **`image` v2 (parked).** The v1 `image` global (shipped — decode/encode
+  PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in, and a chainable raster `Image`
+  handle) intentionally leaves a second wave parked:
+  - **Animated GIF / APNG** — decode/encode all frames (v1 is first-frame only).
+  - **EXIF / orientation** — read metadata, auto-rotate on load, strip on save.
+  - **Custom convolution / morphology / arbitrary filters** — user-supplied
+    kernels, erode/dilate, edge detect beyond the fixed `sharpen`/`blur`.
+  - **SVG output** — v1 is rasterize-*in* only; emitting SVG is a different
+    (vector) pipeline.
+  - **ICC colour profiles** — profile-aware decode/encode + conversion.
+  **Reason parked:** v1 covers the common reconnaissance/troubleshooting needs
+  (resize/crop/convert/inspect); these add scope (extra deps, larger surface)
+  better promoted on demand.
 
 ## Security & resilience testing
 
