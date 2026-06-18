@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.52.4 (2026-06-17).
+covered is v0.1.0 (2026-05-25) through v0.54.0 (2026-06-18).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -475,6 +475,15 @@ on PATH): v0.5.27.
 
 **`services.webdriver`**: see §6 below.
 
+**`services.typst`** (v0.54.0): an external-CLI binding to the Typst
+typesetting compiler — the `typst-as-lib` Rust embedding path can't be linked
+under no-cgo, so this shells out to the official `typst` CLI (feature-detected
+via `available`, like git/gh/ai). `version()`, `fonts()`, `compile(opts)` —
+inline `source` or a `.typ` `input` → PDF bytes, or write PDF/PNG/SVG to an
+`output` path (`root`/`inputs`/`ppi`/`fontPaths`) — and `query(opts)`
+(selector → JSON). PDF-bytes return is the no-output default; PNG/SVG require an
+output path. Verified end-to-end against typst 0.15.0.
+
 ### `tui`
 
 Multi-pane terminal UI backed by tview/tcell. Shipped in v0.7.0 as
@@ -497,6 +506,22 @@ single press. Terminal detection was fixed to use `term.IsTerminal` (an
 
 v0.35.1 added left-click pane focus and fixed scroll-under-cursor
 (previously changed focus while scrolling).
+
+### `image` (v0.53.0)
+
+The eleventh top-level global — image I/O and manipulation, all pure-Go (no
+cgo). Decode PNG/JPEG/GIF/TIFF/BMP/WebP (stdlib `image/*` + `golang.org/x/image`)
+and rasterize an SVG subset (`srwiley/oksvg`+`rasterx`); a chainable,
+**synchronous**, immutable `Image` handle (each transform returns a fresh
+handle) backed by `disintegration/imaging`: `resize` (a `0` dimension preserves
+aspect), `fit`/`thumbnail`/`crop`/`rotate`(+90/180/270)/`flipH`/`flipV`,
+`brightness`/`contrast`/`gamma`/`saturation`/`sharpen`/`blur`/`grayscale`/
+`invert`, `overlay`/`paste`; encode via `bytes(format)` / `save(path)` to
+PNG/JPEG/GIF/TIFF/BMP/WebP (WebP encode via `HugoSmits86/nativewebp`, lossless).
+GIF decode is first-frame; SVG is rasterize-in only. v0.53.0 also pinned
+`make manual` to `--pdf-engine chrome` (recon 0.101.0 made typst its default
+engine, which rejects the `--unsafe-html` the manual needs). v2 (parked):
+animated GIF/APNG, EXIF/orientation, custom convolution/filters, SVG output.
 
 ---
 
