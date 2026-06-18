@@ -1041,7 +1041,7 @@ declare const db: {
   };
 };
 
-/** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control. */
+/** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting. */
 declare const services: {
   agentBrowser: {
     /**
@@ -1233,6 +1233,35 @@ declare const services: {
      * @returns Promise<Array<{ path: string, indexStatus: string, workingStatus: string }>> — one entry per changed path; indexStatus / workingStatus are the porcelain v1 X / Y status characters (e.g. "M", "A", "?"). An empty array means a clean tree.
      */
     status(opts?: { cwd?: string }): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>;
+  };
+  typst: {
+    /**
+     * True when the typst CLI is on PATH. Sync boolean, resolved once per Run. Gate calls on this — every other typst binding throws a clean error when the CLI is absent.
+     * @returns boolean — true if `typst` is found on PATH.
+     */
+    available: boolean;
+    /**
+     * Compile a Typst document to PDF/PNG/SVG. Provide exactly one of `input` (a .typ path) or `source` (inline Typst). With no `output`, a PDF is compiled to a temp file and returned as bytes (PDF only); with an `output` path the result is written there and `format` is inferred from the extension (png/svg require an output path).
+     * @param opts Provide exactly one of input (a path to a .typ file) or source (inline Typst markup) — passing both, or neither, throws. output is the destination path; when omitted a PDF is produced in a temp dir and returned as bytes (PDF only — png/svg require an output path). format (pdf|png|svg) is inferred from output's extension when omitted, defaulting to pdf when there is no output. root sets the project root for absolute imports. inputs are sys.inputs key/value pairs passed as --input k=v (deterministic order). ppi sets PNG resolution (png only). fontPaths adds --font-path search dirs. timeout in ms (default 60000). Inline source caveat: source is written to a temp main.typ, so relative imports/reads resolve against that temp dir, not your cwd — use input (or root) when the document imports or reads sibling files.
+     * @returns Promise<{ format, bytes?, path? }> — format echoes the chosen format. With no output: { format, bytes } where bytes is the compiled PDF as a Uint8Array. With an output path: { format, path } where path is the written file.
+     */
+    compile(opts: { input?: string, source?: string, output?: string, format?: "pdf" | "png" | "svg", root?: string, inputs?: Record<string, string>, ppi?: number, fontPaths?: string[], timeout?: number }): Promise<{ format: string; bytes?: Uint8Array; path?: string }>;
+    /**
+     * List the font families typst can see (from `typst fonts`), de-duplicated and sorted.
+     * @returns Promise<string[]> — sorted, unique font family names available to typst.
+     */
+    fonts(...args: unknown[]): Promise<string[]>;
+    /**
+     * Query a compiled Typst document for elements matching a selector and return the result as parsed JSON. Provide exactly one of `input` or `source`; `selector` is required.
+     * @param opts selector is required — a Typst query selector (e.g. "<label>", "heading", "figure"). Provide exactly one of input (a .typ path) or source (inline Typst). field extracts a single field from each match (--field). one returns just the first match instead of an array (--one). root sets the project root; inputs are --input k=v sys.inputs pairs; timeout in ms (default 60000). Same inline-source caveat as compile: source is written to a temp file, so relative imports/reads resolve there.
+     * @returns Promise<unknown> — the parsed JSON typst emits: an array of matched elements (or matched field values when field is set), or a single value when one is set.
+     */
+    query(opts: { selector: string, input?: string, source?: string, field?: string, one?: boolean, root?: string, inputs?: Record<string, string>, timeout?: number }): Promise<unknown>;
+    /**
+     * The typst CLI version string (from `typst --version`).
+     * @returns Promise<string> — the trimmed version line reported by `typst --version` (e.g. "typst 0.12.0 (…)").
+     */
+    version(...args: unknown[]): Promise<string>;
   };
   webdriver: {
     /**

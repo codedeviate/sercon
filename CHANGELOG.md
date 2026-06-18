@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `services.typst` — external-CLI binding to the Typst compiler (feature-detected
+  via `available`): `version()`, `fonts()`, `compile(opts)` (inline `source` or a
+  `.typ` `input` → PDF bytes, or write PDF/PNG/SVG to `output`; `root`/`inputs`/
+  `ppi`/`fontPaths`), and `query(opts)` (selector → JSON). Throws cleanly when
+  `typst` isn't installed. New `typst.ts` example. (Embedding `typst-as-lib` is
+  impossible under no-cgo, so this is the external-CLI path.)
+
 ## [0.53.0] — 2026-06-18
 
 ### Added

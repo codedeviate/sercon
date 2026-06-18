@@ -1198,10 +1198,26 @@ thumb.save("thumb.webp");                       // webp encode is lossless
 const png = im.crop(0, 0, 64, 64).bytes("png"); // → Uint8Array`)
 	note("Pure-Go (imaging + x/image + nativewebp + oksvg). resize(0,…)/(…,0) keeps aspect; webp encode is lossless (quality ignored); SVG is rasterize-in only; GIF decode is first-frame.")
 
+	header(60, "Typesetting with Typst (services.typst)")
+	code(`// External-CLI binding to the typst compiler — feature-detected on PATH.
+// Provide inline source (or a .typ input). With no output, a PDF is
+// returned as bytes; with an output path, PNG/SVG/PDF is written there.
+if (services.typst.available) {
+  const pdf = await services.typst.compile({ source: "= Hello\nFrom Typst." });
+  runtime.log(pdf.format, "bytes:", pdf.bytes.length);   // "pdf bytes: …"
+  await services.typst.compile({ source: "= Hi", output: "/tmp/out.png", ppi: 144 });
+  // query metadata/elements as JSON:
+  const v = await services.typst.query({
+    source: "#metadata(42) <answer>", selector: "<answer>", field: "value", one: true,
+  });
+  runtime.log("answer:", v);                              // 42
+}`)
+	note("Throws cleanly when typst isn't installed (gate on services.typst.available). PDF bytes only without an output path; png/svg require one. Inline source compiles in a temp dir — use input/root for documents that import sibling files.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 59
+const exampleCount = 60

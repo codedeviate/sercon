@@ -635,5 +635,60 @@ runtime.log("ready:", r.ready);`,
   }
 }`,
 		},
+
+		// typst namespace docs
+		"typst.available": {
+			Summary:    "True when the typst CLI is on PATH. Sync boolean, resolved once per Run. Gate calls on this — every other typst binding throws a clean error when the CLI is absent.",
+			ReturnType: "boolean",
+			Returns:    "boolean — true if `typst` is found on PATH.",
+			Errors:     "Never throws.",
+			Example: `if (!services.typst.available) {
+  runtime.log("install typst (brew install typst) first");
+}`,
+		},
+		"typst.version": {
+			Summary:    "The typst CLI version string (from `typst --version`).",
+			ReturnType: "Promise<string>",
+			Returns:    "Promise<string> — the trimmed version line reported by `typst --version` (e.g. \"typst 0.12.0 (…)\").",
+			Errors:     "Throws if typst is not on PATH or on timeout / context cancellation.",
+			Example:    `runtime.log(await services.typst.version());`,
+		},
+		"typst.fonts": {
+			Summary:    "List the font families typst can see (from `typst fonts`), de-duplicated and sorted.",
+			ReturnType: "Promise<string[]>",
+			Returns:    "Promise<string[]> — sorted, unique font family names available to typst.",
+			Errors:     "Throws if typst is not on PATH or on timeout / context cancellation.",
+			Example: `const families = await services.typst.fonts();
+runtime.log("fonts:", families.length);`,
+		},
+		"typst.compile": {
+			Summary: "Compile a Typst document to PDF/PNG/SVG. Provide exactly one of `input` (a .typ path) or `source` (inline Typst). With no `output`, a PDF is compiled to a temp file and returned as bytes (PDF only); with an `output` path the result is written there and `format` is inferred from the extension (png/svg require an output path).",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ input?: string, source?: string, output?: string, format?: \"pdf\" | \"png\" | \"svg\", root?: string, inputs?: Record<string, string>, ppi?: number, fontPaths?: string[], timeout?: number }", Desc: "Provide exactly one of input (a path to a .typ file) or source (inline Typst markup) — passing both, or neither, throws. output is the destination path; when omitted a PDF is produced in a temp dir and returned as bytes (PDF only — png/svg require an output path). format (pdf|png|svg) is inferred from output's extension when omitted, defaulting to pdf when there is no output. root sets the project root for absolute imports. inputs are sys.inputs key/value pairs passed as --input k=v (deterministic order). ppi sets PNG resolution (png only). fontPaths adds --font-path search dirs. timeout in ms (default 60000). Inline source caveat: source is written to a temp main.typ, so relative imports/reads resolve against that temp dir, not your cwd — use input (or root) when the document imports or reads sibling files."},
+			},
+			ReturnType: "Promise<{ format: string; bytes?: Uint8Array; path?: string }>",
+			Returns:    "Promise<{ format, bytes?, path? }> — format echoes the chosen format. With no output: { format, bytes } where bytes is the compiled PDF as a Uint8Array. With an output path: { format, path } where path is the written file.",
+			Errors:     "Throws if neither or both of input/source are given; if format is not pdf/png/svg; if png/svg is requested without an output path; if the output extension can't be mapped to a format; if typst is not on PATH; if typst exits non-zero (the trimmed stderr is included); or on timeout / context cancellation.",
+			Example: `// Inline source → PDF bytes.
+const pdf = await services.typst.compile({ source: "= Hi\nBody." });
+runtime.log(pdf.format, pdf.bytes.length);
+
+// .typ file → PNG on disk.
+await services.typst.compile({ input: "report.typ", output: "/tmp/report.png", ppi: 144 });`,
+		},
+		"typst.query": {
+			Summary: "Query a compiled Typst document for elements matching a selector and return the result as parsed JSON. Provide exactly one of `input` or `source`; `selector` is required.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ selector: string, input?: string, source?: string, field?: string, one?: boolean, root?: string, inputs?: Record<string, string>, timeout?: number }", Desc: "selector is required — a Typst query selector (e.g. \"<label>\", \"heading\", \"figure\"). Provide exactly one of input (a .typ path) or source (inline Typst). field extracts a single field from each match (--field). one returns just the first match instead of an array (--one). root sets the project root; inputs are --input k=v sys.inputs pairs; timeout in ms (default 60000). Same inline-source caveat as compile: source is written to a temp file, so relative imports/reads resolve there."},
+			},
+			ReturnType: "Promise<unknown>",
+			Returns:    "Promise<unknown> — the parsed JSON typst emits: an array of matched elements (or matched field values when field is set), or a single value when one is set.",
+			Errors:     "Throws if selector is missing; if neither or both of input/source are given; if typst is not on PATH; if typst exits non-zero (the trimmed stderr is included); if the output isn't valid JSON; or on timeout / context cancellation.",
+			Example: `const v = await services.typst.query({
+  source: "#metadata(42) <answer>",
+  selector: "<answer>", field: "value", one: true,
+});
+runtime.log(v); // 42`,
+		},
 	}
 }

@@ -137,11 +137,6 @@ unlock:
   `pdftotext`. Unblocks the deferred `pdf_export_page` plus PDF text/HTML
   extraction.
 - **LaTeX** — `pdflatex` / `xelatex` / `tectonic` for `.tex` → PDF.
-- **Typst** — `typst compile` (`.typ` → PDF/PNG/SVG), feature-detected on PATH.
-  A modern, fast typesetting alternative to LaTeX. Note: the `typst-as-lib`
-  (Rust) embedding path can't be linked under our no-cgo constraint, so a
-  pure-Go in-process Typst is not on the table — the external `typst` binary is
-  the only viable route, same opt-in/feature-detected model as the others.
 - **ImageMagick / GraphicsMagick** — `magick` / `convert` for image
   transforms beyond the pure-Go image stack.
 - **Ghostscript** (`gs`), **pandoc** (document conversion), **ffmpeg**
@@ -183,6 +178,22 @@ clean thrown error and `available: false` when none is installed.
   - **ICC colour profiles** — profile-aware decode/encode + conversion.
   **Reason parked:** v1 covers the common reconnaissance/troubleshooting needs
   (resize/crop/convert/inspect); these add scope (extra deps, larger surface)
+  better promoted on demand.
+
+- **`services.typst` v2 (parked).** The v1 binding (shipped —
+  `available`/`version`/`fonts`/`compile`/`query`, inline `source` or `.typ`
+  `input` → PDF bytes or PDF/PNG/SVG to an `output` path) intentionally leaves a
+  second wave parked:
+  - **`typst watch`** — incremental recompile on file change; long-lived, so it
+    needs `HoldRun` bookkeeping like the server listeners.
+  - **Per-page PNG/SVG bytes return** — v1 only returns bytes for single-file
+    PDF; multi-page PNG/SVG must go to an `output` path (`{p}` template). A
+    bytes-array return for the page set is the parked piece.
+  - **Package-cache / offline control** — `--package-cache-path`,
+    `--package-path`, network-disabled compiles for reproducible/offline builds.
+  - **PDF tagging / metadata** — accessibility tags, document metadata, PDF/A.
+  **Reason parked:** v1 covers compile/query/fonts/version — the common
+  typesetting needs; these add scope (process ownership, multi-output plumbing)
   better promoted on demand.
 
 ## Security & resilience testing
