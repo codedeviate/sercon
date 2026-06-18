@@ -459,6 +459,11 @@ func registerSurface(e *scriptengine.Engine) error {
 	}); err != nil {
 		return err
 	}
+	if err := e.RegisterNamespaceFactory("image", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return imageNamespace(vm, loop)
+	}); err != nil {
+		return err
+	}
 	if err := e.RegisterNamespaceFactory("server", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return serverNamespace(vm, loop, e)
 	}); err != nil {

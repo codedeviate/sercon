@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"testing"
@@ -72,5 +73,26 @@ func TestWebPRoundTrip(t *testing.T) {
 	img, _, err := decodeImage(raw)
 	if err != nil || img.Bounds().Dx() != 16 {
 		t.Fatalf("webp round-trip: %v", err)
+	}
+}
+
+func TestImageScript_Transforms(t *testing.T) {
+	// Encode a 40x20 source to PNG, hand it to a script as __png, run a chain.
+	raw, err := encodeImage(genImage(40, 20), "png", encodeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := runCaptureScript(t, `
+		const im = image.decode(__png);
+		const small = im.resize(20, 0).grayscale();
+		__capture({ w0: im.width, h0: im.height, w1: small.width, h1: small.height,
+		            png: small.bytes("png").length > 8, fmt: im.format });
+	`, map[string]any{"__png": raw})
+	m := got.(map[string]any)
+	if fmt.Sprintf("%v", m["w0"]) != "40" || fmt.Sprintf("%v", m["w1"]) != "20" {
+		t.Fatalf("dims wrong: %#v", m)
+	}
+	if fmt.Sprintf("%v", m["h1"]) != "10" { // 40x20 → width 20 preserves aspect → 10
+		t.Fatalf("aspect wrong: %#v", m)
 	}
 }
