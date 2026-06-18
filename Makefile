@@ -95,6 +95,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/net-sockets.ts \
 	examples/scripts/load.ts \
 	examples/scripts/capture-file.ts \
+	examples/scripts/image.ts \
 	examples/scripts/tui-keys.ts \
 	examples/scripts/agent-browser-core.ts \
 	examples/scripts/agent-browser-capture.ts \
