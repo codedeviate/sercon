@@ -358,6 +358,7 @@ sercon --examples | --help | --version
 | `--examples` | In-depth colorized walkthrough of every feature. |
 | `--no-pager` | Don't page `--help` / `--examples`. By default, when stdout is a terminal they pipe through `$PAGER` (falling back to `less` with `LESS=FRX`, color preserved); a pipe/redirect, `--no-pager`, or `PAGER=cat` renders directly. |
 | `--version` | Print the engine version (plus goja/esbuild build-info versions). |
+| `--doctor` | Check external tool requirements (git, gh, AI providers, agent-browser, chromedriver/geckodriver, typst, recon/curl, clipboard/image): installed?, version, purpose — and validate the chromedriver↔Chrome major-version match; then exit. Prints a category-grouped table. Exits `0` normally (missing tools are optional), `5` on a detected compatibility conflict. Same report as the `services.doctor` binding. |
 | `--watch` | Re-run on file change under the script root. Debounced 150 ms. Ctrl-C exits. |
 | `--secrets-prefix=P` | Namespace prefix for `runtime.secrets` keystore items. Overrides `$SERCON_SECRETS_PREFIX`; default `sercon/`. |
 | `--env-file=PATH` | Load `KEY=VALUE` pairs from a `.env` file into the environment before running (repeatable). Parses `KEY=VALUE`, `#` comments, blank lines, an optional leading `export`, and optional surrounding quotes — no shell expansion. A variable already in the real environment always wins; among multiple files, a later file overrides an earlier one. Replaces the `set -a; source .env; set +a` ritual and makes shebang scripts self-sufficient. |
@@ -401,6 +402,7 @@ When several scripts run, the highest applicable code wins:
 | `2` | at least one script failed to transpile — never ran. |
 | `3` | at least one script timed out (`-timeout`) or was context-cancelled. |
 | `4` | at least one script ran and threw a JS exception. |
+| `5` | `--doctor` detected a compatibility conflict (e.g. chromedriver↔Chrome major mismatch). |
 
 `-v` writes lines prefixed with `[sercon] ` to stderr. The traces
 include the full rewritten entry-script JS (the form goja actually
@@ -2089,6 +2091,68 @@ if (!services.typst.available) {
   });
   runtime.log("answer:", v); // 42
 }
+```
+
+#### `services.doctor`
+
+`services.doctor(requires?)` reports on every external tool sercon can
+use and, optionally, asserts a script's prerequisites. It is the
+script-side form of the `--doctor` CLI flag and returns the same report.
+
+```ts
+const r = await services.doctor(requires?: string[]);
+```
+
+**Report shape.** The promise resolves to:
+
+```ts
+{
+  ok: boolean;          // false only when a compatibility conflict was found
+  satisfied: boolean;   // true when every `requires` entry is met (unmet === [])
+  unmet: string[];      // requested requirements that are absent or conflicted
+  tools: {
+    name: string;       // binary name, e.g. "chromedriver"
+    category: string;   // feature group, e.g. "webdriver"
+    purpose: string;    // what sercon uses it for
+    installed: boolean;
+    version: string | null;  // null when not installed or no --version
+    ok: boolean;        // false only on a compatibility conflict
+    detail?: string;    // e.g. "matches Chrome 149" or the conflict reason
+  }[];
+}
+```
+
+Tools probed include `git`, `gh`, the AI providers (`claude`, `codex`,
+`copilot`, `gemini`), `agent-browser`, `chromedriver` / `geckodriver`,
+`typst`, the HTTP backends (`recon`, `curl`), and the platform clipboard /
+image tools (`pbcopy` / `pbpaste` / `osascript` / `pngpaste` on macOS,
+`wl-copy` / `wl-paste` / `xclip` / `xsel` on Linux, `clip` / `powershell`
+on Windows).
+
+**`requires` — assert prerequisites.** Each entry is either a
+feature/category name (`"webdriver"`, `"typst"`, `"ai"`, `"git"`, `"gh"`,
+`"agentBrowser"`, `"clipboard"`, `"image"`, `"http"`) or a specific binary
+name (`"chromedriver"`, `"pngpaste"`, `"claude"`, …). A category is met
+when at least one tool in it is installed and `ok`. Anything unmet lands in
+`unmet` — **a missing tool is reported, not thrown**, so a script can
+self-skip an optional feature. An **unknown** requirement name (a typo)
+throws.
+
+**The chromedriver↔Chrome check.** When `chromedriver` is installed,
+sercon locates the installed Chrome/Chromium and compares the two major
+versions. A mismatch sets that tool's `ok` to `false` (with a `detail`
+explaining it), the top-level `ok` to `false`, and — for `--doctor` —
+exits with code `5`. A missing Chrome leaves `ok` true and notes that the
+version couldn't be verified. **Missing is fine; only a conflict fails.**
+
+```ts
+// Assert a hard prerequisite.
+const need = await services.doctor(["git"]);
+runtime.assert.ok(need.satisfied, "git is required");
+
+// Self-skip an optional feature.
+const opt = await services.doctor(["typst", "webdriver"]);
+if (!opt.satisfied) runtime.log("skipping; unmet:", JSON.stringify(opt.unmet));
 ```
 
 ### `tui`
@@ -5977,7 +6041,7 @@ await srv.close();
 
 ### services
 
-Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting.
+Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, external-requirement diagnostics (doctor).
 
 #### services.agentBrowser.auth
 
@@ -6240,6 +6304,29 @@ Run a one-shot prompt through a provider. opts { prompt (required), provider?, s
 ```ts
 const r = await services.ai.send({ prompt: "Say hi", provider: "claude" });
 runtime.log(r.output);
+```
+
+#### services.doctor
+
+```
+doctor(requires?: string[]): Promise<{ ok: boolean; satisfied: boolean; unmet: string[]; tools: { name: string; category: string; purpose: string; installed: boolean; version: string | null; ok: boolean; detail?: string }[] }>
+```
+
+Report on every external tool sercon can use (git, gh, AI providers, agent-browser, chromedriver/geckodriver, typst, recon/curl, clipboard/image tools): installed?, version, purpose — and validate the chromedriver↔Chrome major-version match. Optionally assert a script's prerequisites via `requires`.
+
+**Parameters**
+
+- `requires` *(string[], optional)* — Feature/category names (e.g. "webdriver", "typst", "ai", "git", "gh", "agentBrowser", "clipboard", "image", "http") OR specific binaries (e.g. "chromedriver", "pngpaste", "claude") to assert. Each unmet requirement (absent or in a compatibility conflict) lands in the returned `unmet` array — a missing optional tool is reported, not thrown. An unrecognized name throws (catches typos).
+
+**Returns:** Promise<{ ok, satisfied, unmet, tools }> — ok is false only when a compatibility conflict was detected (e.g. chromedriver↔Chrome major mismatch); satisfied is true when every entry in requires is met (unmet is empty); unmet lists the requested requirements that are absent or conflicted; tools is the full report, one entry per probed tool ({ name, category, purpose, installed, version (string|null), ok, optional detail }). A missing tool is installed:false, ok:true (optional, not a failure).
+
+**Throws:** Throws if a requires entry matches neither a known category/feature nor a known binary name (an unknown requirement). Missing tools do NOT throw — they are reported via installed:false and, when requested, listed in unmet.
+
+```ts
+const r = await services.doctor(["git"]);
+runtime.log("git satisfied:", r.satisfied, "of", r.tools.length, "tools");
+const opt = await services.doctor(["typst", "webdriver"]);
+runtime.log("unmet optional features:", JSON.stringify(opt.unmet));
 ```
 
 #### services.exec.http

@@ -8,6 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `doctor` — external-requirements diagnostics. `sercon --doctor` prints a
+  category-grouped report of every optional external tool (git, gh, AI providers,
+  agent-browser, chromedriver/geckodriver, typst, recon/curl, clipboard/image
+  tools): installed?, version, purpose — and validates the chromedriver↔Chrome
+  major-version match. Exits 0 normally (missing tools are fine — they're
+  optional) and 5 on a detected compatibility conflict. `services.doctor(requires?)`
+  returns the same report as `{ ok, satisfied, unmet, tools }`; pass an array of
+  feature names (`"webdriver"`, `"typst"`, `"ai"`, …) or specific binaries to
+  assert a script's prerequisites (`unmet` lists what's absent/conflicted; an
+  unknown name throws). New `doctor.ts` example.
+
 ## [0.57.0] — 2026-06-20
 
 ### Added

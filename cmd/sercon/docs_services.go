@@ -690,5 +690,18 @@ await services.typst.compile({ input: "report.typ", output: "/tmp/report.png", p
 });
 runtime.log(v); // 42`,
 		},
+		"doctor": {
+			Summary: "Report on every external tool sercon can use (git, gh, AI providers, agent-browser, chromedriver/geckodriver, typst, recon/curl, clipboard/image tools): installed?, version, purpose — and validate the chromedriver↔Chrome major-version match. Optionally assert a script's prerequisites via `requires`.",
+			Params: []scriptengine.Param{
+				{Name: "requires", Type: "string[]", Optional: true, Desc: "Feature/category names (e.g. \"webdriver\", \"typst\", \"ai\", \"git\", \"gh\", \"agentBrowser\", \"clipboard\", \"image\", \"http\") OR specific binaries (e.g. \"chromedriver\", \"pngpaste\", \"claude\") to assert. Each unmet requirement (absent or in a compatibility conflict) lands in the returned `unmet` array — a missing optional tool is reported, not thrown. An unrecognized name throws (catches typos)."},
+			},
+			ReturnType: "Promise<{ ok: boolean; satisfied: boolean; unmet: string[]; tools: { name: string; category: string; purpose: string; installed: boolean; version: string | null; ok: boolean; detail?: string }[] }>",
+			Returns:    "Promise<{ ok, satisfied, unmet, tools }> — ok is false only when a compatibility conflict was detected (e.g. chromedriver↔Chrome major mismatch); satisfied is true when every entry in requires is met (unmet is empty); unmet lists the requested requirements that are absent or conflicted; tools is the full report, one entry per probed tool ({ name, category, purpose, installed, version (string|null), ok, optional detail }). A missing tool is installed:false, ok:true (optional, not a failure).",
+			Errors:     "Throws if a requires entry matches neither a known category/feature nor a known binary name (an unknown requirement). Missing tools do NOT throw — they are reported via installed:false and, when requested, listed in unmet.",
+			Example: `const r = await services.doctor(["git"]);
+runtime.log("git satisfied:", r.satisfied, "of", r.tools.length, "tools");
+const opt = await services.doctor(["typst", "webdriver"]);
+runtime.log("unmet optional features:", JSON.stringify(opt.unmet));`,
+		},
 	}
 }

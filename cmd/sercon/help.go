@@ -218,6 +218,7 @@ func showHelp(w io.Writer) {
 	flagLine("--examples", "", "Show colourised script examples covering every feature; then exit.")
 	flagLine("--no-pager", "", "Don't page --help / --examples through $PAGER (default: page when stdout is a terminal; falls back to `less`).")
 	flagLine("--version", "", "Print the engine version (plus goja / esbuild versions) and exit.")
+	flagLine("--doctor", "", "Check external tool requirements (git, gh, AI providers, agent-browser, chromedriver/geckodriver, typst, recon/curl, clipboard/image): installed?, version, purpose — and the chromedriver↔Chrome major-version match; then exit. Exit 0 normally (missing tools are optional), 5 on a detected compatibility conflict.")
 	flagLine("--watch", "", "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Debounced (150 ms). Ctrl-C exits cleanly. .git / .vscode / node_modules / dotfiles ignored.")
 	flagLine("--secrets-prefix", "P", "Namespace prefix for runtime.secrets keystore items (overrides $SERCON_SECRETS_PREFIX; default \"sercon/\").")
 	flagLine("--env-file", "PATH", "Load KEY=VALUE pairs from a .env file into the environment before running (repeatable). Real env vars always win; later files override earlier. Replaces the `set -a; source .env` ritual.")
@@ -1241,10 +1242,26 @@ await b.click("#pay");
 await b.frame("main");`)
 	note("WebDriver does nested + cross-origin frames (W3C /frame; queries are frame-scoped after a switch). agentBrowser.frame() is single-level — agent-browser resolves the selector against the main document and can't descend into nested frames; use WebDriver for nested cases like Klarna Checkout.")
 
+	header(63, "Tool requirements (services.doctor / --doctor)")
+	code(`// Report every external tool sercon can use and assert prerequisites.
+// CLI form: ` + "`sercon --doctor`" + ` prints a category-grouped table and
+// exits 0 (missing tools are optional) or 5 on a compatibility conflict.
+const report = await services.doctor();
+runtime.log(report.tools.filter((t) => t.installed).length, "tools installed; ok=", report.ok);
+
+// Pass feature/category names (or specific binaries) to assert prerequisites.
+const need = await services.doctor(["git"]);
+runtime.assert.ok(need.satisfied, "git is required");
+
+// An unmet optional feature lands in unmet (not an error) so a script can self-skip.
+const opt = await services.doctor(["typst", "webdriver"]);
+runtime.log("unmet:", JSON.stringify(opt.unmet));`)
+	note("Missing tools are fine (installed:false, ok:true — optional). Only a compatibility conflict (chromedriver↔Chrome major mismatch) sets ok:false and exits --doctor with code 5. An unknown requirement name throws.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 62
+const exampleCount = 63
