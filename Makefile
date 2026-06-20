@@ -18,7 +18,8 @@
 #            binding surface (the on-disk file is the source of truth for
 #            editor autocomplete and the public api shape).
 #   release-prep VERSION=x.y.z
-#            Bump every version marker (Go const + MANUAL cover + footer)
+#            Bump every version marker (Go const + MANUAL cover + footer +
+#            HISTORY.md span line)
 #            in one shot, then print the next-step checklist. Releases are
 #            cut manually: this + edit CHANGELOG + make manual + tag + push.
 #            See CLAUDE.md > Versioning and commits.
@@ -212,10 +213,15 @@ release-prep:
 	@sed -i.bak -E 's|(<div class="version">Version )[^<]+(</div>)|\1$(VERSION)\2|' MANUAL.md
 	@sed -i.bak -E 's/(\*This manual covers sercon v)[0-9.]+(\.)/\1$(VERSION)\2/' MANUAL.md
 	@d=$$(date +%Y-%m-%d); sed -i.bak -E "s|(<div class=\"date\">)[^<]+(</div>)|\1$$d\2|" MANUAL.md
-	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak
+	@# HISTORY.md "covered … through vX.Y.Z (YYYY-MM-DD)" span line — bumped here
+	@# so it ships in the cut commit (otherwise the span bump perpetually trails a
+	@# release). Capability narrative is still added per-feature by hand.
+	@d=$$(date +%Y-%m-%d); sed -i.bak -E "s|(through v)[0-9]+\.[0-9]+\.[0-9]+ \([0-9-]+\)|\1$(VERSION) ($$d)|" HISTORY.md
+	@rm -f pkg/scriptengine/version.go.bak MANUAL.md.bak HISTORY.md.bak
 	@$(MAKE) --no-print-directory version-check
 	@echo ""
 	@echo "Next steps:"
+	@echo "  (version.go, MANUAL.md strings, and the HISTORY.md span line are bumped already.)"
 	@echo "  1) Edit CHANGELOG.md: move the [Unreleased] entries into [$(VERSION)] - $$(date +%Y-%m-%d)"
 	@echo "  2) make manual && make types && make test && make vet && make lint && make demo"
 	@echo "  3) git commit -am 'chore: cut v$(VERSION)'"
