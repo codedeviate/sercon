@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.55.0] — 2026-06-20
+
 ### Added
 
 - `runtime.setDeadline(ms)` / `runtime.clearDeadline()` / `runtime.getDeadline()`
