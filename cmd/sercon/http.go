@@ -156,6 +156,7 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body
 		Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 400).
 		Set("headers", respHeaders).
 		Set("body", string(respBody)).
+		Set("bodyBytes", respBody). // raw, undecoded bytes (→ Uint8Array); pair with text.charset.decode for non-UTF-8
 		Set("url", finalURL)
 
 	return result, resp.StatusCode, false, nil

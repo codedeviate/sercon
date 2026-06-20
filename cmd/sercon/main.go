@@ -73,6 +73,8 @@ func run(args []string) int {
 	watch := fs.Bool("watch", false, "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Ctrl-C exits.")
 	noPager := fs.Bool("no-pager", false, "Don't page --help / --examples through $PAGER even on a terminal.")
 	secretsPrefix := fs.String("secrets-prefix", "", "Namespace prefix for runtime.secrets keystore items (overrides SERCON_SECRETS_PREFIX; default \"sercon/\")")
+	var envFiles stringSliceFlag
+	fs.Var(&envFiles, "env-file", "Load KEY=VALUE pairs from a .env file into the environment before running (repeatable). Real env vars always win; later files override earlier.")
 	fs.Usage = func() { showHelp(os.Stderr) }
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -96,6 +98,15 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "sercon: no scripts given")
 		fs.Usage()
 		return exitUsage
+	}
+
+	// Load --env-file(s) into the process environment before the script runs,
+	// so runtime.env.get and any spawned subprocess see them. Real env wins.
+	if len(envFiles) > 0 {
+		if err := applyEnvFiles(envFiles); err != nil {
+			fmt.Fprintln(os.Stderr, "sercon:", err)
+			return exitUsage
+		}
 	}
 
 	scriptRoot := *root
@@ -536,8 +547,9 @@ func httpDo(ctx context.Context, method, url, body string) (map[string]any, erro
 		return nil, err
 	}
 	return map[string]any{
-		"status": resp.StatusCode,
-		"body":   string(bs),
+		"status":    resp.StatusCode,
+		"body":      string(bs),
+		"bodyBytes": bs, // raw, undecoded bytes (→ Uint8Array); pair with text.charset.decode for non-UTF-8
 	}, nil
 }
 

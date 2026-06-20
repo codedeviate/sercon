@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -170,4 +171,45 @@ func mustErr(t *testing.T, src string) string {
 		t.Fatal("expected error")
 	}
 	return err.Error()
+}
+
+// "Växjö Båt" encoded as ISO-8859-1 (9 bytes) — invalid UTF-8, so it must be
+// reachable as raw bytes (the original lossy `body` mangles å/ä/ö to U+FFFD).
+var latin1VaxjoBat = []byte{0x56, 0xE4, 0x78, 0x6A, 0xF6, 0x20, 0x42, 0xE5, 0x74}
+
+func TestHTTPRequest_BodyBytesLatin1(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=ISO-8859-1")
+		_, _ = w.Write(latin1VaxjoBat)
+	}))
+	defer srv.Close()
+	got := runHTTPReqScript(t, `
+		const r = await http.request("GET", `+"`"+srv.URL+"`"+`);
+		const __result = r.bodyBytes;
+	`)
+	bs, ok := got.([]byte)
+	if !ok {
+		t.Fatalf("r.bodyBytes did not export as []byte: %T", got)
+	}
+	if !bytes.Equal(bs, latin1VaxjoBat) {
+		t.Fatalf("r.bodyBytes = % x, want % x", bs, latin1VaxjoBat)
+	}
+}
+
+func TestHTTPDo_BodyBytesLatin1(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(latin1VaxjoBat)
+	}))
+	defer srv.Close()
+	res, err := httpDo(context.Background(), http.MethodGet, srv.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bs, ok := res["bodyBytes"].([]byte)
+	if !ok {
+		t.Fatalf("httpDo bodyBytes not []byte: %T", res["bodyBytes"])
+	}
+	if !bytes.Equal(bs, latin1VaxjoBat) {
+		t.Fatalf("httpDo bodyBytes = % x, want % x", bs, latin1VaxjoBat)
+	}
 }
