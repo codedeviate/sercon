@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.54.0 (2026-06-18).
+covered is v0.1.0 (2026-05-25) through v0.55.0 (2026-06-20).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -135,6 +135,18 @@ are embedder-facing (library) APIs, not reachable from a `.ts` script.
 
 Cancels the in-flight Run via the engine's interrupt path. Added to wire
 the TUI's Ctrl-C handler.
+
+### Resettable run deadline (v0.55.0)
+
+The per-Run timeout watcher (which arms a single timer from `Options.Timeout`
+and interrupts the VM on fire) became **resettable**: it now loops over a
+per-Run reset channel, re-arming or disarming the timer mid-run. Two exported
+methods drive it (same per-Run-handle pattern as `AbortRun`):
+`Engine.SetRunTimeout(d)` (d > 0 re-arms the kill deadline to fire d from now;
+d ≤ 0 disables it) and `Engine.RunTimeoutRemaining() (time.Duration, bool)`.
+The initial `-timeout` deadline is unchanged when a script never adjusts it.
+Surfaced to scripts as `runtime.setDeadline`/`clearDeadline`/`getDeadline`
+(see §4 `runtime`).
 
 ### Stable JSON key order (v0.16.0, v0.20.0, v0.11.2)
 
@@ -282,6 +294,16 @@ and the inherited captured-stderr pipe blocked `cmd.Wait()` forever — clipboar
 writes now route the child's std streams to `os.DevNull` (an `*os.File`, so
 `os/exec` spawns no copier goroutine). Verified end-to-end across macOS, Linux
 X11 (Xvfb), and Linux Wayland (headless sway) for both text and PNG.
+
+`runtime.setDeadline`/`clearDeadline`/`getDeadline` (v0.55.0) let a script
+control its own wall-clock kill timeout — the same deadline the `-timeout` flag
+sets — at runtime: `setDeadline(ms)` moves the deadline to now + ms (extend /
+keep-alive; `ms <= 0` disables), `clearDeadline()` removes it, `getDeadline()`
+returns the ms remaining or `null`. So a script can lengthen a long task, or
+even add a deadline to a `-timeout 0` run, or disable its timeout entirely from
+within. Named `setDeadline` (not `setTimeout`) to avoid conflation with the JS
+global event-loop timer. Backed by the resettable run watcher + `SetRunTimeout`
+in §1.
 
 ### `crypto`
 
