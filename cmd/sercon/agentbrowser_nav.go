@@ -82,6 +82,18 @@ func (h *abHandle) connect(ctx context.Context, call goja.FunctionCall) (any, er
 	return h.runNav(ctx, "connect", target)
 }
 
+// frame switches the session's frame context to an iframe (by CSS selector or
+// @ref) or back to the top document with "main". Subsequent click/fill/find/
+// snapshot operate inside that frame. Nest by calling sequentially; cross-origin
+// frames work (CDP frame switch). Backed by `agent-browser frame <target>`.
+func (h *abHandle) frame(ctx context.Context, call goja.FunctionCall) (any, error) {
+	target := strArg(call, 0)
+	if target == "" {
+		return nil, errors.New("agentBrowser.frame: target required (a CSS selector, an @ref, or \"main\")")
+	}
+	return h.runNav(ctx, "frame", target)
+}
+
 // addNav wires the navigation methods into the handle object.
 func (h *abHandle) addNav(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["open"] = h.p(vm, loop, h.open)
@@ -90,4 +102,5 @@ func (h *abHandle) addNav(obj map[string]any, vm *goja.Runtime, loop *eventloop.
 	obj["reload"] = h.p(vm, loop, h.reload)
 	obj["wait"] = h.p(vm, loop, h.wait)
 	obj["connect"] = h.p(vm, loop, h.connect)
+	obj["frame"] = h.p(vm, loop, h.frame)
 }

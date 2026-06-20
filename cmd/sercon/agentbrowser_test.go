@@ -91,6 +91,20 @@ func TestNavArgs(t *testing.T) {
 	}
 }
 
+func TestFrameArgs(t *testing.T) {
+	cases := map[string][]string{
+		"#klarna-checkout-iframe": {"frame", "#klarna-checkout-iframe"},
+		"@e3":                     {"frame", "@e3"},
+		"main":                    {"frame", "main"},
+	}
+	for arg, want := range cases {
+		got := navArgs("frame", arg)
+		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Fatalf("navArgs(frame, %q) = %v, want %v", arg, got, want)
+		}
+	}
+}
+
 func TestInteractArgs(t *testing.T) {
 	if got := interactArgs("click", "#a"); !reflect.DeepEqual(got, []string{"click", "#a"}) {
 		t.Fatalf("click = %v", got)
