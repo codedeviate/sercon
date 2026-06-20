@@ -1258,10 +1258,21 @@ const opt = await services.doctor(["typst", "webdriver"]);
 runtime.log("unmet:", JSON.stringify(opt.unmet));`)
 	note("Missing tools are fine (installed:false, ok:true — optional). Only a compatibility conflict (chromedriver↔Chrome major mismatch) sets ok:false and exits --doctor with code 5. An unknown requirement name throws.")
 
+	header(64, "Reliable clicks in async/iframe UIs (clickWhenReady)")
+	code(`// find/element interaction follow the active frame (switchToFrame /
+// frameChain). For buttons that render or enable late (e.g. a Klarna
+// Checkout "Pay order"), clickWhenReady waits (visible+enabled) in the
+// active frame then issues a native (trusted) click that fires React handlers.
+const d = await services.webdriver.connect({ browser: "chrome" });
+await d.frameChain(["#klarna-checkout-iframe", "#payment-frame"]);
+await d.clickWhenReady("css", "button.pay", { timeout: 8000 });
+// waitFor also takes { enabled: true } to wait past a disabled→enabled flip.`)
+	note("clickWhenReady = waitFor(visible+enabled, in the active frame) + a native trusted click. find already follows the frame chain; what made nested-checkout flows flaky was timing, not frame context.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 63
+const exampleCount = 64

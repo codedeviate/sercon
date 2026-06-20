@@ -8,6 +8,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `services.webdriver` `clickWhenReady(by, value, opts?)` — wait for an element
+  in the active frame to be present (and, by default, visible + enabled) within a
+  timeout, then issue a native (trusted) click that fires React handlers. With
+  `switchToFrame`/`frameChain` this reliably drives buttons that render or enable
+  asynchronously inside nested cross-origin iframes (e.g. Klarna Checkout). Also:
+  `waitFor` gains an `enabled` option (wait past a disabled→enabled transition).
+  (Investigating feedback 0004 confirmed `find` already follows the active frame
+  — the reported "find doesn't follow the chain" was a timing race, not a frame
+  bug.) New `webdriver-wait-click.ts` example.
+
 ## [0.58.1] — 2026-06-20
 
 ### Docs
