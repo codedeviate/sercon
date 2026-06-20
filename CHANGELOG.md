@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.59.0] — 2026-06-21
+
 ### Added
 
 - `services.webdriver` `clickWhenReady(by, value, opts?)` — wait for an element
