@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.55.0 (2026-06-20).
+covered is v0.1.0 (2026-05-25) through v0.56.0 (2026-06-20).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -173,6 +173,14 @@ v0.4.4 added stdin script support (`-` positional), `Options.Verbose`, the
 
 v0.48.0 added `--secrets-prefix` (and the `SERCON_SECRETS_PREFIX` env) to set
 the `runtime.secrets` keystore namespace prefix (see §4 `runtime`).
+
+v0.56.0 added `--env-file PATH` (repeatable): load `KEY=VALUE` pairs from a
+`.env` file into the process environment before the script runs, so
+`runtime.env.get` and any spawned subprocess see them. Parses `KEY=VALUE`, `#`
+comments, blank lines, an optional leading `export`, and optional surrounding
+quotes — no shell expansion. A variable already in the real environment always
+wins; among multiple files a later file overrides an earlier one. Replaces the
+`set -a; source .env; set +a` ritual and makes shebang scripts self-sufficient.
 
 ### Help paging (v0.15.0)
 
@@ -379,7 +387,10 @@ protection): v0.4.14 (`api.archive.*`), stdlib-only.
 
 **`net.http.*`** (`get`/`post`): present from v0.1.0 (as `api.http.*`).
 `net.http.request(method, url, opts?)` with per-call headers/body/timeout/
-retry/redirect control: v0.5.17.
+retry/redirect control: v0.5.17. v0.56.0 added `bodyBytes` (a `Uint8Array` of
+the raw, undecoded response bytes) alongside the UTF-8 `body` on all three —
+so a script can recover non-UTF-8 content via `text.charset.decode(r.bodyBytes,
+"ISO-8859-1")` instead of losing bytes to U+FFFD.
 
 **`net.probe.*`** (TCP connect, DNS, TLS cert inspection): v0.4.6. NTP
 (beevik/ntp) and WHOIS (likexian/whois): v0.4.7. Ping (TCP mode default,
