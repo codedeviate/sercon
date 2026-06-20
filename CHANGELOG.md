@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.58.1] — 2026-06-20
+
+### Docs
+- `HISTORY.md`: record the `doctor` feature — `--doctor` in §2 (CLI) and
+  `services.doctor(requires?)` in §4 (services), incl. the chromedriver↔Chrome
+  compatibility check and the `requires` assertion model; span line advanced to
+  v0.58.0.
+
 ## [0.58.0] — 2026-06-20
 
 ### Added
