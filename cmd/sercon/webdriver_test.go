@@ -375,3 +375,23 @@ func TestIsElementRef(t *testing.T) {
 		t.Fatalf("scalars are not element refs")
 	}
 }
+
+func TestWDFrameBody_Cases(t *testing.T) {
+	// index
+	if b, err := wdFrameBody(float64(2)); err != nil || b["id"] != 2 {
+		t.Fatalf("index: %v %v", b, err)
+	}
+	// element handle
+	b, err := wdFrameBody(map[string]any{"elementId": "E1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, ok := b["id"].(map[string]string); !ok || id[webElementKey] != "E1" {
+		t.Fatalf("element body: %#v", b)
+	}
+	// a bare string is NOT a wdFrameBody case (the binding find-resolves it);
+	// wdFrameBody must reject it so a mis-route is caught.
+	if _, err := wdFrameBody("#sel"); err == nil {
+		t.Fatal("wdFrameBody should reject a raw string (binding resolves selectors)")
+	}
+}

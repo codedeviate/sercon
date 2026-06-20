@@ -236,17 +236,60 @@ func wdFrameBody(target any) (map[string]any, error) {
 // addFrames wires frame switching onto the session handle (all via W3C /frame).
 func (s *wdSession) addFrames(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["switchToFrame"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		body, err := wdFrameBody(call.Argument(0).Export())
-		if err != nil {
-			return nil, err
-		}
-		return s.do(func() (any, error) { _, e := s.command("POST", "/frame", body); return wdOK(e) })
+		return s.do(func() (any, error) { return s.switchToFrameTarget(call.Argument(0).Export()) })
 	})
 	obj["switchToParentFrame"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
 		return s.do(func() (any, error) { _, e := s.command("POST", "/frame/parent", map[string]any{}); return wdOK(e) })
 	})
 	obj["switchToDefaultContent"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
 		return s.do(func() (any, error) { _, e := s.command("POST", "/frame", map[string]any{"id": nil}); return wdOK(e) })
+	})
+	obj["frameChain"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		arr, ok := call.Argument(0).Export().([]any)
+		if !ok {
+			return nil, errors.New("webdriver.frameChain: argument must be an array of selectors / indices / element handles")
+		}
+		return s.frameChain(arr)
+	})
+}
+
+// switchToFrameTarget switches the active frame to target, which may be a frame
+// index (number), an element handle (map with elementId), or a CSS-selector
+// string (resolved via FindElement in the current context, then switched).
+// Must be called inside s.do (it issues driver commands).
+func (s *wdSession) switchToFrameTarget(target any) (any, error) {
+	if sel, ok := target.(string); ok {
+		el, err := s.wd.FindElement(selenium.ByCSSSelector, sel)
+		if err != nil {
+			return nil, fmt.Errorf("webdriver.switchToFrame: no iframe matches %q: %w", sel, err)
+		}
+		body := map[string]any{"id": map[string]string{webElementKey: wdElementID(el)}}
+		_, e := s.command("POST", "/frame", body)
+		return wdOK(e)
+	}
+	body, err := wdFrameBody(target)
+	if err != nil {
+		return nil, err
+	}
+	_, e := s.command("POST", "/frame", body)
+	return wdOK(e)
+}
+
+// frameChain switches from the top document through each target in order,
+// reaching a nested frame in one call. Each target is a CSS selector, a frame
+// index, or an element handle. Resolves { ok: true }.
+func (s *wdSession) frameChain(targets []any) (any, error) {
+	return s.do(func() (any, error) {
+		// reset to top document first
+		if _, e := s.command("POST", "/frame", map[string]any{"id": nil}); e != nil {
+			return nil, e
+		}
+		for _, t := range targets {
+			if _, e := s.switchToFrameTarget(t); e != nil {
+				return nil, e
+			}
+		}
+		return map[string]any{"ok": true}, nil
 	})
 }
 
