@@ -1225,10 +1225,26 @@ runtime.clearDeadline();      // remove the deadline (like -timeout 0)
 runtime.log("ms remaining:", runtime.getDeadline()); // null`)
 	note("setDeadline(ms) moves the kill deadline to now + ms (ms<=0 disables); clearDeadline() removes it; getDeadline() returns ms remaining or null. Not the JS global setTimeout.")
 
+	header(62, "Browser frames / nested iframes")
+	code(`// WebDriver: nested cross-origin frames. switchToFrame takes a CSS
+// selector now, and frameChain switches through each level in one call.
+const d = await services.webdriver.connect({ browser: "chrome" });
+await d.frameChain(["#klarna-checkout-iframe", "#klarna-fullscreen-iframe"]);
+const btn = await d.find("css", "button.kco-confirm");   // scoped to the inner frame
+await d.switchToDefaultContent();                          // back to the top document
+
+// agentBrowser: single-level frame switch (CDP). frame("main") returns.
+const b = await services.agentBrowser.launch();
+await b.open("https://shop.example/checkout");
+await b.frame("#payment-iframe");   // switch context (one level)
+await b.click("#pay");
+await b.frame("main");`)
+	note("WebDriver does nested + cross-origin frames (W3C /frame; queries are frame-scoped after a switch). agentBrowser.frame() is single-level — agent-browser resolves the selector against the main document and can't descend into nested frames; use WebDriver for nested cases like Klarna Checkout.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 61
+const exampleCount = 62

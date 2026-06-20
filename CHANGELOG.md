@@ -8,6 +8,26 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- Browser iframe support (feedback 0003). `services.webdriver` gains first-class
+  nested-frame addressing: `switchToFrame` now also accepts a **CSS selector**
+  (find-then-switch), and a new `frameChain([...])` switches from the top
+  document through each nested level in one call (queries are frame-scoped after
+  a switch). Uses the W3C `/frame` protocol, so **cross-origin** nested frames
+  (e.g. a Klarna Checkout inner iframe) work. `services.agentBrowser` launch
+  handles gain `frame(target)` (CSS selector / `@ref` / `"main"`) for a CDP frame
+  switch — **single-level only** (agent-browser resolves the selector against the
+  main document and can't descend into nested frames; use WebDriver for nesting).
+  New `webdriver-frames.ts` / `agent-browser-frames.ts` examples.
+
+### Fixed
+- `services.webdriver` `switchToFrame` by element handle (and the new selector
+  form) now actually switches. It previously posted a `/frame` body with only
+  the W3C element key, which chromedriver accepts (2xx) but silently ignores, so
+  the switch no-op'd (only the frame-index form worked) — this matches the
+  long-standing "switchToFrame behaved ambiguously" report. The element/selector
+  paths now switch via a dual-key web-element reference / tebeka `SwitchFrame`.
+
 ## [0.56.0] — 2026-06-20
 
 ### Added
