@@ -102,8 +102,10 @@ examples/scripts/server-sse.ts \
 	examples/scripts/agent-browser-capture.ts \
 	examples/scripts/agent-browser-state.ts \
 	examples/scripts/agent-browser-advanced.ts \
+	examples/scripts/agent-browser-frames.ts \
 	examples/scripts/webdriver.ts \
 	examples/scripts/webdriver-advanced.ts \
+	examples/scripts/webdriver-frames.ts \
 	examples/scripts/typst.ts \
 	examples/scripts/advanced/load-resilience.ts \
 	examples/scripts/advanced/http-api.ts \
