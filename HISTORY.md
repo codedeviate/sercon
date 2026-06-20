@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.57.0 (2026-06-20).
+covered is v0.1.0 (2026-05-25) through v0.58.0 (2026-06-20).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -181,6 +181,14 @@ comments, blank lines, an optional leading `export`, and optional surrounding
 quotes — no shell expansion. A variable already in the real environment always
 wins; among multiple files a later file overrides an earlier one. Replaces the
 `set -a; source .env; set +a` ritual and makes shebang scripts self-sufficient.
+
+v0.58.0 added `--doctor`: print a category-grouped report of every optional
+external tool sercon can use (git, gh, AI providers, agent-browser,
+chromedriver/geckodriver, typst, recon/curl, clipboard/image tools) — installed?,
+version, purpose — and validate the **chromedriver↔Chrome major-version match**.
+Exits 0 normally (a missing tool is fine — everything is optional enrichment) and
+5 on a detected compatibility conflict. Same diagnostics are scriptable via
+`services.doctor` (see §4 `services`).
 
 ### Help paging (v0.15.0)
 
@@ -516,6 +524,19 @@ inline `source` or a `.typ` `input` → PDF bytes, or write PDF/PNG/SVG to an
 `output` path (`root`/`inputs`/`ppi`/`fontPaths`) — and `query(opts)`
 (selector → JSON). PDF-bytes return is the no-output default; PNG/SVG require an
 output path. Verified end-to-end against typst 0.15.0.
+
+**`services.doctor(requires?)`** (v0.58.0): external-requirements diagnostics —
+a shared check registry (used by both the binding and the `--doctor` flag, §2)
+probes every optional external tool concurrently and returns
+`{ ok, satisfied, unmet, tools }`. Each `tools[]` entry carries `installed`,
+`version`, `purpose`, `ok`, and an optional `detail`; the only compatibility
+check is **chromedriver↔Chrome major** (a mismatch sets `ok:false` and flips the
+report `ok`). A missing tool is *not* a failure (everything is optional).
+`requires` is an array of **feature names** (mirroring the `*.available` gates —
+`webdriver`/`typst`/`ai`/`git`/`clipboard`/…) **or** specific binaries; a feature
+is met when ≥1 backing binary is installed and conflict-free, `unmet` lists the
+rest, and an unknown requirement throws. Turns doctor from a readout into an
+assertable prerequisite check a script can self-skip on.
 
 ### `tui`
 
