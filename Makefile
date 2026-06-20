@@ -44,6 +44,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/async.ts \
 	examples/scripts/argv.ts \
 	examples/scripts/console.ts \
+	examples/scripts/deadline.ts \
 	examples/scripts/secrets.ts \
 	examples/scripts/clipboard.ts \
 	examples/scripts/hash.ts \

@@ -282,6 +282,21 @@ func registerSurface(e *scriptengine.Engine) error {
 				fmt.Println(strings.Join(parts, " "))
 				return goja.Undefined()
 			},
+			"setDeadline": func(call goja.FunctionCall) goja.Value {
+				ms := call.Argument(0).ToInteger()
+				e.SetRunTimeout(time.Duration(ms) * time.Millisecond) // ms<=0 disables
+				return goja.Undefined()
+			},
+			"clearDeadline": func(goja.FunctionCall) goja.Value {
+				e.SetRunTimeout(0)
+				return goja.Undefined()
+			},
+			"getDeadline": func(call goja.FunctionCall) goja.Value {
+				if d, ok := e.RunTimeoutRemaining(); ok {
+					return vm.ToValue(float64(d.Milliseconds()))
+				}
+				return goja.Null()
+			},
 			"assert": map[string]any{
 				"equal": func(actual, expected goja.Value, args ...goja.Value) {
 					if !valuesEqual(actual, expected) {

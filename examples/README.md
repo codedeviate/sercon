@@ -20,6 +20,7 @@ Or pick individual scripts:
 | `async.ts` | `http.get`, `time.sleep`, top-level `await`, `import` from a sibling helper |
 | `argv.ts` | `runtime.argv` — the per-script argument vector (program / script / user args). |
 | `console.ts` | `console.*` — browser/Node-compat shim (log/info/debug → stdout, warn/error → stderr). |
+| `deadline.ts` | `runtime.setDeadline`/`clearDeadline`/`getDeadline` — adjust or remove the script's own running timeout at runtime. |
 | `secrets.ts` | `runtime.secrets` set/get/delete round-trip in the OS keystore (prefix-namespaced); self-skips when no backend. |
 | `clipboard.ts` | `runtime.clipboard` — host system clipboard text round-trip (write then read); self-skips when no clipboard backend is on PATH. |
 | `tui-update.ts` | `tui.*` — multi-pane TUI with two parallel subprocesses streaming output into separate panes. Manual run only (takes over the terminal); not in `make demo`. |
