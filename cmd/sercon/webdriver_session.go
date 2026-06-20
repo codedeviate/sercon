@@ -258,21 +258,38 @@ func (s *wdSession) addFrames(obj map[string]any, vm *goja.Runtime, loop *eventl
 // string (resolved via FindElement in the current context, then switched).
 // Must be called inside s.do (it issues driver commands).
 func (s *wdSession) switchToFrameTarget(target any) (any, error) {
-	if sel, ok := target.(string); ok {
-		el, err := s.wd.FindElement(selenium.ByCSSSelector, sel)
+	switch v := target.(type) {
+	case string:
+		// CSS selector: find the iframe in the CURRENT context, then switch via
+		// tebeka's SwitchFrame, which marshals the WebElement with both the
+		// legacy ELEMENT and the W3C element keys. (A W3C-key-only /frame body
+		// is silently ignored by chromedriver — it returns 2xx but does not
+		// change context, so a hand-rolled POST does not actually switch.)
+		el, err := s.wd.FindElement(selenium.ByCSSSelector, v)
 		if err != nil {
-			return nil, fmt.Errorf("webdriver.switchToFrame: no iframe matches %q: %w", sel, err)
+			return nil, fmt.Errorf("webdriver.switchToFrame: no iframe matches %q: %w", v, err)
 		}
-		body := map[string]any{"id": map[string]string{webElementKey: wdElementID(el)}}
+		return wdOK(s.wd.SwitchFrame(el))
+	case float64:
+		return wdOK(s.wd.SwitchFrame(int(v)))
+	case int64:
+		return wdOK(s.wd.SwitchFrame(int(v)))
+	case int:
+		return wdOK(s.wd.SwitchFrame(v))
+	case map[string]any:
+		// Element handle from find(): we kept only its elementId string, so send
+		// a dual-key web-element reference (W3C + legacy ELEMENT) — the shape
+		// SwitchFrame(WebElement) produces — so chromedriver actually switches.
+		id, _ := v["elementId"].(string)
+		if id == "" {
+			return nil, errors.New("webdriver.switchToFrame: element handle has no elementId; pass an iframe element from find()")
+		}
+		body := map[string]any{"id": map[string]any{webElementKey: id, "ELEMENT": id}}
 		_, e := s.command("POST", "/frame", body)
 		return wdOK(e)
+	default:
+		return nil, errors.New("webdriver.switchToFrame: target must be a CSS selector, a frame index (number), or an iframe element handle")
 	}
-	body, err := wdFrameBody(target)
-	if err != nil {
-		return nil, err
-	}
-	_, e := s.command("POST", "/frame", body)
-	return wdOK(e)
 }
 
 // frameChain switches from the top document through each target in order,
