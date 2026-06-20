@@ -182,6 +182,37 @@ func (s *wdSession) addWaits(obj map[string]any, vm *goja.Runtime, loop *eventlo
 		}
 		return s.elementObject(el, vm, loop), nil
 	})
+	obj["clickWhenReady"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		by, value, err := findArgsWD(call)
+		if err != nil {
+			return nil, err
+		}
+		opts := optsArgMap(call, 2)
+		timeout := 10000
+		if t, ok := opts["timeout"]; ok {
+			timeout = numToInt(t)
+		}
+		visible := true
+		if v, ok := opts["visible"].(bool); ok {
+			visible = v
+		}
+		enabled := true
+		if e, ok := opts["enabled"].(bool); ok {
+			enabled = e
+		}
+		poll := 50
+		if p, ok := opts["poll"]; ok {
+			poll = numToInt(p)
+		}
+		el, err := s.waitForElement(by, value, timeout, visible, enabled, time.Duration(poll)*time.Millisecond)
+		if err != nil {
+			return nil, fmt.Errorf("webdriver.clickWhenReady: %w", err)
+		}
+		if _, derr := s.do(func() (any, error) { return wdOK(el.Click()) }); derr != nil {
+			return nil, fmt.Errorf("webdriver.clickWhenReady: click: %w", derr)
+		}
+		return map[string]any{"ok": true}, nil
+	})
 }
 
 func readySuffix(visible, enabled bool) string {

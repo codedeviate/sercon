@@ -414,3 +414,11 @@ func TestReadySuffix(t *testing.T) {
 		}
 	}
 }
+
+func TestClickWhenReadyArgs(t *testing.T) {
+	// findArgsWD underpins clickWhenReady; it must reject a missing value.
+	call := goja.FunctionCall{} // no args
+	if _, _, err := findArgsWD(call); err == nil {
+		t.Fatal("findArgsWD should error with no args (clickWhenReady requires by+value)")
+	}
+}
