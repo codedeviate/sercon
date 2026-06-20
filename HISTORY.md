@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.56.0 (2026-06-20).
+covered is v0.1.0 (2026-05-25) through v0.57.0 (2026-06-20).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -652,6 +652,12 @@ the external binary must be on PATH.
   `clipboard`/`vitals`/`pushstate`); React DevTools; live streaming; AI
   `chat`; escape hatch (`cmd(command, ...args)` / `batch(cmds, { bail })`);
   auth vault (`auth.save`/`list`/`show`/`delete`, `auth.login`).
+- **Frames (v0.57.0):** `frame(target)` switches the session's frame context to
+  an iframe (CSS selector or `@ref`) or back with `"main"`, a CDP frame switch
+  so subsequent click/fill/get/snapshot act inside it. **Single-level only** —
+  `agent-browser` resolves the selector against the main document and can't
+  descend into nested frames; use `services.webdriver` (`frameChain`) for nested
+  / cross-origin cases like Klarna Checkout.
 
 ### `services.webdriver` (v0.40.0 – v0.41.0)
 
@@ -678,6 +684,16 @@ No browser bundled; drivers must be installed separately.
   now carries a context with that deadline, and `quit()` / Run-end cleanup
   cancels any in-flight command, so a driver blocked behind an open alert or
   an unreachable endpoint fails promptly instead of wedging the call.
+- **Nested frames (v0.57.0):** `switchToFrame` now also accepts a **CSS
+  selector** (find-then-switch), alongside the frame index and element-handle
+  forms; `frameChain([t1, t2, …])` switches from the top document through each
+  level in one call (queries are frame-scoped after a switch). Built on the W3C
+  `/frame` protocol, so **nested cross-origin** frames work (the Klarna Checkout
+  inner-iframe case). This release also **fixed** the element/selector switch:
+  the old `/frame` body carried only the W3C element key, which chromedriver
+  accepts (2xx) but silently ignores — so element-handle switching had never
+  actually switched (only the index form worked); the element/selector paths now
+  switch via tebeka's `SwitchFrame` / a dual-key web-element reference.
 
 ---
 
