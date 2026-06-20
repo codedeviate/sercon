@@ -107,6 +107,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/webdriver.ts \
 	examples/scripts/webdriver-advanced.ts \
 	examples/scripts/webdriver-frames.ts \
+	examples/scripts/webdriver-wait-click.ts \
 	examples/scripts/typst.ts \
 	examples/scripts/doctor.ts \
 	examples/scripts/advanced/load-resilience.ts \
