@@ -262,7 +262,11 @@ func (s *wdSession) waitForElement(by, value string, timeout int, visible, enabl
 			return el, nil
 		})
 		if derr == nil {
-			return res.(selenium.WebElement), nil
+			el, ok := res.(selenium.WebElement)
+			if !ok {
+				return nil, fmt.Errorf("webdriver: unexpected element type %T", res)
+			}
+			return el, nil
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("%s=%q not found%s within %dms", by, value, readySuffix(visible, enabled), timeout)
