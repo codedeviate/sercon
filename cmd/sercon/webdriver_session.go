@@ -174,41 +174,70 @@ func (s *wdSession) addWaits(obj map[string]any, vm *goja.Runtime, loop *eventlo
 		if t, ok := opts["timeout"]; ok {
 			timeout = numToInt(t)
 		}
-		needVisible, _ := opts["visible"].(bool)
-		deadline := time.Now().Add(time.Duration(timeout) * time.Millisecond)
-		for {
-			res, derr := s.do(func() (any, error) {
-				el, ferr := s.wd.FindElement(by, value)
-				if ferr != nil {
-					return nil, ferr
-				}
-				if needVisible {
-					vis, verr := el.IsDisplayed()
-					if verr != nil {
-						return nil, verr
-					}
-					if !vis {
-						return nil, errors.New("not visible")
-					}
-				}
-				return s.elementObject(el, vm, loop), nil
-			})
-			if derr == nil {
-				return res, nil
-			}
-			if time.Now().After(deadline) {
-				return nil, fmt.Errorf("webdriver.waitFor: %s=%q not found%s within %dms", by, value, visSuffix(needVisible), timeout)
-			}
-			time.Sleep(200 * time.Millisecond)
+		visible, _ := opts["visible"].(bool)
+		enabled, _ := opts["enabled"].(bool)
+		el, err := s.waitForElement(by, value, timeout, visible, enabled, 200*time.Millisecond)
+		if err != nil {
+			return nil, fmt.Errorf("webdriver.waitFor: %w", err)
 		}
+		return s.elementObject(el, vm, loop), nil
 	})
 }
 
-func visSuffix(v bool) string {
-	if v {
-		return "/visible"
+func readySuffix(visible, enabled bool) string {
+	s := ""
+	if visible {
+		s += "/visible"
 	}
-	return ""
+	if enabled {
+		s += "/enabled"
+	}
+	return s
+}
+
+// waitForElement polls FindElement in the ACTIVE frame until the element is
+// present and — if requested — visible and enabled, or the deadline passes.
+// Returns the raw WebElement. poll is the inter-attempt sleep (defaults to
+// 200ms when <= 0). Used by both waitFor and clickWhenReady.
+func (s *wdSession) waitForElement(by, value string, timeout int, visible, enabled bool, poll time.Duration) (selenium.WebElement, error) {
+	if poll <= 0 {
+		poll = 200 * time.Millisecond
+	}
+	deadline := time.Now().Add(time.Duration(timeout) * time.Millisecond)
+	for {
+		res, derr := s.do(func() (any, error) {
+			el, ferr := s.wd.FindElement(by, value)
+			if ferr != nil {
+				return nil, ferr
+			}
+			if visible {
+				vis, verr := el.IsDisplayed()
+				if verr != nil {
+					return nil, verr
+				}
+				if !vis {
+					return nil, errors.New("not visible")
+				}
+			}
+			if enabled {
+				en, eerr := el.IsEnabled()
+				if eerr != nil {
+					return nil, eerr
+				}
+				if !en {
+					return nil, errors.New("not enabled")
+				}
+			}
+			return el, nil
+		})
+		if derr == nil {
+			return res.(selenium.WebElement), nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("%s=%q not found%s within %dms", by, value, readySuffix(visible, enabled), timeout)
+		}
+		time.Sleep(poll)
+	}
 }
 
 // wdFrameBody builds the W3C /frame request body from a switchToFrame target:

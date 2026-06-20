@@ -395,3 +395,22 @@ func TestWDFrameBody_Cases(t *testing.T) {
 		t.Fatal("wdFrameBody should reject a raw string (binding resolves selectors)")
 	}
 }
+
+// --- 0004 wait/click tests ---
+
+func TestReadySuffix(t *testing.T) {
+	cases := []struct {
+		visible, enabled bool
+		want             string
+	}{
+		{false, false, ""},
+		{true, false, "/visible"},
+		{false, true, "/enabled"},
+		{true, true, "/visible/enabled"},
+	}
+	for _, c := range cases {
+		if got := readySuffix(c.visible, c.enabled); got != c.want {
+			t.Fatalf("readySuffix(%v,%v)=%q want %q", c.visible, c.enabled, got, c.want)
+		}
+	}
+}
