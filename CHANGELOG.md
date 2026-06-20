@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.58.0] — 2026-06-20
+
 ### Added
 
 - `doctor` — external-requirements diagnostics. `sercon --doctor` prints a
