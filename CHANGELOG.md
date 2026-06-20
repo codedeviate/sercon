@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `runtime.setDeadline(ms)` / `runtime.clearDeadline()` / `runtime.getDeadline()`
+  — control the running script's own wall-clock timeout (the `-timeout` deadline)
+  at runtime: `setDeadline(ms)` moves the kill deadline to now + ms (ms<=0
+  disables), `clearDeadline()` removes it, `getDeadline()` returns ms remaining
+  or null. Distinct from the JS global `setTimeout` (which schedules a callback).
+  Backed by new exported `Engine.SetRunTimeout` / `Engine.RunTimeoutRemaining`
+  and a resettable Run watcher. New `deadline.ts` example.
+
 ## [0.54.0] — 2026-06-18
 
 ### Added

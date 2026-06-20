@@ -14,6 +14,30 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Never throws; unserialisable objects degrade to [object Object] rather than erroring.",
 			Example:    `runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}`,
 		},
+		"setDeadline": {
+			Summary: "Set the running script's wall-clock kill deadline to now + ms (replacing any prior deadline; ms<=0 disables it). This is the same deadline the -timeout flag sets — NOT the JS global setTimeout (which schedules a callback). Use it to extend a long task or add a deadline to a `-timeout 0` run.",
+			Params: []scriptengine.Param{
+				{Name: "ms", Type: "number", Desc: "Milliseconds from now until the run is killed; <= 0 disables the deadline (same as clearDeadline())."},
+			},
+			ReturnType: "void",
+			Returns:    "void — applies immediately to the in-flight run.",
+			Errors:     "Does not throw; a non-numeric argument coerces to 0 (disable).",
+			Example:    `runtime.setDeadline(30000); // give this run 30s from now`,
+		},
+		"clearDeadline": {
+			Summary:    "Remove the running script's wall-clock kill deadline entirely (equivalent to -timeout 0 / setDeadline(0)). The script then runs without a timeout.",
+			ReturnType: "void",
+			Returns:    "void.",
+			Errors:     "Does not throw.",
+			Example:    `runtime.clearDeadline(); // run without a timeout`,
+		},
+		"getDeadline": {
+			Summary:    "Return the milliseconds remaining until the running script's kill deadline, or null when no deadline is active (disabled or started with -timeout 0).",
+			ReturnType: "number | null",
+			Returns:    "number — ms remaining (>= 0) — or null when there is no active deadline.",
+			Errors:     "Does not throw.",
+			Example:    `const left = runtime.getDeadline(); // e.g. 9871, or null`,
+		},
 		"assert.equal": {
 			Summary: "Throw when actual != expected (strict equality on primitives, deep equality on objects). Optional msg appears in the error.",
 			Params: []scriptengine.Param{

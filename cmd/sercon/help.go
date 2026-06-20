@@ -1214,10 +1214,20 @@ if (services.typst.available) {
 }`)
 	note("Throws cleanly when typst isn't installed (gate on services.typst.available). PDF bytes only without an output path; png/svg require one. Inline source compiles in a temp dir — use input/root for documents that import sibling files.")
 
+	header(61, "Script timeout control (runtime.setDeadline)")
+	code(`// Adjust the script's own wall-clock kill deadline at runtime — the same
+// deadline the -timeout flag sets. Distinct from the JS global setTimeout,
+// which schedules a callback rather than moving the run's kill timer.
+runtime.log("ms remaining:", runtime.getDeadline()); // e.g. 9998, or null
+runtime.setDeadline(30000);   // give this run 30s from now
+runtime.clearDeadline();      // remove the deadline (like -timeout 0)
+runtime.log("ms remaining:", runtime.getDeadline()); // null`)
+	note("setDeadline(ms) moves the kill deadline to now + ms (ms<=0 disables); clearDeadline() removes it; getDeadline() returns ms remaining or null. Not the JS global setTimeout.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 60
+const exampleCount = 61

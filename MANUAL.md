@@ -677,6 +677,22 @@ Script-host scaffolding. Members:
   (e.g. `"2006-01-02 15:04:05"`).
 - `runtime.env.get(name)` — process environment variable; returns
   `undefined` when unset (never throws).
+- **`runtime.setDeadline(ms)` / `runtime.clearDeadline()` /
+  `runtime.getDeadline()`** — control the running script's own wall-clock
+  kill deadline at runtime. This is the **same** deadline the `-timeout`
+  flag sets, _not_ the JS global `setTimeout` (which merely schedules a
+  callback and does not move the run's kill timer).
+  - `runtime.setDeadline(ms)` — move the kill deadline to **now + `ms`**,
+    replacing any prior deadline. `ms <= 0` disables it (identical to
+    `clearDeadline()`). Use it to extend a long-running task or to add a
+    deadline to a run started with `-timeout 0`. Applies immediately to the
+    in-flight run; never throws (a non-numeric argument coerces to `0`).
+  - `runtime.clearDeadline()` — remove the deadline entirely (equivalent to
+    `-timeout 0` / `setDeadline(0)`); the script then runs without a
+    timeout.
+  - `runtime.getDeadline()` — milliseconds remaining until the kill deadline
+    (`number`, `>= 0`), or `null` when no deadline is active (disabled, or
+    started with `-timeout 0`).
 - `runtime.argv` — `[programName, scriptPath, ...userArgs]`. User args
   come from the CLI args after a `--` separator. The layout mirrors
   Node/Bun: `argv[0]` is `"sercon"`, `argv[1]` is the path of the
@@ -5394,6 +5410,22 @@ Throw when cond is falsy. Optional msg appears in the error.
 runtime.assert.ok(user.id, "user must have an id");
 ```
 
+#### runtime.clearDeadline
+
+```
+clearDeadline(): void
+```
+
+Remove the running script's wall-clock kill deadline entirely (equivalent to -timeout 0 / setDeadline(0)). The script then runs without a timeout.
+
+**Returns:** void.
+
+**Throws:** Does not throw.
+
+```ts
+runtime.clearDeadline(); // run without a timeout
+```
+
 #### runtime.clipboard.available
 
 ```
@@ -5518,6 +5550,22 @@ Read an environment variable. Returns undefined when unset (not empty string).
 const home = runtime.env.get("HOME") ?? "/tmp";
 ```
 
+#### runtime.getDeadline
+
+```
+getDeadline(): number | null
+```
+
+Return the milliseconds remaining until the running script's kill deadline, or null when no deadline is active (disabled or started with -timeout 0).
+
+**Returns:** number — ms remaining (>= 0) — or null when there is no active deadline.
+
+**Throws:** Does not throw.
+
+```ts
+const left = runtime.getDeadline(); // e.g. 9871, or null
+```
+
 #### runtime.log
 
 ```
@@ -5616,6 +5664,26 @@ Store or overwrite a string secret in the OS keystore under prefix + name / acco
 
 ```ts
 await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
+```
+
+#### runtime.setDeadline
+
+```
+setDeadline(ms: number): void
+```
+
+Set the running script's wall-clock kill deadline to now + ms (replacing any prior deadline; ms<=0 disables it). This is the same deadline the -timeout flag sets — NOT the JS global setTimeout (which schedules a callback). Use it to extend a long task or add a deadline to a `-timeout 0` run.
+
+**Parameters**
+
+- `ms` *(number)* — Milliseconds from now until the run is killed; <= 0 disables the deadline (same as clearDeadline()).
+
+**Returns:** void — applies immediately to the in-flight run.
+
+**Throws:** Does not throw; a non-numeric argument coerces to 0 (disable).
+
+```ts
+runtime.setDeadline(30000); // give this run 30s from now
 ```
 
 #### runtime.time.format

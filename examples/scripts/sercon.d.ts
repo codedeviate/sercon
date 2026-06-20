@@ -59,6 +59,11 @@ declare const runtime: {
      */
     ok(cond: unknown, msg?: string): void;
   };
+  /**
+   * Remove the running script's wall-clock kill deadline entirely (equivalent to -timeout 0 / setDeadline(0)). The script then runs without a timeout.
+   * @returns void.
+   */
+  clearDeadline(): void;
   clipboard: {
     /**
      * True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-clipboard or xclip/xsel; Windows clip + PowerShell). Cheap, side-effect-free advisory — does not touch the clipboard; gate calls on it to self-skip on headless boxes.
@@ -102,6 +107,11 @@ declare const runtime: {
     get(name: string): string | undefined;
   };
   /**
+   * Return the milliseconds remaining until the running script's kill deadline, or null when no deadline is active (disabled or started with -timeout 0).
+   * @returns number — ms remaining (>= 0) — or null when there is no active deadline.
+   */
+  getDeadline(): number | null;
+  /**
    * Print one space-separated line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON (circular refs fall back to [object Object]). The script-side equivalent of console.log.
    * @param args Zero or more values to print. They are joined with single spaces; primitives stringify directly, objects/arrays are JSON-encoded.
    * @returns void — writes a single newline-terminated line to stdout.
@@ -136,6 +146,12 @@ declare const runtime: {
      */
     set(name: string, account: string, secret: string): Promise<void>;
   };
+  /**
+   * Set the running script's wall-clock kill deadline to now + ms (replacing any prior deadline; ms<=0 disables it). This is the same deadline the -timeout flag sets — NOT the JS global setTimeout (which schedules a callback). Use it to extend a long task or add a deadline to a `-timeout 0` run.
+   * @param ms Milliseconds from now until the run is killed; <= 0 disables the deadline (same as clearDeadline()).
+   * @returns void — applies immediately to the in-flight run.
+   */
+  setDeadline(ms: number): void;
   time: {
     /**
      * Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Europe/Stockholm'); default is the host's local zone.
