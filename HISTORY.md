@@ -715,6 +715,18 @@ No browser bundled; drivers must be installed separately.
   accepts (2xx) but silently ignores — so element-handle switching had never
   actually switched (only the index form worked); the element/selector paths now
   switch via tebeka's `SwitchFrame` / a dual-key web-element reference.
+- **Reliable waits / clicks (v0.59.0):** `clickWhenReady(by, value, opts?)`
+  polls `find` **in the active frame** until the element is present and (by
+  default) visible + enabled, then issues a **native trusted click** (the W3C
+  Element-Click endpoint, which fires React handlers); `waitFor` gained an
+  `enabled` option (wait past a disabled→enabled flip). Together with
+  `switchToFrame`/`frameChain` this reliably drives buttons that render or
+  enable asynchronously inside nested cross-origin iframes (e.g. a Klarna
+  Checkout "Pay order"). Investigating feedback 0004 confirmed via cross-origin
+  nested fixtures that `find` already follows the active frame (native `find`
+  and `executeScript` agreed across round-trips / `frameChain` / in-frame
+  navigation) — the reported "find doesn't follow the chain" was a timing race,
+  not a frame-context bug.
 
 ---
 
