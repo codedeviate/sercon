@@ -121,6 +121,14 @@ type Engine struct {
 	// the Run via the normal cancel/interrupt path. Guarded by abortMu.
 	abortMu sync.Mutex
 	abortFn func()
+
+	// deadlineMu guards deadlineReset (the per-Run channel the watcher selects
+	// on to re-arm/disarm the timeout). deadlineAt holds the current absolute
+	// kill deadline (nil = no deadline) for RunTimeoutRemaining. Mirrors the
+	// abortFn per-Run-handle pattern; set at the top of Run, cleared on return.
+	deadlineMu    sync.Mutex
+	deadlineReset chan time.Duration
+	deadlineAt    atomic.Pointer[time.Time]
 }
 
 // New constructs an Engine with the supplied options. Defaults are applied for
@@ -169,6 +177,57 @@ func (e *Engine) clearAbort() {
 	e.abortMu.Lock()
 	e.abortFn = nil
 	e.abortMu.Unlock()
+}
+
+// SetRunTimeout adjusts the in-flight Run's wall-clock kill deadline: d > 0
+// re-arms it to fire d from now (replacing any prior deadline); d <= 0 disables
+// it (no timeout). No-op when no Run is active. Safe from any goroutine. The
+// initial deadline still comes from Options.Timeout; this only changes it live.
+func (e *Engine) SetRunTimeout(d time.Duration) {
+	e.deadlineMu.Lock()
+	ch := e.deadlineReset
+	e.deadlineMu.Unlock()
+	if ch == nil {
+		return
+	}
+	// Publish the new deadline synchronously so RunTimeoutRemaining reflects it
+	// the instant SetRunTimeout returns, without racing the watcher goroutine
+	// that re-arms the timer. The watcher re-stores the same value when it
+	// processes the reset; the timer (the actual kill) is owned solely by it.
+	if d > 0 {
+		at := time.Now().Add(d)
+		e.deadlineAt.Store(&at)
+	} else {
+		e.deadlineAt.Store(nil)
+	}
+	// Non-blocking, coalescing send: replace any pending value so the latest
+	// intent wins and we never block the caller.
+	select {
+	case ch <- d:
+	default:
+		select {
+		case <-ch:
+		default:
+		}
+		select {
+		case ch <- d:
+		default:
+		}
+	}
+}
+
+// RunTimeoutRemaining returns the time left until the in-flight Run's deadline
+// and true, or (0, false) when no deadline is active (disabled or no Run).
+func (e *Engine) RunTimeoutRemaining() (time.Duration, bool) {
+	p := e.deadlineAt.Load()
+	if p == nil {
+		return 0, false
+	}
+	rem := time.Until(*p)
+	if rem < 0 {
+		rem = 0
+	}
+	return rem, true
 }
 
 // Register adds a named binding visible to scripts as a global. value may be
@@ -395,6 +454,18 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 	e.setAbort(cancelRun)
 	defer e.clearAbort()
 
+	e.deadlineMu.Lock()
+	e.deadlineReset = make(chan time.Duration, 1)
+	resetCh := e.deadlineReset
+	e.deadlineMu.Unlock()
+	e.deadlineAt.Store(nil)
+	defer func() {
+		e.deadlineMu.Lock()
+		e.deadlineReset = nil
+		e.deadlineMu.Unlock()
+		e.deadlineAt.Store(nil)
+	}()
+
 	cfg := runConfig{scriptRoot: e.opts.ScriptRoot}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -434,22 +505,47 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 
 	done := make(chan struct{})
 
-	// Watcher: interrupts the runtime on ctx cancellation or timeout. Always
-	// exits via the done channel so watchers do not accumulate.
+	// Watcher: interrupts the runtime on ctx cancellation or timeout. The
+	// deadline is resettable mid-run via SetRunTimeout (resetCh): a value > 0
+	// re-arms the timer to fire that far from now; <= 0 disarms it. The loop
+	// re-selects after a reset so a re-arm does not end the watch. Always exits
+	// via done so watchers do not accumulate.
 	go func() {
-		var timeoutC <-chan time.Time
-		if e.opts.Timeout > 0 {
-			t := time.NewTimer(e.opts.Timeout)
-			defer t.Stop()
-			timeoutC = t.C
+		timer := time.NewTimer(time.Hour)
+		if !timer.Stop() {
+			<-timer.C
 		}
-		select {
-		case <-done:
-			return
-		case <-runCtx.Done():
-			canceled.Store(true)
-		case <-timeoutC:
-			timedOut.Store(true)
+		defer timer.Stop()
+		if e.opts.Timeout > 0 {
+			timer.Reset(e.opts.Timeout)
+			at := time.Now().Add(e.opts.Timeout)
+			e.deadlineAt.Store(&at)
+		}
+		for {
+			select {
+			case <-done:
+				return
+			case <-runCtx.Done():
+				canceled.Store(true)
+			case <-timer.C:
+				timedOut.Store(true)
+			case d := <-resetCh:
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				if d > 0 {
+					timer.Reset(d)
+					at := time.Now().Add(d)
+					e.deadlineAt.Store(&at)
+				} else {
+					e.deadlineAt.Store(nil)
+				}
+				continue
+			}
+			break
 		}
 		if vm := vmRef.Load(); vm != nil {
 			if timedOut.Load() {
