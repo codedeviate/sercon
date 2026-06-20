@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.57.0] — 2026-06-20
+
 ### Added
 - Browser iframe support (feedback 0003). `services.webdriver` gains first-class
   nested-frame addressing: `switchToFrame` now also accepts a **CSS selector**
