@@ -8,6 +8,20 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `--env-file PATH` (repeatable) — load `KEY=VALUE` pairs from a `.env` file into
+  the environment before running, so `runtime.env.get` and any spawned subprocess
+  see them. Parses `KEY=VALUE`, `#` comments, blank lines, an optional leading
+  `export`, and optional surrounding quotes (no shell expansion). A variable
+  already in the real environment always wins; among multiple files a later file
+  overrides an earlier one. Replaces the `set -a; source .env; set +a` ritual and
+  makes shebang test scripts self-sufficient. (Feature request 0001.)
+- `bodyBytes: Uint8Array` on `net.http.get` / `net.http.post` / `net.http.request`
+  responses — the raw, undecoded response bytes alongside the UTF-8 `body`. Lets a
+  script byte-verify or charset-decode non-UTF-8 content (e.g.
+  `text.charset.decode(r.bodyBytes, "ISO-8859-1")`) instead of losing å/ä/ö to
+  U+FFFD. (Feature request 0002.)
+
 ## [0.55.0] — 2026-06-20
 
 ### Added

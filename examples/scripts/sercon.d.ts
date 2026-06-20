@@ -807,24 +807,24 @@ declare const net: {
   };
   http: {
     /**
-     * Perform an HTTP GET with a 5-second default timeout. Returns { status, body }.
+     * Perform an HTTP GET with a 5-second default timeout. Returns { status, body, bodyBytes }.
      * @param url Absolute request URL (http:// or https://).
-     * @returns Promise<{ status: number, body: string }> — the HTTP status code and the response body as a string. Redirects are followed by the default client.
+     * @returns Promise<{ status: number, body: string, bodyBytes: Uint8Array }> — the HTTP status code, the response body as a UTF-8 string, and bodyBytes (the raw, undecoded bytes; pair with text.charset.decode for non-UTF-8 content like ISO-8859-1). Redirects are followed by the default client.
      */
     get(url: string): Promise<Record<string, unknown>>;
     /**
-     * Perform an HTTP POST with a 5-second default timeout. Returns { status, body }.
+     * Perform an HTTP POST with a 5-second default timeout. Returns { status, body, bodyBytes }.
      * @param url Absolute request URL (http:// or https://).
      * @param body Request body sent verbatim; omit or pass empty for no body. No Content-Type header is set automatically.
-     * @returns Promise<{ status: number, body: string }> — the HTTP status code and the response body as a string.
+     * @returns Promise<{ status: number, body: string, bodyBytes: Uint8Array }> — the HTTP status code, the response body as a UTF-8 string, and bodyBytes (the raw, undecoded bytes; pair with text.charset.decode for non-UTF-8 content).
      */
     post(url: string, body?: string): Promise<Record<string, unknown>>;
     /**
-     * Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
+     * Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
      * @param method HTTP method (GET, POST, PUT, …); upper-cased internally. Required.
      * @param url Absolute request URL. Required.
      * @param opts headers sets request headers; body is the raw request body; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth.
-     * @returns Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text; url is the final URL after redirects.
+     * @returns Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text (UTF-8); bodyBytes is the raw, undecoded response bytes (pair with text.charset.decode for non-UTF-8 content like ISO-8859-1); url is the final URL after redirects.
      */
     request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<Record<string, unknown>>;
   };

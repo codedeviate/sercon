@@ -220,6 +220,7 @@ func showHelp(w io.Writer) {
 	flagLine("--version", "", "Print the engine version (plus goja / esbuild versions) and exit.")
 	flagLine("--watch", "", "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Debounced (150 ms). Ctrl-C exits cleanly. .git / .vscode / node_modules / dotfiles ignored.")
 	flagLine("--secrets-prefix", "P", "Namespace prefix for runtime.secrets keystore items (overrides $SERCON_SECRETS_PREFIX; default \"sercon/\").")
+	flagLine("--env-file", "PATH", "Load KEY=VALUE pairs from a .env file into the environment before running (repeatable). Real env vars always win; later files override earlier. Replaces the `set -a; source .env` ritual.")
 	fmt.Fprintln(w, "")
 
 	fmt.Fprintln(w, s.bold("ARGUMENTS"))

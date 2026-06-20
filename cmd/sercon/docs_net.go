@@ -5,32 +5,32 @@ import "github.com/codedeviate/sercon/pkg/scriptengine"
 func netDocs() map[string]scriptengine.MemberDoc {
 	return map[string]scriptengine.MemberDoc{
 		"http.get": {
-			Summary: "Perform an HTTP GET with a 5-second default timeout. Returns { status, body }.",
+			Summary: "Perform an HTTP GET with a 5-second default timeout. Returns { status, body, bodyBytes }.",
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "Absolute request URL (http:// or https://)."},
 			},
-			Returns: "Promise<{ status: number, body: string }> — the HTTP status code and the response body as a string. Redirects are followed by the default client.",
+			Returns: "Promise<{ status: number, body: string, bodyBytes: Uint8Array }> — the HTTP status code, the response body as a UTF-8 string, and bodyBytes (the raw, undecoded bytes; pair with text.charset.decode for non-UTF-8 content like ISO-8859-1). Redirects are followed by the default client.",
 			Errors:  "Rejects on transport errors (DNS failure, connection refused, TLS handshake) or if the 5s context deadline is exceeded. 4xx/5xx responses do NOT reject — they surface via status.",
 			Example: `const r = await net.http.get("https://example.com"); runtime.log(r.status);`,
 		},
 		"http.post": {
-			Summary: "Perform an HTTP POST with a 5-second default timeout. Returns { status, body }.",
+			Summary: "Perform an HTTP POST with a 5-second default timeout. Returns { status, body, bodyBytes }.",
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "Absolute request URL (http:// or https://)."},
 				{Name: "body", Type: "string", Optional: true, Desc: "Request body sent verbatim; omit or pass empty for no body. No Content-Type header is set automatically."},
 			},
-			Returns: "Promise<{ status: number, body: string }> — the HTTP status code and the response body as a string.",
+			Returns: "Promise<{ status: number, body: string, bodyBytes: Uint8Array }> — the HTTP status code, the response body as a UTF-8 string, and bodyBytes (the raw, undecoded bytes; pair with text.charset.decode for non-UTF-8 content).",
 			Errors:  "Rejects on transport errors (DNS failure, connection refused, TLS handshake) or if the 5s context deadline is exceeded. 4xx/5xx responses do NOT reject.",
 			Example: `const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1 }));`,
 		},
 		"http.request": {
-			Summary: "Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.",
+			Summary: "Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.",
 			Params: []scriptengine.Param{
 				{Name: "method", Type: "string", Desc: "HTTP method (GET, POST, PUT, …); upper-cased internally. Required."},
 				{Name: "url", Type: "string", Desc: "Absolute request URL. Required."},
 				{Name: "opts", Type: "{ headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }", Optional: true, Desc: "headers sets request headers; body is the raw request body; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth."},
 			},
-			Returns: "Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text; url is the final URL after redirects.",
+			Returns: "Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text (UTF-8); bodyBytes is the raw, undecoded response bytes (pair with text.charset.decode for non-UTF-8 content like ISO-8859-1); url is the final URL after redirects.",
 			Errors:  "Rejects on transport errors (DNS, connection refused, TLS) or context deadline, and after exhausting retries on a persistent transport error / 5xx. A malformed method or URL rejects immediately (not retried). 4xx/5xx that succeed at the transport level resolve normally.",
 			Example: `const r = await net.http.request("POST", "https://api.example.com", { headers: { "content-type": "application/json" }, body: "{}", retry: 2 });`,
 		},
