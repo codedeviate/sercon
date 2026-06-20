@@ -1,10 +1,21 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/dop251/goja"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // toolReport is one external tool's diagnostic entry (also the JS shape).
@@ -137,4 +148,205 @@ func resolveRequires(requires []string, tools []toolReport) ([]string, error) {
 		}
 	}
 	return unmet, nil
+}
+
+const doctorCheckTimeout = 3 * time.Second
+
+// runVersion runs `bin args...` and returns the parsed version from combined
+// output. With no args (versionArgs == []) it skips execution (tools like
+// pbcopy have no --version) and returns "".
+func runVersion(ctx context.Context, bin string, args []string) string {
+	if args == nil {
+		args = []string{"--version"}
+	}
+	if len(args) == 0 {
+		return ""
+	}
+	runCtx, cancel := context.WithTimeout(ctx, doctorCheckTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(runCtx, bin, args...).CombinedOutput() //nolint:gosec // fixed tool + version flag
+	if err != nil && len(out) == 0 {
+		return ""
+	}
+	line := out
+	if i := strings.IndexByte(string(out), '\n'); i >= 0 {
+		line = out[:i]
+	}
+	return doctorParseVersion(string(line))
+}
+
+// detectChromeVersion finds an installed Chrome/Chromium and returns its
+// version string ("" if not found).
+func detectChromeVersion(ctx context.Context) string {
+	candidates := []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"}
+	if runtime.GOOS == "darwin" {
+		candidates = append(candidates,
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Chromium.app/Contents/MacOS/Chromium")
+	}
+	for _, c := range candidates {
+		bin := c
+		if !strings.Contains(c, "/") {
+			p, err := exec.LookPath(c)
+			if err != nil {
+				continue
+			}
+			bin = p
+		} else if _, err := os.Stat(bin); err != nil {
+			continue
+		}
+		if v := runVersion(ctx, bin, []string{"--version"}); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// runDoctor probes every registry check concurrently and returns the full
+// report plus whether any compatibility conflict was found.
+func runDoctor(ctx context.Context) (tools []toolReport, anyConflict bool) {
+	reg := doctorRegistry(runtime.GOOS)
+	reports := make([]toolReport, len(reg))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8) // small worker pool
+	for i, c := range reg {
+		wg.Add(1)
+		go func(i int, c doctorCheck) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			r := toolReport{Name: c.name, Category: c.category, Purpose: c.purpose, OK: true}
+			path := ""
+			for _, b := range c.binaries {
+				if p, err := exec.LookPath(b); err == nil {
+					path = p
+					break
+				}
+			}
+			if path == "" {
+				reports[i] = r // not installed; ok stays true
+				return
+			}
+			r.Installed = true
+			r.Version = runVersion(ctx, path, c.versionArgs)
+			reports[i] = r
+		}(i, c)
+	}
+	wg.Wait()
+
+	// chromedriver↔Chrome compatibility.
+	for i := range reports {
+		if reports[i].Name == "chromedriver" && reports[i].Installed {
+			chrome := detectChromeVersion(ctx)
+			if chrome == "" {
+				reports[i].Detail = "Chrome not found; cannot verify version match"
+				break
+			}
+			if conflict, detail := chromedriverConflict(reports[i].Version, chrome); conflict {
+				reports[i].OK = false
+				reports[i].Detail = detail
+				anyConflict = true
+			} else {
+				reports[i].Detail = fmt.Sprintf("matches Chrome %s", chrome)
+			}
+			break
+		}
+	}
+	return reports, anyConflict
+}
+
+// doctorOp backs services.doctor(requires?). Returns { ok, satisfied, unmet,
+// tools }. requires entries are feature/category names or specific tool names;
+// an unknown name throws.
+func doctorOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+	var requires []string
+	if arr, ok := call.Argument(0).Export().([]any); ok {
+		for _, e := range arr {
+			if s, ok := e.(string); ok {
+				requires = append(requires, s)
+			}
+		}
+	}
+	tools, anyConflict := runDoctor(ctx)
+	unmet, err := resolveRequires(requires, tools)
+	if err != nil {
+		return nil, err
+	}
+	if unmet == nil {
+		unmet = []string{}
+	}
+	toolVals := make([]any, len(tools))
+	for i, t := range tools {
+		o := scriptengine.NewOrdered().
+			Set("name", t.Name).Set("category", t.Category).Set("purpose", t.Purpose).
+			Set("installed", t.Installed).Set("version", versionOrNull(t.Version)).
+			Set("ok", t.OK)
+		if t.Detail != "" {
+			o.Set("detail", t.Detail)
+		}
+		toolVals[i] = o
+	}
+	unmetVals := make([]any, len(unmet))
+	for i, u := range unmet {
+		unmetVals[i] = u
+	}
+	return scriptengine.NewOrdered().
+		Set("ok", !anyConflict).
+		Set("satisfied", len(unmet) == 0).
+		Set("unmet", unmetVals).
+		Set("tools", toolVals), nil
+}
+
+// versionOrNull returns the version string or nil (→ JS null) when empty.
+func versionOrNull(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
+}
+
+// writeDoctor prints the report grouped by category. anyConflict drives the
+// trailing summary line (the caller maps a conflict to a non-zero exit).
+func writeDoctor(w io.Writer, tools []toolReport, anyConflict bool) {
+	// group by category, preserving registry order of first appearance
+	order := []string{}
+	seen := map[string]bool{}
+	for _, t := range tools {
+		if !seen[t.Category] {
+			seen[t.Category] = true
+			order = append(order, t.Category)
+		}
+	}
+	fmt.Fprintln(w, "sercon doctor — external requirements")
+	fmt.Fprintln(w, "  ✓ installed   ⚠ conflict   – not installed (optional)")
+	fmt.Fprintln(w, "")
+	for _, cat := range order {
+		fmt.Fprintf(w, "%s:\n", cat)
+		for _, t := range tools {
+			if t.Category != cat {
+				continue
+			}
+			glyph := "–"
+			if t.Installed && t.OK {
+				glyph = "✓"
+			} else if t.Installed && !t.OK {
+				glyph = "⚠"
+			}
+			ver := t.Version
+			if ver == "" {
+				ver = "—"
+			}
+			line := fmt.Sprintf("  %s %-14s %-16s %s", glyph, t.Name, ver, t.Purpose)
+			if t.Detail != "" {
+				line += "  [" + t.Detail + "]"
+			}
+			fmt.Fprintln(w, line)
+		}
+	}
+	fmt.Fprintln(w, "")
+	if anyConflict {
+		fmt.Fprintln(w, "⚠ compatibility conflict detected (exit 5).")
+	} else {
+		fmt.Fprintln(w, "No conflicts. (Missing tools are optional — install only what you use.)")
+	}
 }

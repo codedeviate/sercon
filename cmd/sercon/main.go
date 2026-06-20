@@ -29,6 +29,8 @@ const (
 	exitTranspile = 2 // at least one script failed to transpile (never ran)
 	exitTimeout   = 3 // at least one script timed out or was context-cancelled
 	exitThrow     = 4 // at least one script ran and threw an exception
+
+	exitDoctorConflict = 5 // --doctor found a compatibility conflict (e.g. chromedriver↔Chrome)
 )
 
 func main() {
@@ -70,6 +72,7 @@ func run(args []string) int {
 	helpLong := fs.Bool("help", false, "Show in-depth, colorized help and exit")
 	examples := fs.Bool("examples", false, "Show in-depth, colorized script examples of all features and exit")
 	version := fs.Bool("version", false, "Print the engine version and exit")
+	doctor := fs.Bool("doctor", false, "Check external tool requirements (installed?, version, chromedriver↔Chrome match) and exit.")
 	watch := fs.Bool("watch", false, "Re-run on every .ts / .tsx / .js / .jsx / .json / .d.ts change under the script root. Ctrl-C exits.")
 	noPager := fs.Bool("no-pager", false, "Don't page --help / --examples through $PAGER even on a terminal.")
 	secretsPrefix := fs.String("secrets-prefix", "", "Namespace prefix for runtime.secrets keystore items (overrides SERCON_SECRETS_PREFIX; default \"sercon/\")")
@@ -90,6 +93,13 @@ func run(args []string) int {
 		return exitOK
 	case *examples:
 		pageOutput(*noPager, showExamples)
+		return exitOK
+	case *doctor:
+		tools, conflict := runDoctor(context.Background())
+		writeDoctor(os.Stdout, tools, conflict)
+		if conflict {
+			return exitDoctorConflict
+		}
 		return exitOK
 	}
 
@@ -477,6 +487,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"agentBrowser": agentBrowserNamespace(vm, loop, e),
 			"webdriver":    webdriverNamespace(vm, loop, e),
 			"typst":        typstNamespace(vm, loop),
+			"doctor":       scriptengine.PromisifyAsync(vm, loop, doctorOp),
 		}
 	}); err != nil {
 		return err
