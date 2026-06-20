@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.56.0] — 2026-06-20
+
 ### Added
 - `--env-file PATH` (repeatable) — load `KEY=VALUE` pairs from a `.env` file into
   the environment before running, so `runtime.env.get` and any spawned subprocess
