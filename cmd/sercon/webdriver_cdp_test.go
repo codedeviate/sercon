@@ -15,3 +15,58 @@ func TestCDPExec_FirefoxRejected(t *testing.T) {
 		t.Fatalf("error should mention Chrome-only, got: %v", err)
 	}
 }
+
+func TestCDPQuery(t *testing.T) {
+	cases := []struct {
+		by, value   string
+		wantQuery   string
+		wantXPath   bool
+		wantErr     bool
+	}{
+		{"css", "button.pay", "button.pay", false, false},
+		{"id", "pay", `[id="pay"]`, false, false},
+		{"name", "q", `[name="q"]`, false, false},
+		{"tag", "button", "button", false, false},
+		{"className", "pay", ".pay", false, false},
+		{"xpath", `//button[.="Pay"]`, `//button[.="Pay"]`, true, false},
+		{"linkText", "Next", `//a[normalize-space(.)="Next"]`, true, false},
+		{"partialLinkText", "Nex", `//a[contains(normalize-space(.), "Nex")]`, true, false},
+		{"bogus", "x", "", false, true},
+	}
+	for _, c := range cases {
+		q, xp, err := cdpQuery(c.by, c.value)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("%s: expected error", c.by)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: unexpected error %v", c.by, err)
+		}
+		if q != c.wantQuery || xp != c.wantXPath {
+			t.Errorf("%s: got (%q,%v) want (%q,%v)", c.by, q, xp, c.wantQuery, c.wantXPath)
+		}
+	}
+}
+
+func TestQuadCenter(t *testing.T) {
+	// a 10x20 box at origin (0,0)-(10,20)
+	quad := []float64{0, 0, 10, 0, 10, 20, 0, 20}
+	x, y := quadCenter(quad, 0, 0)
+	if x != 5 || y != 10 {
+		t.Fatalf("center got (%v,%v) want (5,10)", x, y)
+	}
+	x, y = quadCenter(quad, 3, -4)
+	if x != 8 || y != 6 {
+		t.Fatalf("offset center got (%v,%v) want (8,6)", x, y)
+	}
+}
+
+func TestMouseButtonsMask(t *testing.T) {
+	for in, want := range map[string]int{"left": 1, "right": 2, "middle": 4, "": 1} {
+		if got := mouseButtonsMask(in); got != want {
+			t.Errorf("mask(%q)=%d want %d", in, got, want)
+		}
+	}
+}
