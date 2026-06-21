@@ -141,3 +141,21 @@ func TestCDPClickArgsValidation(t *testing.T) {
 		t.Fatal("addCDP should register cdp and cdpClick")
 	}
 }
+
+func TestCDPLocateX_FakeExec(t *testing.T) {
+	exec := func(method string, params map[string]any) (map[string]any, error) {
+		switch method {
+		case "DOM.getDocument":
+			return map[string]any{"root": map[string]any{"nodeName": "#document", "nodeId": float64(1)}}, nil
+		case "DOM.querySelectorAll":
+			return map[string]any{"nodeIds": []any{float64(42)}}, nil
+		case "DOM.getContentQuads":
+			return map[string]any{"quads": []any{[]any{float64(0), float64(0), float64(10), float64(0), float64(10), float64(20), float64(0), float64(20)}}}, nil
+		}
+		return map[string]any{}, nil
+	}
+	id, quad, found, err := cdpLocateX(exec, "css", "#x")
+	if err != nil || !found || id != 42 || len(quad) != 8 {
+		t.Fatalf("locate got id=%v found=%v quad=%v err=%v", id, found, quad, err)
+	}
+}

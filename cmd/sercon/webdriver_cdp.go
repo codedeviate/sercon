@@ -35,6 +35,22 @@ func (s *wdSession) cdpExec(cmd string, params map[string]any) (any, error) {
 	return v, nil
 }
 
+// cdpExecFn runs one CDP command and returns its decoded result. Implementations
+// either go through chromedriver's page-session passthrough (s.cdpExec) or a
+// browser-level cdpConn session (cdpConn.callMap).
+type cdpExecFn func(method string, params map[string]any) (map[string]any, error)
+
+// passExec adapts the page-session passthrough (s.cdpExec) to a cdpExecFn.
+// Callers must hold s.do (cdpExec issues an s.command).
+func (s *wdSession) passExec(method string, params map[string]any) (map[string]any, error) {
+	r, err := s.cdpExec(method, params)
+	if err != nil {
+		return nil, err
+	}
+	m, _ := r.(map[string]any)
+	return m, nil
+}
+
 // cdpQuery maps a webdriver locator strategy to a query for CDP location.
 // CSS-family strategies return useXPath=false and a CSS selector; XPath-family
 // return useXPath=true and an XPath expression.
@@ -161,14 +177,13 @@ func collectDocumentNodeIDs(node map[string]any, out *[]float64) {
 	}
 }
 
-// cdpContentQuad returns the first content quad (8 floats) of a node, or
-// ok=false when the node has no layout box (not visible / zero-size / detached).
-func (s *wdSession) cdpContentQuad(nodeID float64) ([]float64, bool) {
-	res, err := s.cdpExec("DOM.getContentQuads", map[string]any{"nodeId": nodeID})
-	if err != nil {
+// cdpContentQuadX returns the first content quad (8 floats) of a node, or
+// ok=false when it has no layout box. Transport-agnostic.
+func cdpContentQuadX(exec cdpExecFn, nodeID float64) ([]float64, bool) {
+	m, err := exec("DOM.getContentQuads", map[string]any{"nodeId": nodeID})
+	if err != nil || m == nil {
 		return nil, false
 	}
-	m, _ := res.(map[string]any)
 	qs, _ := m["quads"].([]any)
 	if len(qs) == 0 {
 		return nil, false
@@ -188,14 +203,12 @@ func (s *wdSession) cdpContentQuad(nodeID float64) ([]float64, bool) {
 	return out, true
 }
 
-// cdpQueryCSS finds nodes matching a CSS selector in every document of the
-// pierced frame tree (top + each contentDocument), flattening the results.
-func (s *wdSession) cdpQueryCSS(selector string) ([]float64, error) {
-	res, err := s.cdpExec("DOM.getDocument", map[string]any{"depth": -1, "pierce": true})
+// cdpQueryCSSX finds CSS matches in every document of the pierced frame tree.
+func cdpQueryCSSX(exec cdpExecFn, selector string) ([]float64, error) {
+	m, err := exec("DOM.getDocument", map[string]any{"depth": -1, "pierce": true})
 	if err != nil {
 		return nil, err
 	}
-	m, _ := res.(map[string]any)
 	root, _ := m["root"].(map[string]any)
 	if root == nil {
 		return nil, nil
@@ -205,84 +218,70 @@ func (s *wdSession) cdpQueryCSS(selector string) ([]float64, error) {
 	var out []float64
 	var lastErr error
 	for _, docID := range docIDs {
-		qres, qerr := s.cdpExec("DOM.querySelectorAll", map[string]any{"nodeId": docID, "selector": selector})
+		qm, qerr := exec("DOM.querySelectorAll", map[string]any{"nodeId": docID, "selector": selector})
 		if qerr != nil {
-			lastErr = qerr // a re-navigated/detached document can error; skip it
+			lastErr = qerr
 			continue
 		}
-		lastErr = nil // at least one document accepted the selector
-		qm, _ := qres.(map[string]any)
+		lastErr = nil
 		arr, _ := qm["nodeIds"].([]any)
 		out = append(out, toFloatSlice(arr)...)
 	}
-	// If every document errored (e.g. a syntactically invalid selector), surface
-	// it so the caller fails fast instead of spinning until timeout.
 	if len(out) == 0 && lastErr != nil {
 		return nil, lastErr
 	}
 	return out, nil
 }
 
-// cdpSearchXPath finds nodes matching an XPath across the whole pierced tree via
-// DOM.performSearch (the only frame-piercing XPath primitive in the DOM domain).
-//
-// performSearch requires the DOM agent to be enabled, and it only assigns
-// frontend nodeIds to nodes already pushed to the frontend — so a match inside a
-// cross-origin (out-of-process) iframe comes back as nodeId=0 (and a later
-// getContentQuads then fails) unless we first populate the frontend node map
-// with a pierced getDocument. We do both before searching, every call, so the
-// map stays fresh against dynamically-rendered pages.
-func (s *wdSession) cdpSearchXPath(query string) ([]float64, error) {
-	if _, err := s.cdpExec("DOM.enable", map[string]any{}); err != nil {
+// cdpSearchXPathX finds XPath matches across the pierced tree. performSearch
+// needs DOM.enable + a pierced getDocument first so cross-origin frame matches
+// get real (non-zero) frontend nodeIds.
+func cdpSearchXPathX(exec cdpExecFn, query string) ([]float64, error) {
+	if _, err := exec("DOM.enable", map[string]any{}); err != nil {
 		return nil, err
 	}
-	if _, err := s.cdpExec("DOM.getDocument", map[string]any{"depth": -1, "pierce": true}); err != nil {
+	if _, err := exec("DOM.getDocument", map[string]any{"depth": -1, "pierce": true}); err != nil {
 		return nil, err
 	}
-	res, err := s.cdpExec("DOM.performSearch", map[string]any{"query": query, "includeUserAgentShadowDOM": true})
+	m, err := exec("DOM.performSearch", map[string]any{"query": query, "includeUserAgentShadowDOM": true})
 	if err != nil {
 		return nil, err
 	}
-	m, _ := res.(map[string]any)
 	searchID, _ := m["searchId"].(string)
 	count, _ := m["resultCount"].(float64)
 	if searchID == "" || count <= 0 {
 		if searchID != "" {
-			_, _ = s.cdpExec("DOM.discardSearchResults", map[string]any{"searchId": searchID})
+			_, _ = exec("DOM.discardSearchResults", map[string]any{"searchId": searchID})
 		}
 		return nil, nil
 	}
-	defer func() { _, _ = s.cdpExec("DOM.discardSearchResults", map[string]any{"searchId": searchID}) }()
-	got, err := s.cdpExec("DOM.getSearchResults", map[string]any{"searchId": searchID, "fromIndex": 0, "toIndex": int(count)})
+	defer func() { _, _ = exec("DOM.discardSearchResults", map[string]any{"searchId": searchID}) }()
+	gm, err := exec("DOM.getSearchResults", map[string]any{"searchId": searchID, "fromIndex": 0, "toIndex": int(count)})
 	if err != nil {
 		return nil, err
 	}
-	gm, _ := got.(map[string]any)
 	arr, _ := gm["nodeIds"].([]any)
 	return toFloatSlice(arr), nil
 }
 
-// cdpLocate finds the first laid-out element matching (by,value) anywhere in the
-// page including nested cross-origin frames, returning its nodeId + content
-// quad. found=false (with nil error) means no visible match yet. For CSS the
-// candidate order is DOM/frame order (top frame first); for XPath the order is
-// DOM.performSearch's, which CDP does not formally specify.
-func (s *wdSession) cdpLocate(by, value string) (nodeID float64, quad []float64, found bool, err error) {
+// cdpLocateX finds the first laid-out element matching (by,value), returning its
+// nodeId + content quad (coordinates local to exec's session/widget).
+func cdpLocateX(exec cdpExecFn, by, value string) (nodeID float64, quad []float64, found bool, err error) {
 	query, useXPath, err := cdpQuery(by, value)
 	if err != nil {
 		return 0, nil, false, err
 	}
 	var ids []float64
 	if useXPath {
-		ids, err = s.cdpSearchXPath(query)
+		ids, err = cdpSearchXPathX(exec, query)
 	} else {
-		ids, err = s.cdpQueryCSS(query)
+		ids, err = cdpQueryCSSX(exec, query)
 	}
 	if err != nil {
 		return 0, nil, false, err
 	}
 	for _, id := range ids {
-		if q, ok := s.cdpContentQuad(id); ok {
+		if q, ok := cdpContentQuadX(exec, id); ok {
 			return id, q, true, nil
 		}
 	}
@@ -321,7 +320,7 @@ func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, er
 	for {
 		var found bool
 		if _, err := s.do(func() (any, error) {
-			id, q, f, e := s.cdpLocate(by, value)
+			id, q, f, e := cdpLocateX(s.passExec, by, value)
 			nodeID, quad, found = id, q, f
 			return nil, e
 		}); err != nil {
@@ -339,7 +338,7 @@ func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, er
 	res, err := s.do(func() (any, error) {
 		if scroll {
 			_, _ = s.cdpExec("DOM.scrollIntoViewIfNeeded", map[string]any{"nodeId": nodeID})
-			if q, ok := s.cdpContentQuad(nodeID); ok {
+			if q, ok := cdpContentQuadX(s.passExec, nodeID); ok {
 				quad = q
 			}
 		}
