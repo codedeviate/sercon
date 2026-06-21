@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.62.0] — 2026-06-21
+
 ### Added
 
 - `fs` file primitives (all async): `fs.writeText`, `fs.writeBytes`, `fs.readText`,
