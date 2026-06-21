@@ -45,12 +45,36 @@ func cdpQuery(by, value string) (query string, useXPath bool, err error) {
 	case "xpath":
 		return value, true, nil
 	case "linkText":
-		return fmt.Sprintf(`//a[normalize-space(.)=%q]`, value), true, nil
+		return fmt.Sprintf(`//a[normalize-space(.)=%s]`, xpathLiteral(value)), true, nil
 	case "partialLinkText":
-		return fmt.Sprintf(`//a[contains(normalize-space(.), %q)]`, value), true, nil
+		return fmt.Sprintf(`//a[contains(normalize-space(.), %s)]`, xpathLiteral(value)), true, nil
 	default:
 		return "", false, fmt.Errorf("webdriver.cdpClick: unknown locator strategy %q (use css/xpath/id/name/tag/className/linkText/partialLinkText)", by)
 	}
+}
+
+// xpathLiteral wraps s as a valid XPath 1.0 string literal. XPath has no escape
+// mechanism, so it picks single or double quotes by content, and falls back to
+// concat() when s contains both kinds of quote.
+func xpathLiteral(s string) string {
+	if !strings.Contains(s, "'") {
+		return "'" + s + "'"
+	}
+	if !strings.Contains(s, `"`) {
+		return `"` + s + `"`
+	}
+	// Contains both ' and ": concat('part', "'", 'part', …).
+	parts := strings.Split(s, "'")
+	var b strings.Builder
+	b.WriteString("concat(")
+	for i, p := range parts {
+		if i > 0 {
+			b.WriteString(`, "'", `)
+		}
+		b.WriteString("'" + p + "'")
+	}
+	b.WriteString(")")
+	return b.String()
 }
 
 // quadCenter returns the centre of a CDP DOM quad (8-number [x1,y1..x4,y4]),
@@ -71,6 +95,8 @@ func mouseButtonsMask(button string) int {
 		return 2
 	case "middle":
 		return 4
+	case "left":
+		return 1
 	default:
 		return 1
 	}

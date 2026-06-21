@@ -29,8 +29,12 @@ func TestCDPQuery(t *testing.T) {
 		{"tag", "button", "button", false, false},
 		{"className", "pay", ".pay", false, false},
 		{"xpath", `//button[.="Pay"]`, `//button[.="Pay"]`, true, false},
-		{"linkText", "Next", `//a[normalize-space(.)="Next"]`, true, false},
-		{"partialLinkText", "Nex", `//a[contains(normalize-space(.), "Nex")]`, true, false},
+		{"linkText", "Next", `//a[normalize-space(.)='Next']`, true, false},
+		{"partialLinkText", "Nex", `//a[contains(normalize-space(.), 'Nex')]`, true, false},
+		// XPath 1.0 has no escape mechanism: a value with a double-quote uses
+		// single quotes; a value with a single-quote uses double quotes.
+		{"linkText", `Say "hi"`, `//a[normalize-space(.)='Say "hi"']`, true, false},
+		{"linkText", "O'Brien", `//a[normalize-space(.)="O'Brien"]`, true, false},
 		{"bogus", "x", "", false, true},
 	}
 	for _, c := range cases {
@@ -46,6 +50,20 @@ func TestCDPQuery(t *testing.T) {
 		}
 		if q != c.wantQuery || xp != c.wantXPath {
 			t.Errorf("%s: got (%q,%v) want (%q,%v)", c.by, q, xp, c.wantQuery, c.wantXPath)
+		}
+	}
+}
+
+func TestXPathLiteral(t *testing.T) {
+	cases := map[string]string{
+		"plain":     "'plain'",
+		`has "dq"`:  `'has "dq"'`,
+		"has 'sq'":  `"has 'sq'"`,
+		`both '" x`: `concat('both ', "'", '" x')`,
+	}
+	for in, want := range cases {
+		if got := xpathLiteral(in); got != want {
+			t.Errorf("xpathLiteral(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
