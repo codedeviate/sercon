@@ -443,6 +443,7 @@ func (s *wdSession) addCDP(obj map[string]any, vm *goja.Runtime, loop *eventloop
 		if err != nil {
 			return nil, err
 		}
+		// best-effort warm-up; getTargets below surfaces a broken connection.
 		_, _ = c.callMap("", "Target.setDiscoverTargets", map[string]any{"discover": true})
 		res, err := c.callMap("", "Target.getTargets", nil)
 		if err != nil {

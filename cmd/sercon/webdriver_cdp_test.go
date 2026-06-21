@@ -175,6 +175,7 @@ func TestTargetIDArg(t *testing.T) {
 func TestProjectTargets(t *testing.T) {
 	infos := []any{
 		map[string]any{"targetId": "p", "type": "page", "url": "http://a/", "title": "A"},
+		"not-a-map", // non-map entries must be skipped
 		map[string]any{"targetId": "i", "type": "iframe", "url": "http://b/", "title": "B"},
 	}
 	out := projectTargets(infos)
