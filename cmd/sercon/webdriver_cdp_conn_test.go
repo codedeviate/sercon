@@ -82,3 +82,25 @@ func TestCDPConn_CloseFailsPending(t *testing.T) {
 		t.Fatal("call after close should error")
 	}
 }
+
+func TestBrowserWSURLFromCaps(t *testing.T) {
+	// se:cdp takes precedence and is returned verbatim.
+	s := &wdSession{}
+	if got, err := s.browserWSURLFromCaps(map[string]any{"se:cdp": "ws://grid/cdp"}); err != nil || got != "ws://grid/cdp" {
+		t.Fatalf("se:cdp: got %q err %v", got, err)
+	}
+	// neither se:cdp nor debuggerAddress → error.
+	if _, err := s.browserWSURLFromCaps(map[string]any{}); err == nil {
+		t.Fatal("expected error when no CDP endpoint is advertised")
+	}
+	// debuggerAddress → resolved via /json/version.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"webSocketDebuggerUrl":"ws://browser/devtools/browser/abc"}`))
+	}))
+	defer srv.Close()
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	caps := map[string]any{"goog:chromeOptions": map[string]any{"debuggerAddress": addr}}
+	if got, err := s.browserWSURLFromCaps(caps); err != nil || got != "ws://browser/devtools/browser/abc" {
+		t.Fatalf("debuggerAddress: got %q err %v", got, err)
+	}
+}

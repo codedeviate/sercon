@@ -162,6 +162,60 @@ func (c *cdpConn) close() {
 	_ = c.conn.Close(websocket.StatusNormalClosure, "")
 }
 
+// browserWSURLFromCaps resolves the browser DevTools WebSocket URL from a
+// capabilities map: prefer an se:cdp URL (Selenium Grid), else
+// goog:chromeOptions.debuggerAddress via /json/version.
+func (s *wdSession) browserWSURLFromCaps(caps map[string]any) (string, error) {
+	if cdp, ok := caps["se:cdp"].(string); ok && cdp != "" {
+		return cdp, nil
+	}
+	goog, _ := caps["goog:chromeOptions"].(map[string]any)
+	addr, _ := goog["debuggerAddress"].(string)
+	if addr == "" {
+		return "", errors.New("webdriver: browser-level CDP unavailable (no debuggerAddress or se:cdp in session capabilities)")
+	}
+	return fetchBrowserWSURL(addr)
+}
+
+// cdpConnect returns the session's browser-level CDP connection, dialing and
+// caching it on first use. Closed by shutdown().
+func (s *wdSession) cdpConnect() (*cdpConn, error) {
+	s.cdpMu.Lock()
+	defer s.cdpMu.Unlock()
+	if s.cdpConn != nil {
+		return s.cdpConn, nil
+	}
+	caps, err := s.wd.Capabilities()
+	if err != nil {
+		return nil, err
+	}
+	wsURL, err := s.browserWSURLFromCaps(map[string]any(caps))
+	if err != nil {
+		return nil, err
+	}
+	parent := s.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	c, err := dialCDP(parent, wsURL)
+	if err != nil {
+		return nil, fmt.Errorf("webdriver: connecting browser CDP: %w", err)
+	}
+	s.cdpConn = c
+	return c, nil
+}
+
+// closeCDP closes the cached CDP connection if any. Idempotent.
+func (s *wdSession) closeCDP() {
+	s.cdpMu.Lock()
+	c := s.cdpConn
+	s.cdpConn = nil
+	s.cdpMu.Unlock()
+	if c != nil {
+		c.close()
+	}
+}
+
 // fetchBrowserWSURL queries a DevTools HTTP endpoint (host:port) for the
 // browser-level webSocketDebuggerUrl. Split out for testability.
 func fetchBrowserWSURL(addr string) (string, error) {

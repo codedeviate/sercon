@@ -133,6 +133,9 @@ type wdSession struct {
 	reg     *wdRegistry
 	baseURL string  // <scheme>://host:port[/wd/hub] — for raw s.command requests
 	browser string  // "chrome" | "firefox" — resolved in connect; gates CDP methods
+
+	cdpMu   sync.Mutex // guards cdpConn lazy init
+	cdpConn *cdpConn   // browser-level CDP connection (lazy; closed on shutdown)
 	mu      sync.Mutex
 	closed  atomic.Bool
 
@@ -204,6 +207,7 @@ func (s *wdSession) shutdown() {
 	if s.cancel != nil {
 		s.cancel()
 	}
+	s.closeCDP()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.wd != nil {
