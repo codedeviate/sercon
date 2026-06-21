@@ -159,3 +159,26 @@ func TestCDPLocateX_FakeExec(t *testing.T) {
 		t.Fatalf("locate got id=%v found=%v quad=%v err=%v", id, found, quad, err)
 	}
 }
+
+func TestTargetIDArg(t *testing.T) {
+	if got := targetIDFromExport("ABC"); got != "ABC" {
+		t.Fatalf("string: got %q", got)
+	}
+	if got := targetIDFromExport(map[string]any{"targetId": "XYZ", "type": "iframe"}); got != "XYZ" {
+		t.Fatalf("object: got %q", got)
+	}
+	if got := targetIDFromExport(42); got != "" {
+		t.Fatalf("number: got %q", got)
+	}
+}
+
+func TestProjectTargets(t *testing.T) {
+	infos := []any{
+		map[string]any{"targetId": "p", "type": "page", "url": "http://a/", "title": "A"},
+		map[string]any{"targetId": "i", "type": "iframe", "url": "http://b/", "title": "B"},
+	}
+	out := projectTargets(infos)
+	if len(out) != 2 || out[0]["targetId"] != "p" || out[1]["type"] != "iframe" {
+		t.Fatalf("projectTargets got %v", out)
+	}
+}

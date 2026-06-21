@@ -366,6 +366,60 @@ func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, er
 	return res, nil
 }
 
+// targetIDFromExport extracts a targetId from an exported JS arg: a string id,
+// or an object with a targetId field.
+func targetIDFromExport(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if m, ok := v.(map[string]any); ok {
+		return asStr(m["targetId"])
+	}
+	return ""
+}
+
+// projectTargets reduces a Target.getTargets targetInfos array to the fields the
+// script API exposes.
+func projectTargets(infos []any) []map[string]any {
+	out := make([]map[string]any, 0, len(infos))
+	for _, ti := range infos {
+		m, _ := ti.(map[string]any)
+		if m == nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"targetId": asStr(m["targetId"]),
+			"type":     asStr(m["type"]),
+			"url":      asStr(m["url"]),
+			"title":    asStr(m["title"]),
+		})
+	}
+	return out
+}
+
+// targetSessionObject builds the goja handle for an attached target session.
+func (s *wdSession) targetSessionObject(c *cdpConn, targetID, sessionID string, vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+	return map[string]any{
+		"targetId":  targetID,
+		"sessionId": sessionID,
+		"cdp": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+			method := strArg(call, 0)
+			if method == "" {
+				return nil, errors.New("webdriver: cdp method must be a non-empty string")
+			}
+			return c.callMap(sessionID, method, optsArgMap(call, 1))
+		}),
+		"detach": wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+			if _, err := c.callMap("", "Target.detachFromTarget", map[string]any{"sessionId": sessionID}); err != nil {
+				return nil, err
+			}
+			o := scriptengine.NewOrdered()
+			o.Set("detached", true)
+			return o, nil
+		}),
+	}
+}
+
 // addCDP wires the Chrome-only CDP methods onto the session handle object.
 func (s *wdSession) addCDP(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["cdp"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
@@ -383,5 +437,37 @@ func (s *wdSession) addCDP(obj map[string]any, vm *goja.Runtime, loop *eventloop
 			return nil, errors.New("webdriver.cdpClick: (by, value) are required")
 		}
 		return s.cdpClickImpl(by, value, optsArgMap(call, 2))
+	})
+	obj["targets"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		c, err := s.cdpConnect()
+		if err != nil {
+			return nil, err
+		}
+		_, _ = c.callMap("", "Target.setDiscoverTargets", map[string]any{"discover": true})
+		res, err := c.callMap("", "Target.getTargets", nil)
+		if err != nil {
+			return nil, err
+		}
+		infos, _ := res["targetInfos"].([]any)
+		return projectTargets(infos), nil
+	})
+	obj["attach"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		targetID := targetIDFromExport(call.Argument(0).Export())
+		if targetID == "" {
+			return nil, errors.New("webdriver.attach: a target id or target object is required")
+		}
+		c, err := s.cdpConnect()
+		if err != nil {
+			return nil, err
+		}
+		res, err := c.callMap("", "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true})
+		if err != nil {
+			return nil, fmt.Errorf("webdriver.attach: %w", err)
+		}
+		sessionID := asStr(res["sessionId"])
+		if sessionID == "" {
+			return nil, errors.New("webdriver.attach: no sessionId returned")
+		}
+		return s.targetSessionObject(c, targetID, sessionID, vm, loop), nil
 	})
 }
