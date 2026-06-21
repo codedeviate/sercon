@@ -332,6 +332,7 @@ func (s *wdSession) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[st
 	s.addAlerts(obj, vm, loop)      // Phase 2
 	s.addWindowRect(obj, vm, loop) // Phase 2
 	s.addActions(obj, vm, loop)    // Phase 2
+	s.addCDP(obj, vm, loop)        // 0004: Chrome-only CDP trusted click
 	return obj
 }
 

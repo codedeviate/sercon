@@ -113,3 +113,31 @@ func TestCollectDocumentNodeIDs(t *testing.T) {
 		t.Fatalf("got %v want [1 2]", ids)
 	}
 }
+
+func TestCDPClickArgsValidation(t *testing.T) {
+	s := &wdSession{browser: "chrome"}
+	obj := map[string]any{}
+	s.addCDP(obj, nil, nil)
+
+	// cdpClick with missing/bogus strategy must reject before any driver call.
+	_, err := s.cdpClickImpl("", "", map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "unknown locator strategy") {
+		t.Fatalf("empty by should be rejected with a strategy error, got: %v", err)
+	}
+	_, err = s.cdpClickImpl("bogus", "x", map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "unknown locator strategy") {
+		t.Fatalf("bogus strategy should be rejected, got: %v", err)
+	}
+
+	// firefox guard on cdpClick.
+	ff := &wdSession{browser: "firefox"}
+	_, err = ff.cdpClickImpl("css", "button", map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "Chrome-only") {
+		t.Fatalf("firefox cdpClick should be Chrome-only, got: %v", err)
+	}
+
+	// addCDP registers both methods.
+	if obj["cdp"] == nil || obj["cdpClick"] == nil {
+		t.Fatal("addCDP should register cdp and cdpClick")
+	}
+}

@@ -1,8 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // cdpExec sends one CDP command through chromedriver's passthrough endpoint
@@ -266,4 +274,102 @@ func (s *wdSession) cdpLocate(by, value string) (nodeID float64, quad []float64,
 		}
 	}
 	return 0, nil, false, nil
+}
+
+// cdpClickImpl waits for an element matching (by,value) to appear and lay out
+// anywhere in the frame tree, scrolls it into view, and dispatches a trusted
+// mouse press/release at its centre. Manages its own per-step s.do locking, so
+// callers must NOT wrap it in s.do.
+func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, error) {
+	if s.browser == "firefox" {
+		return nil, fmt.Errorf("webdriver.cdpClick: CDP is Chrome-only (chromedriver); current browser is %q", s.browser)
+	}
+	// Validate the strategy up front for a clean error before any waiting.
+	if _, _, err := cdpQuery(by, value); err != nil {
+		return nil, err
+	}
+
+	timeout := optInt(opts, "timeout", 10000)
+	poll := optInt(opts, "poll", 50)
+	if poll <= 0 {
+		poll = 50
+	}
+	button := "left"
+	if b, ok := opts["button"].(string); ok && b != "" {
+		button = b
+	}
+	scroll := optBool(opts, "scrollIntoView", true)
+	dx := optFloat(opts, "offsetX", 0)
+	dy := optFloat(opts, "offsetY", 0)
+
+	var nodeID float64
+	var quad []float64
+	deadline := time.Now().Add(time.Duration(timeout) * time.Millisecond)
+	for {
+		var found bool
+		if _, err := s.do(func() (any, error) {
+			id, q, f, e := s.cdpLocate(by, value)
+			nodeID, quad, found = id, q, f
+			return nil, e
+		}); err != nil {
+			return nil, fmt.Errorf("webdriver.cdpClick: %w", err)
+		}
+		if found {
+			break
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("webdriver.cdpClick: no element matching %s=%q within %dms", by, value, timeout)
+		}
+		time.Sleep(time.Duration(poll) * time.Millisecond)
+	}
+
+	res, err := s.do(func() (any, error) {
+		if scroll {
+			_, _ = s.cdpExec("DOM.scrollIntoViewIfNeeded", map[string]any{"nodeId": nodeID})
+			if q, ok := s.cdpContentQuad(nodeID); ok {
+				quad = q
+			}
+		}
+		x, y := quadCenter(quad, dx, dy)
+		mask := mouseButtonsMask(button)
+		events := []map[string]any{
+			{"type": "mouseMoved", "x": x, "y": y, "button": "none", "buttons": 0},
+			{"type": "mousePressed", "x": x, "y": y, "button": button, "buttons": mask, "clickCount": 1},
+			{"type": "mouseReleased", "x": x, "y": y, "button": button, "buttons": 0, "clickCount": 1},
+		}
+		for _, p := range events {
+			if _, e := s.cdpExec("Input.dispatchMouseEvent", p); e != nil {
+				return nil, e
+			}
+		}
+		o := scriptengine.NewOrdered()
+		o.Set("clicked", true)
+		o.Set("x", x)
+		o.Set("y", y)
+		return o, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("webdriver.cdpClick: %w", err)
+	}
+	return res, nil
+}
+
+// addCDP wires the Chrome-only CDP methods onto the session handle object.
+func (s *wdSession) addCDP(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
+	obj["cdp"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		cmd := strArg(call, 0)
+		if cmd == "" {
+			return nil, errors.New("webdriver.cdp: command must be a non-empty string")
+		}
+		params := optsArgMap(call, 1)
+		return s.do(func() (any, error) { return s.cdpExec(cmd, params) })
+	})
+	obj["cdpClick"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		by := strArg(call, 0)
+		value := strArg(call, 1)
+		if by == "" || value == "" {
+			return nil, errors.New("webdriver.cdpClick: (by, value) are required")
+		}
+		return s.cdpClickImpl(by, value, optsArgMap(call, 2))
+	})
 }
