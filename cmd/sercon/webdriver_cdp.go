@@ -19,7 +19,7 @@ func (s *wdSession) cdpExec(cmd string, params map[string]any) (any, error) {
 	v, err := s.command("POST", "/goog/cdp/execute", map[string]any{"cmd": cmd, "params": params})
 	if err != nil {
 		msg := err.Error()
-		if strings.Contains(msg, "unknown command") || strings.Contains(msg, "404") || strings.Contains(msg, "invalid session") {
+		if strings.Contains(msg, "unknown command") || strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "invalid session") {
 			return nil, fmt.Errorf("%w (requires a CDP-capable chromedriver endpoint)", err)
 		}
 		return nil, err
