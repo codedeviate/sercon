@@ -93,8 +93,8 @@ func TestFileExists(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "here.txt")
-	if ok, _ := fileExists(ctx, fcall(vm.ToValue(p))); ok {
-		t.Fatal("should not exist yet")
+	if ok, err := fileExists(ctx, fcall(vm.ToValue(p))); err != nil || ok {
+		t.Fatalf("absent path should be (false, nil): ok=%v err=%v", ok, err)
 	}
 	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
