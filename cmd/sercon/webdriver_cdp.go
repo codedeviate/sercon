@@ -136,7 +136,7 @@ func toFloatSlice(arr []any) []float64 {
 // DOM.getDocument(pierce) tree — the top document plus each iframe's
 // contentDocument (including cross-origin frames, which CDP exposes).
 func collectDocumentNodeIDs(node map[string]any, out *[]float64) {
-	if strings.EqualFold(asStr(node["nodeName"]), "#document") {
+	if asStr(node["nodeName"]) == "#document" {
 		if id, ok := node["nodeId"].(float64); ok {
 			*out = append(*out, id)
 		}
@@ -195,14 +195,22 @@ func (s *wdSession) cdpQueryCSS(selector string) ([]float64, error) {
 	var docIDs []float64
 	collectDocumentNodeIDs(root, &docIDs)
 	var out []float64
+	var lastErr error
 	for _, docID := range docIDs {
 		qres, qerr := s.cdpExec("DOM.querySelectorAll", map[string]any{"nodeId": docID, "selector": selector})
 		if qerr != nil {
-			continue // a re-navigated/detached document can error; skip it
+			lastErr = qerr // a re-navigated/detached document can error; skip it
+			continue
 		}
+		lastErr = nil // at least one document accepted the selector
 		qm, _ := qres.(map[string]any)
 		arr, _ := qm["nodeIds"].([]any)
 		out = append(out, toFloatSlice(arr)...)
+	}
+	// If every document errored (e.g. a syntactically invalid selector), surface
+	// it so the caller fails fast instead of spinning until timeout.
+	if len(out) == 0 && lastErr != nil {
+		return nil, lastErr
 	}
 	return out, nil
 }
@@ -235,7 +243,9 @@ func (s *wdSession) cdpSearchXPath(query string) ([]float64, error) {
 
 // cdpLocate finds the first laid-out element matching (by,value) anywhere in the
 // page including nested cross-origin frames, returning its nodeId + content
-// quad. found=false (with nil error) means no visible match yet.
+// quad. found=false (with nil error) means no visible match yet. For CSS the
+// candidate order is DOM/frame order (top frame first); for XPath the order is
+// DOM.performSearch's, which CDP does not formally specify.
 func (s *wdSession) cdpLocate(by, value string) (nodeID float64, quad []float64, found bool, err error) {
 	query, useXPath, err := cdpQuery(by, value)
 	if err != nil {
