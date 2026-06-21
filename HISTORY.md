@@ -727,16 +727,34 @@ No browser bundled; drivers must be installed separately.
   and `executeScript` agreed across round-trips / `frameChain` / in-frame
   navigation) — the reported "find doesn't follow the chain" was a timing race,
   not a frame-context bug.
-- **Trusted CDP clicks (v0.60.0)** — `cdpClick` activates elements inside nested
-  cross-origin iframes that the W3C Element Click intercepts (Klarna "Pay order"):
-  locate across the pierced frame tree + `DOM.getContentQuads` +
-  `Input.dispatchMouseEvent`. Raw `cdp(command, params?)` escape hatch alongside.
-  Chrome-only. (Resolves feedback 0004's remaining activation blocker.)
-- **Cross-OOPIF clicks + target API (v0.61.0)** — `cdpClick` reaches buttons
-  inside true out-of-process iframes (cross-site, e.g. Klarna Checkout) by
-  dispatching input over a browser-level CDP WebSocket; `targets()`/`attach()`
-  expose CDP targets/sessions. (Closes 0005; v0.60.0's same-site fixture never
-  exercised the OOPIF path.)
+- **Trusted CDP clicks (v0.60.0)** — `cdpClick(by, value, opts?)` activates a
+  button inside a **same-process** cross-origin iframe that the W3C Element Click
+  hit-tests to the parent `<iframe>` and intercepts: it locates the element
+  across the pierced frame tree (`DOM.getDocument{pierce}` + `querySelectorAll` /
+  `performSearch`), reads its true viewport coordinates with
+  `DOM.getContentQuads`, scrolls it into view, and dispatches a trusted
+  `Input.dispatchMouseEvent` over chromedriver's page-session CDP passthrough.
+  Raw `cdp(command, params?)` escape hatch alongside. Chrome-only. (Closed the
+  same-process half of 0004; the genuine out-of-process case turned out to need
+  v0.61.0 — the v0.60.0 fixture was a same-*site* two-port iframe, i.e. the same
+  renderer process, so it never exercised a real OOPIF.)
+- **Cross-OOPIF clicks + browser-level CDP (v0.61.0)** — completes the Klarna
+  case. `cdpClick` now reaches buttons inside **true out-of-process iframes**: a
+  cross-*site* iframe (different eTLD+1) runs in its own renderer process, which
+  chromedriver's page-session CDP passthrough cannot touch. sercon opens a
+  **browser-level CDP WebSocket** (dialed from chromedriver's `debuggerAddress`
+  via `/json/version`, the way Puppeteer/Playwright drive input), attaches to the
+  page **and every iframe target**, locates the element in its **owning session**
+  (coordinates local to that frame's widget — no offset math), and dispatches the
+  trusted `Input.dispatchMouseEvent` there, where browser-level input *is*
+  hit-tested across OOPIF boundaries. Targets are **re-enumerated every poll**, so
+  an iframe injected by JS seconds after load (the real checkout pattern) is still
+  found. New scriptable target API: `targets()` lists the browser's CDP targets
+  and `attach(target)` → `{ targetId, sessionId, cdp(method, params?), detach() }`
+  drives a specific target (e.g. an OOPIF) directly. Falls back to the v0.60.0
+  page-session path when browser-level CDP is unavailable (e.g. a remote Grid not
+  advertising `se:cdp`). Chrome-only. (Closes 0005 and the real 0004; a full
+  Klarna KCO test order was confirmed end-to-end on v0.61.0.)
 
 ---
 
