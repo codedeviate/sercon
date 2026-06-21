@@ -391,6 +391,15 @@ range).
 **`fs.archive.*`** (`create`/`extract` for zip/tar/tar.gz with zip-slip
 protection): v0.4.14 (`api.archive.*`), stdlib-only.
 
+- **File read/write (v0.62.0)** — `fs` gained general file primitives:
+  `writeText`/`writeBytes`/`readText`/`readBytes`/`mkdir`/`exists`/`remove`/`stat`
+  (all async). Previously `fs` only did path math + archives, so scripts could
+  capture screenshots but not write the report document that stitches them
+  together; this closes that gap. Writes are Node-like (fail on a missing parent;
+  `mkdir` is `mkdir -p`); no path sandboxing, matching the existing
+  `image.save`/`screenshot` writers. Shipped with `fs-report.ts` — an illustrated
+  per-step screenshot report.
+
 ### `net`
 
 **`net.http.*`** (`get`/`post`): present from v0.1.0 (as `api.http.*`).

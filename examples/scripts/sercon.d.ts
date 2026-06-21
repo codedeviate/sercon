@@ -700,6 +700,18 @@ declare const fs: {
      */
     extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<Record<string, unknown>>;
   };
+  /**
+   * Report whether a path exists. Never throws for a missing path.
+   * @param path Path to test.
+   * @returns Promise resolving to true if the path exists, false if it does not.
+   */
+  exists(path: string): Promise<boolean>;
+  /**
+   * Create a directory, including any missing parents (mkdir -p). Idempotent.
+   * @param path Directory path to create (mode 0755). Existing directories are fine.
+   * @returns Promise resolving to { path }.
+   */
+  mkdir(path: string): Promise<{ path: string }>;
   path: {
     /**
      * Final segment of a path; optional suffix is stripped if it matches.
@@ -715,6 +727,44 @@ declare const fs: {
      */
     dirname(path: string): string;
   };
+  /**
+   * Read an entire file as bytes.
+   * @param path File to read (CWD-relative or absolute).
+   * @returns Promise resolving to the file contents as a Uint8Array.
+   */
+  readBytes(path: string): Promise<Uint8Array>;
+  /**
+   * Read an entire file as a UTF-8 string.
+   * @param path File to read (CWD-relative or absolute).
+   * @returns Promise resolving to the file contents decoded as UTF-8.
+   */
+  readText(path: string): Promise<string>;
+  /**
+   * Remove a file or a directory tree (recursive). No error if the path is already absent.
+   * @param path File or directory to remove. Directories are removed recursively.
+   * @returns Promise resolving to { path }.
+   */
+  remove(path: string): Promise<{ path: string }>;
+  /**
+   * File metadata: size, whether it is a directory, and last-modified time.
+   * @param path Path to stat.
+   * @returns Promise resolving to { size (bytes), isDir, modifiedMs (epoch milliseconds) }.
+   */
+  stat(path: string): Promise<{ size: number; isDir: boolean; modifiedMs: number }>;
+  /**
+   * Write binary data (a Uint8Array) to a file, truncating. Fails if the parent directory does not exist.
+   * @param path Output file path (CWD-relative or absolute).
+   * @param data Bytes to write (mode 0644). Pass a Uint8Array (e.g. new Uint8Array(shot.bytes)).
+   * @returns Promise resolving to { path, bytes } where bytes is the number of bytes written.
+   */
+  writeBytes(path: string, data: Uint8Array): Promise<{ path: string; bytes: number }>;
+  /**
+   * Write a string to a file (UTF-8, truncating). Fails if the parent directory does not exist — call fs.mkdir first.
+   * @param path Output file path (CWD-relative or absolute). Used as given; no sandboxing.
+   * @param text Content to write as UTF-8. The file is created (mode 0644) or truncated.
+   * @returns Promise resolving to { path, bytes } where bytes is the number of bytes written.
+   */
+  writeText(path: string, text: string): Promise<{ path: string; bytes: number }>;
 };
 
 /** Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions. */

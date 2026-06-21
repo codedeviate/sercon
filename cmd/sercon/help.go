@@ -1297,10 +1297,24 @@ await s.cdp("Runtime.evaluate", { expression: "location.href", returnByValue: tr
 await s.detach();`)
 	note("A true OOPIF requires a cross-SITE iframe (different eTLD+1) — a different port is same-site and stays in-process. cdpClick attaches to every page/iframe target and clicks in the one that owns the element.")
 
+	header(67, "Read & write files (fs)")
+	code(`// General file I/O on the fs global. Writes do not create parent dirs —
+// call fs.mkdir first (it is mkdir -p). Paths are used as given.
+await fs.mkdir("report");
+await fs.writeText("report/index.html", "<h1>Run report</h1>");
+await fs.writeBytes("report/shot.png", new Uint8Array(shot.bytes));
+if (await fs.exists("report/index.html")) {
+  const st = await fs.stat("report/index.html");
+  runtime.log("report:", st.size, "bytes,", st.modifiedMs);
+}
+const html = await fs.readText("report/index.html");
+await fs.remove("report"); // file or dir tree; no error if absent`)
+	note("fs.writeText/writeBytes fail if the parent directory is missing (Node-like) — fs.mkdir is the mkdir -p. readBytes returns a Uint8Array; stat gives { size, isDir, modifiedMs }. See examples/scripts/fs-report.ts for a screenshot report built on these.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 66
+const exampleCount = 67

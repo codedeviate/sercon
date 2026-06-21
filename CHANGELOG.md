@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `fs` file primitives (all async): `fs.writeText`, `fs.writeBytes`, `fs.readText`,
+  `fs.readBytes` (→ Uint8Array), `fs.mkdir` (mkdir -p), `fs.exists`, `fs.remove`
+  (file or tree), `fs.stat` (`{ size, isDir, modifiedMs }`). Writes fail if the
+  parent dir is missing (Node-like). Enables building reports/artifacts from a
+  script — see the new `fs-report.ts` example (per-step screenshot report).
+
 ## [0.61.0] — 2026-06-21
 
 ### Added

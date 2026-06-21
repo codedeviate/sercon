@@ -4719,6 +4719,46 @@ const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true
 runtime.log(r.entries.length, "files extracted");
 ```
 
+#### fs.exists
+
+```
+exists(path: string): Promise<boolean>
+```
+
+Report whether a path exists. Never throws for a missing path.
+
+**Parameters**
+
+- `path` *(string)* — Path to test.
+
+**Returns:** Promise resolving to true if the path exists, false if it does not.
+
+**Throws:** Rejects only on an unexpected stat error (e.g. a permission error on a parent); a missing path resolves to false.
+
+```ts
+if (!(await fs.exists("report"))) await fs.mkdir("report");
+```
+
+#### fs.mkdir
+
+```
+mkdir(path: string): Promise<{ path: string }>
+```
+
+Create a directory, including any missing parents (mkdir -p). Idempotent.
+
+**Parameters**
+
+- `path` *(string)* — Directory path to create (mode 0755). Existing directories are fine.
+
+**Returns:** Promise resolving to { path }.
+
+**Throws:** Rejects if path is missing/empty or creation fails (e.g. a path component is an existing file).
+
+```ts
+await fs.mkdir("report/assets");
+```
+
 #### fs.path.basename
 
 ```
@@ -4758,6 +4798,131 @@ Directory portion of a path. POSIX-style; trailing slashes are stripped.
 
 ```ts
 const d = fs.path.dirname("/var/log/app.log"); // "/var/log"
+```
+
+#### fs.readBytes
+
+```
+readBytes(path: string): Promise<Uint8Array>
+```
+
+Read an entire file as bytes.
+
+**Parameters**
+
+- `path` *(string)* — File to read (CWD-relative or absolute).
+
+**Returns:** Promise resolving to the file contents as a Uint8Array.
+
+**Throws:** Rejects if path is missing/empty or the file cannot be read.
+
+```ts
+const bytes = await fs.readBytes("shot.png");
+```
+
+#### fs.readText
+
+```
+readText(path: string): Promise<string>
+```
+
+Read an entire file as a UTF-8 string.
+
+**Parameters**
+
+- `path` *(string)* — File to read (CWD-relative or absolute).
+
+**Returns:** Promise resolving to the file contents decoded as UTF-8.
+
+**Throws:** Rejects if path is missing/empty or the file cannot be read (absent, permissions).
+
+```ts
+const html = await fs.readText("report/index.html");
+```
+
+#### fs.remove
+
+```
+remove(path: string): Promise<{ path: string }>
+```
+
+Remove a file or a directory tree (recursive). No error if the path is already absent.
+
+**Parameters**
+
+- `path` *(string)* — File or directory to remove. Directories are removed recursively.
+
+**Returns:** Promise resolving to { path }.
+
+**Throws:** Rejects only if removal fails (e.g. permissions); removing an absent path is a no-op.
+
+```ts
+await fs.remove("report"); // clean slate
+```
+
+#### fs.stat
+
+```
+stat(path: string): Promise<{ size: number; isDir: boolean; modifiedMs: number }>
+```
+
+File metadata: size, whether it is a directory, and last-modified time.
+
+**Parameters**
+
+- `path` *(string)* — Path to stat.
+
+**Returns:** Promise resolving to { size (bytes), isDir, modifiedMs (epoch milliseconds) }.
+
+**Throws:** Rejects if path is missing/empty or the target does not exist.
+
+```ts
+const st = await fs.stat("report/index.html");
+runtime.log(st.size, st.isDir, st.modifiedMs);
+```
+
+#### fs.writeBytes
+
+```
+writeBytes(path: string, data: Uint8Array): Promise<{ path: string; bytes: number }>
+```
+
+Write binary data (a Uint8Array) to a file, truncating. Fails if the parent directory does not exist.
+
+**Parameters**
+
+- `path` *(string)* — Output file path (CWD-relative or absolute).
+- `data` *(Uint8Array)* — Bytes to write (mode 0644). Pass a Uint8Array (e.g. new Uint8Array(shot.bytes)).
+
+**Returns:** Promise resolving to { path, bytes } where bytes is the number of bytes written.
+
+**Throws:** Rejects if path is missing/empty, data is not a Uint8Array, the parent directory does not exist, or the write fails.
+
+```ts
+const shot = await d.screenshot();
+await fs.writeBytes("shot.png", new Uint8Array(shot.bytes));
+```
+
+#### fs.writeText
+
+```
+writeText(path: string, text: string): Promise<{ path: string; bytes: number }>
+```
+
+Write a string to a file (UTF-8, truncating). Fails if the parent directory does not exist — call fs.mkdir first.
+
+**Parameters**
+
+- `path` *(string)* — Output file path (CWD-relative or absolute). Used as given; no sandboxing.
+- `text` *(string)* — Content to write as UTF-8. The file is created (mode 0644) or truncated.
+
+**Returns:** Promise resolving to { path, bytes } where bytes is the number of bytes written.
+
+**Throws:** Rejects if path is missing/empty, text is not a string, the parent directory does not exist, or the write fails (permissions, etc.).
+
+```ts
+await fs.mkdir("report");
+await fs.writeText("report/index.html", "<h1>Hi</h1>");
 ```
 
 ### image
