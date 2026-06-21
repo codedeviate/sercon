@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.60.0] — 2026-06-21
+
 ### Added
 
 - `services.webdriver` session `cdpClick(by, value, opts?)` — a trusted click on
