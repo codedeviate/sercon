@@ -288,19 +288,18 @@ func cdpLocateX(exec cdpExecFn, by, value string) (nodeID float64, quad []float6
 	return 0, nil, false, nil
 }
 
-// cdpClickImpl waits for an element matching (by,value) to appear and lay out
-// anywhere in the frame tree, scrolls it into view, and dispatches a trusted
-// mouse press/release at its centre. Manages its own per-step s.do locking, so
-// callers must NOT wrap it in s.do.
+// cdpClickImpl waits for an element matching (by,value) anywhere in the frame
+// tree — including out-of-process iframes — then dispatches a trusted CDP mouse
+// click over the session that owns the element. Uses a browser-level CDP
+// connection (which crosses OOPIF boundaries); falls back to the page-session
+// passthrough when browser-level CDP is unavailable (e.g. remote Grid w/o CDP).
 func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, error) {
 	if s.browser == "firefox" {
 		return nil, fmt.Errorf("webdriver.cdpClick: CDP is Chrome-only (chromedriver); current browser is %q", s.browser)
 	}
-	// Validate the strategy up front for a clean error before any waiting.
 	if _, _, err := cdpQuery(by, value); err != nil {
 		return nil, err
 	}
-
 	timeout := optInt(opts, "timeout", 10000)
 	poll := optInt(opts, "poll", 50)
 	if poll <= 0 {
@@ -314,6 +313,114 @@ func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, er
 	dx := optFloat(opts, "offsetX", 0)
 	dy := optFloat(opts, "offsetY", 0)
 
+	c, cerr := s.cdpConnect()
+	if cerr != nil {
+		// Browser-level CDP unavailable — fall back to the page-session
+		// passthrough (same-process frames only).
+		return s.cdpClickPassthrough(by, value, timeout, poll, button, scroll, dx, dy)
+	}
+	return s.cdpClickBrowser(c, by, value, timeout, poll, button, scroll, dx, dy)
+}
+
+// cdpClickBrowser performs cdpClick over the browser-level connection: attach to
+// page + every iframe target, locate the element in its owning session (local
+// coords), and dispatch input there.
+func (s *wdSession) cdpClickBrowser(c *cdpConn, by, value string, timeout, poll int, button string, scroll bool, dx, dy float64) (any, error) {
+	// best-effort warm-up; getTargets below surfaces a broken connection.
+	_, _ = c.callMap("", "Target.setDiscoverTargets", map[string]any{"discover": true})
+	tg, err := c.callMap("", "Target.getTargets", nil)
+	if err != nil {
+		return nil, fmt.Errorf("webdriver.cdpClick: %w", err)
+	}
+	type sess struct{ targetID, sessionID string }
+	var sessions []sess
+	infos, _ := tg["targetInfos"].([]any)
+	for _, ti := range infos {
+		m, _ := ti.(map[string]any)
+		typ := asStr(m["type"])
+		if typ != "page" && typ != "iframe" {
+			continue
+		}
+		tid := asStr(m["targetId"])
+		r, aerr := c.callMap("", "Target.attachToTarget", map[string]any{"targetId": tid, "flatten": true})
+		if aerr != nil {
+			continue
+		}
+		if sid := asStr(r["sessionId"]); sid != "" {
+			sessions = append(sessions, sess{tid, sid})
+		}
+	}
+	defer func() {
+		for _, se := range sessions {
+			_, _ = c.callMap("", "Target.detachFromTarget", map[string]any{"sessionId": se.sessionID})
+		}
+	}()
+	if len(sessions) == 0 {
+		return nil, errors.New("webdriver.cdpClick: no page/iframe targets to search")
+	}
+
+	var hit sess
+	var nodeID float64
+	var quad []float64
+	deadline := time.Now().Add(time.Duration(timeout) * time.Millisecond)
+	first := true
+	for {
+		sawClean := false
+		var lastErr error
+		for _, se := range sessions {
+			se := se
+			exec := func(method string, params map[string]any) (map[string]any, error) {
+				return c.callMap(se.sessionID, method, params)
+			}
+			id, q, found, lerr := cdpLocateX(exec, by, value)
+			if lerr != nil {
+				lastErr = lerr
+				continue
+			}
+			sawClean = true
+			if found {
+				hit, nodeID, quad = se, id, q
+				break
+			}
+		}
+		if hit.sessionID != "" {
+			break
+		}
+		// Invalid selector / DOM unavailable everywhere → fail fast.
+		if first && !sawClean && lastErr != nil {
+			return nil, fmt.Errorf("webdriver.cdpClick: %w", lastErr)
+		}
+		first = false
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("webdriver.cdpClick: no element matching %s=%q within %dms", by, value, timeout)
+		}
+		time.Sleep(time.Duration(poll) * time.Millisecond)
+	}
+
+	exec := func(method string, params map[string]any) (map[string]any, error) {
+		return c.callMap(hit.sessionID, method, params)
+	}
+	if scroll {
+		_, _ = exec("DOM.scrollIntoViewIfNeeded", map[string]any{"nodeId": nodeID})
+		if q, ok := cdpContentQuadX(exec, nodeID); ok {
+			quad = q
+		}
+	}
+	x, y := quadCenter(quad, dx, dy)
+	if err := dispatchTrustedClick(exec, x, y, button); err != nil {
+		return nil, fmt.Errorf("webdriver.cdpClick: %w", err)
+	}
+	o := scriptengine.NewOrdered()
+	o.Set("clicked", true)
+	o.Set("x", x)
+	o.Set("y", y)
+	o.Set("targetId", hit.targetID)
+	return o, nil
+}
+
+// cdpClickPassthrough is the v0.60.0 page-session path (same-process frames only),
+// used when a browser-level CDP connection cannot be established.
+func (s *wdSession) cdpClickPassthrough(by, value string, timeout, poll int, button string, scroll bool, dx, dy float64) (any, error) {
 	var nodeID float64
 	var quad []float64
 	deadline := time.Now().Add(time.Duration(timeout) * time.Millisecond)
@@ -334,7 +441,6 @@ func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, er
 		}
 		time.Sleep(time.Duration(poll) * time.Millisecond)
 	}
-
 	res, err := s.do(func() (any, error) {
 		if scroll {
 			_, _ = s.cdpExec("DOM.scrollIntoViewIfNeeded", map[string]any{"nodeId": nodeID})
@@ -343,16 +449,8 @@ func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, er
 			}
 		}
 		x, y := quadCenter(quad, dx, dy)
-		mask := mouseButtonsMask(button)
-		events := []map[string]any{
-			{"type": "mouseMoved", "x": x, "y": y, "button": "none", "buttons": 0},
-			{"type": "mousePressed", "x": x, "y": y, "button": button, "buttons": mask, "clickCount": 1},
-			{"type": "mouseReleased", "x": x, "y": y, "button": button, "buttons": 0, "clickCount": 1},
-		}
-		for _, p := range events {
-			if _, e := s.cdpExec("Input.dispatchMouseEvent", p); e != nil {
-				return nil, e
-			}
+		if err := dispatchTrustedClick(s.passExec, x, y, button); err != nil {
+			return nil, err
 		}
 		o := scriptengine.NewOrdered()
 		o.Set("clicked", true)
@@ -364,6 +462,22 @@ func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, er
 		return nil, fmt.Errorf("webdriver.cdpClick: %w", err)
 	}
 	return res, nil
+}
+
+// dispatchTrustedClick sends move/press/release at (x,y) over exec's session.
+func dispatchTrustedClick(exec cdpExecFn, x, y float64, button string) error {
+	mask := mouseButtonsMask(button)
+	events := []map[string]any{
+		{"type": "mouseMoved", "x": x, "y": y, "button": "none", "buttons": 0},
+		{"type": "mousePressed", "x": x, "y": y, "button": button, "buttons": mask, "clickCount": 1},
+		{"type": "mouseReleased", "x": x, "y": y, "button": button, "buttons": 0, "clickCount": 1},
+	}
+	for _, p := range events {
+		if _, err := exec("Input.dispatchMouseEvent", p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // targetIDFromExport extracts a targetId from an exported JS arg: a string id,
