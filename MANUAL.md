@@ -893,6 +893,21 @@ Filesystem operations:
   `fs.archive.extract(archivePath, destDir, opts?)` — tar/zip with
   optional compression.
 
+General file read/write (all async; paths used as given, no sandboxing —
+matching `image.save` and the WebDriver `screenshot` writers):
+
+- `fs.writeText(path, text)` → `{ path, bytes }` — UTF-8, truncating.
+- `fs.writeBytes(path, data: Uint8Array)` → `{ path, bytes }`.
+- `fs.readText(path)` → `string`; `fs.readBytes(path)` → `Uint8Array`.
+- `fs.mkdir(path)` → `{ path }` — creates parents (`mkdir -p`), idempotent.
+- `fs.exists(path)` → `boolean` — never throws for a missing path.
+- `fs.remove(path)` → `{ path }` — file or directory tree; no error if absent.
+- `fs.stat(path)` → `{ size, isDir, modifiedMs }`.
+
+`writeText`/`writeBytes` **do not create parent directories** — call `fs.mkdir`
+first (Node-like); reads and `stat` reject when the target is absent. See
+`examples/scripts/fs-report.ts` for a per-step screenshot report built on these.
+
 ### `net`
 
 Network clients and probes:
