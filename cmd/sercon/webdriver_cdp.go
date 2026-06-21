@@ -326,49 +326,24 @@ func (s *wdSession) cdpClickImpl(by, value string, opts map[string]any) (any, er
 // page + every iframe target, locate the element in its owning session (local
 // coords), and dispatch input there.
 func (s *wdSession) cdpClickBrowser(c *cdpConn, by, value string, timeout, poll int, button string, scroll bool, dx, dy float64) (any, error) {
-	// best-effort warm-up; getTargets below surfaces a broken connection.
-	_, _ = c.callMap("", "Target.setDiscoverTargets", map[string]any{"discover": true})
-	tg, err := c.callMap("", "Target.getTargets", nil)
-	if err != nil {
-		return nil, fmt.Errorf("webdriver.cdpClick: %w", err)
-	}
-	type sess struct{ targetID, sessionID string }
-	var sessions []sess
-	infos, _ := tg["targetInfos"].([]any)
-	for _, ti := range infos {
-		m, _ := ti.(map[string]any)
-		typ := asStr(m["type"])
-		if typ != "page" && typ != "iframe" {
-			continue
-		}
-		tid := asStr(m["targetId"])
-		r, aerr := c.callMap("", "Target.attachToTarget", map[string]any{"targetId": tid, "flatten": true})
-		if aerr != nil {
-			continue
-		}
-		if sid := asStr(r["sessionId"]); sid != "" {
-			sessions = append(sessions, sess{tid, sid})
-		}
-	}
-	defer func() {
-		for _, se := range sessions {
-			_, _ = c.callMap("", "Target.detachFromTarget", map[string]any{"sessionId": se.sessionID})
-		}
-	}()
-	if len(sessions) == 0 {
-		return nil, errors.New("webdriver.cdpClick: no page/iframe targets to search")
-	}
-
-	var hit sess
-	var nodeID float64
-	var quad []float64
 	deadline := time.Now().Add(time.Duration(timeout) * time.Millisecond)
-	first := true
+	allErrPasses := 0
 	for {
+		// Re-enumerate + re-attach every pass: a true OOPIF target (e.g. a
+		// checkout iframe injected by third-party JS seconds after load) may not
+		// exist at the first poll. Sessions are detached at the end of each pass
+		// so the next pass re-attaches cleanly.
+		sessions, err := s.attachFrameTargets(c)
+		if err != nil {
+			return nil, fmt.Errorf("webdriver.cdpClick: %w", err)
+		}
+
+		var hit frameSess
+		var nodeID float64
+		var quad []float64
 		sawClean := false
 		var lastErr error
 		for _, se := range sessions {
-			se := se
 			exec := func(method string, params map[string]any) (map[string]any, error) {
 				return c.callMap(se.sessionID, method, params)
 			}
@@ -383,39 +358,90 @@ func (s *wdSession) cdpClickBrowser(c *cdpConn, by, value string, timeout, poll 
 				break
 			}
 		}
+
 		if hit.sessionID != "" {
-			break
+			exec := func(method string, params map[string]any) (map[string]any, error) {
+				return c.callMap(hit.sessionID, method, params)
+			}
+			if scroll {
+				_, _ = exec("DOM.scrollIntoViewIfNeeded", map[string]any{"nodeId": nodeID})
+				if q, ok := cdpContentQuadX(exec, nodeID); ok {
+					quad = q
+				}
+			}
+			x, y := quadCenter(quad, dx, dy)
+			derr := dispatchTrustedClick(exec, x, y, button)
+			detachFrameTargets(c, sessions)
+			if derr != nil {
+				return nil, fmt.Errorf("webdriver.cdpClick: %w", derr)
+			}
+			o := scriptengine.NewOrdered()
+			o.Set("clicked", true)
+			o.Set("x", x)
+			o.Set("y", y)
+			o.Set("targetId", hit.targetID)
+			return o, nil
 		}
-		// Invalid selector / DOM unavailable everywhere → fail fast.
-		if first && !sawClean && lastErr != nil {
-			return nil, fmt.Errorf("webdriver.cdpClick: %w", lastErr)
+		detachFrameTargets(c, sessions)
+
+		// A persistently bad selector errors on every session every pass; an
+		// initializing frame may error transiently for one pass. Fail fast only
+		// after two consecutive all-error passes (strategy is already validated
+		// up front by cdpQuery, so a runtime locate error is usually transient).
+		if !sawClean && lastErr != nil {
+			allErrPasses++
+			if allErrPasses >= 2 {
+				return nil, fmt.Errorf("webdriver.cdpClick: %w", lastErr)
+			}
+		} else {
+			allErrPasses = 0
 		}
-		first = false
+
 		if !time.Now().Before(deadline) {
 			return nil, fmt.Errorf("webdriver.cdpClick: no element matching %s=%q within %dms", by, value, timeout)
 		}
 		time.Sleep(time.Duration(poll) * time.Millisecond)
 	}
+}
 
-	exec := func(method string, params map[string]any) (map[string]any, error) {
-		return c.callMap(hit.sessionID, method, params)
+// frameSess is one attached page/iframe target session.
+type frameSess struct{ targetID, sessionID string }
+
+// attachFrameTargets enumerates the browser's targets and attaches (flatten) to
+// every page/iframe target, returning their sessions. Re-called each poll so
+// late-created OOPIF targets are picked up.
+func (s *wdSession) attachFrameTargets(c *cdpConn) ([]frameSess, error) {
+	// best-effort warm-up; getTargets below surfaces a broken connection.
+	_, _ = c.callMap("", "Target.setDiscoverTargets", map[string]any{"discover": true})
+	tg, err := c.callMap("", "Target.getTargets", nil)
+	if err != nil {
+		return nil, err
 	}
-	if scroll {
-		_, _ = exec("DOM.scrollIntoViewIfNeeded", map[string]any{"nodeId": nodeID})
-		if q, ok := cdpContentQuadX(exec, nodeID); ok {
-			quad = q
+	infos, _ := tg["targetInfos"].([]any)
+	var sessions []frameSess
+	for _, ti := range infos {
+		m, _ := ti.(map[string]any)
+		typ := asStr(m["type"])
+		if typ != "page" && typ != "iframe" {
+			continue
+		}
+		tid := asStr(m["targetId"])
+		r, aerr := c.callMap("", "Target.attachToTarget", map[string]any{"targetId": tid, "flatten": true})
+		if aerr != nil {
+			continue
+		}
+		if sid := asStr(r["sessionId"]); sid != "" {
+			sessions = append(sessions, frameSess{tid, sid})
 		}
 	}
-	x, y := quadCenter(quad, dx, dy)
-	if err := dispatchTrustedClick(exec, x, y, button); err != nil {
-		return nil, fmt.Errorf("webdriver.cdpClick: %w", err)
+	return sessions, nil
+}
+
+// detachFrameTargets best-effort detaches a set of attached sessions.
+func detachFrameTargets(c *cdpConn, sessions []frameSess) {
+	for _, se := range sessions {
+		_, _ = c.callMap("", "Target.detachFromTarget", map[string]any{"sessionId": se.sessionID})
 	}
-	o := scriptengine.NewOrdered()
-	o.Set("clicked", true)
-	o.Set("x", x)
-	o.Set("y", y)
-	o.Set("targetId", hit.targetID)
-	return o, nil
 }
 
 // cdpClickPassthrough is the v0.60.0 page-session path (same-process frames only),
