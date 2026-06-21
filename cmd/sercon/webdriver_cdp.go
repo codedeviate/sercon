@@ -225,7 +225,20 @@ func (s *wdSession) cdpQueryCSS(selector string) ([]float64, error) {
 
 // cdpSearchXPath finds nodes matching an XPath across the whole pierced tree via
 // DOM.performSearch (the only frame-piercing XPath primitive in the DOM domain).
+//
+// performSearch requires the DOM agent to be enabled, and it only assigns
+// frontend nodeIds to nodes already pushed to the frontend — so a match inside a
+// cross-origin (out-of-process) iframe comes back as nodeId=0 (and a later
+// getContentQuads then fails) unless we first populate the frontend node map
+// with a pierced getDocument. We do both before searching, every call, so the
+// map stays fresh against dynamically-rendered pages.
 func (s *wdSession) cdpSearchXPath(query string) ([]float64, error) {
+	if _, err := s.cdpExec("DOM.enable", map[string]any{}); err != nil {
+		return nil, err
+	}
+	if _, err := s.cdpExec("DOM.getDocument", map[string]any{"depth": -1, "pierce": true}); err != nil {
+		return nil, err
+	}
 	res, err := s.cdpExec("DOM.performSearch", map[string]any{"query": query, "includeUserAgentShadowDOM": true})
 	if err != nil {
 		return nil, err
