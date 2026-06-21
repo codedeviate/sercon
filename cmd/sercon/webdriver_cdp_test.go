@@ -88,3 +88,28 @@ func TestMouseButtonsMask(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectDocumentNodeIDs(t *testing.T) {
+	// root #document(1) -> body -> iframe -> contentDocument #document(2)
+	tree := map[string]any{
+		"nodeName": "#document", "nodeId": float64(1),
+		"children": []any{
+			map[string]any{
+				"nodeName": "BODY",
+				"children": []any{
+					map[string]any{
+						"nodeName": "IFRAME",
+						"contentDocument": map[string]any{
+							"nodeName": "#document", "nodeId": float64(2),
+						},
+					},
+				},
+			},
+		},
+	}
+	var ids []float64
+	collectDocumentNodeIDs(tree, &ids)
+	if len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
+		t.Fatalf("got %v want [1 2]", ids)
+	}
+}

@@ -131,3 +131,129 @@ func toFloatSlice(arr []any) []float64 {
 	}
 	return out
 }
+
+// collectDocumentNodeIDs gathers the nodeId of every #document node in a
+// DOM.getDocument(pierce) tree — the top document plus each iframe's
+// contentDocument (including cross-origin frames, which CDP exposes).
+func collectDocumentNodeIDs(node map[string]any, out *[]float64) {
+	if strings.EqualFold(asStr(node["nodeName"]), "#document") {
+		if id, ok := node["nodeId"].(float64); ok {
+			*out = append(*out, id)
+		}
+	}
+	if kids, ok := node["children"].([]any); ok {
+		for _, k := range kids {
+			if km, ok := k.(map[string]any); ok {
+				collectDocumentNodeIDs(km, out)
+			}
+		}
+	}
+	if cd, ok := node["contentDocument"].(map[string]any); ok {
+		collectDocumentNodeIDs(cd, out)
+	}
+}
+
+// cdpContentQuad returns the first content quad (8 floats) of a node, or
+// ok=false when the node has no layout box (not visible / zero-size / detached).
+func (s *wdSession) cdpContentQuad(nodeID float64) ([]float64, bool) {
+	res, err := s.cdpExec("DOM.getContentQuads", map[string]any{"nodeId": nodeID})
+	if err != nil {
+		return nil, false
+	}
+	m, _ := res.(map[string]any)
+	qs, _ := m["quads"].([]any)
+	if len(qs) == 0 {
+		return nil, false
+	}
+	q, _ := qs[0].([]any)
+	if len(q) < 8 {
+		return nil, false
+	}
+	out := make([]float64, 8)
+	for i := 0; i < 8; i++ {
+		f, ok := q[i].(float64)
+		if !ok {
+			return nil, false
+		}
+		out[i] = f
+	}
+	return out, true
+}
+
+// cdpQueryCSS finds nodes matching a CSS selector in every document of the
+// pierced frame tree (top + each contentDocument), flattening the results.
+func (s *wdSession) cdpQueryCSS(selector string) ([]float64, error) {
+	res, err := s.cdpExec("DOM.getDocument", map[string]any{"depth": -1, "pierce": true})
+	if err != nil {
+		return nil, err
+	}
+	m, _ := res.(map[string]any)
+	root, _ := m["root"].(map[string]any)
+	if root == nil {
+		return nil, nil
+	}
+	var docIDs []float64
+	collectDocumentNodeIDs(root, &docIDs)
+	var out []float64
+	for _, docID := range docIDs {
+		qres, qerr := s.cdpExec("DOM.querySelectorAll", map[string]any{"nodeId": docID, "selector": selector})
+		if qerr != nil {
+			continue // a re-navigated/detached document can error; skip it
+		}
+		qm, _ := qres.(map[string]any)
+		arr, _ := qm["nodeIds"].([]any)
+		out = append(out, toFloatSlice(arr)...)
+	}
+	return out, nil
+}
+
+// cdpSearchXPath finds nodes matching an XPath across the whole pierced tree via
+// DOM.performSearch (the only frame-piercing XPath primitive in the DOM domain).
+func (s *wdSession) cdpSearchXPath(query string) ([]float64, error) {
+	res, err := s.cdpExec("DOM.performSearch", map[string]any{"query": query, "includeUserAgentShadowDOM": true})
+	if err != nil {
+		return nil, err
+	}
+	m, _ := res.(map[string]any)
+	searchID, _ := m["searchId"].(string)
+	count, _ := m["resultCount"].(float64)
+	if searchID == "" || count <= 0 {
+		if searchID != "" {
+			_, _ = s.cdpExec("DOM.discardSearchResults", map[string]any{"searchId": searchID})
+		}
+		return nil, nil
+	}
+	defer func() { _, _ = s.cdpExec("DOM.discardSearchResults", map[string]any{"searchId": searchID}) }()
+	got, err := s.cdpExec("DOM.getSearchResults", map[string]any{"searchId": searchID, "fromIndex": 0, "toIndex": int(count)})
+	if err != nil {
+		return nil, err
+	}
+	gm, _ := got.(map[string]any)
+	arr, _ := gm["nodeIds"].([]any)
+	return toFloatSlice(arr), nil
+}
+
+// cdpLocate finds the first laid-out element matching (by,value) anywhere in the
+// page including nested cross-origin frames, returning its nodeId + content
+// quad. found=false (with nil error) means no visible match yet.
+func (s *wdSession) cdpLocate(by, value string) (nodeID float64, quad []float64, found bool, err error) {
+	query, useXPath, err := cdpQuery(by, value)
+	if err != nil {
+		return 0, nil, false, err
+	}
+	var ids []float64
+	if useXPath {
+		ids, err = s.cdpSearchXPath(query)
+	} else {
+		ids, err = s.cdpQueryCSS(query)
+	}
+	if err != nil {
+		return 0, nil, false, err
+	}
+	for _, id := range ids {
+		if q, ok := s.cdpContentQuad(id); ok {
+			return id, q, true, nil
+		}
+	}
+	return 0, nil, false, nil
+}
