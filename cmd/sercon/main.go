@@ -419,10 +419,14 @@ func registerSurface(e *scriptengine.Engine) error {
 		return err
 	}
 	if err := e.RegisterNamespaceFactory("fs", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return map[string]any{
+		m := map[string]any{
 			"path":    pathNamespace(vm),
 			"archive": archiveNamespace(vm, loop),
 		}
+		for k, v := range fileNamespace(vm, loop) {
+			m[k] = v
+		}
+		return m
 	}); err != nil {
 		return err
 	}
