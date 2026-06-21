@@ -131,7 +131,8 @@ type wdSession struct {
 	wd      selenium.WebDriver
 	svc     *selenium.Service
 	reg     *wdRegistry
-	baseURL string // <scheme>://host:port[/wd/hub] — for raw s.command requests
+	baseURL string  // <scheme>://host:port[/wd/hub] — for raw s.command requests
+	browser string  // "chrome" | "firefox" — resolved in connect; gates CDP methods
 	mu      sync.Mutex
 	closed  atomic.Bool
 
@@ -265,6 +266,7 @@ func (r *wdRegistry) connect(vm *goja.Runtime, loop *eventloop.EventLoop) func(c
 		s := &wdSession{
 			wd: wd, svc: svc, reg: r,
 			baseURL:    strings.TrimRight(url, "/"),
+			browser:    browser,
 			ctx:        ctx,
 			cancel:     cancel,
 			cmdTimeout: wdCommandTimeout(opts),
