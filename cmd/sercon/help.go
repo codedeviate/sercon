@@ -1282,10 +1282,25 @@ await d.cdpClick("xpath", '//button[normalize-space()="Pay order"]', { timeout: 
 const ver = await d.cdp("Browser.getVersion", {});`)
 	note("cdpClick = locate across the pierced frame tree (DOM.getDocument{pierce}/performSearch) + DOM.getContentQuads + a trusted Input.dispatchMouseEvent. Use it when clickWhenReady throws 'element click intercepted' inside nested cross-origin frames.")
 
+	header(66, "Clicks across out-of-process iframes (OOPIFs)")
+	code(`// A cross-site iframe (e.g. a Klarna Checkout on another domain) runs
+// out-of-process; chromedriver's page-session CDP can't reach it. cdpClick
+// now dispatches input over a browser-level CDP connection, which is
+// hit-tested across OOPIF boundaries. targets()/attach() expose the targets.
+const d = await services.webdriver.connect({ browser: "chrome" });
+await d.get(shopUrl);
+await d.cdpClick("xpath", '//button[normalize-space()="Pay order"]', { timeout: 8000 });
+// Inspect / drive a specific OOPIF target directly:
+const t = (await d.targets()).find(t => /klarna/.test(t.url));
+const s = await d.attach(t);
+await s.cdp("Runtime.evaluate", { expression: "location.href", returnByValue: true });
+await s.detach();`)
+	note("A true OOPIF requires a cross-SITE iframe (different eTLD+1) — a different port is same-site and stays in-process. cdpClick attaches to every page/iframe target and clicks in the one that owns the element.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 65
+const exampleCount = 66

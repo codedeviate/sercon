@@ -732,6 +732,11 @@ No browser bundled; drivers must be installed separately.
   locate across the pierced frame tree + `DOM.getContentQuads` +
   `Input.dispatchMouseEvent`. Raw `cdp(command, params?)` escape hatch alongside.
   Chrome-only. (Resolves feedback 0004's remaining activation blocker.)
+- **Cross-OOPIF clicks + target API (v0.61.0)** — `cdpClick` reaches buttons
+  inside true out-of-process iframes (cross-site, e.g. Klarna Checkout) by
+  dispatching input over a browser-level CDP WebSocket; `targets()`/`attach()`
+  expose CDP targets/sessions. (Closes 0005; v0.60.0's same-site fixture never
+  exercised the OOPIF path.)
 
 ---
 

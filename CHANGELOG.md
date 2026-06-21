@@ -8,6 +8,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `services.webdriver` `cdpClick` now activates elements inside true
+  out-of-process iframes (OOPIFs) — cross-*site* iframes such as a Klarna
+  Checkout — by dispatching input over a browser-level CDP connection. (v0.60.0
+  only handled same-process iframes; a different port is same-site and stays
+  in-process.)
+- `services.webdriver` session `targets()` and `attach(target)` →
+  `{ targetId, sessionId, cdp(method, params?), detach() }` — a scriptable
+  browser-level CDP target/session API (Chrome-only).
+
 ## [0.60.0] — 2026-06-21
 
 ### Added
