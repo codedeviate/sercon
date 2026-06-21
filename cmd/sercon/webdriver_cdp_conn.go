@@ -116,6 +116,8 @@ func (c *cdpConn) call(sessionID, method string, params map[string]any) (json.Ra
 	err = c.conn.Write(c.ctx, websocket.MessageText, b)
 	c.writeMu.Unlock()
 	if err != nil {
+		// readLoop may have already removed this id; delete is then a no-op.
+		// (The browser never got the command, so no real response can arrive.)
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
@@ -136,8 +138,12 @@ func (c *cdpConn) callMap(sessionID, method string, params map[string]any) (map[
 		return nil, err
 	}
 	var m map[string]any
-	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &m)
+	// An absent/null result (some commands return none) leaves m nil; a present
+	// result must be a JSON object — surface a decode failure rather than hide it.
+	if len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &m); err != nil {
+			return nil, fmt.Errorf("cdp: decoding %s result: %w", method, err)
+		}
 	}
 	return m, nil
 }
