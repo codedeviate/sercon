@@ -73,6 +73,7 @@ Or pick individual scripts:
 | `webdriver-frames.ts` | `services.webdriver` nested-frame addressing — `frameChain([...])` reaches a deeply nested iframe in one call and the selector form of `switchToFrame` scopes queries to a frame; nested same-origin `data:` iframes (same W3C path as cross-origin); self-skips without a driver. |
 | `webdriver-wait-click.ts` | `services.webdriver` `clickWhenReady` + `waitFor({enabled})` — reliably wait for an async-rendered/enabled button inside a cross-origin iframe, then trusted-click it; self-skips without a driver. |
 | `webdriver-cdp-click.ts` | `services.webdriver` `cdpClick` + raw `cdp()` — a trusted click on a button inside a nested cross-origin iframe (the Klarna "Pay order" case), via CDP `DOM.getContentQuads` + `Input.dispatchMouseEvent`. Chrome-only. |
+| `webdriver-cdp-oopif.ts` | `services.webdriver` `cdpClick` across a true out-of-process iframe (cross-*site*), plus `targets()`/`attach()` — routes input over a browser-level CDP connection (the Klarna "Pay order" case). Chrome-only. |
 | `typst.ts` | `services.typst` — compile inline Typst to PDF bytes + PNG file, version/fonts/query; self-skips without the typst CLI. |
 | `doctor.ts` | `services.doctor()` — report external tool requirements (installed/version/conflict) and assert required features (e.g. `["git"]`); `--doctor` is the CLI form. |
 | `server-http.ts` | `server.http.listen` — minimal HTTP server with routing and middleware (logger); self-tests routes via `net.http.get` then closes. |
