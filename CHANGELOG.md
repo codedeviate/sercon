@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `services.webdriver` session `cdpClick(by, value, opts?)` — a trusted click on
+  an element inside a nested cross-origin iframe (the Klarna "Pay order" case),
+  where the W3C Element Click hit-tests to the parent iframe and is intercepted.
+  Locates across the pierced frame tree and dispatches a CDP
+  `Input.dispatchMouseEvent` at the element's true viewport coords. Chrome-only.
+- `services.webdriver` session `cdp(command, params?)` — raw Chrome DevTools
+  Protocol escape hatch (Chrome-only).
+
 ## [0.59.0] — 2026-06-21
 
 ### Added

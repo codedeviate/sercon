@@ -1269,10 +1269,23 @@ await d.clickWhenReady("css", "button.pay", { timeout: 8000 });
 // waitFor also takes { enabled: true } to wait past a disabled→enabled flip.`)
 	note("clickWhenReady = waitFor(visible+enabled, in the active frame) + a native trusted click. find already follows the frame chain; what made nested-checkout flows flaky was timing, not frame context.")
 
+	header(65, "Trusted clicks in nested cross-origin iframes (cdpClick)")
+	code(`// When the W3C Element Click hit-tests to a parent iframe and throws
+// "element click intercepted" (e.g. a Klarna Checkout "Pay order" deep in
+// nested cross-origin frames), cdpClick locates the element across the whole
+// frame tree and dispatches a trusted CDP mouse click at its real viewport
+// coords. Chrome-only. No switchToFrame needed — it pierces every frame.
+const d = await services.webdriver.connect({ browser: "chrome" });
+await d.get(checkoutUrl);
+await d.cdpClick("xpath", '//button[normalize-space()="Pay order"]', { timeout: 8000 });
+// Raw escape hatch for any other CDP command:
+const ver = await d.cdp("Browser.getVersion", {});`)
+	note("cdpClick = locate across the pierced frame tree (DOM.getDocument{pierce}/performSearch) + DOM.getContentQuads + a trusted Input.dispatchMouseEvent. Use it when clickWhenReady throws 'element click intercepted' inside nested cross-origin frames.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 64
+const exampleCount = 65

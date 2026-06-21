@@ -727,6 +727,11 @@ No browser bundled; drivers must be installed separately.
   and `executeScript` agreed across round-trips / `frameChain` / in-frame
   navigation) — the reported "find doesn't follow the chain" was a timing race,
   not a frame-context bug.
+- **Trusted CDP clicks (v0.60.0)** — `cdpClick` activates elements inside nested
+  cross-origin iframes that the W3C Element Click intercepts (Klarna "Pay order"):
+  locate across the pierced frame tree + `DOM.getContentQuads` +
+  `Input.dispatchMouseEvent`. Raw `cdp(command, params?)` escape hatch alongside.
+  Chrome-only. (Resolves feedback 0004's remaining activation blocker.)
 
 ---
 
