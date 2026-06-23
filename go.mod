@@ -65,6 +65,10 @@ require (
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/Azure/go-ntlmssp v0.1.0 // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
+	github.com/PuerkitoBio/goquery v1.8.0 // indirect
+	github.com/andybalholm/cascadia v1.3.1 // indirect
+	github.com/antchfx/htmlquery v1.3.6 // indirect
+	github.com/antchfx/xpath v1.3.6 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cention-sany/utf7 v0.0.0-20170124080048-26cad61bd60a // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -84,6 +88,7 @@ require (
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
@@ -91,6 +96,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jaytaylor/html2text v0.0.0-20230321000545-74c2419ad056 // indirect
+	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.3 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
@@ -101,6 +107,10 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
+	github.com/mmcdole/gofeed v1.3.0 // indirect
+	github.com/mmcdole/goxpp v1.1.1-0.20240225020742-a0c311522b23 // indirect
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/paulmach/orb v0.12.0 // indirect
