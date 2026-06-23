@@ -39,7 +39,7 @@ async function apiRequest(method, path, ctx, body, extraHeaders) {
   }
   const authHeaders = ctx.sign(method, path, bodyStr);
   for (const k in authHeaders) headers[k] = authHeaders[k];
-  const url = path.indexOf("http") === 0 ? path : ctx.baseUrl + path;
+  const url = path.startsWith("http://") || path.startsWith("https://") ? path : ctx.baseUrl + path;
   const res = await net.http.request(method, url, {
     headers,
     body: bodyStr,
@@ -245,7 +245,7 @@ __export(client_exports5, {
 function findOperation(payload, rel) {
   const ops = payload && payload.operations || payload && payload.paymentOrder && payload.paymentOrder.operations || [];
   for (const op of ops) {
-    if (op && typeof op.rel === "string" && (op.rel === rel || op.rel.endsWith(rel))) {
+    if (op && typeof op.rel === "string" && (op.rel === rel || op.rel.endsWith("-" + rel))) {
       return { rel: op.rel, href: String(op.href), method: String(op.method || "POST") };
     }
   }
