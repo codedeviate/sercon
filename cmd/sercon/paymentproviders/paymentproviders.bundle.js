@@ -70,6 +70,9 @@ function pickBaseUrl(env, baseUrl, testUrl, prodUrl) {
 }
 
 // cmd/sercon/paymentproviders/core/crypto.ts
+function sha512HexUpper(input) {
+  return crypto.hash.sha512(input).toUpperCase();
+}
 function basicAuth(user, pass) {
   return "Basic " + text.str.base64Encode(`${user}:${pass}`);
 }
@@ -134,7 +137,44 @@ function client2(overrides = {}) {
     cancelPayment: (id) => apiRequest("PUT", `${p(id)}/terminate`, ctx)
   };
 }
+
+// cmd/sercon/paymentproviders/sveacheckout2/client.ts
+var client_exports3 = {};
+__export(client_exports3, {
+  client: () => client3
+});
+var TEST_URL3 = "https://checkoutapistage.svea.com";
+var PROD_URL3 = "https://checkoutapi.svea.com";
+function sveaTimestamp() {
+  return (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").split(".")[0];
+}
+function client3(overrides = {}) {
+  const merchantId = overrides.merchantId ?? envGet("SCO_MERCHANT_ID");
+  const secretKey = overrides.secretKey ?? envGet("SCO_SECRET_KEY");
+  if (!merchantId) throw new Error("sveacheckout2: SCO_MERCHANT_ID is required (set it in the environment/.env or pass merchantId)");
+  if (!secretKey) throw new Error("sveacheckout2: SCO_SECRET_KEY is required (set it in the environment/.env or pass secretKey)");
+  const env = overrides.env ?? envGet("SCO_ENV");
+  const baseUrl = pickBaseUrl(env, overrides.baseUrl ?? envGet("SCO_BASE_URL"), TEST_URL3, PROD_URL3);
+  const sign = (_m, _p, bodyStr) => {
+    const ts = sveaTimestamp();
+    const hash = sha512HexUpper(bodyStr + secretKey + ts);
+    const token = text.str.base64Encode(`${merchantId}:${hash}`);
+    return { Authorization: "Svea " + token, Timestamp: ts };
+  };
+  const ctx = { baseUrl, provider: "sveacheckout2", sign };
+  const ord = (id) => `/api/orders/${encodeURIComponent(id)}`;
+  return {
+    createOrder: (order) => apiRequest("POST", "/api/orders", ctx, order),
+    getOrder: (id) => apiRequest("GET", ord(id), ctx),
+    getPayment: (id) => apiRequest("GET", ord(id), ctx),
+    // SEAM paths below — confirmed/fixed live later.
+    capturePayment: (id, input) => apiRequest("POST", `${ord(id)}/deliveries`, ctx, { amount: input.amount, rows: input.rows }),
+    refundPayment: (id, input) => apiRequest("POST", `${ord(id)}/credits`, ctx, { amount: input.amount, rows: input.rows }),
+    cancelPayment: (id) => apiRequest("POST", `${ord(id)}/cancel`, ctx)
+  };
+}
 export {
   client_exports as kcov3,
-  client_exports2 as netsv1
+  client_exports2 as netsv1,
+  client_exports3 as sveacheckout2
 };

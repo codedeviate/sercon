@@ -126,6 +126,35 @@ func TestPaymentProviders_NetsMockRoundtrip(t *testing.T) {
 	}
 }
 
+func TestPaymentProviders_SveaSignerRoundtrip(t *testing.T) {
+	eng := newPPEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { sveacheckout2 } from "paymentproviders";
+		const MID = "123123", SECRET = "sharedSecret";
+		let verified = false, sawTimestamp = "";
+		const srv = await server.http.listen({ port: 38273, routes: {
+			"POST /api/orders": (q: any, r: any) => {
+				const ts = q.headers["timestamp"][0];
+				sawTimestamp = ts;
+				const expectHash = crypto.hash.sha512(q.body + SECRET + ts).toUpperCase();
+				const expectToken = "Svea " + text.str.base64Encode(MID + ":" + expectHash);
+				verified = q.headers["authorization"][0] === expectToken;
+				return r.status(201).json({ OrderId: 777 });
+			},
+		}});
+		try {
+			const api = sveacheckout2.client({ merchantId: MID, secretKey: SECRET, baseUrl: "http://127.0.0.1:38273" });
+			const o = await api.createOrder({ Currency: "SEK", amount: 1000 });
+			runtime.assert.equal(o.OrderId, 777, "create parsed");
+			runtime.assert.ok(verified, "Svea token recomputes from the received body+secret+timestamp");
+			runtime.assert.ok(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(sawTimestamp), "timestamp format YYYY-MM-DD HH:MM:SS");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("svea signer roundtrip: %v", err)
+	}
+}
+
 // TestPaymentProviders_DoesNotShadowUserFile ensures the loader only serves the
 // node_modules-resolved bare import, never a user's relative file that happens
 // to be named paymentproviders.ts.
