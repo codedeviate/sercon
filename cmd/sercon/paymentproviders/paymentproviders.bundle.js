@@ -39,7 +39,8 @@ async function apiRequest(method, path, ctx, body, extraHeaders) {
   }
   const authHeaders = ctx.sign(method, path, bodyStr);
   for (const k in authHeaders) headers[k] = authHeaders[k];
-  const res = await net.http.request(method, ctx.baseUrl + path, {
+  const url = path.indexOf("http") === 0 ? path : ctx.baseUrl + path;
+  const res = await net.http.request(method, url, {
     headers,
     body: bodyStr,
     follow: true
