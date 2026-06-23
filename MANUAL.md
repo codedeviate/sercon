@@ -2,7 +2,7 @@
 <h1>sercon</h1>
 <div class="subtitle">User Manual</div>
 <hr>
-<div class="version">Version 0.65.0</div> <!-- x-release-please-version -->
+<div class="version">Version 0.66.0</div> <!-- x-release-please-version -->
 <div class="date">2026-06-23</div>
 <div class="meta">
 Repository · https://github.com/codedeviate/sercon<br>
@@ -8060,7 +8060,7 @@ const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);
 
 ---
 
-*This manual covers sercon v0.65.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.66.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
