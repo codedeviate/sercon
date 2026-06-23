@@ -70,6 +70,28 @@ function pickBaseUrl(env, baseUrl, testUrl, prodUrl) {
 }
 
 // cmd/sercon/paymentproviders/core/crypto.ts
+var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function base64Bytes(bytes) {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i];
+    const b1 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    out += B64[b0 >> 2];
+    out += B64[(b0 & 3) << 4 | b1 >> 4];
+    out += i + 1 < bytes.length ? B64[(b1 & 15) << 2 | b2 >> 6] : "=";
+    out += i + 2 < bytes.length ? B64[b2 & 63] : "=";
+  }
+  return out;
+}
+function hexToBytes(hex) {
+  const out = [];
+  for (let i = 0; i + 1 < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
+  return out;
+}
+function sha256Base64(input) {
+  return base64Bytes(hexToBytes(crypto.hash.sha256(input)));
+}
 function sha512HexUpper(input) {
   return crypto.hash.sha512(input).toUpperCase();
 }
@@ -173,8 +195,32 @@ function client3(overrides = {}) {
     cancelPayment: (id) => apiRequest("POST", `${ord(id)}/cancel`, ctx)
   };
 }
+
+// cmd/sercon/paymentproviders/qlirov2/client.ts
+var client_exports4 = {};
+__export(client_exports4, {
+  client: () => client4
+});
+var TEST_URL4 = "https://pago.qit.nu";
+var PROD_URL4 = "https://payments.qliro.com";
+function client4(overrides = {}) {
+  const apiKey = overrides.apiKey ?? envGet("QLIRO_API_KEY");
+  const apiPassword = overrides.apiPassword ?? envGet("QLIRO_APIPASSWORD");
+  if (!apiKey) throw new Error("qlirov2: QLIRO_API_KEY is required (set it in the environment/.env or pass apiKey)");
+  if (!apiPassword) throw new Error("qlirov2: QLIRO_APIPASSWORD is required (set it in the environment/.env or pass apiPassword)");
+  const env = overrides.env ?? envGet("QLIRO_ENV");
+  const baseUrl = pickBaseUrl(env, overrides.baseUrl ?? envGet("QLIRO_BASE_URL"), TEST_URL4, PROD_URL4);
+  const sign = (_m, _p, bodyStr) => ({ Authorization: "Qliro " + sha256Base64(bodyStr + apiPassword) });
+  const ctx = { baseUrl, provider: "qlirov2", sign };
+  return {
+    createOrder: (order) => apiRequest("POST", "/checkout/merchantapi/Orders", ctx, { MerchantApiKey: apiKey, ...order }),
+    getOrder: (id) => apiRequest("POST", "/checkout/merchantapi/Orders/GetOrder", ctx, { MerchantApiKey: apiKey, OrderId: id }),
+    getPayment: (id) => apiRequest("POST", "/checkout/merchantapi/Orders/GetOrder", ctx, { MerchantApiKey: apiKey, OrderId: id })
+  };
+}
 export {
   client_exports as kcov3,
   client_exports2 as netsv1,
+  client_exports4 as qlirov2,
   client_exports3 as sveacheckout2
 };

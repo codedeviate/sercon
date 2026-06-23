@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -152,6 +154,33 @@ func TestPaymentProviders_SveaSignerRoundtrip(t *testing.T) {
 	`)
 	if err != nil {
 		t.Fatalf("svea signer roundtrip: %v", err)
+	}
+}
+
+func TestPaymentProviders_QliroSignerRoundtrip(t *testing.T) {
+	eng := newPPEngine(t)
+	// The client sends createOrder({"OrderId":0}) → serialized body is
+	// {"MerchantApiKey":"K","OrderId":0} (object key order = insertion order).
+	const secret = "apipw_123"
+	body := `{"MerchantApiKey":"K","OrderId":0}`
+	sum := sha256.Sum256([]byte(body + secret))
+	wantAuth := "Qliro " + base64.StdEncoding.EncodeToString(sum[:])
+	script := `
+		import { qlirov2 } from "paymentproviders";
+		let sawAuth = "", sawBody = "";
+		const srv = await server.http.listen({ port: 38274, routes: {
+			"POST /checkout/merchantapi/Orders": (q: any, r: any) => { sawAuth = q.headers["authorization"][0]; sawBody = q.body; return r.json({ OrderId: 999 }); },
+		}});
+		try {
+			const api = qlirov2.client({ apiKey: "K", apiPassword: "` + secret + `", baseUrl: "http://127.0.0.1:38274" });
+			const o = await api.createOrder({ OrderId: 0 });
+			runtime.assert.equal(o.OrderId, 999, "create parsed");
+			runtime.assert.equal(sawBody, ` + "`" + body + "`" + `, "serialized body matches expectation");
+			runtime.assert.equal(sawAuth, "` + wantAuth + `", "Qliro token equals independent SHA256-base64 vector");
+		} finally { await srv.close(); }
+	`
+	if _, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), script); err != nil {
+		t.Fatalf("qliro signer roundtrip: %v", err)
 	}
 }
 
