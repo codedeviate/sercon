@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.65.0] — 2026-06-23
+
 ### Added
 
 - `paymentproviders` Cycle 3 — `swedbankpayv2` + `swedbankpayv3` (SwedbankPay
