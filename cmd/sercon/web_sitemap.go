@@ -7,6 +7,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -61,8 +63,7 @@ func urlEntry(loc, lastmod, changefreq, priority string) map[string]any {
 		m["changefreq"] = changefreq
 	}
 	if priority != "" {
-		var p float64
-		if _, err := fmt.Sscanf(priority, "%g", &p); err == nil {
+		if p, err := strconv.ParseFloat(strings.TrimSpace(priority), 64); err == nil {
 			m["priority"] = p
 		}
 	}
@@ -105,6 +106,8 @@ func parseSitemap(data []byte) (map[string]any, error) {
 // loadSitemap parses data and, when expand is true and it's an index, fetches
 // each child sitemap (bounded by maxSitemapChildren), gunzips, and merges their
 // urls into the result. Per-child failures are captured in errors[], not thrown.
+// Children that are themselves sitemapindex documents yield 0 urls — expansion is
+// limited to one level (their child sitemaps are not recursed).
 func loadSitemap(ctx context.Context, data []byte, optsMap map[string]any, expand bool) (map[string]any, error) {
 	sm, err := parseSitemap(data)
 	if err != nil {
