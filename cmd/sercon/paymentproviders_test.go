@@ -185,6 +185,46 @@ func TestPaymentProviders_QliroSignerRoundtrip(t *testing.T) {
 	}
 }
 
+func TestPaymentProviders_SwedbankPayHALRoundtrip(t *testing.T) {
+	eng := newPPEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { swedbankpayv3 } from "paymentproviders";
+		const base = "http://127.0.0.1:38278";
+		let createAuth = "", capPath = "", capAuth = "", capBody = "";
+		const srv = await server.http.listen({ port: 38278, routes: {
+			"POST /psp/paymentorders": (q: any, r: any) => {
+				createAuth = q.headers["authorization"][0];
+				return r.status(201).json({ paymentOrder: { id: "/psp/paymentorders/abc", operations: [
+					{ rel: "view-paymentorder", href: base + "/psp/paymentorders/abc", method: "GET" },
+					{ rel: "create-paymentorder-capture", href: base + "/psp/paymentorders/abc/captures", method: "POST" }
+				]}});
+			},
+			"POST /psp/paymentorders/abc/captures": (q: any, r: any) => {
+				capPath = q.path; capAuth = q.headers["authorization"][0]; capBody = q.body;
+				return r.status(201).json({ capture: { id: "cap1" } });
+			},
+		}});
+		try {
+			const api = swedbankpayv3.client({ accessToken: "tok123", merchantId: "m1", baseUrl: base });
+			const po = await api.createPaymentOrder({ paymentorder: { amount: 1000 } });
+			runtime.assert.equal(createAuth, "Bearer tok123", "bearer on create");
+
+			const cap = await api.capturePayment(po, { transaction: { amount: 1000 } });
+			runtime.assert.equal(cap.capture.id, "cap1", "capture parsed");
+			runtime.assert.equal(capAuth, "Bearer tok123", "bearer on capture");
+			runtime.assert.ok(capPath.indexOf("/psp/paymentorders/abc/captures") >= 0, "POSTed to the operation href");
+			runtime.assert.equal(JSON.parse(capBody).transaction.amount, 1000, "capture body forwarded");
+
+			let threw = false;
+			try { await api.operation(po, "no-such-op", {}); } catch (e) { threw = String(e).includes("not available"); }
+			runtime.assert.ok(threw, "missing operation throws");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("swedbankpay HAL roundtrip: %v", err)
+	}
+}
+
 // TestPaymentProviders_DoesNotShadowUserFile ensures the loader only serves the
 // node_modules-resolved bare import, never a user's relative file that happens
 // to be named paymentproviders.ts.

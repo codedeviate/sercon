@@ -234,9 +234,73 @@ function client4(overrides = {}) {
     cancelPayment: (orderId) => apiRequest("POST", "/checkout/adminapi/v2/cancelOrder", ctx, mgmt(orderId, {}))
   };
 }
+
+// cmd/sercon/paymentproviders/swedbankpayv2/client.ts
+var client_exports5 = {};
+__export(client_exports5, {
+  client: () => client5
+});
+
+// cmd/sercon/paymentproviders/core/hal.ts
+function findOperation(payload, rel) {
+  const ops = payload && payload.operations || payload && payload.paymentOrder && payload.paymentOrder.operations || [];
+  for (const op of ops) {
+    if (op && typeof op.rel === "string" && (op.rel === rel || op.rel.endsWith(rel))) {
+      return { rel: op.rel, href: String(op.href), method: String(op.method || "POST") };
+    }
+  }
+  return void 0;
+}
+
+// cmd/sercon/paymentproviders/swedbankpay/common.ts
+var TEST_URL5 = "https://api.externalintegration.payex.com";
+var PROD_URL5 = "https://api.payex.com";
+function buildClient(overrides, ver) {
+  const accessToken = overrides.accessToken ?? envGet("SWEDBANKPAY_ACCESS_TOKEN");
+  const merchantId = overrides.merchantId ?? envGet("SWEDBANKPAY_MERCHANT_ID");
+  if (!accessToken) throw new Error(`${ver.version}: SWEDBANKPAY_ACCESS_TOKEN is required (set it in the environment/.env or pass accessToken)`);
+  if (!merchantId) throw new Error(`${ver.version}: SWEDBANKPAY_MERCHANT_ID is required (set it in the environment/.env or pass merchantId)`);
+  const env = overrides.env ?? envGet("SWEDBANKPAY_ENV");
+  const baseUrl = pickBaseUrl(env, overrides.baseUrl ?? envGet("SWEDBANKPAY_BASE_URL"), TEST_URL5, PROD_URL5);
+  const ctx = { baseUrl, provider: ver.version, sign: () => ({ Authorization: "Bearer " + accessToken }) };
+  const getPaymentOrder = (idOrUrl) => apiRequest("GET", idOrUrl, ctx);
+  const operation = async (paymentOrderOrUrl, rel, body) => {
+    const po = typeof paymentOrderOrUrl === "string" ? await getPaymentOrder(paymentOrderOrUrl) : paymentOrderOrUrl;
+    const op = findOperation(po, rel);
+    if (!op) throw new Error(`${ver.version}: operation '${rel}' is not available on this payment order`);
+    return apiRequest(op.method, op.href, ctx, body);
+  };
+  return {
+    merchantId,
+    createPaymentOrder: (body) => apiRequest("POST", ver.createPath, ctx, body),
+    getPaymentOrder,
+    getPayment: getPaymentOrder,
+    operation,
+    // rel names are SEAMs — confirmed live.
+    capturePayment: (poOrUrl, body) => operation(poOrUrl, "capture", body),
+    refundPayment: (poOrUrl, body) => operation(poOrUrl, "reversal", body),
+    cancelPayment: (poOrUrl, body) => operation(poOrUrl, "cancel", body)
+  };
+}
+
+// cmd/sercon/paymentproviders/swedbankpayv2/client.ts
+function client5(overrides = {}) {
+  return buildClient(overrides, { version: "swedbankpayv2", createPath: "/psp/paymentorders" });
+}
+
+// cmd/sercon/paymentproviders/swedbankpayv3/client.ts
+var client_exports6 = {};
+__export(client_exports6, {
+  client: () => client6
+});
+function client6(overrides = {}) {
+  return buildClient(overrides, { version: "swedbankpayv3", createPath: "/psp/paymentorders" });
+}
 export {
   client_exports as kcov3,
   client_exports2 as netsv1,
   client_exports4 as qlirov2,
-  client_exports3 as sveacheckout2
+  client_exports3 as sveacheckout2,
+  client_exports5 as swedbankpayv2,
+  client_exports6 as swedbankpayv3
 };
