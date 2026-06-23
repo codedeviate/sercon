@@ -2468,8 +2468,9 @@ errors[] }`. `urls` entries are `{ loc, lastmod?, changefreq?,
 priority? }`; an index lists child sitemap URLs in `sitemaps`. `load`
 detects gzip by magic bytes on the body (a `Content-Encoding: gzip`
 response is already unwrapped by the HTTP transport). For an index,
-pass `{ expand: true }` to fetch every child sitemap (bounded
-recursion) and merge their URLs into `urls`; per-child fetch/parse
+pass `{ expand: true }` to fetch every child sitemap (bounded,
+single-level expansion — a child that is itself a `sitemapindex` is
+not recursed) and merge their URLs into `urls`; per-child fetch/parse
 failures are collected in `errors[]` rather than thrown.
 
 #### `web.html`
