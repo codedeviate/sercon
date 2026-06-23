@@ -278,8 +278,8 @@ func classifyErr(err error) int {
 	}
 }
 
-// registerSurface wires sercon's ten top-level script-facing globals:
-// runtime, crypto, text, codec, fs, net, db, server, services, tui.
+// registerSurface wires sercon's twelve top-level script-facing globals:
+// runtime, crypto, text, codec, fs, net, db, server, services, tui, image, web.
 // Each is registered via RegisterNamespaceFactory so per-Run
 // constructions that need the loop (Promise-returning bindings, TUI
 // controller, server listeners) get fresh state every run. JSDoc lives
@@ -507,6 +507,11 @@ func registerSurface(e *scriptengine.Engine) error {
 	}); err != nil {
 		return err
 	}
+	if err := e.RegisterNamespaceFactory("web", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return webNamespace(vm, loop)
+	}); err != nil {
+		return err
+	}
 	if err := e.RegisterNamespaceFactory("server", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return serverNamespace(vm, loop, e)
 	}); err != nil {
@@ -535,6 +540,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("tui", tuiDocs())
 	e.SetDocs("image", "Image decode/encode (PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in) and a chainable Image handle: resize/crop/rotate/flip/adjust/filter/compose.")
 	e.SetMemberDocsStructured("image", imageDocs())
+	e.SetDocs("web", "Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).")
+	e.SetMemberDocsStructured("web", webDocs())
 	e.SetDocs("server", "Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.")
 	e.SetMemberDocsStructured("server", serverDocs())
 	e.SetDocs("console", "Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.")

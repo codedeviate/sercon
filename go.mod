@@ -9,6 +9,8 @@ require (
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/andybalholm/brotli v1.2.1
+	github.com/andybalholm/cascadia v1.3.1
+	github.com/antchfx/htmlquery v1.3.6
 	github.com/beevik/ntp v1.5.0
 	github.com/boombuler/barcode v1.1.0
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
@@ -38,6 +40,7 @@ require (
 	github.com/likexian/whois-parser v1.24.21
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/microsoft/go-mssqldb v1.10.0
+	github.com/mmcdole/gofeed v1.3.0
 	github.com/pierrec/lz4/v4 v4.1.26
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/prometheus-community/pro-bing v0.8.0
@@ -66,8 +69,6 @@ require (
 	github.com/Azure/go-ntlmssp v0.1.0 // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
 	github.com/PuerkitoBio/goquery v1.8.0 // indirect
-	github.com/andybalholm/cascadia v1.3.1 // indirect
-	github.com/antchfx/htmlquery v1.3.6 // indirect
 	github.com/antchfx/xpath v1.3.6 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cention-sany/utf7 v0.0.0-20170124080048-26cad61bd60a // indirect
@@ -107,7 +108,6 @@ require (
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
-	github.com/mmcdole/gofeed v1.3.0 // indirect
 	github.com/mmcdole/goxpp v1.1.1-0.20240225020742-a0c311522b23 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect

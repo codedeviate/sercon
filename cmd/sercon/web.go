@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
+	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
 )
 
 // defaultWebUserAgent is sent on web.*.load requests unless the caller
@@ -96,4 +98,16 @@ func loadBytes(ctx context.Context, url string, optsMap map[string]any) ([]byte,
 		return nil, finalURL, fmt.Errorf("web: GET %s: HTTP %d", finalURL, status)
 	}
 	return body, finalURL, nil
+}
+
+// webNamespace builds the `web` reserved global: feed / sitemap / html.
+func webNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+	return map[string]any{
+		"feed":    feedNamespace(vm, loop),
+		"sitemap": sitemapNamespace(vm, loop),
+		"html": map[string]any{
+			"parse": htmlParseBinding(vm),
+			"load":  htmlLoadBinding(vm, loop),
+		},
+	}
 }
