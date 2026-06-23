@@ -99,6 +99,33 @@ func TestPaymentProviders_KcoMockRoundtrip(t *testing.T) {
 	}
 }
 
+func TestPaymentProviders_NetsMockRoundtrip(t *testing.T) {
+	eng := newPPEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { netsv1 } from "paymentproviders";
+		const seen: any[] = [];
+		const srv = await server.http.listen({ port: 38272, routes: {
+			"POST /v1/payments": (q: any, r: any) => { seen.push({ path: q.path, auth: q.headers["authorization"][0], body: q.body }); return r.status(201).json({ paymentId: "pay_1" }); },
+			"GET /v1/payments/pay_1": (q: any, r: any) => { seen.push({ path: q.path, auth: q.headers["authorization"][0] }); return r.json({ payment: { paymentId: "pay_1" } }); },
+			"POST /v1/payments/pay_1/charges": (q: any, r: any) => { seen.push({ path: q.path, body: q.body }); return r.status(201).json({ chargeId: "ch_1" }); },
+		}});
+		try {
+			const api = netsv1.client({ secretKey: "sk_test_123", baseUrl: "http://127.0.0.1:38272" });
+			const created = await api.createPayment({ order: { amount: 1000 } });
+			runtime.assert.equal(created.paymentId, "pay_1", "create parsed");
+			runtime.assert.equal(seen[0].auth, "sk_test_123", "secret key is the Authorization header verbatim");
+			const got = await api.getPayment("pay_1");
+			runtime.assert.equal(got.payment.paymentId, "pay_1", "get parsed");
+			const ch = await api.capturePayment("pay_1", { amount: 1000 });
+			runtime.assert.equal(ch.chargeId, "ch_1", "charge parsed");
+			runtime.assert.equal(JSON.parse(seen[2].body).amount, 1000, "charge body amount");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("nets mock roundtrip: %v", err)
+	}
+}
+
 // TestPaymentProviders_DoesNotShadowUserFile ensures the loader only serves the
 // node_modules-resolved bare import, never a user's relative file that happens
 // to be named paymentproviders.ts.
