@@ -148,6 +148,7 @@ func run(args []string) int {
 	if *verbose {
 		engOpts.Verbose = os.Stderr
 	}
+	engOpts.ModuleLoader = paymentprovidersLoader(engOpts.ModuleLoader)
 	eng := scriptengine.New(engOpts)
 	if err := registerSurface(eng); err != nil {
 		fmt.Fprintln(os.Stderr, "sercon:", err)
