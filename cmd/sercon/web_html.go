@@ -48,25 +48,43 @@ func xpathQueryFirst(root *html.Node, expr string) (*html.Node, error) {
 
 // nodeText returns the concatenated text content of a node (and, for attribute
 // nodes from an XPath //x/@attr match, the attribute value).
-func nodeText(n *html.Node) string { return htmlquery.InnerText(n) }
+func nodeText(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	return htmlquery.InnerText(n)
+}
 
 // nodeOuterHTML renders the node and its subtree as HTML.
-func nodeOuterHTML(n *html.Node) string { return htmlquery.OutputHTML(n, true) }
+func nodeOuterHTML(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	return htmlquery.OutputHTML(n, true)
+}
 
 // nodeInnerHTML renders only the node's children as HTML.
-func nodeInnerHTML(n *html.Node) string { return htmlquery.OutputHTML(n, false) }
+func nodeInnerHTML(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	return htmlquery.OutputHTML(n, false)
+}
 
 // nodeTag returns the lower-cased element name, or "" for non-element nodes
 // (document, text, comment, attribute results).
 func nodeTag(n *html.Node) string {
-	if n.Type == html.ElementNode {
-		return strings.ToLower(n.Data)
+	if n == nil || n.Type != html.ElementNode {
+		return ""
 	}
-	return ""
+	return strings.ToLower(n.Data) // html.Parse already lowercases element names; defensive for programmatically built nodes
 }
 
 // nodeAttr returns an attribute value and whether it was present.
 func nodeAttr(n *html.Node, name string) (string, bool) {
+	if n == nil {
+		return "", false
+	}
 	for _, a := range n.Attr {
 		if a.Key == name {
 			return a.Val, true
@@ -75,11 +93,19 @@ func nodeAttr(n *html.Node, name string) (string, bool) {
 	return "", false
 }
 
-// nodeAttrs returns all attributes of the node as a name→value map.
+// nodeAttrs returns all attributes of the node as a name→value map. Namespaced
+// attributes (e.g. SVG xlink:href) are keyed "namespace:key" to avoid collisions.
 func nodeAttrs(n *html.Node) map[string]string {
+	if n == nil {
+		return map[string]string{}
+	}
 	m := make(map[string]string, len(n.Attr))
 	for _, a := range n.Attr {
-		m[a.Key] = a.Val
+		key := a.Key
+		if a.Namespace != "" {
+			key = a.Namespace + ":" + a.Key
+		}
+		m[key] = a.Val
 	}
 	return m
 }

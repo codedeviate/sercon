@@ -53,3 +53,30 @@ func TestHTML_XPathAndAttributes(t *testing.T) {
 		t.Fatalf("expected error on invalid XPath")
 	}
 }
+
+func TestHTML_NoMatchAndAttrs(t *testing.T) {
+	root, _ := htmlParse(`<div><a class="p" href="/a">A</a></div>`)
+
+	// First-match helpers return (nil, nil) when nothing matches.
+	if n, err := cssQueryFirst(root, "section"); err != nil || n != nil {
+		t.Fatalf("cssQueryFirst no-match = (%v, %v), want (nil, nil)", n, err)
+	}
+	if n, err := xpathQueryFirst(root, "//section"); err != nil || n != nil {
+		t.Fatalf("xpathQueryFirst no-match = (%v, %v), want (nil, nil)", n, err)
+	}
+
+	// Accessors are nil-safe.
+	if nodeText(nil) != "" || nodeTag(nil) != "" {
+		t.Fatalf("accessors not nil-safe")
+	}
+	if _, ok := nodeAttr(nil, "x"); ok {
+		t.Fatalf("nodeAttr(nil) should report absent")
+	}
+
+	// nodeAttrs returns all attributes.
+	a, _ := cssQueryFirst(root, "a")
+	attrs := nodeAttrs(a)
+	if attrs["class"] != "p" || attrs["href"] != "/a" || len(attrs) != 2 {
+		t.Fatalf("nodeAttrs = %v, want {class:p, href:/a}", attrs)
+	}
+}
