@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/dop251/goja"
+)
 
 const tagSoup = `<html><body>
   <ul>
@@ -78,5 +82,24 @@ func TestHTML_NoMatchAndAttrs(t *testing.T) {
 	attrs := nodeAttrs(a)
 	if attrs["class"] != "p" || attrs["href"] != "/a" || len(attrs) != 2 {
 		t.Fatalf("nodeAttrs = %v, want {class:p, href:/a}", attrs)
+	}
+}
+
+func TestHTMLNode_GojaHandle(t *testing.T) {
+	vm := goja.New()
+	root, _ := htmlParse(`<div id="root"><a class="x" href="/p">Hi</a><span>S</span></div>`)
+	if err := vm.Set("doc", newHTMLNode(vm, root)); err != nil {
+		t.Fatalf("set doc: %v", err)
+	}
+	out, err := vm.RunString(`
+		const a = doc.find("a.x");
+		[a.tag(), a.text(), a.attr("href"), a.attr("missing"), doc.findAll("a,span").length,
+		 doc.xpath("//a/@href").text()].join("|")
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out.String() != "a|Hi|/p||2|/p" {
+		t.Fatalf("got %q, want a|Hi|/p||2|/p", out.String())
 	}
 }
