@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -95,5 +96,29 @@ func TestPaymentProviders_KcoMockRoundtrip(t *testing.T) {
 	`)
 	if err != nil {
 		t.Fatalf("kco mock roundtrip: %v", err)
+	}
+}
+
+// TestPaymentProviders_DoesNotShadowUserFile ensures the loader only serves the
+// node_modules-resolved bare import, never a user's relative file that happens
+// to be named paymentproviders.ts.
+func TestPaymentProviders_DoesNotShadowUserFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "paymentproviders.ts"),
+		[]byte(`export const kcov3 = "USER_FILE";`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := scriptengine.Options{ScriptRoot: dir, Timeout: 10 * time.Second}
+	opts.ModuleLoader = paymentprovidersLoader(opts.ModuleLoader)
+	eng := scriptengine.New(opts)
+	if err := registerSurface(eng); err != nil {
+		t.Fatalf("registerSurface: %v", err)
+	}
+	_, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+		import { kcov3 } from "./paymentproviders";
+		if (kcov3 !== "USER_FILE") throw new Error("user file was shadowed: " + JSON.stringify(kcov3));
+	`)
+	if err != nil {
+		t.Fatalf("relative import must resolve to the user's file, not the bundle: %v", err)
 	}
 }
