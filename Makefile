@@ -38,7 +38,7 @@ GOLANGCI_VERSION  ?= v2.12.2
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 
-.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check clean
+.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check paymentproviders paymentproviders-check clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -232,6 +232,12 @@ release-prep:
 	@echo "  4) git tag -a v$(VERSION) -m 'release v$(VERSION)'"
 	@echo "  5) git push origin master v$(VERSION)  # CI publishes binaries via goreleaser"
 
+paymentproviders:        ## bundle the embedded paymentproviders TS library
+	go run ./cmd/ppbundle
+
+paymentproviders-check:  ## fail if the committed paymentproviders bundle is stale
+	go run ./cmd/ppbundle --check
+
 version-check:
 	@const=$$(sed -nE 's|^const Version = "([^"]+)".*$$|\1|p' pkg/scriptengine/version.go); \
 	cover=$$(sed -nE 's|.*<div class="version">Version ([^<]+)</div>.*|\1|p' MANUAL.md); \
@@ -251,6 +257,7 @@ version-check:
 		exit 1; \
 	fi; \
 	echo "version markers in sync at $$const ($${coverdate:-no cover date})"
+	@go run ./cmd/ppbundle --check
 
 clean:
 	rm -f $(BIN) MANUAL.pdf
