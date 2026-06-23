@@ -53,6 +53,9 @@ declare module "paymentproviders" {
       createOrder(order: Record<string, unknown>): Promise<any>;
       getOrder(id: string | number): Promise<any>;
       getPayment(id: string | number): Promise<any>;
+      capturePayment(orderId: string | number, input?: Record<string, unknown>): Promise<any>;
+      refundPayment(orderId: string | number, input?: Record<string, unknown>): Promise<any>;
+      cancelPayment(orderId: string | number): Promise<any>;
     }
     function client(overrides?: QliroConfig): QliroClient;
   }

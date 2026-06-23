@@ -202,7 +202,14 @@ __export(client_exports4, {
   client: () => client4
 });
 var TEST_URL4 = "https://pago.qit.nu";
-var PROD_URL4 = "https://payments.qliro.com";
+var PROD_URL4 = "https://payments.qit.nu";
+function uuidV4() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === "x" ? r : r & 3 | 8;
+    return v.toString(16);
+  });
+}
 function client4(overrides = {}) {
   const apiKey = overrides.apiKey ?? envGet("QLIRO_API_KEY");
   const apiPassword = overrides.apiPassword ?? envGet("QLIRO_APIPASSWORD");
@@ -212,13 +219,18 @@ function client4(overrides = {}) {
   const baseUrl = pickBaseUrl(env, overrides.baseUrl ?? envGet("QLIRO_BASE_URL"), TEST_URL4, PROD_URL4);
   const sign = (_m, _p, bodyStr) => ({ Authorization: "Qliro " + sha256Base64(bodyStr + apiPassword) });
   const ctx = { baseUrl, provider: "qlirov2", sign };
+  const mgmt = (orderId, extra) => ({ RequestId: uuidV4(), OrderId: orderId, ...extra, MerchantApiKey: apiKey });
+  const oid = (id) => `/checkout/merchantapi/Orders/${encodeURIComponent(String(id))}`;
   return {
-    // MerchantApiKey is injected last so the credential is authoritative — a
-    // caller's order object cannot accidentally override it.
+    // createOrder: MerchantApiKey injected last so a caller's order cannot override it.
     createOrder: (order) => apiRequest("POST", "/checkout/merchantapi/Orders", ctx, { ...order, MerchantApiKey: apiKey }),
-    getOrder: (id) => apiRequest("POST", "/checkout/merchantapi/Orders/GetOrder", ctx, { MerchantApiKey: apiKey, OrderId: id }),
-    // getPayment is an alias — for Qliro the order IS the payment.
-    getPayment: (id) => apiRequest("POST", "/checkout/merchantapi/Orders/GetOrder", ctx, { MerchantApiKey: apiKey, OrderId: id })
+    // getOrder is RESTful: GET /Orders/{id}, no body. getPayment is an alias (the order IS the payment).
+    getOrder: (id) => apiRequest("GET", oid(id), ctx),
+    getPayment: (id) => apiRequest("GET", oid(id), ctx),
+    // Admin API v2 management: capture = MarkItemsAsShipped, refund = ReturnItems, cancel = cancelOrder.
+    capturePayment: (orderId, input = {}) => apiRequest("POST", "/checkout/adminapi/v2/MarkItemsAsShipped", ctx, mgmt(orderId, input)),
+    refundPayment: (orderId, input = {}) => apiRequest("POST", "/checkout/adminapi/v2/ReturnItems", ctx, mgmt(orderId, input)),
+    cancelPayment: (orderId) => apiRequest("POST", "/checkout/adminapi/v2/cancelOrder", ctx, mgmt(orderId, {}))
   };
 }
 export {
