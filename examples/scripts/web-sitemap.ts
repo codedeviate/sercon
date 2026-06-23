@@ -4,7 +4,7 @@
 // True for failure signatures that mean "the network/endpoint is unusable
 // here" — distinct from a real binding bug, which is re-thrown.
 function netSkip(e: unknown): boolean {
-  return /deadline|time?out|timed out|connection refused|no such host|dial |i\/o timeout|tls|eof|reset by peer|network is unreachable|unexpected status|HTTP \d/i
+  return /deadline|time?out|timed out|connection refused|no such host|dial |i\/o timeout|tls|eof|reset by peer|network is unreachable|HTTP \d/i
     .test(String(e));
 }
 
