@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -136,7 +137,7 @@ func newHTMLNode(vm *goja.Runtime, n *html.Node) goja.Value {
 	}
 	throwOn := func(err error, kind, expr string) {
 		if err != nil {
-			panic(vm.NewTypeError("web.html: invalid %s %q: %v", kind, expr, err))
+			panic(vm.NewGoError(fmt.Errorf("web.html: invalid %s %q: %v", kind, expr, err)))
 		}
 	}
 
@@ -206,6 +207,9 @@ func htmlLoadBinding(vm *goja.Runtime, loop *eventloop.EventLoop) func(goja.Func
 				optsMap = m
 			}
 		}
+		// url and optsMap are fully extracted into locals above, so (unlike
+		// PromisifyAsync) we don't need to snapshot call.Arguments before the
+		// goroutine — nothing here retains call past this function's return.
 		keepAlive := loop.SetTimeout(func(*goja.Runtime) {}, 24*time.Hour)
 		go func() {
 			body, _, err := loadBytes(context.Background(), url, optsMap)

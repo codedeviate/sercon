@@ -103,3 +103,27 @@ func TestHTMLNode_GojaHandle(t *testing.T) {
 		t.Fatalf("got %q, want a|Hi|/p||2|/p", out.String())
 	}
 }
+
+func TestHTMLNode_GojaExtras(t *testing.T) {
+	vm := goja.New()
+	root, _ := htmlParse(`<div><a class="x" href="/p">Hi</a><span>S</span></div>`)
+	if err := vm.Set("doc", newHTMLNode(vm, root)); err != nil {
+		t.Fatalf("set doc: %v", err)
+	}
+	out, err := vm.RunString(`
+		const a = doc.find("a.x");
+		const missing = doc.find("section");          // no match -> null
+		const firstTag = doc.findAll("a,span")[0].tag(); // chained sub-query on a findAll result
+		[a.attrs().href, a.attrs().class, a.html(), missing === null, firstTag].join("|")
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// htmlquery.OutputHTML renders attributes in source order; verified against
+	// the live library: <a class="x" href="/p">Hi</a>.
+	const wantHTML = `<a class="x" href="/p">Hi</a>`
+	want := `/p|x|` + wantHTML + `|true|a`
+	if out.String() != want {
+		t.Fatalf("got %q, want %q", out.String(), want)
+	}
+}
