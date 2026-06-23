@@ -5,8 +5,16 @@
 *.out
 .DS_Store
 
+# Local secrets / credentials (e.g. payment-provider test creds for the
+# paymentproviders library). Never commit these.
+/.env
+/.env.*
+
 # Local secrets for the sws6 dev-shop scripts (see sws6/.env.example).
 examples/scripts/sws6/.env
+
+# Compiled bundler binary (built by `go build ./cmd/ppbundle`).
+/ppbundle
 
 # Tracked despite a global ignore rule in ~/.gitignore_global.
 !CLAUDE.md
