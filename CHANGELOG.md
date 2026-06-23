@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `paymentproviders` Cycle 2 — three more providers on the shared core (now with a
+  pluggable per-request auth signer): `netsv1` (Nexi/Nets Checkout Payment API v1,
+  secret-key header), `sveacheckout2` (Svea Checkout, SHA512 signature + Timestamp
+  header), `qlirov2` (Qliro One, `Qliro base64(SHA256(body+secret))`). Versioned
+  namespaces (`<provider><version>`) so new API versions ship alongside. Creds from
+  `NETS_*`/`SCO_*`/`QLIRO_*` env.
+
 ## [0.63.0] — 2026-06-23
 
 ### Added

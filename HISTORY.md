@@ -820,3 +820,15 @@ artifact (`cmd/ppbundle` builds it; `make paymentproviders-check` guards drift).
 transport, Basic `merchantId:sharedSecret` auth, `Klarna-Idempotency-Key`,
 `PaymentError`, minor-unit money). Decomposed so Nets/Svea/Qliro (Cycle 2) and
 SwedbankPay (Cycle 3) are additive namespaces.
+
+### Cycle 2 — Nets / Svea / Qliro (v0.64.0)
+
+The core gained a **pluggable per-request signer** (`ctx.sign(method,path,body)
+→ headers`) so each provider supplies its own auth; `kcov3` migrated onto it
+(Basic). Added `netsv1` (secret-key header), `sveacheckout2` (Svea token:
+`base64(merchantId:UPPER(SHA512(body+secret+ts)))` + `Timestamp` header), and
+`qlirov2` (`Qliro base64(SHA256(body+secret))`). A library-local byte-base64
+(`core/crypto.ts`) supplies Qliro's raw-digest base64 (sercon's `crypto.hash`
+returns hex; `text.str.base64Encode` is UTF-8-only). Namespaces are
+**version-labelled** so a new provider API version ships as a sibling. Cycle 3 =
+SwedbankPay (`swedbankpayv2` + `swedbankpayv3`).

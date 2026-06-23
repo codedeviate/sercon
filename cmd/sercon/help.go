@@ -1318,7 +1318,7 @@ const api = kcov3.client();                 // KCO_MERCHANT_ID/KCO_SHARED_SECRET
 const order = await api.getPayment(orderId);
 await api.capturePayment(orderId, { amount: order.order_amount });
 await api.refundPayment(orderId, { amount: 500 });`)
-	note("kcov3 wraps Kustom Order-Management + Checkout (Basic auth, auto idempotency key). Non-2xx throws PaymentError{provider,status,body}. Nets/Svea/Qliro/SwedbankPay planned. See examples/scripts/paymentproviders-kcov3.ts.")
+	note("kcov3 (Kustom), netsv1 (Nets), sveacheckout2 (Svea), qlirov2 (Qliro). Non-2xx throws PaymentError{provider,status,body}. Versioned namespaces; SwedbankPay planned. See examples/scripts/paymentproviders-*.ts.")
 
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))

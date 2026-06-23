@@ -114,6 +114,9 @@ examples/scripts/server-sse.ts \
 	examples/scripts/typst.ts \
 	examples/scripts/doctor.ts \
 	examples/scripts/paymentproviders-kcov3.ts \
+	examples/scripts/paymentproviders-nets.ts \
+	examples/scripts/paymentproviders-svea.ts \
+	examples/scripts/paymentproviders-qliro.ts \
 	examples/scripts/advanced/load-resilience.ts \
 	examples/scripts/advanced/http-api.ts \
 	examples/scripts/advanced/smtp-pipeline.ts \

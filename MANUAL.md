@@ -3516,6 +3516,22 @@ throws a `PaymentError` (`provider`, `status`, parsed `body`, `requestId?`).
 Amounts are integer minor units (öre). Additional providers (Nets, Svea, Qliro,
 SwedbankPay) are planned as additive namespaces.
 
+**Additional providers** (same `client()` + lifecycle shape):
+
+- `netsv1` (Nexi/Nets Checkout Payment API v1) — `createPayment`/`getPayment`/
+  `capturePayment`/`refundPayment`/`cancelPayment`; env `NETS_SECRET_KEY`,
+  `NETS_ENV`; auth = the secret key in the `Authorization` header.
+- `sveacheckout2` (Svea Checkout) — `createOrder`/`getOrder`/`capturePayment`/
+  `refundPayment`/`cancelPayment`; env `SCO_MERCHANT_ID`, `SCO_SECRET_KEY`,
+  `SCO_ENV`; auth = `Svea base64(merchantId:UPPER(SHA512(body+secret+timestamp)))`
+  plus a `Timestamp` header.
+- `qlirov2` (Qliro One) — `createOrder`/`getOrder`/`getPayment`; env
+  `QLIRO_API_KEY`, `QLIRO_APIPASSWORD`, `QLIRO_ENV`; auth =
+  `Qliro base64(SHA256(body+secret))`.
+
+Provider namespaces are version-labelled (e.g. `kcov3`, `netsv1`) so a future API
+version ships alongside (e.g. `netsv2`) without breaking callers.
+
 ## 16. Binding reference (generated)
 
 The per-function reference below is generated from the structured binding

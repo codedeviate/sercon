@@ -92,6 +92,9 @@ Or pick individual scripts:
 | `pty-color.ts` | `services.exec.shell` `{ pty: true }` — run a command under a pseudo-terminal so TTY-gated color output reaches the pane; contrasts with the same command without `pty` (monochrome). Unix only; falls back to pipes on Windows. **Run separately in a real terminal** — headless the PTY pane renders blank (CRLF), so the color contrast only shows on a TTY. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 | `paymentproviders-kcov3.ts` | Bundled `paymentproviders` library — KCO v3 payment lifecycle (`getPayment`/`capturePayment`/`refundPayment`/`cancelPayment`) over a local mock; live check self-skips without `KCO_*` env. |
+| `paymentproviders-nets.ts` | Bundled `paymentproviders` — `netsv1` (Nexi/Nets Checkout v1) create/get over a local mock; live check self-skips without `NETS_SECRET_KEY`. |
+| `paymentproviders-svea.ts` | Bundled `paymentproviders` — `sveacheckout2` (Svea Checkout) create over a mock that verifies the SHA512 signature; live check self-skips without `SCO_*`. |
+| `paymentproviders-qliro.ts` | Bundled `paymentproviders` — `qlirov2` (Qliro One) create over a mock checking the `Qliro` auth header; live check self-skips without `QLIRO_*`. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
 runnable on their own.
