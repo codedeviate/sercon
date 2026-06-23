@@ -132,7 +132,10 @@ examples/scripts/server-sse.ts \
 	examples/scripts/advanced/webdriver-actions.ts \
 	examples/scripts/advanced/webdriver-grid.ts \
 	examples/scripts/advanced/sqlite-migration.ts \
-	examples/scripts/advanced/sse-stream.ts
+	examples/scripts/advanced/sse-stream.ts \
+	examples/scripts/web-feed.ts \
+	examples/scripts/web-sitemap.ts \
+	examples/scripts/web-html.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

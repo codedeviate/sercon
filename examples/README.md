@@ -96,6 +96,9 @@ Or pick individual scripts:
 | `paymentproviders-svea.ts` | Bundled `paymentproviders` — `sveacheckout2` (Svea Checkout) create over a mock that verifies the SHA512 signature; live check self-skips without `SCO_*`. |
 | `paymentproviders-qliro.ts` | Bundled `paymentproviders` — `qlirov2` (Qliro One) create over a mock checking the `Qliro` auth header; live check self-skips without `QLIRO_*`. |
 | `paymentproviders-swedbankpay.ts` | Bundled `paymentproviders` — `swedbankpayv3`/`swedbankpayv2` (Bearer + HAL operations): create a payment order, then `capturePayment` resolves the `capture` operation href and POSTs to it. Live check self-skips without `SWEDBANKPAY_*`. |
+| `web-html.ts` | `web.html` — lenient HTML parse with CSS (`find`/`findAll`) + XPath (`xpath`/`xpathAll`) and chainable nodes (`text`/`attr`/…). Offline always; live `web.html.load` self-skips without a network. |
+| `web-feed.ts` | `web.feed` — RSS/Atom/JSON feeds normalized to one model with a `.raw` escape hatch. Offline always; live `web.feed.load` self-skips without a network. |
+| `web-sitemap.ts` | `web.sitemap` — urlset/sitemapindex parse, gzip, and `{expand:true}` recursion. Offline always; live `web.sitemap.load` self-skips without a network. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
 runnable on their own.
