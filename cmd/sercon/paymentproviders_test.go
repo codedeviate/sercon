@@ -160,9 +160,10 @@ func TestPaymentProviders_SveaSignerRoundtrip(t *testing.T) {
 func TestPaymentProviders_QliroSignerRoundtrip(t *testing.T) {
 	eng := newPPEngine(t)
 	// The client sends createOrder({"OrderId":0}) → serialized body is
-	// {"MerchantApiKey":"K","OrderId":0} (object key order = insertion order).
+	// {"OrderId":0,"MerchantApiKey":"K"} — the client spreads the caller's order
+	// then injects MerchantApiKey last (key order = insertion order).
 	const secret = "apipw_123"
-	body := `{"MerchantApiKey":"K","OrderId":0}`
+	body := `{"OrderId":0,"MerchantApiKey":"K"}`
 	sum := sha256.Sum256([]byte(body + secret))
 	wantAuth := "Qliro " + base64.StdEncoding.EncodeToString(sum[:])
 	script := `

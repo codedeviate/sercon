@@ -213,8 +213,11 @@ function client4(overrides = {}) {
   const sign = (_m, _p, bodyStr) => ({ Authorization: "Qliro " + sha256Base64(bodyStr + apiPassword) });
   const ctx = { baseUrl, provider: "qlirov2", sign };
   return {
-    createOrder: (order) => apiRequest("POST", "/checkout/merchantapi/Orders", ctx, { MerchantApiKey: apiKey, ...order }),
+    // MerchantApiKey is injected last so the credential is authoritative — a
+    // caller's order object cannot accidentally override it.
+    createOrder: (order) => apiRequest("POST", "/checkout/merchantapi/Orders", ctx, { ...order, MerchantApiKey: apiKey }),
     getOrder: (id) => apiRequest("POST", "/checkout/merchantapi/Orders/GetOrder", ctx, { MerchantApiKey: apiKey, OrderId: id }),
+    // getPayment is an alias — for Qliro the order IS the payment.
     getPayment: (id) => apiRequest("POST", "/checkout/merchantapi/Orders/GetOrder", ctx, { MerchantApiKey: apiKey, OrderId: id })
   };
 }

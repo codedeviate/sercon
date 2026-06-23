@@ -29,8 +29,11 @@ export function client(overrides: QliroConfig = {}): QliroClient {
   // SEAM: Qliro's merchant API is RPC-style; the API key rides in the body
   // (MerchantApiKey). Paths + key placement confirmed live later.
   return {
-    createOrder: (order) => apiRequest("POST", "/checkout/merchantapi/Orders", ctx, { MerchantApiKey: apiKey, ...order }),
+    // MerchantApiKey is injected last so the credential is authoritative — a
+    // caller's order object cannot accidentally override it.
+    createOrder: (order) => apiRequest("POST", "/checkout/merchantapi/Orders", ctx, { ...order, MerchantApiKey: apiKey }),
     getOrder: (id) => apiRequest("POST", "/checkout/merchantapi/Orders/GetOrder", ctx, { MerchantApiKey: apiKey, OrderId: id }),
+    // getPayment is an alias — for Qliro the order IS the payment.
     getPayment: (id) => apiRequest("POST", "/checkout/merchantapi/Orders/GetOrder", ctx, { MerchantApiKey: apiKey, OrderId: id }),
   };
 }
