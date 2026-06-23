@@ -1320,10 +1320,23 @@ await api.capturePayment(orderId, { amount: order.order_amount });
 await api.refundPayment(orderId, { amount: 500 });`)
 	note("kcov3 (Kustom), netsv1 (Nets), sveacheckout2 (Svea), qlirov2 (Qliro), swedbankpayv2/v3 (SwedbankPay, HAL operations). Non-2xx throws PaymentError{provider,status,body}. Versioned namespaces. See examples/scripts/paymentproviders-*.ts.")
 
+	header(69, "Fetch & parse web content (web)")
+	code(`// Feeds (RSS/Atom/JSON), sitemaps, and lenient HTML — from a string or URL.
+const feed = await web.feed.load("https://example.com/feed.xml");
+feed.items.forEach(i => console.log(i.title, i.link));
+
+const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });
+console.log(sm.urls.length, "urls");
+
+const doc = await web.html.load("https://example.com");
+doc.findAll("a.product").forEach(a => console.log(a.text(), a.attr("href")));
+doc.xpathAll("//h2").forEach(h => console.log(h.text()));`)
+	note("web.html.parse is lenient (real-world tag soup OK); query with CSS find/findAll or XPath xpath/xpathAll. load() reuses net.http options + a default User-Agent and throws on non-2xx. See examples/scripts/web-*.ts.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 68
+const exampleCount = 69

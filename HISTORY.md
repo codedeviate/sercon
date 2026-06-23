@@ -586,6 +586,26 @@ GIF decode is first-frame; SVG is rasterize-in only. v0.53.0 also pinned
 engine, which rejects the `--unsafe-html` the manual needs). v2 (parked):
 animated GIF/APNG, EXIF/orientation, custom convolution/filters, SVG output.
 
+### `web` (v0.66.0)
+
+The twelfth top-level global — fetch & parse web documents, all pure-Go (no
+cgo). It closes the HTML-scraping gap that `codec.xml` left open: `codec.xml`
+handles strict, well-formed XML, but real-world pages are tag soup and feeds
+arrive in three rival formats. `web` answers with three families, each pairing
+a synchronous `parse(string)` with an async `load(url, opts?)` that GETs first:
+**`web.feed`** parses RSS/Atom/JSON feeds (`mmcdole/gofeed`) into a single
+normalized model — the format quirks (`pubDate`/`updated`, `description`/
+`summary`) unified, with a per-item `raw` escape hatch carrying enclosures and
+namespaced (`media:*`/`dc:*`) extras; **`web.sitemap`** parses urlset /
+sitemapindex documents with transparent `.xml.gz` decompression and a bounded
+`{expand:true}` index recursion that merges child URLs (per-child failures
+collected, not thrown); **`web.html`** parses leniently (`golang.org/x/net/html`)
+into a chainable `Node` queryable by CSS (`andybalholm/cascadia` — `find`/
+`findAll`) or XPath (`antchfx/htmlquery` — `xpath`/`xpathAll`), with accessors
+`text`/`html`/`innerHTML`/`tag`/`attr`/`attrs`. Every `load` reuses the
+`net.http` option surface, sends a default `sercon-web/<version>` User-Agent,
+and throws on non-2xx.
+
 ---
 
 ## 5. Servers (`server.*`)

@@ -116,7 +116,7 @@ func loadSitemap(ctx context.Context, data []byte, optsMap map[string]any, expan
 	if !expand || sm["type"] != "sitemapindex" {
 		return sm, nil
 	}
-	children := sm["sitemaps"].([]string)
+	children, _ := sm["sitemaps"].([]string)
 	merged := make([]map[string]any, 0)
 	errs := make([]map[string]any, 0)
 	fo := parseFetchOpts(optsMap)

@@ -8,6 +8,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `web` — a new reserved global for fetching & parsing web documents, each from a
+  string or a URL: `web.feed` (RSS/Atom/JSON normalized to one model + `.raw`
+  escape hatch), `web.sitemap` (urlset/sitemapindex, transparent gzip,
+  `{expand:true}` bounded index recursion), and `web.html` (lenient HTML parse —
+  real-world tag soup welcome — with chainable nodes queryable by CSS
+  `find`/`findAll` and XPath `xpath`/`xpathAll`). `load()` reuses the `net.http`
+  option surface with a default `sercon-web/<version>` User-Agent and throws on
+  non-2xx. New deps: gofeed, cascadia, antchfx/htmlquery (all pure-Go).
+
 ## [0.65.0] — 2026-06-23
 
 ### Added

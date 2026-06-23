@@ -410,7 +410,7 @@ runs, after the ESM→CJS rewrite + async IIFE wrapper) and every
 module-resolution event, so debugging an unexpected resolve target or a
 mis-rewritten import is straightforward.
 
-The CLI registers eleven reserved top-level globals; see the next section.
+The CLI registers twelve reserved top-level globals; see the next section.
 
 ### `--watch`: re-run on file change
 
@@ -601,13 +601,13 @@ sercon serve --shutdown-timeout 10s server.ts
 
 ## 5. Reserved globals (script surface)
 
-sercon scripts get eleven reserved top-level globals. Use them directly —
+sercon scripts get twelve reserved top-level globals. Use them directly —
 there is no enclosing namespace. The full per-binding reference is the
 generated `examples/scripts/sercon.d.ts`; this section is the at-a-glance
 prose.
 
 **Reserved names:** `runtime`, `crypto`, `text`, `codec`, `fs`, `net`,
-`db`, `server`, `services`, `tui`, `image`. User code can shadow these with a
+`db`, `server`, `services`, `tui`, `image`, `web`. User code can shadow these with a
 local `let`/`const`/`var` per normal JavaScript scoping — sercon does
 not intervene at runtime. `server` (added in v0.10.0) covers inbound
 listeners — see [section 6](#6-servers) for the long-form treatment.
@@ -622,7 +622,7 @@ internally.
 
 ### `console` (browser/Node compatibility)
 
-Beyond the eleven reserved globals, sercon provides a `console` global so
+Beyond the twelve reserved globals, sercon provides a `console` global so
 scripts pasted from a browser or Node run unchanged:
 
 | Method | Stream |
@@ -2424,6 +2424,95 @@ const png = im.crop(0, 0, 64, 64).bytes("png"); // → Uint8Array
 Pure-Go stack: `disintegration/imaging` + `golang.org/x/image`
 (webp/tiff/bmp decode) + `HugoSmits86/nativewebp` (webp encode) +
 `srwiley/oksvg`+`rasterx` (SVG). No cgo.
+
+### `web`
+
+Fetch & parse web documents. Three families — `web.feed` (RSS/Atom/JSON
+feeds), `web.sitemap` (sitemaps), and `web.html` (lenient HTML scraping)
+— each exposing a synchronous `parse(string)` and an async
+`load(url, opts?)`. `parse` works on a string you already have; `load`
+GETs the URL first, then parses the body. This closes the
+HTML-scraping gap that `codec.xml` (strict XML only) left open. All
+pure-Go, no cgo.
+
+**Shared fetch options.** Every `load(url, opts?)` reuses the `net.http`
+option surface — `timeout` (ms number or duration string), `headers`,
+`follow` (redirects), `userAgent`, and basic-auth `username`/`password`
+— and sends a default `sercon-web/<version>` User-Agent unless you
+override it. A non-2xx response throws.
+
+#### `web.feed`
+
+| Function | Returns | Notes |
+|---|---|---|
+| `web.feed.parse(source)` | `Feed` | Parse RSS, Atom, or JSON-feed text; format auto-detected (`feedType` reports it). |
+| `web.feed.load(url, opts?)` | `Promise<Feed>` | Fetch then parse. |
+
+`Feed` is normalized to one model regardless of source format — the
+RSS/Atom field differences (`pubDate`/`updated`, `description`/`summary`)
+are unified: `{ feedType, title, description, link, updated, items[] }`.
+Each item is `{ title, link, published, updated, content, summary,
+author, guid, categories[], raw }`. The `raw` object is the escape
+hatch carrying format-specific extras (enclosures, namespaced elements
+like `media:*` / `dc:*`) that the normalized model drops.
+
+#### `web.sitemap`
+
+| Function | Returns | Notes |
+|---|---|---|
+| `web.sitemap.parse(source)` | `Sitemap` | Parse a `urlset` or `sitemapindex` document. |
+| `web.sitemap.load(url, opts?)` | `Promise<Sitemap>` | Fetch then parse; transparently decompresses `.xml.gz`. |
+
+`Sitemap` is `{ type: "urlset" | "sitemapindex", urls[], sitemaps[],
+errors[] }`. `urls` entries are `{ loc, lastmod?, changefreq?,
+priority? }`; an index lists child sitemap URLs in `sitemaps`. `load`
+detects gzip by magic bytes on the body (a `Content-Encoding: gzip`
+response is already unwrapped by the HTTP transport). For an index,
+pass `{ expand: true }` to fetch every child sitemap (bounded
+recursion) and merge their URLs into `urls`; per-child fetch/parse
+failures are collected in `errors[]` rather than thrown.
+
+#### `web.html`
+
+| Function | Returns | Notes |
+|---|---|---|
+| `web.html.parse(source)` | `Node` | Parse HTML leniently — real-world tag soup is accepted, never throws on bad markup. |
+| `web.html.load(url, opts?)` | `Promise<Node>` | Fetch then parse. |
+
+`parse`/`load` return a chainable **Node** rooted at the document.
+Query it with CSS or XPath, read it with the accessor methods:
+
+| Method | Effect |
+|---|---|
+| `find(selector)` | First CSS match (or `null`). |
+| `findAll(selector)` | All CSS matches as a `Node[]`. |
+| `xpath(expr)` | First XPath match (or `null`). |
+| `xpathAll(expr)` | All XPath matches as a `Node[]`. |
+| `text()` | Concatenated text content. |
+| `html()` | Outer HTML of the node. |
+| `innerHTML()` | Inner HTML (children only). |
+| `tag()` | Tag name. |
+| `attr(name)` | Attribute value (or `null`). |
+| `attrs()` | All attributes as a `Record<string, string>`. |
+
+Sub-queries are scoped to the receiver node — use `.//` for relative
+XPath; a leading `//` is document-wide.
+
+```ts
+const feed = await web.feed.load("https://example.com/feed.xml");
+feed.items.forEach(i => console.log(i.title, i.link));
+
+const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });
+console.log(sm.urls.length, "urls");
+
+const doc = await web.html.load("https://example.com");
+doc.findAll("a.product").forEach(a => console.log(a.text(), a.attr("href")));
+doc.xpathAll("//h2").forEach(h => console.log(h.text()));
+```
+
+Pure-Go stack: `mmcdole/gofeed` (feeds) + `andybalholm/cascadia`
+(CSS selectors over `golang.org/x/net/html`) + `antchfx/htmlquery`
+(XPath). No cgo.
 
 ## 6. Servers
 
@@ -7838,6 +7927,133 @@ Resolve with the next keypress (TTY mode). One-shot — await again for the next
 tui.layout({ rows: [{ name: "log" }] });
 tui.pane("log").writeln("Done. Press any key to close.");
 await tui.waitKey();
+```
+
+### web
+
+Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).
+
+#### web.feed.load
+
+```
+load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>
+```
+
+Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option surface and sends a default User-Agent unless overridden. Throws on a non-2xx response.
+
+**Parameters**
+
+- `url` *(string)* — The feed URL to GET.
+- `opts` *({ timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }, optional)* — Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password.
+
+**Returns:** A promise resolving to the normalized feed object.
+
+**Throws:** Throws on transport failure or a non-2xx response, and on malformed feed content.
+
+```ts
+const f = await web.feed.load("https://example.com/feed.xml");
+```
+
+#### web.feed.parse
+
+```
+parse(source: string): { feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }
+```
+
+Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-detected; feedType reports it. RSS/Atom field differences are unified (pubDate/updated, description/summary). Each item carries a `raw` escape hatch with format-specific extras (enclosures, namespaced elements like media:*/dc:*).
+
+**Parameters**
+
+- `source` *(string)* — The feed document text (RSS/Atom XML or JSON Feed).
+
+**Returns:** The normalized feed object.
+
+**Throws:** Throws on empty/malformed/undetectable feed input.
+
+```ts
+const f = web.feed.parse(xml); f.items[0].title;
+```
+
+#### web.html.load
+
+```
+load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>
+```
+
+Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the net.http option surface with a default User-Agent. Throws on a non-2xx response.
+
+**Parameters**
+
+- `url` *(string)* — The page URL to GET.
+- `opts` *({ timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }, optional)* — Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password.
+
+**Returns:** A promise resolving to the document Node handle.
+
+**Throws:** Throws on transport failure or a non-2xx response.
+
+```ts
+const doc = await web.html.load("https://example.com"); doc.findAll("a").map(a => a.attr("href"));
+```
+
+#### web.html.parse
+
+```
+parse(source: string): { find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }
+```
+
+Parse HTML leniently (real-world tag soup is accepted, never throws on bad markup) into a chainable Node. Query with CSS (find/findAll) or XPath (xpath/xpathAll); read with text/html/innerHTML/tag/attr/attrs. Sub-queries are scoped to the receiver node (use .// for relative XPath; // is document-wide).
+
+**Parameters**
+
+- `source` *(string)* — The HTML document text.
+
+**Returns:** A Node handle rooted at the document.
+
+**Throws:** Does not throw on malformed markup; only on unreadable input.
+
+```ts
+const doc = web.html.parse(html); doc.find("h1").text();
+```
+
+#### web.sitemap.load
+
+```
+load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>
+```
+
+Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic-byte detection on the body; a Content-Encoding: gzip response is unwrapped by the HTTP transport). For a sitemapindex, pass {expand:true} to fetch all child sitemaps (bounded; per-child errors collected in `errors[]`) and merge their urls into `urls`.
+
+**Parameters**
+
+- `url` *(string)* — The sitemap URL to GET (may be .xml.gz).
+- `opts` *({ expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }, optional)* — expand:true fetches & merges child sitemaps for an index. Plus the standard fetch options.
+
+**Returns:** A promise resolving to the sitemap object.
+
+**Throws:** Throws on transport failure, non-2xx, or a non-sitemap document. Per-child expand failures are captured in errors[], not thrown.
+
+```ts
+const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });
+```
+
+#### web.sitemap.parse
+
+```
+parse(source: string): { type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }
+```
+
+Parse a sitemap document (urlset or sitemapindex) into {type, urls, sitemaps, errors}. urls carry loc/lastmod/changefreq/priority; an index lists child sitemap URLs in `sitemaps`.
+
+**Parameters**
+
+- `source` *(string)* — The sitemap XML text (decompressed).
+
+**Returns:** The parsed sitemap object.
+
+**Throws:** Throws when the document is neither <urlset> nor <sitemapindex>.
+
+```ts
+const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);
 ```
 <!-- END GENERATED REFERENCE -->
 
