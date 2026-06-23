@@ -91,6 +91,7 @@ Or pick individual scripts:
 | `tui-keys.ts` | `tui.*` — autoscroll (panes follow the tail), `{ autoscroll: false }` per-pane opt-out, `{ mouse: true }` root option, `tui.onKey` persistent callback, `tui.waitKey` awaitable keypress. Falls back to prefixed lines in non-TTY. |
 | `pty-color.ts` | `services.exec.shell` `{ pty: true }` — run a command under a pseudo-terminal so TTY-gated color output reaches the pane; contrasts with the same command without `pty` (monochrome). Unix only; falls back to pipes on Windows. **Run separately in a real terminal** — headless the PTY pane renders blank (CRLF), so the color contrast only shows on a TTY. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
+| `paymentproviders-kcov3.ts` | Bundled `paymentproviders` library — KCO v3 payment lifecycle (`getPayment`/`capturePayment`/`refundPayment`/`cancelPayment`) over a local mock; live check self-skips without `KCO_*` env. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
 runnable on their own.

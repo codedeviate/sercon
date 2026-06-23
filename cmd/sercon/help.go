@@ -1311,10 +1311,19 @@ const html = await fs.readText("report/index.html");
 await fs.remove("report"); // file or dir tree; no error if absent`)
 	note("fs.writeText/writeBytes fail if the parent directory is missing (Node-like) — fs.mkdir is the mkdir -p. readBytes returns a Uint8Array; stat gives { size, isDir, modifiedMs }. See examples/scripts/fs-report.ts for a screenshot report built on these.")
 
+	header(68, "Bundled payments library (paymentproviders)")
+	code(`// Compiled into the binary — import it directly, no install.
+import { kcov3 } from "paymentproviders";
+const api = kcov3.client();                 // KCO_MERCHANT_ID/KCO_SHARED_SECRET/KCO_ENV from env
+const order = await api.getPayment(orderId);
+await api.capturePayment(orderId, { amount: order.order_amount });
+await api.refundPayment(orderId, { amount: 500 });`)
+	note("kcov3 wraps Kustom Order-Management + Checkout (Basic auth, auto idempotency key). Non-2xx throws PaymentError{provider,status,body}. Nets/Svea/Qliro/SwedbankPay planned. See examples/scripts/paymentproviders-kcov3.ts.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 67
+const exampleCount = 68

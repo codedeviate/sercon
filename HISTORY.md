@@ -807,3 +807,16 @@ it checks out `codedeviate/homebrew-cli` and runs that tap's
 `scripts/bump.sh sercon <version>` to recompute the source-tarball sha256
 and rewrite `Formula/sercon.rb`. Requires a `HOMEBREW_TAP_GITHUB_TOKEN`
 secret; skips cleanly if absent. v0.35.1 was the last hand-bumped version.
+
+## Bundled libraries
+
+### `paymentproviders` (v0.63.0)
+
+A TypeScript payments library **compiled into the sercon executable** and served
+to scripts via an `Options.ModuleLoader` over an `//go:embed`-ed, esbuild-bundled
+artifact (`cmd/ppbundle` builds it; `make paymentproviders-check` guards drift).
+`import { kcov3 } from "paymentproviders"` works with no install. Cycle 1 ships
+**KCO v3** (Kustom Order-Management + Checkout) over a shared core (`net.http`
+transport, Basic `merchantId:sharedSecret` auth, `Klarna-Idempotency-Key`,
+`PaymentError`, minor-unit money). Decomposed so Nets/Svea/Qliro (Cycle 2) and
+SwedbankPay (Cycle 3) are additive namespaces.

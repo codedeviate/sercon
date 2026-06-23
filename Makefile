@@ -113,6 +113,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/fs-report.ts \
 	examples/scripts/typst.ts \
 	examples/scripts/doctor.ts \
+	examples/scripts/paymentproviders-kcov3.ts \
 	examples/scripts/advanced/load-resilience.ts \
 	examples/scripts/advanced/http-api.ts \
 	examples/scripts/advanced/smtp-pipeline.ts \

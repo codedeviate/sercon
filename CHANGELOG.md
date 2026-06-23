@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `paymentproviders` — a TypeScript payments library compiled into the binary,
+  imported as `import { kcov3 } from "paymentproviders"`. Cycle 1 ships **KCO v3**
+  (Kustom): `getPayment`/`acknowledge`/`capturePayment`/`refundPayment`/
+  `cancelPayment`/`releaseRemainingAuthorization` + bonus `createCheckout`/
+  `getCheckout`, over a shared core (HTTP via `net.http`, Basic auth, idempotency
+  keys, `PaymentError`). Credentials from `KCO_MERCHANT_ID`/`KCO_SHARED_SECRET`/
+  `KCO_ENV` (env or `.env`). Nets/Svea/Qliro/SwedbankPay planned as later cycles.
+
 ## [0.62.0] — 2026-06-21
 
 ### Added

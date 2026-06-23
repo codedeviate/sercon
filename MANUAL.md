@@ -3490,6 +3490,32 @@ the seventh artifact in that chain).
 See [OUT-OF-SCOPE.md](./OUT-OF-SCOPE.md) for the active backlog of
 deferred ideas.
 
+## Bundled libraries
+
+### `paymentproviders`
+
+A TypeScript payments library compiled into the sercon binary and importable by
+scripts — no install needed:
+
+```ts
+import { kcov3 } from "paymentproviders";
+const api = kcov3.client();                 // reads KCO_* from the environment
+const order = await api.getPayment(orderId);
+await api.capturePayment(orderId, { amount: order.order_amount });
+```
+
+**KCO v3** (`kcov3`) wraps Kustom's Order-Management + Checkout APIs:
+`getPayment`, `acknowledge`, `capturePayment`, `refundPayment`, `cancelPayment`,
+`releaseRemainingAuthorization`, and (bonus) `createCheckout` / `getCheckout`.
+`kcov3.client(overrides?)` reads credentials from the environment (or `.env` via
+`--env-file`): `KCO_MERCHANT_ID`, `KCO_SHARED_SECRET`, `KCO_ENV` (`test`|`prod`,
+selecting `api.playground.kustom.co` / `api.kustom.co`) or `KCO_BASE_URL`; any can
+be overridden per call. Auth is HTTP Basic (`merchantId:sharedSecret`); POST
+mutations carry an auto-generated `Klarna-Idempotency-Key`. A non-2xx response
+throws a `PaymentError` (`provider`, `status`, parsed `body`, `requestId?`).
+Amounts are integer minor units (öre). Additional providers (Nets, Svea, Qliro,
+SwedbankPay) are planned as additive namespaces.
+
 ## 16. Binding reference (generated)
 
 The per-function reference below is generated from the structured binding
