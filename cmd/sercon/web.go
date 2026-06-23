@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
@@ -29,6 +28,9 @@ type fetchOpts struct {
 // parseFetchOpts reads a JS opts object into fetchOpts, reusing the same option
 // helpers net.http.request uses so the surfaces stay consistent.
 func parseFetchOpts(opts map[string]any) fetchOpts {
+	if opts == nil {
+		return fetchOpts{timeout: 30 * time.Second, follow: true}
+	}
 	return fetchOpts{
 		timeout:   optMillis(opts, "timeout", 30*time.Second),
 		headers:   optStringMap(opts, "headers"),
@@ -91,7 +93,7 @@ func loadBytes(ctx context.Context, url string, optsMap map[string]any) ([]byte,
 		return nil, finalURL, fmt.Errorf("web: GET %s: %w", url, err)
 	}
 	if status < 200 || status >= 300 {
-		return nil, finalURL, fmt.Errorf("web: GET %s: unexpected status %d", strings.TrimSpace(finalURL), status)
+		return nil, finalURL, fmt.Errorf("web: GET %s: HTTP %d", finalURL, status)
 	}
 	return body, finalURL, nil
 }

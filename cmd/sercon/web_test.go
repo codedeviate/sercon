@@ -32,9 +32,19 @@ func TestWebFetch_DefaultUserAgentAndStatus(t *testing.T) {
 	}
 
 	// Caller-supplied userAgent overrides the default.
-	_, _, _ = loadBytes(context.Background(), srv.URL+"/", map[string]any{"userAgent": "my-bot/1.0"})
+	if _, _, err := loadBytes(context.Background(), srv.URL+"/", map[string]any{"userAgent": "my-bot/1.0"}); err != nil {
+		t.Fatalf("loadBytes (custom UA): %v", err)
+	}
 	if gotUA != "my-bot/1.0" {
 		t.Fatalf("override UA = %q, want my-bot/1.0", gotUA)
+	}
+
+	// A User-Agent supplied via opts.headers also wins over the default.
+	if _, _, err := loadBytes(context.Background(), srv.URL+"/", map[string]any{"headers": map[string]any{"User-Agent": "via-headers/2.0"}}); err != nil {
+		t.Fatalf("loadBytes (headers UA): %v", err)
+	}
+	if gotUA != "via-headers/2.0" {
+		t.Fatalf("headers UA = %q, want via-headers/2.0", gotUA)
 	}
 
 	// Non-2xx throws (returns error).
