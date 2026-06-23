@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.63.0] — 2026-06-23
+
 ### Added
 
 - `paymentproviders` — a TypeScript payments library compiled into the binary,
