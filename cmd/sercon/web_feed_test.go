@@ -33,6 +33,9 @@ func TestFeed_NormalizeRSSAndAtom(t *testing.T) {
 	if rss["feedType"] != "rss" || rss["title"] != "My Blog" {
 		t.Fatalf("rss header wrong: %v", rss)
 	}
+	if rss["description"] != "desc" || rss["link"] != "https://blog.example" {
+		t.Fatalf("rss top-level fields wrong: desc=%v link=%v", rss["description"], rss["link"])
+	}
 	items := rss["items"].([]map[string]any)
 	if len(items) != 1 || items[0]["title"] != "First" || items[0]["link"] != "https://blog.example/1" {
 		t.Fatalf("rss item wrong: %v", items)
@@ -43,6 +46,10 @@ func TestFeed_NormalizeRSSAndAtom(t *testing.T) {
 	raw := items[0]["raw"].(map[string]any)
 	if _, ok := raw["enclosure"]; !ok {
 		t.Fatalf("expected enclosure in raw, got %v", raw)
+	}
+	media, ok := raw["media:content"].(map[string]string)
+	if !ok || media["url"] != "https://blog.example/img.png" {
+		t.Fatalf("expected media:content extension in raw, got %v", raw["media:content"])
 	}
 
 	atom, err := parseFeed(atomFixture)
@@ -55,6 +62,9 @@ func TestFeed_NormalizeRSSAndAtom(t *testing.T) {
 	aitems := atom["items"].([]map[string]any)
 	if aitems[0]["summary"] != "sum" || aitems[0]["updated"] == nil {
 		t.Fatalf("atom item normalization wrong: %v", aitems[0])
+	}
+	if cats, ok := aitems[0]["categories"].([]string); !ok || cats == nil || len(cats) != 0 {
+		t.Fatalf("atom categories should be empty non-nil slice, got %#v", aitems[0]["categories"])
 	}
 }
 

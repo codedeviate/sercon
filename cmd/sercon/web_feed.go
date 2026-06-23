@@ -22,7 +22,9 @@ func isoOrNil(t *time.Time) any {
 
 // feedItemRaw collects format-specific extras that don't fit the normalized
 // shape: enclosures, namespaced extension elements (media:*, dc:*, …), and any
-// gofeed Custom entries. Best-effort; may be empty.
+// gofeed Custom entries. Best-effort: for a repeated/namespaced element only the
+// first occurrence's Value (or, failing that, its Attrs) is surfaced; nested
+// extension Children are not flattened. May be empty.
 func feedItemRaw(it *gofeed.Item) map[string]any {
 	raw := map[string]any{}
 	if len(it.Enclosures) > 0 {
