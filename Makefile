@@ -117,6 +117,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/paymentproviders-nets.ts \
 	examples/scripts/paymentproviders-svea.ts \
 	examples/scripts/paymentproviders-qliro.ts \
+	examples/scripts/paymentproviders-swedbankpay.ts \
 	examples/scripts/advanced/load-resilience.ts \
 	examples/scripts/advanced/http-api.ts \
 	examples/scripts/advanced/smtp-pipeline.ts \

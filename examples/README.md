@@ -95,6 +95,7 @@ Or pick individual scripts:
 | `paymentproviders-nets.ts` | Bundled `paymentproviders` — `netsv1` (Nexi/Nets Checkout v1) create/get over a local mock; live check self-skips without `NETS_SECRET_KEY`. |
 | `paymentproviders-svea.ts` | Bundled `paymentproviders` — `sveacheckout2` (Svea Checkout) create over a mock that verifies the SHA512 signature; live check self-skips without `SCO_*`. |
 | `paymentproviders-qliro.ts` | Bundled `paymentproviders` — `qlirov2` (Qliro One) create over a mock checking the `Qliro` auth header; live check self-skips without `QLIRO_*`. |
+| `paymentproviders-swedbankpay.ts` | Bundled `paymentproviders` — `swedbankpayv3`/`swedbankpayv2` (Bearer + HAL operations): create a payment order, then `capturePayment` resolves the `capture` operation href and POSTs to it. Live check self-skips without `SWEDBANKPAY_*`. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
 runnable on their own.

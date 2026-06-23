@@ -3528,6 +3528,14 @@ SwedbankPay) are planned as additive namespaces.
 - `qlirov2` (Qliro One) — `createOrder`/`getOrder`/`getPayment`; env
   `QLIRO_API_KEY`, `QLIRO_APIPASSWORD`, `QLIRO_ENV`; auth =
   `Qliro base64(SHA256(body+secret))`.
+- `swedbankpayv3` / `swedbankpayv2` (SwedbankPay Checkout v3 / v2) — Bearer auth
+  plus HAL/hypermedia: `createPaymentOrder`, `getPaymentOrder`/`getPayment`, the
+  low-level `operation(paymentOrderOrUrl, rel, body?)` primitive (resolves the
+  rel's `href` in the payment-order response and POSTs to it), and convenience
+  `capturePayment`/`refundPayment`/`cancelPayment` (the `capture`/`reversal`/
+  `cancel` operations). Env `SWEDBANKPAY_ACCESS_TOKEN` (Bearer), `SWEDBANKPAY_MERCHANT_ID`
+  (the `payee.payeeId`), `SWEDBANKPAY_ENV`. Base URLs
+  `api.externalintegration.payex.com` (test) / `api.payex.com` (prod).
 
 Provider namespaces are version-labelled (e.g. `kcov3`, `netsv1`) so a future API
 version ships alongside (e.g. `netsv2`) without breaking callers.

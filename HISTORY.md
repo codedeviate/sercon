@@ -832,3 +832,15 @@ The core gained a **pluggable per-request signer** (`ctx.sign(method,path,body)
 returns hex; `text.str.base64Encode` is UTF-8-only). Namespaces are
 **version-labelled** so a new provider API version ships as a sibling. Cycle 3 =
 SwedbankPay (`swedbankpayv2` + `swedbankpayv3`).
+
+### Cycle 3 — SwedbankPay v2 / v3 (v0.65.0)
+
+Added `swedbankpayv2` + `swedbankpayv3` — Bearer auth (simple) over SwedbankPay's
+**HAL/hypermedia** model: a payment-order response carries an `operations` array
+(`{rel, href, method}`), and capture/refund/cancel POST to the matching operation's
+absolute `href` rather than a fixed endpoint. New `core/hal.ts` (`findOperation`,
+exact-or-hyphen-delimited-suffix rel match) + an absolute-URL tweak to `apiRequest`;
+a shared `swedbankpay/common.ts` builder backs both thin version namespaces. Exposes
+a low-level `operation(paymentOrderOrUrl, rel, body?)` primitive plus the unified
+`capturePayment`/`refundPayment`/`cancelPayment`. Completes the provider set
+(`kcov3`, `netsv1`, `sveacheckout2`, `qlirov2`, `swedbankpayv2`, `swedbankpayv3`).

@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `paymentproviders` Cycle 3 — `swedbankpayv2` + `swedbankpayv3` (SwedbankPay
+  Checkout v2/v3): Bearer auth + HAL/hypermedia operations. `createPaymentOrder`,
+  `getPaymentOrder`, an `operation(paymentOrderOrUrl, rel, body?)` primitive, and
+  `capturePayment`/`refundPayment`/`cancelPayment` (resolve the operation href and
+  POST). Adds `core/hal.ts` (findOperation) and absolute-URL support in the core
+  HTTP helper. Creds from `SWEDBANKPAY_*` env. Completes the planned provider set.
+
 ## [0.64.0] — 2026-06-23
 
 ### Added

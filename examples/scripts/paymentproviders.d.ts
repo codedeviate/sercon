@@ -59,4 +59,32 @@ declare module "paymentproviders" {
     }
     function client(overrides?: QliroConfig): QliroClient;
   }
+  export namespace swedbankpayv3 {
+    interface SwedbankPayConfig { accessToken?: string; merchantId?: string; env?: "test" | "prod"; baseUrl?: string; }
+    interface SwedbankPayClient {
+      merchantId: string;
+      createPaymentOrder(body: Record<string, unknown>): Promise<any>;
+      getPaymentOrder(idOrUrl: string): Promise<any>;
+      getPayment(idOrUrl: string): Promise<any>;
+      operation(paymentOrderOrUrl: string | Record<string, unknown>, rel: string, body?: unknown): Promise<any>;
+      capturePayment(paymentOrderOrUrl: string | Record<string, unknown>, body: Record<string, unknown>): Promise<any>;
+      refundPayment(paymentOrderOrUrl: string | Record<string, unknown>, body: Record<string, unknown>): Promise<any>;
+      cancelPayment(paymentOrderOrUrl: string | Record<string, unknown>, body?: Record<string, unknown>): Promise<any>;
+    }
+    function client(overrides?: SwedbankPayConfig): SwedbankPayClient;
+  }
+  export namespace swedbankpayv2 {
+    interface SwedbankPayConfig { accessToken?: string; merchantId?: string; env?: "test" | "prod"; baseUrl?: string; }
+    interface SwedbankPayClient {
+      merchantId: string;
+      createPaymentOrder(body: Record<string, unknown>): Promise<any>;
+      getPaymentOrder(idOrUrl: string): Promise<any>;
+      getPayment(idOrUrl: string): Promise<any>;
+      operation(paymentOrderOrUrl: string | Record<string, unknown>, rel: string, body?: unknown): Promise<any>;
+      capturePayment(paymentOrderOrUrl: string | Record<string, unknown>, body: Record<string, unknown>): Promise<any>;
+      refundPayment(paymentOrderOrUrl: string | Record<string, unknown>, body: Record<string, unknown>): Promise<any>;
+      cancelPayment(paymentOrderOrUrl: string | Record<string, unknown>, body?: Record<string, unknown>): Promise<any>;
+    }
+    function client(overrides?: SwedbankPayConfig): SwedbankPayClient;
+  }
 }
