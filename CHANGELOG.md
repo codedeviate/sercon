@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.64.0] — 2026-06-23
+
 ### Added
 
 - `paymentproviders` Cycle 2 — three more providers on the shared core (now with a
