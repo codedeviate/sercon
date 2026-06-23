@@ -37,11 +37,11 @@ async function apiRequest(method, path, ctx, body, extraHeaders) {
     headers["content-type"] = "application/json";
     bodyStr = JSON.stringify(body);
   }
+  const authHeaders = ctx.sign(method, path, bodyStr);
+  for (const k in authHeaders) headers[k] = authHeaders[k];
   const res = await net.http.request(method, ctx.baseUrl + path, {
     headers,
     body: bodyStr,
-    username: ctx.username,
-    password: ctx.password,
     follow: true
   });
   let parsed;
@@ -69,6 +69,11 @@ function pickBaseUrl(env, baseUrl, testUrl, prodUrl) {
   return env === "prod" ? prodUrl : testUrl;
 }
 
+// cmd/sercon/paymentproviders/core/crypto.ts
+function basicAuth(user, pass) {
+  return "Basic " + text.str.base64Encode(`${user}:${pass}`);
+}
+
 // cmd/sercon/paymentproviders/kcov3/client.ts
 var TEST_URL = "https://api.playground.kustom.co";
 var PROD_URL = "https://api.kustom.co";
@@ -79,7 +84,7 @@ function client(overrides = {}) {
   if (!sharedSecret) throw new Error("kcov3: KCO_SHARED_SECRET is required (set it in the environment/.env or pass sharedSecret)");
   const env = overrides.env ?? envGet("KCO_ENV");
   const baseUrl = pickBaseUrl(env, overrides.baseUrl ?? envGet("KCO_BASE_URL"), TEST_URL, PROD_URL);
-  const ctx = { baseUrl, provider: "kcov3", username: merchantId, password: sharedSecret };
+  const ctx = { baseUrl, provider: "kcov3", sign: () => ({ Authorization: basicAuth(merchantId, sharedSecret) }) };
   const om = (id) => `/ordermanagement/v1/orders/${encodeURIComponent(id)}`;
   const idem = () => ({ "klarna-idempotency-key": idempotencyKey() });
   return {

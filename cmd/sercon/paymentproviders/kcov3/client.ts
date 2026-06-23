@@ -1,5 +1,6 @@
 import { apiRequest, idempotencyKey, ClientCtx } from "../core/http";
 import { envGet, pickBaseUrl } from "../core/config";
+import { basicAuth } from "../core/crypto";
 
 const TEST_URL = "https://api.playground.kustom.co";
 const PROD_URL = "https://api.kustom.co";
@@ -31,7 +32,7 @@ export function client(overrides: KcoConfig = {}): KcoClient {
   if (!sharedSecret) throw new Error("kcov3: KCO_SHARED_SECRET is required (set it in the environment/.env or pass sharedSecret)");
   const env = overrides.env ?? (envGet("KCO_ENV") as "test" | "prod" | undefined);
   const baseUrl = pickBaseUrl(env, overrides.baseUrl ?? envGet("KCO_BASE_URL"), TEST_URL, PROD_URL);
-  const ctx: ClientCtx = { baseUrl, provider: "kcov3", username: merchantId, password: sharedSecret };
+  const ctx: ClientCtx = { baseUrl, provider: "kcov3", sign: () => ({ Authorization: basicAuth(merchantId, sharedSecret) }) };
 
   const om = (id: string) => `/ordermanagement/v1/orders/${encodeURIComponent(id)}`;
   const idem = () => ({ "klarna-idempotency-key": idempotencyKey() });

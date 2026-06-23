@@ -4,8 +4,9 @@ import { PaymentError } from "./errors";
 export interface ClientCtx {
   baseUrl: string;
   provider: string;
-  username: string;
-  password: string;
+  // sign receives the method, path, and serialized body (providers like
+  // Svea/Qliro sign over the body) and returns auth headers to merge.
+  sign: (method: string, path: string, bodyStr: string) => Record<string, string>;
 }
 
 // idempotencyKey returns a unique key for a mutating request (overridable).
@@ -13,8 +14,8 @@ export function idempotencyKey(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-// apiRequest performs a JSON request via net.http and throws PaymentError on a
-// non-2xx response. body (when given) is JSON-encoded; extraHeaders are merged.
+// apiRequest performs a JSON request via net.http (with the ctx signer's auth
+// headers) and throws PaymentError on a non-2xx response.
 export async function apiRequest(
   method: string,
   path: string,
@@ -28,11 +29,11 @@ export async function apiRequest(
     headers["content-type"] = "application/json";
     bodyStr = JSON.stringify(body);
   }
+  const authHeaders = ctx.sign(method, path, bodyStr);
+  for (const k in authHeaders) headers[k] = authHeaders[k];
   const res = await net.http.request(method, ctx.baseUrl + path, {
     headers,
     body: bodyStr,
-    username: ctx.username,
-    password: ctx.password,
     follow: true,
   });
   let parsed: unknown;
