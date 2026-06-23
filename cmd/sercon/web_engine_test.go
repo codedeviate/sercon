@@ -27,6 +27,7 @@ func TestWeb_EngineSurface(t *testing.T) {
 		runtime.assert.equal(sm.urls[0].loc, "https://x/1", "sitemap url");
 		runtime.assert.equal(typeof web.feed.load, "function", "feed.load present");
 		runtime.assert.equal(typeof web.html.load, "function", "html.load present");
+		runtime.assert.equal(typeof web.sitemap.load, "function", "sitemap.load present");
 	`
 	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), script)
 	if err != nil {

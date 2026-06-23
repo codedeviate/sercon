@@ -31,8 +31,8 @@ const webFetchOptsTS = `{ timeout?: number | string; headers?: Record<string, st
 func webDocs() map[string]scriptengine.MemberDoc {
 	return map[string]scriptengine.MemberDoc{
 		"feed.parse": {
-			Summary: "Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-detected; feedType reports it. RSS/Atom field differences are unified (pubDate/updated, description/summary). Each item carries a `raw` escape hatch with format-specific extras (enclosures, namespaced elements like media:*/dc:*).",
-			Params:  []scriptengine.Param{{Name: "source", Type: "string", Desc: "The feed document text (RSS/Atom XML or JSON Feed)."}},
+			Summary:    "Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-detected; feedType reports it. RSS/Atom field differences are unified (pubDate/updated, description/summary). Each item carries a `raw` escape hatch with format-specific extras (enclosures, namespaced elements like media:*/dc:*).",
+			Params:     []scriptengine.Param{{Name: "source", Type: "string", Desc: "The feed document text (RSS/Atom XML or JSON Feed)."}},
 			ReturnType: webFeedTS,
 			Returns:    "The normalized feed object.",
 			Errors:     "Throws on empty/malformed/undetectable feed input.",
@@ -50,15 +50,15 @@ func webDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const f = await web.feed.load("https://example.com/feed.xml");`,
 		},
 		"sitemap.parse": {
-			Summary: "Parse a sitemap document (urlset or sitemapindex) into {type, urls, sitemaps, errors}. urls carry loc/lastmod/changefreq/priority; an index lists child sitemap URLs in `sitemaps`.",
-			Params:  []scriptengine.Param{{Name: "source", Type: "string", Desc: "The sitemap XML text (decompressed)."}},
+			Summary:    "Parse a sitemap document (urlset or sitemapindex) into {type, urls, sitemaps, errors}. urls carry loc/lastmod/changefreq/priority; an index lists child sitemap URLs in `sitemaps`.",
+			Params:     []scriptengine.Param{{Name: "source", Type: "string", Desc: "The sitemap XML text (decompressed)."}},
 			ReturnType: webSitemapTS,
 			Returns:    "The parsed sitemap object.",
 			Errors:     "Throws when the document is neither <urlset> nor <sitemapindex>.",
 			Example:    `const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);`,
 		},
 		"sitemap.load": {
-			Summary: "Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic / Content-Encoding). For a sitemapindex, pass {expand:true} to fetch all child sitemaps (bounded; per-child errors collected in `errors[]`) and merge their urls into `urls`.",
+			Summary: "Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic-byte detection on the body; a Content-Encoding: gzip response is unwrapped by the HTTP transport). For a sitemapindex, pass {expand:true} to fetch all child sitemaps (bounded; per-child errors collected in `errors[]`) and merge their urls into `urls`.",
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "The sitemap URL to GET (may be .xml.gz)."},
 				{Name: "opts", Type: `{ expand?: boolean } & ` + webFetchOptsTS, Optional: true, Desc: "expand:true fetches & merges child sitemaps for an index. Plus the standard fetch options."},
@@ -69,8 +69,8 @@ func webDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });`,
 		},
 		"html.parse": {
-			Summary: "Parse HTML leniently (real-world tag soup is accepted, never throws on bad markup) into a chainable Node. Query with CSS (find/findAll) or XPath (xpath/xpathAll); read with text/html/innerHTML/tag/attr/attrs. Sub-queries are scoped to the receiver node (use .// for relative XPath; // is document-wide).",
-			Params:  []scriptengine.Param{{Name: "source", Type: "string", Desc: "The HTML document text."}},
+			Summary:    "Parse HTML leniently (real-world tag soup is accepted, never throws on bad markup) into a chainable Node. Query with CSS (find/findAll) or XPath (xpath/xpathAll); read with text/html/innerHTML/tag/attr/attrs. Sub-queries are scoped to the receiver node (use .// for relative XPath; // is document-wide).",
+			Params:     []scriptengine.Param{{Name: "source", Type: "string", Desc: "The HTML document text."}},
 			ReturnType: webNodeTS,
 			Returns:    "A Node handle rooted at the document.",
 			Errors:     "Does not throw on malformed markup; only on unreadable input.",

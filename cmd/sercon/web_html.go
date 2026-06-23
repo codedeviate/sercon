@@ -212,6 +212,10 @@ func htmlLoadBinding(vm *goja.Runtime, loop *eventloop.EventLoop) func(goja.Func
 		// goroutine — nothing here retains call past this function's return.
 		keepAlive := loop.SetTimeout(func(*goja.Runtime) {}, 24*time.Hour)
 		go func() {
+			// context.Background() (not the run ctx) mirrors PromisifyAsync's
+			// convention; the per-call fetchOpts.timeout still bounds the HTTP
+			// request at the http.Client level. Revisit if early run-cancel of an
+			// in-flight html.load is ever needed.
 			body, _, err := loadBytes(context.Background(), url, optsMap)
 			var root *html.Node
 			if err == nil {

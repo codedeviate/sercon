@@ -287,7 +287,7 @@ func classifyErr(err error) int {
 // namespace at Run time.
 func registerSurface(e *scriptengine.Engine) error {
 	// `console` is a browser/Node-compat shim (see console.go). Registered
-	// alongside the ten reserved globals; the CLI disables the engine's
+	// alongside the twelve reserved globals; the CLI disables the engine's
 	// built-in console (Options.DisableConsole) so this one is authoritative.
 	if err := e.RegisterNamespaceFactory("console", func(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 		return consoleNamespace(vm)
