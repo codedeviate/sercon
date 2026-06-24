@@ -640,11 +640,20 @@ Script-host scaffolding. Members:
   `runtime.assert.ok(cond, msg?)` — throw on mismatch / falsy.
   `assert.equal` is **deep**: distinct objects/arrays with identical
   contents compare equal (structural, recursive — key order irrelevant).
-- `runtime.time.nowMs()` — current wall-clock in milliseconds.
+- `runtime.time.nowMs()` — current wall-clock in milliseconds since the
+  Unix epoch (host clock; never throws).
 - `runtime.time.sleep(ms)` — Promise that resolves after `ms` on the
-  event loop.
-- `runtime.time.format(unixMs, layout, tz?)` — Go-style time layout
-  (e.g. `"2006-01-02 15:04:05"`).
+  event loop. It is **cancellable**: if the run hits its deadline or is
+  cancelled before the delay elapses, the pending sleep rejects (the
+  underlying context is cancelled) rather than holding the loop open.
+- `runtime.time.format(unixMs, layout, tz?)` — render a Unix-ms timestamp
+  through **strftime-style** tokens (not Go's reference layout). Supported
+  tokens: `%Y %y %m %d %H %M %S %T %F %j %A %a %B %b %z %Z` and `%%` (a
+  literal percent); unknown `%X` tokens pass through verbatim. `tz` is an
+  optional IANA zone name (e.g. `"Europe/Stockholm"`, `"UTC"`); it defaults
+  to the host's local zone and **throws** if the name is not loadable. For
+  example `runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC")`
+  yields `"2026-06-24 13:45:09"`.
 - `runtime.env.get(name)` — process environment variable; returns
   `undefined` when unset (never throws).
 - **`runtime.setDeadline(ms)` / `runtime.clearDeadline()` /
