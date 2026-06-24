@@ -1565,12 +1565,59 @@ v0.8.0). Members:
   `success: false`, while spawn failures and timeouts reject. Useful for
   processing large or incremental output without holding it all in memory.
 - `services.exec.http(method, url, opts?)` — shell-level `curl`-style
-  HTTP (separate from `net.http`, intended for raw protocol use).
-- `services.git.*` — git porcelain wrappers (clone, status, commit,
-  log, …) invoking the local `git` binary.
-- `services.gh.{authStatus, prList, repoView}` — thin `gh` CLI
-  wrappers.
-- `services.ai.{providers, send}` — provider-agnostic AI chat client.
+  HTTP, separate from `net.http` and intended for raw protocol use. It
+  shells out to **`recon` first, then `curl`** (`opts.backend` =
+  `"auto"` | `"recon"` | `"curl"` picks; `"auto"` is the default). 4xx/5xx
+  resolve as a `status`; only transport errors and timeouts throw. The
+  request body is sent via a temp file + `--data-binary` so CR/LF survive
+  intact, and `opts.{headers, timeout, follow, insecure}` map onto the
+  underlying flags. Resolves `{ status, headers, body, durationMs,
+  backend }` (header names lower-cased, `backend` = whichever tool ran).
+
+The **`services.git.*`** wrappers shell out to the local `git` binary and
+each accept `{ cwd }` to select the checkout (defaulting to the engine's
+working directory):
+
+- `git.branch()` → `{ current, detached, all }` — current branch (`""`
+  when detached), the detached flag, and every local branch.
+- `git.isClean()` → `boolean` — true when `git status --porcelain` is
+  empty.
+- `git.status()` → `Array<{ path, indexStatus, workingStatus }>` — parsed
+  porcelain v1 entries (empty array = clean tree).
+- `git.revParse(rev)` → the full 40-char SHA (`rev` is any ref/HEAD/short
+  SHA; an unresolvable rev throws git's own message).
+- `git.add(paths)` / `git.commit(message, { allowEmpty? })` — stage one or
+  many paths (passed after `--`), then commit (`allowEmpty` adds
+  `--allow-empty`); commit returns `{ sha }`.
+- `git.log({ limit?, revRange? })` → newest-first
+  `{ sha, shortSha, author, email, timestamp, subject }[]` (default limit
+  50, default range `HEAD`).
+- `git.diffStat({ revRange? })` → `{ files, insertions, deletions }`
+  (default range `HEAD~1..HEAD`).
+- `git.runText(args, { cwd? })` — escape hatch: run any `git <args>` and
+  get `{ stdout, stderr, exitCode }`; the exit code is **data**, so a
+  non-zero status does not throw.
+
+The **`services.gh.{authStatus, prList, repoView}`** wrappers are thin
+`gh` CLI bindings. `authStatus()` is deliberately non-throwing — a missing
+`gh` or an unauthenticated session resolves with `{ authenticated: false,
+… }` (only context cancellation throws), so it is safe to probe
+unconditionally. `prList({ cwd?, state?, limit?, author? })` returns one
+object per PR with `author` flattened from gh's `{ login }` wrapper and
+ISO-8601 `createdAt`/`updatedAt`; `repoView(repo?, { cwd? })` returns repo
+metadata with `owner`/`defaultBranch` pre-flattened (omit `repo` for the
+cwd's repo, or pass `"owner/name"` for any repo gh can see).
+
+The **`services.ai.{providers, send}`** client is provider-agnostic.
+`providers()` is **synchronous** and returns the subset of
+`claude` / `codex` / `copilot` / `gemini` found on PATH in preference order
+(empty array when none). `send({ prompt, provider?, system?, context?,
+timeout? })` runs a one-shot prompt — when `provider` is omitted the first
+provider on PATH is chosen; `system`/`context` are prepended as
+`System:` / `Context:` blocks (a portable substitute for each CLI's own
+flags). It resolves `{ provider, output, exitCode }`; a non-zero exit is
+**data**, not a throw (only a missing prompt, no provider on PATH, an
+unknown provider, or a timeout throw).
 - `services.agentBrowser.*` — headless-Chrome automation via the
   `agent-browser` CLI. See the subsection below.
 - `services.webdriver.*` — W3C WebDriver client (via `tebeka/selenium`).
@@ -6778,12 +6825,14 @@ show(...args: unknown[])
 #### services.agentBrowser.available
 
 ```
-available
+available: boolean
 ```
 
 True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run. Gate calls on this; every binding throws a clean error when the CLI is absent.
 
 **Returns:** boolean — true if `agent-browser` is on PATH.
+
+**Throws:** Never throws.
 
 ```ts
 if (!services.agentBrowser.available) runtime.log("install agent-browser first");
@@ -6792,7 +6841,7 @@ if (!services.agentBrowser.available) runtime.log("install agent-browser first")
 #### services.agentBrowser.clearDefaultOptions
 
 ```
-clearDefaultOptions(...args: unknown[])
+clearDefaultOptions(): void
 ```
 
 Reset the namespace-level launch defaults to an empty object, removing any values set by setDefaultOptions.
@@ -6809,7 +6858,7 @@ runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {}
 #### services.agentBrowser.defaultOptions
 
 ```
-defaultOptions(...args: unknown[])
+defaultOptions(): object
 ```
 
 Return a shallow copy of the current namespace-level launch defaults. These are merged (under per-call opts) into every subsequent launch().
@@ -6826,7 +6875,7 @@ runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed
 #### services.agentBrowser.eval
 
 ```
-eval(url: string, js: string): void
+eval(url: string, js: string): Promise<{ success: boolean, data: object, error: string | null }>
 ```
 
 One-shot shortcut: launch an ephemeral session, open url, evaluate a JS expression in the page, and close.
@@ -6938,7 +6987,7 @@ const b = services.agentBrowser.launch(); // headed:false + proxy inherited
 #### services.agentBrowser.snapshot
 
 ```
-snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): void
+snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): Promise<{ success: boolean, data: object, error: string | null }>
 ```
 
 One-shot shortcut: launch an ephemeral session, open url, take an accessibility-tree snapshot, and close.
@@ -6992,7 +7041,7 @@ const ps = services.ai.providers(); // e.g. ["claude", "gemini"]
 #### services.ai.send
 
 ```
-send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<Record<string, unknown>>
+send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<{ provider: string; output: string; exitCode: number }>
 ```
 
 Run a one-shot prompt through a provider. opts { prompt (required), provider?, system?, context?, timeout? }. Returns { provider, output, exitCode }. Non-zero exit is data; no provider throws.
@@ -7036,7 +7085,7 @@ runtime.log("unmet optional features:", JSON.stringify(opt.unmet));
 #### services.exec.http
 
 ```
-http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<Record<string, unknown>>
+http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<{ status: number; headers: Record<string, string>; body: string; durationMs: number; backend: "recon" | "curl" }>
 ```
 
 Make an HTTP request by shelling out to recon (preferred) or curl (fallback). 4xx/5xx resolve as status; transport errors and timeouts throw. opts.backend = 'auto' | 'recon' | 'curl'.
@@ -7059,7 +7108,7 @@ runtime.log(r.status, r.backend);
 #### services.exec.shell
 
 ```
-shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<Record<string, unknown>>
+shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<{ stdout: string; stderr: string; exitCode: number; success: boolean; durationMs: number }>
 ```
 
 Run a subprocess and wait for it to exit. String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Non-zero exits resolve normally; spawn failures and timeouts throw.
@@ -7123,7 +7172,7 @@ if (a.authenticated) runtime.log("logged in as", a.user);
 #### services.gh.prList
 
 ```
-prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Record<string, unknown>[]>
+prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Array<{ number: number; title: string; state: string; author: string; headRefName: string; baseRefName: string; url: string; createdAt: string; updatedAt: string }>>
 ```
 
 List pull requests on the cwd's repo (or opts.cwd). Defaults: open state, limit 30. Filters: state / limit / author.
@@ -7144,7 +7193,7 @@ for (const pr of prs) runtime.log(pr.number, pr.title);
 #### services.gh.repoView
 
 ```
-repoView(repo?: string, opts?: { cwd?: string }): Promise<Record<string, unknown>>
+repoView(repo?: string, opts?: { cwd?: string }): Promise<{ name: string; owner: string; description: string; url: string; defaultBranch: string; visibility: string }>
 ```
 
 Repo metadata. With no arg uses cwd's repo; pass 'owner/name' for any repo gh can see. owner + defaultBranch are pre-flattened.
@@ -7270,7 +7319,7 @@ if (await services.git.isClean()) runtime.log("clean");
 #### services.git.log
 
 ```
-log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }[]>
+log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<Array<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }>>
 ```
 
 Recent commits as { sha, shortSha, author, email, timestamp, subject }. opts.limit / opts.revRange.
@@ -7334,7 +7383,7 @@ if (r.exitCode === 0) runtime.log(r.stdout);
 #### services.git.status
 
 ```
-status(opts?: { cwd?: string }): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>
+status(opts?: { cwd?: string }): Promise<Array<{ path: string; indexStatus: string; workingStatus: string }>>
 ```
 
 Parsed `git status --porcelain` entries: { path, indexStatus, workingStatus }.
@@ -7455,12 +7504,14 @@ runtime.log(await services.typst.version());
 #### services.webdriver.available
 
 ```
-available
+available: boolean
 ```
 
 True when a W3C WebDriver binary (chromedriver or geckodriver) is on PATH. Sync boolean, resolved once per Run. Gate calls on this before using probe or connect.
 
 **Returns:** boolean — true if chromedriver or geckodriver is found on PATH.
+
+**Throws:** Never throws.
 
 ```ts
 if (!services.webdriver.available) {

@@ -1129,19 +1129,19 @@ declare const services: {
      * Reset the namespace-level launch defaults to an empty object, removing any values set by setDefaultOptions.
      * @returns void
      */
-    clearDefaultOptions(...args: unknown[]): unknown;
+    clearDefaultOptions(): void;
     /**
      * Return a shallow copy of the current namespace-level launch defaults. These are merged (under per-call opts) into every subsequent launch().
      * @returns object — a plain-object copy of the current defaults map. Empty object when no defaults have been set.
      */
-    defaultOptions(...args: unknown[]): unknown;
+    defaultOptions(): object;
     /**
      * One-shot shortcut: launch an ephemeral session, open url, evaluate a JS expression in the page, and close.
      * @param url URL to open. Required.
      * @param js JavaScript expression to evaluate in the page context. Required.
      * @returns Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data.result holds the serialised return value.
      */
-    eval(url: string, js: string): unknown;
+    eval(url: string, js: string): Promise<{ success: boolean, data: object, error: string | null }>;
     /**
      * Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.
      * @param opts Launch flags captured for the lifetime of the handle and threaded into every subprocess call. session names the agent-browser session (auto-generated when omitted). timeout is the per-call agent-browser subprocess timeout in milliseconds (default 30000, 0 disables); when a call exceeds the limit the Promise rejects with a clear 'timed out' error instead of hanging forever.
@@ -1168,14 +1168,14 @@ declare const services: {
      * @param opts A plain object of launch option key/value pairs. The entire defaults map is replaced (not merged) with this object.
      * @returns void
      */
-    setDefaultOptions(opts: object): unknown;
+    setDefaultOptions(opts: object): void;
     /**
      * One-shot shortcut: launch an ephemeral session, open url, take an accessibility-tree snapshot, and close.
      * @param url URL to open. Required.
      * @param opts Snapshot options forwarded to the handle's snapshot() method.
      * @returns Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.
      */
-    snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): unknown;
+    snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): Promise<{ success: boolean, data: object, error: string | null }>;
     /**
      * The agent-browser CLI version string.
      * @returns Promise<string> — the version reported by `agent-browser --version`.
@@ -1193,7 +1193,7 @@ declare const services: {
      * @param opts prompt is required. provider names the CLI to use; when omitted, the first provider on PATH (in preference order) is chosen. system and context are prepended to the prompt as "System: …" / "Context: …" blocks (a portable substitute for each CLI's own flags). timeout in ms (default 120000).
      * @returns Promise<{ provider: string, output: string, exitCode: number }> — provider is the CLI that ran; output is its trimmed stdout (or stderr when stdout is empty on a non-zero exit); exitCode is 0 on success.
      */
-    send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<Record<string, unknown>>;
+    send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<{ provider: string; output: string; exitCode: number }>;
   };
   /**
    * Report on every external tool sercon can use (git, gh, AI providers, agent-browser, chromedriver/geckodriver, typst, recon/curl, clipboard/image tools): installed?, version, purpose — and validate the chromedriver↔Chrome major-version match. Optionally assert a script's prerequisites via `requires`.
@@ -1209,14 +1209,14 @@ declare const services: {
      * @param opts headers emits one -H "Name: Value" per entry. body is written to a temp file and sent via --data-binary so CR/LF stay intact. timeout in ms (default 30000). follow toggles -L to follow 3xx redirects. insecure toggles -k to skip TLS verification. backend picks the tool: 'auto' (default) prefers recon then curl; 'recon' or 'curl' require that specific binary on PATH.
      * @returns Promise<{ status: number, headers: Record<string, string>, body: string, durationMs: number, backend: "recon" | "curl" }> — status is the final HTTP status code; headers have lower-cased names (last response block on a redirect chain); body is the UTF-8 decoded response body; backend is whichever tool ran.
      */
-    http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<Record<string, unknown>>;
+    http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<{ status: number; headers: Record<string, string>; body: string; durationMs: number; backend: "recon" | "curl" }>;
     /**
      * Run a subprocess and wait for it to exit. String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Non-zero exits resolve normally; spawn failures and timeouts throw.
      * @param cmd A string is passed verbatim to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell, so use this form when arguments contain whitespace or shell metacharacters you don't want re-interpreted.
      * @param opts timeout in ms (default 30000); on expiry the process tree is killed and the call throws. cwd sets the working directory. stdin is fed to the process's standard input. env entries are merged on top of the inherited environment (they do not replace it). pane (a tui.pane name or Pane handle) streams stdout+stderr live into a TUI pane — in that mode the result's stdout/stderr strings stay empty. pty (default false) runs the command under a pseudo-terminal so it believes it is a terminal and emits color/progress; with a pane the output is rendered there, without a pane it is captured into stdout (stderr stays empty since a pty merges both streams). Unix only — on Windows pty is ignored and the normal pipe path is used.
      * @returns Promise<{ stdout: string, stderr: string, exitCode: number, success: boolean, durationMs: number }> — stdout/stderr are captured (empty when streamed to a pane); exitCode is 0 on success; success is exitCode === 0; durationMs is wall-clock spawn-to-exit time.
      */
-    shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<Record<string, unknown>>;
+    shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<{ stdout: string; stderr: string; exitCode: number; success: boolean; durationMs: number }>;
     /**
      * Run a subprocess and stream its stdout/stderr to a callback line by line as output arrives (unlike exec.shell, which buffers). String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Resolves { exitCode, success, durationMs } on exit; non-zero exits resolve normally; spawn failures and timeouts reject.
      * @param cmd A string is passed to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so pipes, redirects, and globs work. A string[] is treated as argv: argv[0] is run directly with no shell.
@@ -1237,14 +1237,14 @@ declare const services: {
      * @param opts cwd selects the repo (defaults to the engine's working directory, which gh uses to detect the repo). state filters by PR state ("open" default, "closed", "merged", "all"). limit caps results (default 30; must be positive). author filters to PRs opened by that login.
      * @returns Promise<Array<{ number: number, title: string, state: string, author: string, headRefName: string, baseRefName: string, url: string, createdAt: string, updatedAt: string }>> — one object per PR; author is flattened from gh's { login } wrapper to the bare login string; createdAt/updatedAt are ISO 8601 timestamps.
      */
-    prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Record<string, unknown>[]>;
+    prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Array<{ number: number; title: string; state: string; author: string; headRefName: string; baseRefName: string; url: string; createdAt: string; updatedAt: string }>>;
     /**
      * Repo metadata. With no arg uses cwd's repo; pass 'owner/name' for any repo gh can see. owner + defaultBranch are pre-flattened.
      * @param repo "owner/name" of any repo gh can access. Omit (or pass opts as the first arg) to view the repo detected from cwd.
      * @param opts cwd selects the checkout gh uses to detect the current repo when repo is omitted.
      * @returns Promise<{ name: string, owner: string, description: string, url: string, defaultBranch: string, visibility: string }> — owner is flattened from gh's { login } wrapper to the bare login; defaultBranch is flattened from defaultBranchRef.name ("" if absent); key order matches gh's output.
      */
-    repoView(repo?: string, opts?: { cwd?: string }): Promise<Record<string, unknown>>;
+    repoView(repo?: string, opts?: { cwd?: string }): Promise<{ name: string; owner: string; description: string; url: string; defaultBranch: string; visibility: string }>;
   };
   git: {
     /**
@@ -1284,7 +1284,7 @@ declare const services: {
      * @param opts cwd selects the checkout. limit caps the number of commits (default 50; must be positive). revRange selects the range/ref to walk (default "HEAD").
      * @returns Promise<Array<{ sha: string, shortSha: string, author: string, email: string, timestamp: number, subject: string }>> — newest first; timestamp is the author Unix epoch seconds; subject is the commit's first line.
      */
-    log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }[]>;
+    log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<Array<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }>>;
     /**
      * Full 40-char SHA for the given rev. Invalid refs throw.
      * @param rev Any revision git understands (branch, tag, HEAD, short SHA, HEAD~2, etc.).
@@ -1304,7 +1304,7 @@ declare const services: {
      * @param opts cwd selects the checkout; defaults to the engine's working directory.
      * @returns Promise<Array<{ path: string, indexStatus: string, workingStatus: string }>> — one entry per changed path; indexStatus / workingStatus are the porcelain v1 X / Y status characters (e.g. "M", "A", "?"). An empty array means a clean tree.
      */
-    status(opts?: { cwd?: string }): Promise<{ path: string; indexStatus: string; workingStatus: string }[]>;
+    status(opts?: { cwd?: string }): Promise<Array<{ path: string; indexStatus: string; workingStatus: string }>>;
   };
   typst: {
     /**

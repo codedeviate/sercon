@@ -10,8 +10,9 @@ func servicesDocs() map[string]scriptengine.MemberDoc {
 				{Name: "cmd", Type: "string | string[]", Desc: "A string is passed verbatim to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell, so use this form when arguments contain whitespace or shell metacharacters you don't want re-interpreted."},
 				{Name: "opts", Type: "{ timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }", Optional: true, Desc: "timeout in ms (default 30000); on expiry the process tree is killed and the call throws. cwd sets the working directory. stdin is fed to the process's standard input. env entries are merged on top of the inherited environment (they do not replace it). pane (a tui.pane name or Pane handle) streams stdout+stderr live into a TUI pane — in that mode the result's stdout/stderr strings stay empty. pty (default false) runs the command under a pseudo-terminal so it believes it is a terminal and emits color/progress; with a pane the output is rendered there, without a pane it is captured into stdout (stderr stays empty since a pty merges both streams). Unix only — on Windows pty is ignored and the normal pipe path is used."},
 			},
-			Returns: "Promise<{ stdout: string, stderr: string, exitCode: number, success: boolean, durationMs: number }> — stdout/stderr are captured (empty when streamed to a pane); exitCode is 0 on success; success is exitCode === 0; durationMs is wall-clock spawn-to-exit time.",
-			Errors:  "Throws if cmd is missing, an empty string, an empty array, or a non-string array element; if the host binary is not on PATH or fails to start; if the timeout (or context cancellation) fires before exit; or if a named pane is referenced without a prior tui.layout. A non-zero exit code does NOT throw — it resolves with success:false.",
+			ReturnType: "Promise<{ stdout: string; stderr: string; exitCode: number; success: boolean; durationMs: number }>",
+			Returns:    "Promise<{ stdout: string, stderr: string, exitCode: number, success: boolean, durationMs: number }> — stdout/stderr are captured (empty when streamed to a pane); exitCode is 0 on success; success is exitCode === 0; durationMs is wall-clock spawn-to-exit time.",
+			Errors:     "Throws if cmd is missing, an empty string, an empty array, or a non-string array element; if the host binary is not on PATH or fails to start; if the timeout (or context cancellation) fires before exit; or if a named pane is referenced without a prior tui.layout. A non-zero exit code does NOT throw — it resolves with success:false.",
 			Example: `const r = await services.exec.shell("echo hi");
 if (r.success) runtime.log(r.stdout.trim());`,
 		},
@@ -37,8 +38,9 @@ runtime.log("exit", r.exitCode);`,
 				{Name: "url", Type: "string", Desc: "Target URL; must be fully qualified (the backend requires a scheme + host)."},
 				{Name: "opts", Type: "{ headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: \"auto\" | \"recon\" | \"curl\" }", Optional: true, Desc: "headers emits one -H \"Name: Value\" per entry. body is written to a temp file and sent via --data-binary so CR/LF stay intact. timeout in ms (default 30000). follow toggles -L to follow 3xx redirects. insecure toggles -k to skip TLS verification. backend picks the tool: 'auto' (default) prefers recon then curl; 'recon' or 'curl' require that specific binary on PATH."},
 			},
-			Returns: "Promise<{ status: number, headers: Record<string, string>, body: string, durationMs: number, backend: \"recon\" | \"curl\" }> — status is the final HTTP status code; headers have lower-cased names (last response block on a redirect chain); body is the UTF-8 decoded response body; backend is whichever tool ran.",
-			Errors:  "Throws if method or url is missing/empty; if the requested backend (or, for 'auto', neither recon nor curl) is on PATH; on transport errors (DNS failure, connection refused, TLS handshake); on timeout or context cancellation; or if the response headers can't be parsed. HTTP 4xx/5xx do NOT throw — they resolve with that status.",
+			ReturnType: "Promise<{ status: number; headers: Record<string, string>; body: string; durationMs: number; backend: \"recon\" | \"curl\" }>",
+			Returns:    "Promise<{ status: number, headers: Record<string, string>, body: string, durationMs: number, backend: \"recon\" | \"curl\" }> — status is the final HTTP status code; headers have lower-cased names (last response block on a redirect chain); body is the UTF-8 decoded response body; backend is whichever tool ran.",
+			Errors:     "Throws if method or url is missing/empty; if the requested backend (or, for 'auto', neither recon nor curl) is on PATH; on transport errors (DNS failure, connection refused, TLS handshake); on timeout or context cancellation; or if the response headers can't be parsed. HTTP 4xx/5xx do NOT throw — they resolve with that status.",
 			Example: `const r = await services.exec.http("GET", "https://example.com");
 runtime.log(r.status, r.backend);`,
 		},
@@ -47,8 +49,9 @@ runtime.log(r.status, r.backend);`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ cwd?: string }", Optional: true, Desc: "cwd selects the checkout to inspect; defaults to the engine's working directory."},
 			},
-			Returns: "Promise<{ current: string, detached: boolean, all: string[] }> — current is the checked-out branch name (\"\" when detached); detached is true on a detached HEAD; all lists every local branch (refs/heads) by short name.",
-			Errors:  "Throws if git is not on PATH, the directory is not a git repository, or the underlying git command fails. A detached HEAD is reported via detached:true, not a throw.",
+			ReturnType: "Promise<{ current: string; detached: boolean; all: string[] }>",
+			Returns:    "Promise<{ current: string, detached: boolean, all: string[] }> — current is the checked-out branch name (\"\" when detached); detached is true on a detached HEAD; all lists every local branch (refs/heads) by short name.",
+			Errors:     "Throws if git is not on PATH, the directory is not a git repository, or the underlying git command fails. A detached HEAD is reported via detached:true, not a throw.",
 			Example: `const b = await services.git.branch();
 runtime.log(b.detached ? "(detached)" : b.current);`,
 		},
@@ -57,9 +60,10 @@ runtime.log(b.detached ? "(detached)" : b.current);`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ cwd?: string }", Optional: true, Desc: "cwd selects the checkout; defaults to the engine's working directory."},
 			},
-			Returns: "Promise<boolean> — true when the working tree has no staged, unstaged, or untracked changes.",
-			Errors:  "Throws if git is not on PATH, the directory is not a git repository, or git status exits non-zero.",
-			Example: `if (await services.git.isClean()) runtime.log("clean");`,
+			ReturnType: "Promise<boolean>",
+			Returns:    "Promise<boolean> — true when the working tree has no staged, unstaged, or untracked changes.",
+			Errors:     "Throws if git is not on PATH, the directory is not a git repository, or git status exits non-zero.",
+			Example:    `if (await services.git.isClean()) runtime.log("clean");`,
 		},
 		"git.revParse": {
 			Summary: "Full 40-char SHA for the given rev. Invalid refs throw.",
@@ -67,17 +71,19 @@ runtime.log(b.detached ? "(detached)" : b.current);`,
 				{Name: "rev", Type: "string", Desc: "Any revision git understands (branch, tag, HEAD, short SHA, HEAD~2, etc.)."},
 				{Name: "opts", Type: "{ cwd?: string }", Optional: true, Desc: "cwd selects the checkout; defaults to the engine's working directory."},
 			},
-			Returns: "Promise<string> — the full 40-character commit SHA the rev resolves to.",
-			Errors:  "Throws if rev is missing or empty, git is not on PATH, the directory is not a git repository, or the rev cannot be resolved (git's own error message is included).",
-			Example: `const sha = await services.git.revParse("HEAD");`,
+			ReturnType: "Promise<string>",
+			Returns:    "Promise<string> — the full 40-character commit SHA the rev resolves to.",
+			Errors:     "Throws if rev is missing or empty, git is not on PATH, the directory is not a git repository, or the rev cannot be resolved (git's own error message is included).",
+			Example:    `const sha = await services.git.revParse("HEAD");`,
 		},
 		"git.status": {
 			Summary: "Parsed `git status --porcelain` entries: { path, indexStatus, workingStatus }.",
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ cwd?: string }", Optional: true, Desc: "cwd selects the checkout; defaults to the engine's working directory."},
 			},
-			Returns: "Promise<Array<{ path: string, indexStatus: string, workingStatus: string }>> — one entry per changed path; indexStatus / workingStatus are the porcelain v1 X / Y status characters (e.g. \"M\", \"A\", \"?\"). An empty array means a clean tree.",
-			Errors:  "Throws if git is not on PATH, the directory is not a git repository, or git status exits non-zero.",
+			ReturnType: "Promise<Array<{ path: string; indexStatus: string; workingStatus: string }>>",
+			Returns:    "Promise<Array<{ path: string, indexStatus: string, workingStatus: string }>> — one entry per changed path; indexStatus / workingStatus are the porcelain v1 X / Y status characters (e.g. \"M\", \"A\", \"?\"). An empty array means a clean tree.",
+			Errors:     "Throws if git is not on PATH, the directory is not a git repository, or git status exits non-zero.",
 			Example: `for (const e of await services.git.status())
   runtime.log(e.indexStatus + e.workingStatus, e.path);`,
 		},
@@ -87,9 +93,10 @@ runtime.log(b.detached ? "(detached)" : b.current);`,
 				{Name: "paths", Type: "string | string[]", Desc: "Path or paths to stage. Passed after a `--` separator so paths that look like flags (-foo) are handled literally."},
 				{Name: "opts", Type: "{ cwd?: string }", Optional: true, Desc: "cwd selects the checkout; defaults to the engine's working directory."},
 			},
-			Returns: "Promise<{ paths: string[] }> — the list of paths that were staged.",
-			Errors:  "Throws if paths is missing, an empty string, or contains a non-string array element; if git is not on PATH; or if git add exits non-zero (e.g. a pathspec matching nothing).",
-			Example: `await services.git.add(["src/a.ts", "src/b.ts"]);`,
+			ReturnType: "Promise<{ paths: string[] }>",
+			Returns:    "Promise<{ paths: string[] }> — the list of paths that were staged.",
+			Errors:     "Throws if paths is missing, an empty string, or contains a non-string array element; if git is not on PATH; or if git add exits non-zero (e.g. a pathspec matching nothing).",
+			Example:    `await services.git.add(["src/a.ts", "src/b.ts"]);`,
 		},
 		"git.commit": {
 			Summary: "Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --allow-empty.",
@@ -97,17 +104,19 @@ runtime.log(b.detached ? "(detached)" : b.current);`,
 				{Name: "message", Type: "string", Desc: "Commit message (passed as a single -m argument)."},
 				{Name: "opts", Type: "{ cwd?: string, allowEmpty?: boolean }", Optional: true, Desc: "cwd selects the checkout. allowEmpty adds --allow-empty so a commit succeeds with no staged changes (release markers, etc.); defaults to false."},
 			},
-			Returns: "Promise<{ sha: string }> — sha is the full SHA of the newly created HEAD commit.",
-			Errors:  "Throws if message is missing or blank, git is not on PATH, or git commit exits non-zero (e.g. nothing staged and allowEmpty is false).",
-			Example: `const c = await services.git.commit("chore: bump", { allowEmpty: true });`,
+			ReturnType: "Promise<{ sha: string }>",
+			Returns:    "Promise<{ sha: string }> — sha is the full SHA of the newly created HEAD commit.",
+			Errors:     "Throws if message is missing or blank, git is not on PATH, or git commit exits non-zero (e.g. nothing staged and allowEmpty is false).",
+			Example:    `const c = await services.git.commit("chore: bump", { allowEmpty: true });`,
 		},
 		"git.log": {
 			Summary: "Recent commits as { sha, shortSha, author, email, timestamp, subject }. opts.limit / opts.revRange.",
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ cwd?: string, limit?: number, revRange?: string }", Optional: true, Desc: "cwd selects the checkout. limit caps the number of commits (default 50; must be positive). revRange selects the range/ref to walk (default \"HEAD\")."},
 			},
-			Returns: "Promise<Array<{ sha: string, shortSha: string, author: string, email: string, timestamp: number, subject: string }>> — newest first; timestamp is the author Unix epoch seconds; subject is the commit's first line.",
-			Errors:  "Throws if limit is <= 0, git is not on PATH, the directory is not a git repository, or git log exits non-zero (e.g. an unknown revRange).",
+			ReturnType: "Promise<Array<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }>>",
+			Returns:    "Promise<Array<{ sha: string, shortSha: string, author: string, email: string, timestamp: number, subject: string }>> — newest first; timestamp is the author Unix epoch seconds; subject is the commit's first line.",
+			Errors:     "Throws if limit is <= 0, git is not on PATH, the directory is not a git repository, or git log exits non-zero (e.g. an unknown revRange).",
 			Example: `const log = await services.git.log({ limit: 5 });
 runtime.log(log[0].subject);`,
 		},
@@ -116,8 +125,9 @@ runtime.log(log[0].subject);`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ cwd?: string, revRange?: string }", Optional: true, Desc: "cwd selects the checkout. revRange is the diff range (default \"HEAD~1..HEAD\", the last commit)."},
 			},
-			Returns: "Promise<{ files: number, insertions: number, deletions: number }> — counters parsed from git diff --shortstat. An empty diff returns all zeros.",
-			Errors:  "Throws if git is not on PATH, the directory is not a git repository, or git diff exits non-zero (e.g. a bad revRange).",
+			ReturnType: "Promise<{ files: number; insertions: number; deletions: number }>",
+			Returns:    "Promise<{ files: number, insertions: number, deletions: number }> — counters parsed from git diff --shortstat. An empty diff returns all zeros.",
+			Errors:     "Throws if git is not on PATH, the directory is not a git repository, or git diff exits non-zero (e.g. a bad revRange).",
 			Example: `const d = await services.git.diffStat();
 runtime.log(d.files, d.insertions, d.deletions);`,
 		},
@@ -127,15 +137,17 @@ runtime.log(d.files, d.insertions, d.deletions);`,
 				{Name: "args", Type: "string | string[]", Desc: "git arguments (without the leading \"git\"), e.g. [\"tag\", \"--list\"]. A bare string is treated as a single argument."},
 				{Name: "opts", Type: "{ cwd?: string }", Optional: true, Desc: "cwd selects the checkout; defaults to the engine's working directory."},
 			},
-			Returns: "Promise<{ stdout: string, stderr: string, exitCode: number }> — captured streams plus git's exit code, so callers can react to any exit status without try/catch.",
-			Errors:  "Throws if args is missing, an empty string, or an empty array; if git is not on PATH; or on a spawn failure / context cancellation. A non-zero exit code does NOT throw — it is returned in exitCode.",
+			ReturnType: "Promise<{ stdout: string; stderr: string; exitCode: number }>",
+			Returns:    "Promise<{ stdout: string, stderr: string, exitCode: number }> — captured streams plus git's exit code, so callers can react to any exit status without try/catch.",
+			Errors:     "Throws if args is missing, an empty string, or an empty array; if git is not on PATH; or on a spawn failure / context cancellation. A non-zero exit code does NOT throw — it is returned in exitCode.",
 			Example: `const r = await services.git.runText(["tag", "--list"]);
 if (r.exitCode === 0) runtime.log(r.stdout);`,
 		},
 		"gh.authStatus": {
-			Summary: "Probe gh's auth state. Missing gh / unauthenticated resolve with { authenticated: false, … } — only context cancellation throws.",
-			Returns: "Promise<{ authenticated: boolean, user: string, raw: string }> — authenticated is true only when `gh api user` succeeds; user is the resolved login (\"\" when not authenticated); raw is the login on success or the underlying gh error / \"gh not on PATH\" otherwise.",
-			Errors:  "Throws only on context cancellation. A missing gh binary or an unauthenticated session resolve with authenticated:false rather than throwing.",
+			Summary:    "Probe gh's auth state. Missing gh / unauthenticated resolve with { authenticated: false, … } — only context cancellation throws.",
+			ReturnType: "Promise<{ authenticated: boolean; user: string; raw: string }>",
+			Returns:    "Promise<{ authenticated: boolean, user: string, raw: string }> — authenticated is true only when `gh api user` succeeds; user is the resolved login (\"\" when not authenticated); raw is the login on success or the underlying gh error / \"gh not on PATH\" otherwise.",
+			Errors:     "Throws only on context cancellation. A missing gh binary or an unauthenticated session resolve with authenticated:false rather than throwing.",
 			Example: `const a = await services.gh.authStatus();
 if (a.authenticated) runtime.log("logged in as", a.user);`,
 		},
@@ -144,8 +156,9 @@ if (a.authenticated) runtime.log("logged in as", a.user);`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ cwd?: string, state?: string, limit?: number, author?: string }", Optional: true, Desc: "cwd selects the repo (defaults to the engine's working directory, which gh uses to detect the repo). state filters by PR state (\"open\" default, \"closed\", \"merged\", \"all\"). limit caps results (default 30; must be positive). author filters to PRs opened by that login."},
 			},
-			Returns: "Promise<Array<{ number: number, title: string, state: string, author: string, headRefName: string, baseRefName: string, url: string, createdAt: string, updatedAt: string }>> — one object per PR; author is flattened from gh's { login } wrapper to the bare login string; createdAt/updatedAt are ISO 8601 timestamps.",
-			Errors:  "Throws if limit is <= 0, gh is not on PATH, gh exits non-zero (not authenticated, not a GitHub repo, etc.), the JSON can't be parsed, or on context cancellation.",
+			ReturnType: "Promise<Array<{ number: number; title: string; state: string; author: string; headRefName: string; baseRefName: string; url: string; createdAt: string; updatedAt: string }>>",
+			Returns:    "Promise<Array<{ number: number, title: string, state: string, author: string, headRefName: string, baseRefName: string, url: string, createdAt: string, updatedAt: string }>> — one object per PR; author is flattened from gh's { login } wrapper to the bare login string; createdAt/updatedAt are ISO 8601 timestamps.",
+			Errors:     "Throws if limit is <= 0, gh is not on PATH, gh exits non-zero (not authenticated, not a GitHub repo, etc.), the JSON can't be parsed, or on context cancellation.",
 			Example: `const prs = await services.gh.prList({ state: "open", limit: 5 });
 for (const pr of prs) runtime.log(pr.number, pr.title);`,
 		},
@@ -155,8 +168,9 @@ for (const pr of prs) runtime.log(pr.number, pr.title);`,
 				{Name: "repo", Type: "string", Optional: true, Desc: "\"owner/name\" of any repo gh can access. Omit (or pass opts as the first arg) to view the repo detected from cwd."},
 				{Name: "opts", Type: "{ cwd?: string }", Optional: true, Desc: "cwd selects the checkout gh uses to detect the current repo when repo is omitted."},
 			},
-			Returns: "Promise<{ name: string, owner: string, description: string, url: string, defaultBranch: string, visibility: string }> — owner is flattened from gh's { login } wrapper to the bare login; defaultBranch is flattened from defaultBranchRef.name (\"\" if absent); key order matches gh's output.",
-			Errors:  "Throws if gh is not on PATH, gh exits non-zero (repo not found, not authenticated, etc.), the JSON can't be parsed, or on context cancellation.",
+			ReturnType: "Promise<{ name: string; owner: string; description: string; url: string; defaultBranch: string; visibility: string }>",
+			Returns:    "Promise<{ name: string, owner: string, description: string, url: string, defaultBranch: string, visibility: string }> — owner is flattened from gh's { login } wrapper to the bare login; defaultBranch is flattened from defaultBranchRef.name (\"\" if absent); key order matches gh's output.",
+			Errors:     "Throws if gh is not on PATH, gh exits non-zero (repo not found, not authenticated, etc.), the JSON can't be parsed, or on context cancellation.",
 			Example: `const r = await services.gh.repoView("cli/cli");
 runtime.log(r.owner, r.defaultBranch);`,
 		},
@@ -172,23 +186,27 @@ runtime.log(r.owner, r.defaultBranch);`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ prompt: string, provider?: \"claude\" | \"codex\" | \"copilot\" | \"gemini\", system?: string, context?: string, timeout?: number }", Desc: "prompt is required. provider names the CLI to use; when omitted, the first provider on PATH (in preference order) is chosen. system and context are prepended to the prompt as \"System: …\" / \"Context: …\" blocks (a portable substitute for each CLI's own flags). timeout in ms (default 120000)."},
 			},
-			Returns: "Promise<{ provider: string, output: string, exitCode: number }> — provider is the CLI that ran; output is its trimmed stdout (or stderr when stdout is empty on a non-zero exit); exitCode is 0 on success.",
-			Errors:  "Throws if opts.prompt is missing/empty, no provider is on PATH (when provider is unset), the named provider is unknown, the CLI fails to spawn, or on timeout / context cancellation. A non-zero exit code does NOT throw — it resolves with that exitCode.",
+			ReturnType: "Promise<{ provider: string; output: string; exitCode: number }>",
+			Returns:    "Promise<{ provider: string, output: string, exitCode: number }> — provider is the CLI that ran; output is its trimmed stdout (or stderr when stdout is empty on a non-zero exit); exitCode is 0 on success.",
+			Errors:     "Throws if opts.prompt is missing/empty, no provider is on PATH (when provider is unset), the named provider is unknown, the CLI fails to spawn, or on timeout / context cancellation. A non-zero exit code does NOT throw — it resolves with that exitCode.",
 			Example: `const r = await services.ai.send({ prompt: "Say hi", provider: "claude" });
 runtime.log(r.output);`,
 		},
 
 		// agentBrowser namespace docs
 		"agentBrowser.available": {
-			Summary: "True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run. Gate calls on this; every binding throws a clean error when the CLI is absent.",
-			Returns: "boolean — true if `agent-browser` is on PATH.",
-			Example: `if (!services.agentBrowser.available) runtime.log("install agent-browser first");`,
+			Summary:    "True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run. Gate calls on this; every binding throws a clean error when the CLI is absent.",
+			ReturnType: "boolean",
+			Returns:    "boolean — true if `agent-browser` is on PATH.",
+			Errors:     "Never throws.",
+			Example:    `if (!services.agentBrowser.available) runtime.log("install agent-browser first");`,
 		},
 		"agentBrowser.version": {
-			Summary: "The agent-browser CLI version string.",
-			Returns: "Promise<string> — the version reported by `agent-browser --version`.",
-			Errors:  "Throws if the agent-browser CLI is not on PATH.",
-			Example: `runtime.log(await services.agentBrowser.version());`,
+			Summary:    "The agent-browser CLI version string.",
+			ReturnType: "Promise<string>",
+			Returns:    "Promise<string> — the version reported by `agent-browser --version`.",
+			Errors:     "Throws if the agent-browser CLI is not on PATH.",
+			Example:    `runtime.log(await services.agentBrowser.version());`,
 		},
 		"agentBrowser.launch": {
 			Summary: "Allocate a browser session and return a handle. Synchronous (no browser starts until the first command). Pass opts.session to name the session; otherwise a unique id is generated. Launch flags (headed, profile, proxy, userAgent, device, colorScheme, ignoreHttpsErrors, engine, executablePath, enable, args) are threaded into every call the handle makes. Sessions the script does not close() are best-effort closed when the Run ends.",
@@ -209,8 +227,9 @@ await b.close();`,
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "The URL to navigate to. Required."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data typically contains { url, title } after navigation.",
-			Errors:  "Throws if url is missing, if agent-browser is not on PATH, or if navigation fails.",
+			ReturnType: "Promise<{ success: boolean; data: object; error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data typically contains { url, title } after navigation.",
+			Errors:     "Throws if url is missing, if agent-browser is not on PATH, or if navigation fails.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("https://example.com");
 await b.close();`,
@@ -220,9 +239,10 @@ await b.close();`,
 			Params: []scriptengine.Param{
 				{Name: "selector", Type: "string", Desc: "CSS selector for the element to click. Required."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
-			Errors:  "Throws if selector is missing, element not found, or agent-browser is not on PATH.",
-			Example: `await b.click("#submit-btn");`,
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:     "Throws if selector is missing, element not found, or agent-browser is not on PATH.",
+			Example:    `await b.click("#submit-btn");`,
 		},
 		"agentBrowser.fill": {
 			Summary: "Fill an input element with text.",
@@ -230,9 +250,10 @@ await b.close();`,
 				{Name: "selector", Type: "string", Desc: "CSS selector for the input element. Required."},
 				{Name: "text", Type: "string", Desc: "Text to fill into the element."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
-			Errors:  "Throws if selector is missing, element not found, or agent-browser is not on PATH.",
-			Example: `await b.fill("#search", "typescript");`,
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:     "Throws if selector is missing, element not found, or agent-browser is not on PATH.",
+			Example:    `await b.fill("#search", "typescript");`,
 		},
 		"agentBrowser.get": {
 			Summary: "Get a page property. what is one of: text, html, value, attr, title, url, count, box, styles, cdp-url. Pass selector as the second argument for element-scoped queries.",
@@ -240,8 +261,9 @@ await b.close();`,
 				{Name: "what", Type: "string", Desc: "Property name: text, html, value, attr, title, url, count, box, styles, cdp-url. Required."},
 				{Name: "selector", Type: "string", Optional: true, Desc: "CSS selector to scope the query to a specific element."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser wraps results in this envelope; the requested value lives under data (e.g. get(\"title\") → { success, data: { title }, error }, get(\"value\", \"#sel\") → { success, data: { value }, error }).",
-			Errors:  "Throws if what is missing, the selector finds no element, or agent-browser is not on PATH.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser wraps results in this envelope; the requested value lives under data (e.g. get(\"title\") → { success, data: { title }, error }, get(\"value\", \"#sel\") → { success, data: { value }, error }).",
+			Errors:     "Throws if what is missing, the selector finds no element, or agent-browser is not on PATH.",
 			Example: `const r = await b.get("title");
 runtime.log(r.data?.title);
 
@@ -253,8 +275,9 @@ runtime.log(t.data?.text);`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ interactive?: boolean, compact?: boolean, depth?: number, selector?: string }", Optional: true, Desc: "interactive: include interactive-only elements (-i). compact: compact output (-c). depth: max tree depth (-d). selector: scope to a subtree (-s selector)."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.",
-			Errors:  "Throws if agent-browser is not on PATH or the snapshot fails.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.",
+			Errors:     "Throws if agent-browser is not on PATH or the snapshot fails.",
 			Example: `const snap = await b.snapshot({ interactive: true });
 runtime.log("snapshot keys:", Object.keys(snap).join(", "));`,
 		},
@@ -265,23 +288,26 @@ runtime.log("snapshot keys:", Object.keys(snap).join(", "));`,
 				{Name: "value", Type: "string", Desc: "Value to match for the given locator type. Required."},
 				{Name: "opts", Type: "{ action: string, text?: string }", Desc: "action is required (e.g. click, fill, hover, check). text is passed as the fill text when action is 'fill' or 'type'."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
-			Errors:  "Throws if locator, value, or opts.action is missing, or if agent-browser is not on PATH.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:     "Throws if locator, value, or opts.action is missing, or if agent-browser is not on PATH.",
 			Example: `await b.find("role", "button", { action: "click" });
 await b.find("text", "Search", { action: "fill", text: "query" });`,
 		},
 		"agentBrowser.close": {
-			Summary: "Close the browser session. Idempotent: a second close is a no-op.",
-			Returns: "Promise<{ closed: boolean }> — { closed: true } on the first call; an empty object on subsequent calls.",
-			Errors:  "Throws if the close command fails (e.g. agent-browser error).",
-			Example: `await b.close();`,
+			Summary:    "Close the browser session. Idempotent: a second close is a no-op.",
+			ReturnType: "Promise<{ closed: boolean }>",
+			Returns:    "Promise<{ closed: boolean }> — { closed: true } on the first call; an empty object on subsequent calls.",
+			Errors:     "Throws if the close command fails (e.g. agent-browser error).",
+			Example:    `await b.close();`,
 		},
 
 		// Phase 2 — defaults bag
 		"agentBrowser.defaultOptions": {
-			Summary: "Return a shallow copy of the current namespace-level launch defaults. These are merged (under per-call opts) into every subsequent launch().",
-			Returns: "object — a plain-object copy of the current defaults map. Empty object when no defaults have been set.",
-			Errors:  "Never throws.",
+			Summary:    "Return a shallow copy of the current namespace-level launch defaults. These are merged (under per-call opts) into every subsequent launch().",
+			ReturnType: "object",
+			Returns:    "object — a plain-object copy of the current defaults map. Empty object when no defaults have been set.",
+			Errors:     "Never throws.",
 			Example: `services.agentBrowser.setDefaultOptions({ headed: false });
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed":false}`,
 		},
@@ -290,15 +316,17 @@ runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "object", Desc: "A plain object of launch option key/value pairs. The entire defaults map is replaced (not merged) with this object."},
 			},
-			Returns: "void",
-			Errors:  "Never throws.",
+			ReturnType: "void",
+			Returns:    "void",
+			Errors:     "Never throws.",
 			Example: `services.agentBrowser.setDefaultOptions({ headed: false, proxy: "http://proxy:3128" });
 const b = services.agentBrowser.launch(); // headed:false + proxy inherited`,
 		},
 		"agentBrowser.clearDefaultOptions": {
-			Summary: "Reset the namespace-level launch defaults to an empty object, removing any values set by setDefaultOptions.",
-			Returns: "void",
-			Errors:  "Never throws.",
+			Summary:    "Reset the namespace-level launch defaults to an empty object, removing any values set by setDefaultOptions.",
+			ReturnType: "void",
+			Returns:    "void",
+			Errors:     "Never throws.",
 			Example: `services.agentBrowser.clearDefaultOptions();
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {}`,
 		},
@@ -335,8 +363,9 @@ runtime.log(new Uint8Array(pdf.bytes).length, pdf.format); // e.g. 5678 pdf`,
 				{Name: "url", Type: "string", Desc: "URL to open. Required."},
 				{Name: "opts", Type: "{ interactive?: boolean, compact?: boolean, depth?: number, selector?: string }", Optional: true, Desc: "Snapshot options forwarded to the handle's snapshot() method."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.",
-			Errors:  "Throws if url is missing; if agent-browser is not on PATH; on navigation or snapshot failure.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.",
+			Errors:     "Throws if url is missing; if agent-browser is not on PATH; on navigation or snapshot failure.",
 			Example: `const snap = await services.agentBrowser.snapshot("data:text/html,<h1>Hi</h1>", { compact: true });
 runtime.log(JSON.stringify(snap.data).slice(0, 100));`,
 		},
@@ -346,17 +375,19 @@ runtime.log(JSON.stringify(snap.data).slice(0, 100));`,
 				{Name: "url", Type: "string", Desc: "URL to open. Required."},
 				{Name: "js", Type: "string", Desc: "JavaScript expression to evaluate in the page context. Required."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data.result holds the serialised return value.",
-			Errors:  "Throws if url or js is missing; if agent-browser is not on PATH; on navigation or evaluation failure.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data.result holds the serialised return value.",
+			Errors:     "Throws if url or js is missing; if agent-browser is not on PATH; on navigation or evaluation failure.",
 			Example: `const r = await services.agentBrowser.eval("data:text/html,<title>Hi</title>", "document.title");
 runtime.log(r.data?.result); // "Hi"`,
 		},
 
 		// Phase 3 — handle-level network/cookies/storage/tabs/diff
 		"agentBrowser.network": {
-			Summary: "Handle sub-object for network interception and monitoring: network.route, network.unroute, network.requests, network.request, network.har.start, network.har.stop.",
-			Returns: "object — the network namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Summary:    "Handle sub-object for network interception and monitoring: network.route, network.unroute, network.requests, network.request, network.har.start, network.har.stop.",
+			ReturnType: "object",
+			Returns:    "object — the network namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("data:text/html,<h1>hi</h1>");
 await b.network.route("**/api/*", { abort: true });
@@ -365,9 +396,10 @@ runtime.log("requests:", JSON.stringify(reqs.data));
 await b.close();`,
 		},
 		"agentBrowser.cookies": {
-			Summary: "Handle sub-object for cookie management: cookies.get(), cookies.set(name, value, opts?), cookies.clear().",
-			Returns: "object — the cookies namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Summary:    "Handle sub-object for cookie management: cookies.get(), cookies.set(name, value, opts?), cookies.clear().",
+			ReturnType: "object",
+			Returns:    "object — the cookies namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("data:text/html,<h1>hi</h1>");
 await b.cookies.set("sid", "abc123", { sameSite: "Lax", httpOnly: true });
@@ -377,9 +409,10 @@ await b.cookies.clear();
 await b.close();`,
 		},
 		"agentBrowser.storage": {
-			Summary: "Handle sub-object for web storage: storage.local.{get,set,clear} and storage.session.{get,set,clear}.",
-			Returns: "object — the storage namespace with local and session sub-objects. Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Summary:    "Handle sub-object for web storage: storage.local.{get,set,clear} and storage.session.{get,set,clear}.",
+			ReturnType: "object",
+			Returns:    "object — the storage namespace with local and session sub-objects. Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("data:text/html,<h1>hi</h1>");
 await b.storage.local.set("theme", "dark");
@@ -389,9 +422,10 @@ await b.storage.session.set("token", "xyz");
 await b.close();`,
 		},
 		"agentBrowser.tabs": {
-			Summary: "Handle sub-object for tab management: tabs.list(), tabs.new(url?, opts?), tabs.close(ref?), tabs.select(ref). Tab refs are t1/t2/… or user labels.",
-			Returns: "object — the tabs namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or a tab ref is required but missing.",
+			Summary:    "Handle sub-object for tab management: tabs.list(), tabs.new(url?, opts?), tabs.close(ref?), tabs.select(ref). Tab refs are t1/t2/… or user labels.",
+			ReturnType: "object",
+			Returns:    "object — the tabs namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or a tab ref is required but missing.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("data:text/html,<h1>tab1</h1>");
 await b.tabs.new("data:text/html,<h1>tab2</h1>", { label: "second" });
@@ -402,9 +436,10 @@ await b.tabs.close("second");
 await b.close();`,
 		},
 		"agentBrowser.diff": {
-			Summary: "Handle sub-object for page diffing: diff.snapshot(opts?), diff.screenshot(opts), diff.url(url1, url2).",
-			Returns: "object — the diff namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or a required option (e.g. baseline) is missing.",
+			Summary:    "Handle sub-object for page diffing: diff.snapshot(opts?), diff.screenshot(opts), diff.url(url1, url2).",
+			ReturnType: "object",
+			Returns:    "object — the diff namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or a required option (e.g. baseline) is missing.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("data:text/html,<h1>hello</h1>");
 const snap = await b.diff.snapshot();
@@ -417,9 +452,10 @@ await b.close();`,
 
 		// Phase 4 — handle-level debug/perf groups
 		"agentBrowser.trace": {
-			Summary: "Handle sub-object for Chrome DevTools tracing: trace.start() begins a trace, trace.stop(path?) stops it and optionally saves to a file.",
-			Returns: "object — the trace namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Summary:    "Handle sub-object for Chrome DevTools tracing: trace.start() begins a trace, trace.stop(path?) stops it and optionally saves to a file.",
+			ReturnType: "object",
+			Returns:    "object — the trace namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("data:text/html,<h1>hi</h1>");
 await b.trace.start();
@@ -432,8 +468,9 @@ await b.close();`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ categories?: string }", Optional: true, Desc: "categories is a comma-separated list of V8/Blink profiling categories (e.g. 'v8,blink')."},
 			},
-			Returns: "object — the profiler namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			ReturnType: "object",
+			Returns:    "object — the profiler namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("data:text/html,<h1>hi</h1>");
 await b.profiler.start({ categories: "v8,blink" });
@@ -442,9 +479,10 @@ await b.profiler.stop("/tmp/profile.json");
 await b.close();`,
 		},
 		"agentBrowser.inspect": {
-			Summary: "Open the Chrome DevTools inspector on the current session and return the DevTools URL.",
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data typically contains { url } for the DevTools connection.",
-			Errors:  "Throws if agent-browser is not on PATH or the session is closed.",
+			Summary:    "Open the Chrome DevTools inspector on the current session and return the DevTools URL.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data typically contains { url } for the DevTools connection.",
+			Errors:     "Throws if agent-browser is not on PATH or the session is closed.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("https://example.com");
 const r = await b.inspect();
@@ -457,8 +495,9 @@ await b.close();`,
 				{Name: "op", Type: "\"read\" | \"write\" | \"copy\" | \"paste\"", Desc: "Clipboard operation. Required."},
 				{Name: "text", Type: "string", Optional: true, Desc: "Text to write (only used when op is 'write')."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
-			Errors:  "Throws if op is missing or agent-browser is not on PATH.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:     "Throws if op is missing or agent-browser is not on PATH.",
 			Example: `await b.clipboard("write", "hello");
 const r = await b.clipboard("read");
 runtime.log(r.data?.text);`,
@@ -468,8 +507,9 @@ runtime.log(r.data?.text);`,
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Optional: true, Desc: "URL to navigate to before measuring. When omitted, vitals are measured on the currently loaded page."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the Core Web Vitals metrics.",
-			Errors:  "Throws if agent-browser is not on PATH or the session is closed.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the Core Web Vitals metrics.",
+			Errors:     "Throws if agent-browser is not on PATH or the session is closed.",
 			Example: `const v = await b.vitals();
 runtime.log("LCP:", v.data?.lcp);`,
 		},
@@ -478,16 +518,18 @@ runtime.log("LCP:", v.data?.lcp);`,
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "The URL to push into the browser history. Required."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
-			Errors:  "Throws if url is missing or agent-browser is not on PATH.",
-			Example: `await b.pushstate("/app/dashboard");`,
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:     "Throws if url is missing or agent-browser is not on PATH.",
+			Example:    `await b.pushstate("/app/dashboard");`,
 		},
 
 		// Phase 4 — handle-level React DevTools
 		"agentBrowser.react": {
-			Summary: "Handle sub-object for React DevTools integration: react.tree(), react.inspect(id), react.renders.start/stop(), react.suspense(opts?). Requires the session launched with launch({ enable: 'react-devtools' }).",
-			Returns: "object — the react namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>. agent-browser returns a clear error when react-devtools was not enabled at launch time.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or react-devtools was not enabled at launch.",
+			Summary:    "Handle sub-object for React DevTools integration: react.tree(), react.inspect(id), react.renders.start/stop(), react.suspense(opts?). Requires the session launched with launch({ enable: 'react-devtools' }).",
+			ReturnType: "object",
+			Returns:    "object — the react namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>. agent-browser returns a clear error when react-devtools was not enabled at launch time.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or react-devtools was not enabled at launch.",
 			Example: `const b = services.agentBrowser.launch({ enable: "react-devtools" });
 await b.open("https://react-app.example.com");
 const tree = await b.react.tree();
@@ -503,8 +545,9 @@ await b.close();`,
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ port?: number }", Optional: true, Desc: "port selects the streaming port (default chosen by agent-browser)."},
 			},
-			Returns: "object — the stream namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			ReturnType: "object",
+			Returns:    "object — the stream namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
 			Example: `await b.stream.enable({ port: 9229 });
 const status = await b.stream.status();
 runtime.log("streaming:", status.data?.enabled);
@@ -516,8 +559,9 @@ await b.stream.disable();`,
 				{Name: "message", Type: "string", Desc: "Natural-language instruction for the AI to execute. Required."},
 				{Name: "opts", Type: "{ model?: string }", Optional: true, Desc: "model selects the AI model (uses the agent-browser default when omitted)."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
-			Errors:  "Throws if message is missing, if agent-browser is not on PATH, or if no AI gateway is configured.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:     "Throws if message is missing, if agent-browser is not on PATH, or if no AI gateway is configured.",
 			Example: `// Requires agent-browser to have an AI gateway configured.
 const r = await b.chat("Click the Login button");
 runtime.log("chat ok:", r.success);`,
@@ -528,8 +572,9 @@ runtime.log("chat ok:", r.success);`,
 				{Name: "command", Type: "string", Desc: "The agent-browser subcommand to run (e.g. 'get', 'scroll'). Required."},
 				{Name: "args", Type: "string[]", Desc: "Additional arguments to pass to the subcommand (spread after the command)."},
 			},
-			Returns: "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
-			Errors:  "Throws if command is missing or agent-browser is not on PATH.",
+			ReturnType: "Promise<{ success: boolean, data: object, error: string | null }>",
+			Returns:    "Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.",
+			Errors:     "Throws if command is missing or agent-browser is not on PATH.",
 			Example: `const r = await b.cmd("get", "title");
 runtime.log("title via cmd:", r.data?.title);`,
 		},
@@ -539,17 +584,19 @@ runtime.log("title via cmd:", r.data?.title);`,
 				{Name: "cmds", Type: "string[]", Desc: "Array of full command strings to execute sequentially. Required."},
 				{Name: "opts", Type: "{ bail?: boolean }", Optional: true, Desc: "bail: stop on the first failed command and return results up to that point."},
 			},
-			Returns: "Promise<Array<{ success: boolean, data: object, error: string|null }>> — a JSON array of per-command result envelopes (not the usual single envelope).",
-			Errors:  "Throws if cmds is missing/not an array or agent-browser is not on PATH.",
+			ReturnType: "Promise<Array<{ success: boolean, data: object, error: string | null }>>",
+			Returns:    "Promise<Array<{ success: boolean, data: object, error: string|null }>> — a JSON array of per-command result envelopes (not the usual single envelope).",
+			Errors:     "Throws if cmds is missing/not an array or agent-browser is not on PATH.",
 			Example: `const results = await b.batch(["get title", "get url"], { bail: false });
 for (const r of results) runtime.log(r.success, r.data);`,
 		},
 
 		// Phase 4 — namespace-level auth vault
 		"agentBrowser.auth": {
-			Summary: "Namespace object for the auth vault (session-independent): auth.save, auth.list, auth.show, auth.delete. Passwords are never placed in argv — auth.save sends the password via stdin (--password-stdin).",
-			Returns: "object — the auth namespace (not callable itself; use sub-methods). auth.list returns an array of profile names; auth.show/delete return an envelope; auth.save returns an envelope. Handle-level auth.login(name) is a separate method on the session handle.",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH, or required fields (name, url, username, password) are missing.",
+			Summary:    "Namespace object for the auth vault (session-independent): auth.save, auth.list, auth.show, auth.delete. Passwords are never placed in argv — auth.save sends the password via stdin (--password-stdin).",
+			ReturnType: "object",
+			Returns:    "object — the auth namespace (not callable itself; use sub-methods). auth.list returns an array of profile names; auth.show/delete return an envelope; auth.save returns an envelope. Handle-level auth.login(name) is a separate method on the session handle.",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH, or required fields (name, url, username, password) are missing.",
 			Example: `// Save a login profile (password sent via stdin, never via argv).
 await services.agentBrowser.auth.save("prod", {
   url: "https://app.example.com/login",
@@ -572,9 +619,10 @@ await b.close();`,
 
 		// Phase 2 — handle-level set.* and record.*
 		"agentBrowser.set": {
-			Summary: "Namespace object with browser-settings sub-methods on an open handle: set.viewport, set.device, set.geo, set.offline, set.headers, set.credentials, set.media.",
-			Returns: "object — the set namespace (not callable itself; use sub-methods).",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Summary:    "Namespace object with browser-settings sub-methods on an open handle: set.viewport, set.device, set.geo, set.offline, set.headers, set.credentials, set.media.",
+			ReturnType: "object",
+			Returns:    "object — the set namespace (not callable itself; use sub-methods).",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("data:text/html,<h1>Test</h1>");
 await b.set.viewport(1920, 1080);
@@ -582,9 +630,10 @@ await b.set.device("iPhone 12");
 await b.close();`,
 		},
 		"agentBrowser.record": {
-			Summary: "Namespace object for video recording on an open handle: record.start(path, url?) and record.stop().",
-			Returns: "object — the record namespace (not callable itself; use sub-methods).",
-			Errors:  "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
+			Summary:    "Namespace object for video recording on an open handle: record.start(path, url?) and record.stop().",
+			ReturnType: "object",
+			Returns:    "object — the record namespace (not callable itself; use sub-methods).",
+			Errors:     "Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.",
 			Example: `const b = services.agentBrowser.launch();
 await b.open("https://example.com");
 await b.record.start("/tmp/clip.webm");
@@ -595,8 +644,10 @@ await b.close();`,
 
 		// webdriver namespace docs
 		"webdriver.available": {
-			Summary: "True when a W3C WebDriver binary (chromedriver or geckodriver) is on PATH. Sync boolean, resolved once per Run. Gate calls on this before using probe or connect.",
-			Returns: "boolean — true if chromedriver or geckodriver is found on PATH.",
+			Summary:    "True when a W3C WebDriver binary (chromedriver or geckodriver) is on PATH. Sync boolean, resolved once per Run. Gate calls on this before using probe or connect.",
+			ReturnType: "boolean",
+			Returns:    "boolean — true if chromedriver or geckodriver is found on PATH.",
+			Errors:     "Never throws.",
 			Example: `if (!services.webdriver.available) {
   runtime.log("install chromedriver or geckodriver first");
 }`,
