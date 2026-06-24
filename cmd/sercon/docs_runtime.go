@@ -73,7 +73,7 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Params: []scriptengine.Param{
 				{Name: "ms", Type: "number", Desc: "Delay in milliseconds. Coerced to an integer; non-positive values resolve effectively immediately."},
 			},
-			ReturnType: "void",
+			ReturnType: "Promise<void>",
 			Returns:    "Promise<void> — resolves once the delay elapses.",
 			Errors:     "Rejects if the run is cancelled or hits its timeout before the delay elapses (the underlying context is cancelled).",
 			Example:    `await runtime.time.sleep(250);`,
