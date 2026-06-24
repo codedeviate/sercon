@@ -141,6 +141,30 @@ Pure library-side changes (e.g. `WithScriptRoot`, `Engine.Reset()`) only need `M
 
 Version bumps: **manual via `make release-prep`** as of v0.7.0 (previously release-please drove this in CI from v0.4.21 to v0.6.0; the workflow was dropped because its state desynced with manual tags we cut while debugging an unrelated Actions permission issue, and re-anchoring it was more work than running the cut by hand). The recipe: `make release-prep VERSION=x.y.z` bumps `pkg/scriptengine/version.go`, the two MANUAL.md version strings (located via `x-release-please-version` end-of-line comments — kept for future automation), and the `HISTORY.md` "covered … through vX.Y.Z (date)" span line (so the span ships in the cut commit instead of perpetually trailing a release; capability narrative is still added per-feature by hand), then prints a checklist (edit CHANGELOG `[Unreleased]` → versioned section, `make manual && make types && make test && make vet && make lint && make demo`, commit, tag, push). `release.yml` fires on the `vX.Y.Z` tag push and runs goreleaser. `make version-check` is the standalone sanity check. `--version` reads `scriptengine.Version`, so it follows the constant automatically — goja / esbuild versions in the same output come from `runtime/debug.ReadBuildInfo` and update with `go.mod`.
 
+## WISHLIST.md inbox → OUT-OF-SCOPE.md
+
+`WISHLIST.md` is the maintainer's scratch inbox for backlog ideas — a place to jot
+things without hand-editing `OUT-OF-SCOPE.md`. **When there's nothing else to do
+(idle moments, end of a task), check `WISHLIST.md`.** If it has any content beyond
+its scaffold header:
+
+1. For each idea, move it into the matching `##` section of `OUT-OF-SCOPE.md`
+   (e.g. *Encoding / decoding / barcodes*, *Databases*, *Networking — servers*,
+   *External-CLI fallbacks*, *Tracked code follow-ups*; create a new `##` section
+   only if none fits), **rewritten to that file's terse style**: a bolded lead,
+   one-or-two-sentence description, and a **Reason:** it's parked. Honour
+   OUT-OF-SCOPE's entry rule (must have a viable pure-Go or feature-detected
+   external-CLI path; never park a cgo-only capability).
+2. Reset `WISHLIST.md` to just its scaffold (heading + instruction + the
+   `<!-- Write ideas below this line -->` marker) — that scaffold-only state means
+   "inbox empty".
+3. Don't invent detail the maintainer didn't write; if an idea is too vague to
+   place or to assign a Reason, leave it in `WISHLIST.md` and flag it rather than
+   guessing. Confirm before moving anything ambiguous.
+
+This is housekeeping, not a release artifact — a normal `docs:` commit; no version
+bump, no docs-lockstep obligations.
+
 ## CI and release flow
 
 - **`.github/workflows/ci.yml`** runs on every push and PR. Matrix: Go 1.25 + latest stable, on ubuntu-latest and macos-latest. Each job runs `go build` (slim flags), `go vet`, `go test ./...`, and the offline subset of `examples/scripts/*` (excludes network-dependent demos — covered locally via `make demo`). A separate `lint` job runs `golangci-lint` v2.12.2 (pinned to match `make lint`'s fallback).
