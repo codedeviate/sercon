@@ -139,7 +139,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Params:     []scriptengine.Param{{Name: "percent", Type: "number", Desc: "Brightness change in percent, -100 (black) .. 100 (white)."}},
 			ReturnType: "Image",
 			Returns:    "Image — brightness-adjusted.",
-			Errors:     "Does not throw; values outside [-100, 100] are applied as given (clamped per-pixel during the adjustment).",
+			Errors:     "Does not throw; values outside [-100, 100] are clamped to the boundary (e.g. 150 behaves identically to 100).",
 			Example:    `const b = im.brightness(20);`,
 		},
 		"contrast": {
@@ -147,7 +147,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Params:     []scriptengine.Param{{Name: "percent", Type: "number", Desc: "Contrast change in percent, -100 .. 100."}},
 			ReturnType: "Image",
 			Returns:    "Image — contrast-adjusted.",
-			Errors:     "Does not throw; values outside [-100, 100] are applied as given (clamped per-pixel during the adjustment).",
+			Errors:     "Does not throw; values outside [-100, 100] are clamped to the boundary (e.g. 150 behaves identically to 100).",
 			Example:    `const c = im.contrast(15);`,
 		},
 		"gamma": {
@@ -163,7 +163,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Params:     []scriptengine.Param{{Name: "percent", Type: "number", Desc: "Saturation change in percent, -100 (gray) .. 100."}},
 			ReturnType: "Image",
 			Returns:    "Image — saturation-adjusted.",
-			Errors:     "Does not throw; values outside [-100, 100] are applied as given.",
+			Errors:     "Does not throw; values outside [-100, 100] are clamped to the boundary (e.g. 150 behaves identically to 100).",
 			Example:    `const s = im.saturation(30);`,
 		},
 		"sharpen": {
