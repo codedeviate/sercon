@@ -690,7 +690,7 @@ declare const fs: {
      * @param sources Non-empty array of inputs. A bare string uses the disk path as-is and its basename inside the archive; an object overrides the in-archive name via name. Directory sources are recursed (the directory's basename becomes the archive subdir). Archive paths always use forward slashes.
      * @returns Promise<{ path: string, format: string, entries: string[], bytes?: number }> — path is destPath, format is the inferred format ("zip" | "tar" | "tar.gz"), entries lists the file paths written (directories excluded), and bytes is the final archive size when stat succeeds.
      */
-    create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<Record<string, unknown>>;
+    create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<{ path: string; format: string; entries: string[]; bytes?: number }>;
     /**
      * Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour.
      * @param archivePath Path to the archive. Format is inferred from its extension (.zip, .tar, .tar.gz, .tgz).
@@ -698,7 +698,7 @@ declare const fs: {
      * @param opts overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL).
      * @returns Promise<{ path: string, format: string, dest: string, entries: string[] }> — path is archivePath, format is the inferred format, dest is destDir, and entries lists the extracted entry names (regular files only).
      */
-    extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<Record<string, unknown>>;
+    extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<{ path: string; format: string; dest: string; entries: string[] }>;
   };
   /**
    * Report whether a path exists. Never throws for a missing path.

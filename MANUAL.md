@@ -1027,10 +1027,32 @@ hashing.
 
 Filesystem operations:
 
-- `fs.path.dirname(p)` / `fs.path.basename(p, suffix?)` — POSIX-style.
-- `fs.archive.create(srcPath, opts?)` /
-  `fs.archive.extract(archivePath, destDir, opts?)` — tar/zip with
-  optional compression.
+- `fs.path.dirname(p)` / `fs.path.basename(p, suffix?)` — POSIX-style path
+  splitting (forward slashes). `dirname` returns everything up to (not
+  including) the final slash — `"."` when there is no directory component,
+  `"/"` for a rooted single segment; trailing slashes are stripped first.
+  `basename` returns the final segment and, when `suffix` is supplied and the
+  segment ends with it (and is not equal to it), strips that suffix — handy for
+  dropping a known extension. Both **throw a `TypeError`** if `p` is missing,
+  `null`, or `undefined`. These are pure string transforms — they never touch
+  disk. On Windows, normalise separators yourself before calling.
+- `fs.archive.create(destPath, sources)` /
+  `fs.archive.extract(archivePath, destDir, opts?)` — both **async** (return
+  Promises). The archive format is **inferred from the file extension**: `.zip`,
+  `.tar`, `.tar.gz`, and `.tgz` (a `.tgz` resolves to the `tar.gz` format); an
+  unrecognised extension rejects. `create` takes a non-empty array of sources —
+  a bare string uses the disk path as-is with its basename inside the archive,
+  while an `{ path, name }` object overrides the in-archive name; directory
+  sources are recursed (their basename becomes the archive subdirectory) and
+  archive paths always use forward slashes. It resolves to
+  `{ path, format, entries, bytes? }` (entries lists the regular files written;
+  `bytes` is the final archive size when stat succeeds). `extract` creates
+  `destDir` recursively if absent, applies **zip-slip / tar-slip protection**
+  (entries that resolve outside `destDir` via an absolute path or a `..`
+  component reject the whole call), and honours `opts.overwrite` — the default
+  `false` opens targets with `O_EXCL` so an entry colliding with an existing
+  file fails; pass `true` to clobber. It resolves to
+  `{ path, format, dest, entries }`.
 
 General file read/write (all async; paths used as given, no sandboxing —
 matching `image.save` and the WebDriver `screenshot` writers):
@@ -4971,7 +4993,7 @@ Filesystem operations: path manipulation and archive create/extract.
 #### fs.archive.create
 
 ```
-create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<Record<string, unknown>>
+create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<{ path: string; format: string; entries: string[]; bytes?: number }>
 ```
 
 Create a zip / tar / tar.gz at destPath from a list of paths. Format inferred from extension.
@@ -4993,7 +5015,7 @@ runtime.log(r.format, r.entries.length);
 #### fs.archive.extract
 
 ```
-extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<Record<string, unknown>>
+extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<{ path: string; format: string; dest: string; entries: string[] }>
 ```
 
 Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour.
