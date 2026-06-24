@@ -1,15 +1,3 @@
-<div class="cover">
-<h1>sercon</h1>
-<div class="subtitle">User Manual</div>
-<hr>
-<div class="version">Version 0.66.0</div> <!-- x-release-please-version -->
-<div class="date">2026-06-23</div>
-<div class="meta">
-Repository · https://github.com/codedeviate/sercon<br>
-License · MIT
-</div>
-</div>
-
 # sercon manual
 
 Long-form reference for the `pkg/scriptengine` library, the `sercon` CLI,
@@ -20,27 +8,6 @@ otherwise noted.
 
 [goja]: https://github.com/dop251/goja
 [goja_nodejs]: https://github.com/dop251/goja_nodejs
-
----
-
-## Table of contents
-
-1. [Overview](#1-overview)
-2. [Quickstart](#2-quickstart)
-3. [Library API — `pkg/scriptengine`](#3-library-api--pkgscriptengine)
-4. [CLI — `sercon`](#4-cli--sercon)
-5. [Reserved globals (script surface)](#5-reserved-globals-script-surface)
-6. [Servers](#6-servers)
-7. [JavaScript runtime built-ins (goja)](#7-javascript-runtime-built-ins-goja)
-8. [Async runtime additions (goja_nodejs)](#8-async-runtime-additions-goja_nodejs)
-9. [TypeScript support](#9-typescript-support)
-10. [Top-level `await`](#10-top-level-await)
-11. [Module resolution](#11-module-resolution)
-12. [Timeouts and cancellation](#12-timeouts-and-cancellation)
-13. [Error semantics](#13-error-semantics)
-14. [Type generation (.d.ts)](#14-type-generation-dts)
-15. [Limitations and gotchas](#15-limitations-and-gotchas)
-16. [Binding reference (generated)](#16-binding-reference-generated)
 
 ---
 
