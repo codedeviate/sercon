@@ -2714,6 +2714,17 @@ see every key except `Ctrl-C` (which always aborts) and coexist with the
 built-in navigation keys. Both require a TTY: `waitKey` rejects and `onKey`
 is a no-op in non-TTY (fallback) mode.
 
+The `name` field is the tcell key name — `"Enter"`, `"Up"`, `"Tab"`,
+`"F1"`, or `"Ctrl-A"` for `Ctrl`+letter combos — or `"Rune"` for a
+printable character, in which case `rune` holds it. Because `Ctrl`+letter
+arrives as a combined name (`"Ctrl-A"`) rather than via the `ctrl` flag,
+branch on `name` to detect control keys. `waitKey` is one-shot: `await` it
+again for the next key, and concurrent waiters resolve FIFO (one keypress
+satisfies the oldest pending `await`). A pending `waitKey` keeps the TUI
+open, which is the idiomatic "press any key to close" hold. `onKey` does
+**not** keep the Run alive on its own — pair it with an outstanding
+`await` (a `waitKey` or a sleep) if the script should stay interactive.
+
 #### Limitations (v1)
 
 - `tui` is **incompatible with `--watch`**: calling
