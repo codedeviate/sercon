@@ -764,7 +764,8 @@ through as `MapClaims`. `view` decodes the header and payload **without
 verifying** the signature (handy for debugging an auth flow), preserving
 object key order and returning the raw signature segment alongside.
 `validate` verifies the signature plus the standard time claims
-(`exp`/`nbf`/`iat`) and, when `opts.audience`/`opts.issuer` are set, those
+(`exp`/`nbf` — `iat` is not checked, per RFC 7519 §4.1.6) and, when
+`opts.audience`/`opts.issuer` are set, those
 claims too; pinning `opts.algorithm` activates the algorithm-confusion
 guard. It resolves `{ valid: true, claims }` or `{ valid: false, reason }`
 — cryptographic and claim failures do *not* throw; only structural/wiring
@@ -4543,7 +4544,7 @@ const tok = crypto.jwt.sign({ sub: "u1" }, "topsecret", { algorithm: "HS256" });
 validate(token: string, secret: string, opts?: { algorithm?: string, audience?: string, issuer?: string }): { valid: boolean; claims?: object; reason?: string }
 ```
 
-Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.
+Verify signature + standard time claims (exp/nbf; iat is not checked, per RFC 7519) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.
 
 **Parameters**
 

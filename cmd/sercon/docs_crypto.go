@@ -97,7 +97,7 @@ func cryptoDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const { header, payload } = crypto.jwt.view(tok);`,
 		},
 		"jwt.validate": {
-			Summary: "Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.",
+			Summary: "Verify signature + standard time claims (exp/nbf; iat is not checked, per RFC 7519) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.",
 			Params: []scriptengine.Param{
 				{Name: "token", Type: "string", Desc: "The compact-serialisation JWT to verify."},
 				{Name: "secret", Type: "string", Desc: "Verification key: raw HMAC bytes, a PEM-encoded public key (or certificate), or a JWK JSON object."},

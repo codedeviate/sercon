@@ -286,7 +286,7 @@ declare const crypto: {
      */
     sign(claims: Record<string, unknown>, secret: string, opts?: { algorithm?: string }): string;
     /**
-     * Verify signature + standard claims (exp/nbf/iat) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.
+     * Verify signature + standard time claims (exp/nbf; iat is not checked, per RFC 7519) + optional aud/iss. secret accepts raw bytes / PEM public key / JWK. Set opts.algorithm for the algo-confusion guard. Resolves { valid:true, claims } or { valid:false, reason }.
      * @param token The compact-serialisation JWT to verify.
      * @param secret Verification key: raw HMAC bytes, a PEM-encoded public key (or certificate), or a JWK JSON object.
      * @param opts algorithm pins the accepted alg (algorithm-confusion guard); when unset, any supported alg is accepted. audience / issuer enforce the aud / iss claims when set.
