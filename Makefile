@@ -157,6 +157,7 @@ manual: reference
 	awk -f scripts/typst-safe.awk MANUAL.md | $(RECON) --md-to-pdf - -o MANUAL.pdf \
 		--gfm --page-break-on-h1 \
 		--font "IBM Plex Sans" \
+		--cover \
 		--toc --toc-depth 3 --toc-title "Contents" \
 		--doc-title "sercon User Manual" \
 		--doc-subtitle "Embeddable TypeScript script engine — reference and guide" \
