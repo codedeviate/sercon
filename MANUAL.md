@@ -887,6 +887,70 @@ Binary-format codecs (was `format` in v0.8.0). Members:
   ordering is not preserved. Cycles, mismatched tags, multiple roots, and
   malformed XML throw.
 
+#### `codec.compression` — compress / decompress
+
+Nine algorithms, exposed by name (case-insensitive). `codec.compression.algos()`
+returns them in registration order: `gzip`, `deflate`, `zlib`, `bzip2`, `zstd`,
+`brotli`, `lz4`, `xz`, `snappy`.
+
+- `codec.compression.compress(algo, data): Promise<Uint8Array>` — both
+  `compress` and `decompress` are **async** (they run off the loop via
+  `PromisifyAsync`). `data` is a string (taken as its UTF-8 bytes), a
+  `Uint8Array`, or an `ArrayBuffer`.
+- `codec.compression.decompress(algo, data): Promise<Uint8Array>` — the inverse;
+  pass the **same** algorithm name you compressed with. The frame format is
+  algorithm-specific and not self-describing, so there is no auto-detection.
+
+Notes on the implementations: `bzip2` is compressed via `dsnet/compress` (Go's
+standard `compress/bzip2` is decompression-only); `snappy` and `lz4` use their
+one-shot block forms (no streaming frame header); `gzip`/`zlib`/`deflate` are
+stdlib. Outputs surface to JS as `Uint8Array`; decode bytes back to text with
+`new TextDecoder().decode(bytes)`. Round-trips are byte-faithful for the same
+algorithm; cross-algorithm or truncated input throws.
+
+#### `codec.barcode` — encode / decode
+
+- `codec.barcode.encode(format, data, opts?): Promise<Uint8Array>` — **async**;
+  renders `data` into PNG bytes. Encodable formats (`codec.barcode.formats()`):
+  `qr`, `datamatrix`, `aztec`, `pdf417`, `code128`, `code39`, `codabar`,
+  `ean13`, `ean8`, `upca`.
+- `codec.barcode.decode(data, format?): Promise<{ format, text }>` — **async**;
+  reads PNG / JPEG / WebP image bytes via gozxing. Decodable formats
+  (`codec.barcode.decodableFormats()`): the encodable set minus `pdf417` (gozxing
+  has no PDF417 reader) plus `code93`, `upce`, and `itf`. With no `format` hint
+  every reader is tried in priority order and the first hit wins; a hint runs
+  only that reader.
+
+**Dimensions and the quiet zone.** `opts.width` / `opts.height` default to
+256×256 for the 2D codes (`qr`, `datamatrix`, `aztec`) and 400×120 for the 1D
+symbologies. `opts.quietZone` pads a white margin around the rendered bars:
+`true` uses 10 % of the width (minimum 10 px), a number uses that many pixels per
+side, and `false`/`0`/absent adds none. **EAN/UPC barcodes need a quiet zone to
+be decodable** — encode them with `quietZone: true` (or supply margin in the
+source image) before round-tripping through `decode`. Invalid payloads for a
+symbology (e.g. wrong EAN digit count) throw at encode time.
+
+#### `codec.checkdigit` — validate / compute / inspect
+
+Six algorithms (`codec.checkdigit.algos()`): `luhn`, `isbn10`, `isbn13`,
+`ean13`, `ean8`, `upca`. `isbn13` is an alias for `ean13` (identical check-digit
+math). Algorithm names are case-insensitive and trimmed.
+
+- `codec.checkdigit.validate(algo, input): boolean` — does `input` (the full
+  number *including* its trailing check digit) pass? Returns `false` — never
+  throws — for the wrong length, non-digit characters, or an unknown algorithm.
+- `codec.checkdigit.compute(algo, partial): string` — the single missing check
+  digit for `partial` (the number *without* the check digit). Returns `'0'`–`'9'`,
+  or `'X'` for ISBN-10 when the value is 10. **Throws** on an unknown algorithm,
+  wrong length, or a non-digit. Fixed-length algorithms expect exactly
+  length − 1 digits (12 for `ean13`, 9 for `isbn10`, etc.).
+- `codec.checkdigit.inspect(algo, input): { algo, input, valid, given, computed }` —
+  a diagnostic that combines the two: `given` is the input's last character,
+  `computed` is the recalculated check digit (empty when the input is too short
+  to split), and `valid` is `given === computed` (case-insensitive). Never throws;
+  malformed input yields `valid: false` with an empty `computed`. ISBN-10 accepts
+  a trailing `X` as the check digit.
+
 #### `codec.php` — PHP dump formats
 
 Three PHP textual formats, each with an encoder and a matching parser:
