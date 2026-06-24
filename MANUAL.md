@@ -1090,10 +1090,11 @@ Network clients and probes:
   port whose ICMP `port-unreachable` proves reachability (needs root /
   `CAP_NET_RAW`), alongside the existing `"tcp"` (default) and `"icmp"` modes.
 - `net.netstatus.check(host)` — combined reachability summary.
-- `net.email.*` — `spf`, `dmarc`, `mtasts`, `tlsrpt`, `bimi`, and
+- `net.email.*` — `spf`, `dmarc`, `mtaSts`, `tlsRpt`, `bimi`, and
   `all(domain)` which runs every probe in parallel and aggregates; plus
   `send({…})` — outbound SMTP sender (see §6.7).
-- `net.browser.open(url)` — launches the OS default browser.
+- `net.browser.open()` — open a stateful HTTP session (cookie jar + replayed
+  default headers); **not** an OS-browser launcher.
 - `net.tcp.connect(host, port, opts?)` — open a TCP client socket.
 - `net.udp.open(opts)` — open a UDP socket (connected or bound).
 - `net.icmp.open(opts?)` — open a raw ICMP socket (needs privileges).
@@ -1104,6 +1105,118 @@ Network clients and probes:
 - `net.load.http(opts)` — authorized HTTP load / resilience self-test
   (worker-pool, latency percentiles + error rate; public hosts need
   `confirm:true`).
+
+#### HTTP client (`net.http`)
+
+Three entry points, all returning a `Promise`. **A 4xx/5xx response never
+rejects** — it resolves with the status set; only transport-level failures
+(DNS, connection refused, TLS handshake) or a deadline reject.
+
+- `net.http.get(url)` / `net.http.post(url, body?)` — quick one-liners with a
+  **5-second** default timeout. Resolve to `{ status, body, bodyBytes }`:
+  `body` is the response decoded as UTF-8, `bodyBytes` is the raw, undecoded
+  `Uint8Array` (pair with `text.charset.decode` for ISO-8859-1 and other
+  non-UTF-8 payloads). `post` sends `body` verbatim and sets **no**
+  `Content-Type` — add one via `request` if the server needs it.
+- `net.http.request(method, url, opts?)` — the full client. `opts` is
+  `{ headers?, body?, timeout? (ms, default 30000), retry? (extra attempts,
+  default 0), follow? (default true), username?, password? }`. `retry`
+  applies **only** to transport errors and 5xx, with linear backoff capped at
+  1 s; a malformed method/URL rejects immediately and is not retried.
+  `follow: false` stops at the first 3xx. Resolves to `{ status, ok, headers,
+  body, bodyBytes, url }` — `ok` is `status` in `[200, 400)`; `headers` is a
+  lower-cased name→value map (last value wins); `url` is the final URL after
+  redirects.
+
+#### One-shot probes (`net.probe`)
+
+Each `net.probe.*` helper performs a single handshake/lookup and resolves
+with a structured result. Connection-level failures reject; *findings* (an
+expired cert, a missing STARTTLS, an unreachable host) are returned as data.
+
+- `net.probe.tcp(target, opts?)` — dial and report `{ host, port, ip,
+  latencyMs }`. `opts.port` (default `"80"`) supplies a port when `target`
+  is a bare host; `opts.timeout` ms (default 5000).
+- `net.probe.dns(host, opts?)` — resolve A / AAAA / MX / TXT / CNAME / NS.
+  `opts.types` restricts the set (case-insensitive). **Always resolves** —
+  per-type failures and empties are simply omitted from the result, so test
+  presence with `"mx" in result`. `mx` entries are `{ preference, host }`.
+- `net.probe.tls(target, opts?)` — open a TLS connection with
+  **verification skipped** (probe-only) and return the leaf cert summary
+  `{ cn, issuer, notBefore, notAfter, daysRemaining, dnsNames,
+  serialNumber, fingerprintSha256 }`. The host is sent as SNI; expired or
+  name-mismatched certs still report (that's the point). A bare host uses
+  port 443.
+- `net.probe.ntp(host, opts?)` — query an NTPv4 server (UDP 123) and report
+  `{ serverTime, offsetMs, rttMs, stratum, referenceTime, rootDelayMs,
+  rootDispersionMs }`.
+- `net.probe.whois(domain, opts?)` — two-hop WHOIS via the IANA referral.
+  `raw` is always the full response text; `domain` / `registrar` are
+  best-effort parsed and omitted for TLDs the parser doesn't recognise. A
+  parse failure is non-fatal (only `raw` comes back); a wire failure rejects.
+- `net.probe.smtp(host, opts?)` — SMTP **capability** probe (EHLO only, no
+  mail). Returns `{ banner, ehloDomain, extensions, starttls,
+  authMechanisms, sizeLimit }`. A server that omits STARTTLS/AUTH reports
+  `false` / `[]` — a finding, not an error. `opts.port` default `"25"`,
+  `opts.ehloName` default `"localhost"`.
+- `net.probe.wss(url, opts?)` — WebSocket handshake probe. Returns
+  `{ connected, subprotocol, status, handshakeMs, pingMs }` and closes
+  immediately. `opts.ping` (default `true`) toggles the RTT measurement;
+  `pingMs` is `-1` when skipped or unanswered.
+
+`net.netstatus.check(host, opts?)` rolls DNS / TCP / TLS / HTTP into **one
+concurrent** sweep, resolving to `{ host, port, elapsedMs, reachable, dns,
+tcp, tls, http }`. Each sub-probe is `{ ok, …, error? }` — sub-failures are
+**captured as data**, never thrown; only an empty `host` rejects.
+`reachable` is `dns.ok && tcp.ok` (TLS/HTTP are reported but don't gate it).
+`opts.port` defaults to `"443"`.
+
+#### Email-authentication probes (`net.email`)
+
+DNS-based deliverability / anti-spoofing posture checks. Each takes a
+`domain` and resolves to a discriminated union — `{ present: false }` when
+the record is absent, or `{ present: true, record, … }` with the parsed
+fields when found. **They reject only on a DNS error other than NXDOMAIN**;
+a missing record is the normal `{ present: false }` outcome, not a throw.
+
+- `net.email.spf(domain)` → `{ record, mechanisms, allPolicy }` from the
+  apex `TXT` (`v=spf1`); `allPolicy` summarises the trailing `all` mechanism
+  (`pass` / `fail` / `softfail` / `neutral`).
+- `net.email.dmarc(domain)` → the `_dmarc.<domain>` `v=DMARC1` record with
+  `{ tags, policy, subdomain, percent, rua, ruf }`.
+- `net.email.mtaSts(domain)` → the `_mta-sts.<domain>` `TXT` **plus** the
+  fetched well-known policy file (`{ mode, mx, maxAge }`); a policy-fetch
+  failure surfaces in `policyError`, not as a throw.
+- `net.email.tlsRpt(domain)` → the `_smtp._tls.<domain>` `v=TLSRPTv1` record
+  with `{ tags, rua }`.
+- `net.email.bimi(domain, opts?)` → the `<selector>._bimi.<domain>` record
+  with `{ l, a }` (logo URL + VMC assertion); `opts.selector` defaults to
+  `"default"` and is echoed back in the result.
+- `net.email.all(domain)` runs all five **in parallel** and aggregates under
+  `{ domain, spf, dmarc, mtaSts, tlsRpt, bimi }`; a single probe's failure
+  surfaces as `{ error }` under its key rather than failing the aggregate, so
+  this call always resolves.
+
+#### Stateful HTTP session (`net.browser`)
+
+`net.browser.open()` (no arguments) opens a **stateful HTTP session** — an
+`http.Client` with an automatic, public-suffix-scoped **cookie jar** and a
+set of default headers replayed on every request, the way a browser carries
+a session across page loads. It does **not** launch the OS web browser. It
+resolves to a handle:
+
+- `setUserAgent(ua)` / `setHeader(name, value)` — register default headers
+  replayed on subsequent requests (synchronous).
+- `get(url)` / `post(url, body?)` — issue a request through the session;
+  resolve to the same `{ status, ok, headers, body, url }` shape as
+  `net.http.request`. The jar is updated automatically, so a login `post`
+  followed by a `get` replays the session cookie with no manual handling.
+- `cookies(url)` — list the jar's cookies scoped to `url` as
+  `{ name, value }[]`, e.g. to confirm a login set the expected cookie.
+
+`open()` rejects only if the cookie jar can't be created; `get` / `post` /
+`cookies` reject on an empty/unparseable URL or a transport error (4xx/5xx
+resolve normally).
 
 **Raw sockets (`net.tcp` / `net.udp` / `net.icmp`)** are long-lived,
 bidirectional client sockets with a *push / callback* read model — unlike
@@ -5313,7 +5426,7 @@ Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email
 #### net.browser.open
 
 ```
-open(...args: unknown[]): Promise<Record<string, unknown>>
+open(...args: unknown[]): Promise<{ setUserAgent(ua: string): void, setHeader(name: string, value: string): void, get(url: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, post(url: string, body?: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, cookies(url: string): Promise<{ name: string, value: string }[]> }>
 ```
 
 Open a stateful HTTP session: { setUserAgent, setHeader, get, post, cookies }. Cookie jar + default headers persist across requests (like a browser).
@@ -5349,7 +5462,7 @@ for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);
 #### net.capture.open
 
 ```
-open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, vlan?: { id: number, priority: number, drop: boolean, type: string }, arp?: { operation: string, senderMac: string, senderIp: string, targetMac: string, targetIp: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, window: number, checksum: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean }, options?: { mss?: number, windowScale?: number, sackPermitted?: boolean, timestamps?: { val: number, ecr: number } } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, dns?: { id: number, qr: boolean, opcode: string, rcode: string, questions: { name: string, type: string }[], answers: { name: string, type: string, data: string }[] }, payload?: Uint8Array, bytes: Uint8Array }) => void): void
+open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, vlan?: { id: number, priority: number, drop: boolean, type: string }, arp?: { operation: string, senderMac: string, senderIp: string, targetMac: string, targetIp: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, window: number, checksum: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean }, options?: { mss?: number, windowScale?: number, sackPermitted?: boolean, timestamps?: { val: number, ecr: number } } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, dns?: { id: number, qr: boolean, opcode: string, rcode: string, questions: { name: string, type: string }[], answers: { name: string, type: string, data: string }[] }, payload?: Uint8Array, bytes: Uint8Array }) => void): Promise<{ iface: string, link: string, close(): Promise<void> }>
 ```
 
 Live packet capture: net.capture.open({ iface, promisc?, snaplen?, filter? }, pkt => {…}) → Promise<{ iface, link, close() }>. Linux + macOS only (Windows rejects); needs root / CAP_NET_RAW (Linux) or /dev/bpf access (macOS). promisc defaults true. The handler is called per frame with a decoded packet { ts, length, captureLength, link, eth?, vlan?, arp?, ip?, tcp?, udp?, icmp?, dns?, payload?, bytes }. Optional filter is a tcpdump-like expression string (e.g. 'tcp and port 80'), evaluated post-decode in userspace — NOT a kernel BPF program, so it skips the JS callback for non-matching packets but does not avoid the kernel→userspace copy. Supports tcp/udp/icmp/ip/ip6, host/src host/dst host, net/src net/dst net (CIDR), port/src port/dst port, portrange/src portrange/dst portrange, and/or/not + parens, implicit-and between juxtaposed primaries. A malformed expression makes open reject. close() returns Promise<void>. Pure-Go gopacket (no libpcap/cgo).
@@ -5373,7 +5486,7 @@ await cap.close();
 #### net.capture.openFile
 
 ```
-openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, vlan?: object, arp?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, dns?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): void
+openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, vlan?: object, arp?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, dns?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): Promise<void>
 ```
 
 Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) → Promise<void>. Calls the handler once per decoded packet (same shape as capture.open) and resolves at EOF. Offline; no privileges. opts is an optional trailing arg { filter? } — the 2-arg form still works; filter is the same tcpdump-like expression string as capture.open (post-decode/userspace, not kernel BPF; supports host/net CIDR + port/portrange; malformed → rejects).
@@ -5434,7 +5547,7 @@ await w.close();
 #### net.email.all
 
 ```
-all(domain: string): Promise<Record<string, unknown>>
+all(domain: string): Promise<{ domain: string, spf: object, dmarc: object, mtaSts: object, tlsRpt: object, bimi: object }>
 ```
 
 Run all five email probes in parallel — five-way handshake aggregate.
@@ -5454,7 +5567,7 @@ const a = await net.email.all("example.com"); runtime.log(a.spf, a.dmarc);
 #### net.email.bimi
 
 ```
-bimi(domain: string, opts?: { selector?: string }): Promise<Record<string, unknown>>
+bimi(domain: string, opts?: { selector?: string }): Promise<{ present: false, selector: string } | { present: true, selector: string, record: string, tags: Record<string, string>, l: string, a: string }>
 ```
 
 Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'.
@@ -5475,7 +5588,7 @@ const r = await net.email.bimi("example.com", { selector: "v1" }); runtime.log(r
 #### net.email.dmarc
 
 ```
-dmarc(domain: string): Promise<Record<string, unknown>>
+dmarc(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, policy: string, subdomain: string, percent: string, rua: string, ruf: string }>
 ```
 
 Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.
@@ -5495,7 +5608,7 @@ const r = await net.email.dmarc("example.com"); runtime.log(r.present && r.polic
 #### net.email.mtaSts
 
 ```
-mtaSts(domain: string): Promise<Record<string, unknown>>
+mtaSts(domain: string): Promise<{ present: false } | { present: true, record: string, txt: { v: string, id: string }, policy?: { version?: string, mode?: string, mx?: string[], maxAge?: number | string }, policyError?: string }>
 ```
 
 Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file.
@@ -5515,7 +5628,7 @@ const r = await net.email.mtaSts("example.com"); runtime.log(r.present && r.poli
 #### net.email.send
 
 ```
-send(opts: { to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number }): Promise<{ accepted: string[]; rejected: { address: string; reason: string }[] }>
+send(opts: { to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number }): Promise<{ accepted: string[], rejected: { address: string, reason: string }[] }>
 ```
 
 Send an outbound email: net.email.send({to, from, subject, body, html?, attachments?, headers?, server: {host, port?, auth?, tls?}, timeout?}) → Promise<{accepted: string[], rejected: [{address, reason}]}>. One TCP connection per call; per-recipient outcome captured. Transport failures throw; per-RCPT rejections surface in the result. TLS modes: starttls (default), tls, none.
@@ -5539,7 +5652,7 @@ runtime.log(r.accepted, r.rejected);
 #### net.email.spf
 
 ```
-spf(domain: string): Promise<Record<string, unknown>>
+spf(domain: string): Promise<{ present: false } | { present: true, record: string, mechanisms: string[], allPolicy: string }>
 ```
 
 Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.
@@ -5559,7 +5672,7 @@ const r = await net.email.spf("example.com"); if (r.present) runtime.log(r.allPo
 #### net.email.tlsRpt
 
 ```
-tlsRpt(domain: string): Promise<Record<string, unknown>>
+tlsRpt(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, rua: string }>
 ```
 
 Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua.
@@ -5579,7 +5692,7 @@ const r = await net.email.tlsRpt("example.com"); runtime.log(r.present && r.rua)
 #### net.http.get
 
 ```
-get(url: string): Promise<Record<string, unknown>>
+get(url: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
 ```
 
 Perform an HTTP GET with a 5-second default timeout. Returns { status, body, bodyBytes }.
@@ -5599,7 +5712,7 @@ const r = await net.http.get("https://example.com"); runtime.log(r.status);
 #### net.http.post
 
 ```
-post(url: string, body?: string): Promise<Record<string, unknown>>
+post(url: string, body?: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
 ```
 
 Perform an HTTP POST with a 5-second default timeout. Returns { status, body, bodyBytes }.
@@ -5620,7 +5733,7 @@ const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1
 #### net.http.request
 
 ```
-request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<Record<string, unknown>>
+request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
 ```
 
 Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
@@ -5642,7 +5755,7 @@ const r = await net.http.request("POST", "https://api.example.com", { headers: {
 #### net.icmp.open
 
 ```
-open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): void
+open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array, body?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
 ```
 
 Open a raw ICMP socket: net.icmp.open(opts?) → Promise<handle>. Requires root / CAP_NET_RAW (open rejects otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4'), readBuffer? }. handle.send(opts) writes a message in one of two modes: Echo mode { to, type?, code?, id?, seq?, payload? } (type defaults to the network's echo request), or raw mode { to, type, code?, body } where body (Uint8Array|string) is marshalled verbatim (icmp.RawBody) for hand-built non-Echo messages such as destination-unreachable — in raw mode type is required and body is mutually exclusive with id/seq/payload. push/callback model — onMessage(cb) events carry { address, type, code }; onClose(cb)/onError(cb); handle.network/local; handle.close().
@@ -5686,7 +5799,7 @@ const r = await net.load.http({ url: "http://127.0.0.1:8080/", requests: 200, co
 #### net.netstatus.check
 
 ```
-check(host: string, opts?: { port?: string, timeout?: number }): Promise<Record<string, unknown>>
+check(host: string, opts?: { port?: string, timeout?: number }): Promise<{ host: string, port: string, elapsedMs: number, reachable: boolean, dns: { ok: boolean, ips: string[], error?: string }, tcp: { ok: boolean, latencyMs: number, error?: string }, tls: { ok: boolean, daysRemaining: number, error?: string }, http: { ok: boolean, status: number, error?: string } }>
 ```
 
 Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, dns, tcp, tls, http } — each sub-probe ok+error; reachable = dns.ok AND tcp.ok. Sub-failures are data, not throws.
@@ -5707,7 +5820,7 @@ const s = await net.netstatus.check("example.com"); runtime.log(s.reachable);
 #### net.probe.dns
 
 ```
-dns(host: string, opts?: { types?: string[] }): Promise<Record<string, unknown>>
+dns(host: string, opts?: { types?: string[] }): Promise<{ a?: string[], aaaa?: string[], mx?: { preference: number, host: string }[], txt?: string[], cname?: string, ns?: string[] }>
 ```
 
 Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five.
@@ -5728,7 +5841,7 @@ const r = await net.probe.dns("example.com", { types: ["a", "mx"] });
 #### net.probe.ntp
 
 ```
-ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<Record<string, unknown>>
+ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<{ serverTime: string, offsetMs: number, rttMs: number, stratum: number, referenceTime: string, rootDelayMs: number, rootDispersionMs: number }>
 ```
 
 Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / dispersion.
@@ -5749,7 +5862,7 @@ const r = await net.probe.ntp("pool.ntp.org"); runtime.log(r.offsetMs);
 #### net.probe.ping
 
 ```
-ping(host: string, opts?: { mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }): Promise<{ host: string; ip: string; mode: string; sent: number; received: number; lossPercent: number; minMs: number; avgMs: number; maxMs: number }>
+ping(host: string, opts?: { mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }): Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }>
 ```
 
 Reachability probe. mode tcp (default; dials host:port), icmp (real ICMP echo, needs raw-socket privileges), or udp (sends a datagram to a closed port and counts ICMP port-unreachable as reachable, needs root / CAP_NET_RAW). Returns { sent, received, lossPercent, minMs, avgMs, maxMs }. Unreachable = received 0, no throw.
@@ -5770,7 +5883,7 @@ const p = await net.probe.ping("example.com", { count: 3 }); runtime.log(p.lossP
 #### net.probe.smtp
 
 ```
-smtp(host: string, opts?: { port?: string, timeout?: number, ehloName?: string }): Promise<{ host: string; port: string; banner: string; ehloDomain: string; extensions: string[]; starttls: boolean; authMechanisms: string[]; sizeLimit: number }>
+smtp(host: string, opts?: { port?: string, timeout?: number, ehloName?: string }): Promise<{ host: string, port: string, banner: string, ehloDomain: string, extensions: string[], starttls: boolean, authMechanisms: string[], sizeLimit: number }>
 ```
 
 SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner, ehloDomain, extensions, starttls, authMechanisms, sizeLimit }. Connection failures throw.
@@ -5791,7 +5904,7 @@ const s = await net.probe.smtp("mail.example.com"); runtime.log(s.starttls, s.au
 #### net.probe.tcp
 
 ```
-tcp(target: string, opts?: { timeout?: number, port?: string }): Promise<{ host: string; port: number; ip: string; latencyMs: number }>
+tcp(target: string, opts?: { timeout?: number, port?: string }): Promise<{ host: string, port: number, ip: string, latencyMs: number }>
 ```
 
 Dial a TCP target and report latency + resolved IP. Default timeout 5s.
@@ -5812,7 +5925,7 @@ const r = await net.probe.tcp("example.com:443"); runtime.log(r.latencyMs);
 #### net.probe.tls
 
 ```
-tls(target: string, opts?: { timeout?: number }): Promise<Record<string, unknown>>
+tls(target: string, opts?: { timeout?: number }): Promise<{ cn: string, issuer: string, notBefore: string, notAfter: string, daysRemaining: number, dnsNames: string[], serialNumber: string, fingerprintSha256: string }>
 ```
 
 Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert chain summary.
@@ -5856,7 +5969,7 @@ for (const h of hops) runtime.log(h.ttl, h.address ?? "*", h.rttsMs);
 #### net.probe.whois
 
 ```
-whois(domain: string, opts?: { timeout?: number }): Promise<Record<string, unknown>>
+whois(domain: string, opts?: { timeout?: number }): Promise<{ raw: string, domain?: { name: string, punycode: string, whoisServer: string, nameServers: string[], status: string[], dnssec: boolean, createdDate: string, updatedDate: string, expirationDate: string }, registrar?: { name: string } }>
 ```
 
 Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw response text.
@@ -5877,7 +5990,7 @@ const w = await net.probe.whois("example.com"); runtime.log(w.domain?.expiration
 #### net.probe.wss
 
 ```
-wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string; connected: boolean; subprotocol: string; status: number; handshakeMs: number; pingMs: number }>
+wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string, connected: boolean, subprotocol: string, status: number, handshakeMs: number, pingMs: number }>
 ```
 
 WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT. Returns { connected, subprotocol, status, handshakeMs, pingMs }. Failed handshake throws.
@@ -5949,7 +6062,7 @@ else runtime.log("filtered / no answer");
 #### net.tcp.connect
 
 ```
-connect(host: string, port: string | number, opts?: { timeout?: number, readBuffer?: number }): void
+connect(host: string, port: string | number, opts?: { timeout?: number, readBuffer?: number }): Promise<{ remote: string, local: string, write(data: string | Uint8Array): Promise<void>, onData(cb: (ev: { bytes: Uint8Array, text: string }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
 ```
 
 Open a TCP client socket: net.tcp.connect(host, port, opts?) → Promise<handle>. Push/callback read model — handle.onData(cb)/onClose(cb)/onError(cb) register listeners; handle.write(data) sends (string→UTF-8 / Uint8Array); handle.remote/local are the peer/local addresses; handle.close() shuts down. opts { timeout?, readBuffer? }.
@@ -5973,7 +6086,7 @@ await sock.write("GET / HTTP/1.0\r\n\r\n");
 #### net.udp.open
 
 ```
-open(opts: { host?: string, port?: string | number, bind?: string, readBuffer?: number }): void
+open(opts: { host?: string, port?: string | number, bind?: string, readBuffer?: number }): Promise<{ local: string, send(data: string | Uint8Array): Promise<void>, sendTo(data: string | Uint8Array, host: string, port: string | number): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address?: string, port?: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
 ```
 
 Open a UDP socket: net.udp.open(opts) → Promise<handle>. Connected mode { host, port } exposes send(data); bound mode { bind: ':9999' } exposes sendTo(data, host, port) and tags inbound events with { address, port }. Push/callback model — onMessage(cb)/onClose(cb)/onError(cb); handle.local is the bound address; handle.close() shuts down. opts also takes readBuffer?.
