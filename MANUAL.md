@@ -902,9 +902,9 @@ returns them in registration order: `gzip`, `deflate`, `zlib`, `bzip2`, `zstd`,
   algorithm-specific and not self-describing, so there is no auto-detection.
 
 Notes on the implementations: `bzip2` is compressed via `dsnet/compress` (Go's
-standard `compress/bzip2` is decompression-only); `snappy` and `lz4` use their
-one-shot block forms (no streaming frame header); `gzip`/`zlib`/`deflate` are
-stdlib. Outputs surface to JS as `Uint8Array`; decode bytes back to text with
+standard `compress/bzip2` is decompression-only); `snappy` uses its one-shot
+block form (no streaming frame header), while `lz4` uses the LZ4 frame format
+(`pierrec/lz4` writer/reader); `gzip`/`zlib`/`deflate` are stdlib. Outputs surface to JS as `Uint8Array`; decode bytes back to text with
 `new TextDecoder().decode(bytes)`. Round-trips are byte-faithful for the same
 algorithm; cross-algorithm or truncated input throws.
 
