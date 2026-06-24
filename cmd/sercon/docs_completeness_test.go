@@ -32,7 +32,7 @@ func docsByNamespace() map[string]map[string]scriptengine.MemberDoc {
 // completeness standard. Each Part-B task appends its namespace here as its final
 // step; the final task asserts this set covers every namespace in
 // docsByNamespace() (see TestDocsComplete_CoversAllNamespaces, added later).
-var sweptNamespaces = []string{"runtime", "crypto", "text", "codec", "fs", "net", "db", "services", "tui"}
+var sweptNamespaces = []string{"runtime", "crypto", "text", "codec", "fs", "net", "db", "services", "tui", "image", "web", "console"}
 
 // checkMember asserts a single MemberDoc meets the completeness standard:
 // non-empty Summary/ReturnType/Returns/Errors/Example, and every Param has

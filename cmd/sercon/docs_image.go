@@ -92,6 +92,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "Image",
 			Returns:    "Image — the largest image that fits within the box at the original aspect ratio.",
+			Errors:     "Does not throw; non-positive or zero dimensions produce a degenerate (possibly empty) image rather than an error.",
 			Example:    `const fitted = im.fit(800, 600);`,
 		},
 		"thumbnail": {
@@ -102,6 +103,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "Image",
 			Returns:    "Image — a width × height thumbnail, centre-cropped to fill.",
+			Errors:     "Does not throw; non-positive dimensions produce a degenerate image rather than an error.",
 			Example:    `const sq = im.thumbnail(128, 128);`,
 		},
 		"crop": {
@@ -124,18 +126,20 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "Image",
 			Returns:    "Image — the rotated image with transparent fill in the new corners.",
+			Errors:     "Does not throw; any finite angle is accepted (multiples of 360 are a no-op).",
 			Example:    `const tilted = im.rotate(15);`,
 		},
-		"rotate90":  {Summary: "Rotate 90° counter-clockwise (lossless, no resampling). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — rotated 90° CCW.", Example: `const r = im.rotate90();`},
-		"rotate180": {Summary: "Rotate 180° (lossless). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — rotated 180°.", Example: `const r = im.rotate180();`},
-		"rotate270": {Summary: "Rotate 270° counter-clockwise / 90° clockwise (lossless). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — rotated 270° CCW.", Example: `const r = im.rotate270();`},
-		"flipH":     {Summary: "Flip horizontally (mirror left↔right). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — horizontally mirrored.", Example: `const m = im.flipH();`},
-		"flipV":     {Summary: "Flip vertically (mirror top↔bottom). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — vertically mirrored.", Example: `const m = im.flipV();`},
+		"rotate90":  {Summary: "Rotate 90° counter-clockwise (lossless, no resampling). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — rotated 90° CCW.", Errors: "Does not throw.", Example: `const r = im.rotate90();`},
+		"rotate180": {Summary: "Rotate 180° (lossless). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — rotated 180°.", Errors: "Does not throw.", Example: `const r = im.rotate180();`},
+		"rotate270": {Summary: "Rotate 270° counter-clockwise / 90° clockwise (lossless). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — rotated 270° CCW.", Errors: "Does not throw.", Example: `const r = im.rotate270();`},
+		"flipH":     {Summary: "Flip horizontally (mirror left↔right). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — horizontally mirrored.", Errors: "Does not throw.", Example: `const m = im.flipH();`},
+		"flipV":     {Summary: "Flip vertically (mirror top↔bottom). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — vertically mirrored.", Errors: "Does not throw.", Example: `const m = im.flipV();`},
 		"brightness": {
 			Summary:    "Adjust brightness by a percentage in [-100, 100]; positive brightens, negative darkens, 0 is a no-op. Returns a fresh Image.",
 			Params:     []scriptengine.Param{{Name: "percent", Type: "number", Desc: "Brightness change in percent, -100 (black) .. 100 (white)."}},
 			ReturnType: "Image",
 			Returns:    "Image — brightness-adjusted.",
+			Errors:     "Does not throw; values outside [-100, 100] are applied as given (clamped per-pixel during the adjustment).",
 			Example:    `const b = im.brightness(20);`,
 		},
 		"contrast": {
@@ -143,6 +147,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Params:     []scriptengine.Param{{Name: "percent", Type: "number", Desc: "Contrast change in percent, -100 .. 100."}},
 			ReturnType: "Image",
 			Returns:    "Image — contrast-adjusted.",
+			Errors:     "Does not throw; values outside [-100, 100] are applied as given (clamped per-pixel during the adjustment).",
 			Example:    `const c = im.contrast(15);`,
 		},
 		"gamma": {
@@ -150,6 +155,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Params:     []scriptengine.Param{{Name: "gamma", Type: "number", Desc: "Gamma factor (> 0). 1.0 leaves the image unchanged."}},
 			ReturnType: "Image",
 			Returns:    "Image — gamma-corrected.",
+			Errors:     "Does not throw; pass a positive gamma (a non-positive value yields an all-black or undefined result rather than an error).",
 			Example:    `const g = im.gamma(1.2);`,
 		},
 		"saturation": {
@@ -157,6 +163,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Params:     []scriptengine.Param{{Name: "percent", Type: "number", Desc: "Saturation change in percent, -100 (gray) .. 100."}},
 			ReturnType: "Image",
 			Returns:    "Image — saturation-adjusted.",
+			Errors:     "Does not throw; values outside [-100, 100] are applied as given.",
 			Example:    `const s = im.saturation(30);`,
 		},
 		"sharpen": {
@@ -164,6 +171,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Params:     []scriptengine.Param{{Name: "sigma", Type: "number", Desc: "Sharpening strength (Gaussian sigma); larger is stronger."}},
 			ReturnType: "Image",
 			Returns:    "Image — sharpened.",
+			Errors:     "Does not throw; a sigma <= 0 leaves the image effectively unchanged.",
 			Example:    `const s = im.sharpen(1.0);`,
 		},
 		"blur": {
@@ -171,10 +179,11 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Params:     []scriptengine.Param{{Name: "sigma", Type: "number", Desc: "Gaussian blur sigma; larger blurs more."}},
 			ReturnType: "Image",
 			Returns:    "Image — blurred.",
+			Errors:     "Does not throw; a sigma <= 0 leaves the image effectively unchanged.",
 			Example:    `const soft = im.blur(2.0);`,
 		},
-		"grayscale": {Summary: "Convert to grayscale (luminance). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — grayscale.", Example: `const g = im.grayscale();`},
-		"invert":    {Summary: "Invert colours (photographic negative). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — colour-inverted.", Example: `const n = im.invert();`},
+		"grayscale": {Summary: "Convert to grayscale (luminance). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — grayscale.", Errors: "Does not throw.", Example: `const g = im.grayscale();`},
+		"invert":    {Summary: "Invert colours (photographic negative). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — colour-inverted.", Errors: "Does not throw.", Example: `const n = im.invert();`},
 		"overlay": {
 			Summary: "Composite another Image on top of this one at (x, y) with an optional opacity (alpha-blended). Returns a fresh Image the size of the base.",
 			Params: []scriptengine.Param{
