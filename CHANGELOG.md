@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.67.0] — 2026-06-24
+
 ### Changed
 
 - Manual rendered via recon's **typst** engine: a `--cover` title page, page-number
