@@ -733,16 +733,73 @@ const args = runtime.argv.slice(2);   // post-`--` user args
 
 ### `crypto`
 
-Hashing, JWT, and age-style encryption. Members:
+Hashing, JWT, and age/PGP encryption. Three sub-namespaces:
 
-- `crypto.hash.*` — `md5`, `sha1`, `sha256`, `sha384`, `sha512`,
-  `sha3_256`, `sha3_512`, `blake3`, `crc32`. All take a `string` and
-  return the hex digest.
-- `crypto.jwt.sign(claims, key, opts?)` / `crypto.jwt.view(token)` /
-  `crypto.jwt.validate(token, key, opts?)` — HS256/RS256/ES256 JWTs.
-- `crypto.encrypt.{keygen, keygenPgp, encrypt, decrypt, rekey,
-  detectBackend}` — age-format symmetric encryption with PGP-compat
-  key wrapping.
+#### `crypto.hash.*`
+
+`md5`, `sha1`, `sha256`, `sha384`, `sha512`, `sha3_256`, `sha3_512`,
+`blake3`, `crc32`. Each takes a single `string` (interpreted as a UTF-8
+byte sequence) and returns a lowercase hex digest. Digest widths: MD5 32,
+SHA-1 40, SHA-256/SHA3-256/BLAKE3 64, SHA-384 96, SHA-512/SHA3-512 128.
+`crc32` is the IEEE polynomial, zero-padded to 8 hex chars. All are pure
+and deterministic. A missing/`null`/`undefined` argument throws a
+`TypeError`. MD5 and SHA-1 are exposed for legacy fingerprinting only —
+do not use them for security. BLAKE3 is `lukechampine.com/blake3`
+(256-bit output); the `sha3_*` underscore naming matches recon's binding.
+
+#### `crypto.jwt.*`
+
+`sign(claims, secret, opts?)`, `view(token)`, `validate(token, secret, opts?)`.
+
+The `secret` argument is polymorphic and the same across sign/validate:
+raw bytes for HMAC algorithms (`HS256`/`HS384`/`HS512`); a PEM-encoded
+key (`-----BEGIN …`) for the asymmetric families (`RS*`, `PS*`, `ES*`,
+`EdDSA`); or a JWK JSON object (whose `kty` selects the key type). Sign
+uses the private key, validate the public key (a certificate is accepted).
+`opts.algorithm` is case-insensitive and defaults to `HS256`.
+
+`sign` does **not** synthesise reserved claims — set `iat`/`exp`/`nbf`
+yourself if you want them; everything in `claims` is passed straight
+through as `MapClaims`. `view` decodes the header and payload **without
+verifying** the signature (handy for debugging an auth flow), preserving
+object key order and returning the raw signature segment alongside.
+`validate` verifies the signature plus the standard time claims
+(`exp`/`nbf`/`iat`) and, when `opts.audience`/`opts.issuer` are set, those
+claims too; pinning `opts.algorithm` activates the algorithm-confusion
+guard. It resolves `{ valid: true, claims }` or `{ valid: false, reason }`
+— cryptographic and claim failures do *not* throw; only structural/wiring
+errors (empty token/secret, malformed token, key shape mismatching the
+token's algorithm) throw.
+
+#### `crypto.encrypt.*`
+
+`keygen()`, `keygenPgp(opts?)`, `encrypt(data, recipients, opts?)`,
+`decrypt(ciphertext, identities)`, `rekey(ciphertext, oldIdentities,
+newRecipients, opts?)`, `detectBackend(input)`.
+
+Two interoperable backends, auto-dispatched on key format — you never name
+the backend explicitly. age (`filippo.io/age`) keys are bech32:
+`age1…` recipients (public) and `AGE-SECRET-KEY-1…` identities (private);
+age also accepts SSH public keys as recipients. PGP keys are ASCII-armored
+`-----BEGIN PGP PUBLIC/PRIVATE KEY BLOCK-----` blocks. `keygen` mints a
+fresh age X25519 keypair; `keygenPgp` mints an RSA-2048 PGP keypair
+(`opts.name`/`opts.email` populate the user ID). `encrypt`/`decrypt` route
+to age or PGP by inspecting the supplied keys (and, for decrypt, the
+ciphertext armor) — the two backends cannot be mixed in a single call.
+
+`encrypt` accepts `string`/`Uint8Array`/`ArrayBuffer` data and one or many
+recipients; age output is binary unless `opts.armored` requests ASCII
+armor, PGP output is always armored. Multi-recipient ciphertext can be
+opened by any listed identity. `decrypt` returns the plaintext as a
+`Uint8Array` (decode with `new TextDecoder().decode(...)`). `rekey` is an
+age-only decrypt+re-encrypt that rotates a ciphertext to a new recipient
+set without exposing plaintext to JS; output armor defaults to the input's
+and `opts.armored` overrides. `detectBackend` is pure prefix matching (no
+parsing, no I/O) and never throws — it returns
+`{ backend: "age" | "pgp" | "unknown", kind?: "public" | "private" }`.
+The encrypt/decrypt/rekey calls throw on type/shape errors: wrong key kind
+(public where private is expected or vice versa), empty key lists, an
+unsupported data type, or no identity matching the ciphertext.
 
 ### `text`
 
