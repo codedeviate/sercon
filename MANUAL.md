@@ -2889,9 +2889,21 @@ Pure-Go stack: `mmcdole/gofeed` (feeds) + `andybalholm/cascadia`
 
 The `server` global (added in v0.10.0) hosts inbound listeners — scripts
 that *accept* connections rather than make them. It ships `server.http`
-and `server.https` (§6.2), `server.smtp` (§6.7), and the raw
-`server.tcp` / `server.udp` listeners (§6.8); future cycles will add
-IMAP, FTP, and POP3 against the same engine foundation.
+and `server.https` (§6.2) — with static-file serving (§6.3), middleware
+(§6.4), and WebSocket / Server-Sent-Event upgrades (§6.5) — plus
+`server.smtp` (§6.7) and the raw `server.tcp` / `server.udp` /
+`server.icmp` listeners (§6.8). Lifecycle and the `sercon serve`
+production niceties are covered in §6.6. Future cycles will add IMAP,
+FTP, and POP3 against the same engine foundation.
+
+Every listener follows the same shape: a **synchronous bind** (a port
+already in use throws immediately, before any Promise), a background
+serve loop kept alive by one `HoldRun` sentinel (§6.1), and a handle
+exposing `address` (a `proto/host:port` string, with the OS-chosen port
+filled in for `port: 0`) and a `close()` that returns `Promise<void>`.
+The HTTP and SMTP handles additionally carry a `stopped` Promise that
+resolves when the listener exits (and rejects on a non-close serve
+error).
 
 ### 6.1 Foundation: `HoldRun` + `LoopCallable`
 
@@ -3184,7 +3196,7 @@ want custom error handling.
       await ws.send(msg.bytes);              // msg.type === "binary"
     }
   }
-  // iterator ends on close; ws.closeCode / ws.closeReason populated
+  // iterator ends when the peer closes or ws.close() is called
 },
 ```
 
@@ -3198,8 +3210,6 @@ type WSMessage =
 type WebSocket = AsyncIterable<WSMessage> & {
   send(data: string | Uint8Array): Promise<void>;
   close(code?: number, reason?: string): Promise<void>;
-  closeCode?:   number;
-  closeReason?: string;
   remote:       string;
 };
 ```
@@ -3509,12 +3519,14 @@ keeping the event loop alive via the same `HoldRun` model as the HTTP and
 SMTP listeners. `srv.close()` returns a `Promise<void>` (resolving once the
 listener is closed and accepted connections are drained), matching the rest
 of the `server.*` family. Passing `port: 0` binds an OS-chosen
-ephemeral port; read it back from the returned handle's `address`.
+ephemeral port; read it back from the returned handle's `address`. Unlike
+the HTTP/SMTP handles, the raw listeners expose **no `stopped` Promise** —
+just `address` and `close()`.
 
 Both return a server handle:
 
 ```ts
-srv.address;       // "tcp/127.0.0.1:54321"  or  "udp/127.0.0.1:54321"
+srv.address;       // "tcp/0.0.0.0:54321"  or  "udp/0.0.0.0:54321"
 srv.close();       // Promise<void> — stop accepting, drain, release HoldRun
 ```
 
@@ -3534,14 +3546,15 @@ const srv = await server.tcp.listen({ port: 0 }, (conn) => {
   // conn.close()  — half/full close this connection
 });
 
-const port = Number(srv.address.split(":").pop());   // "tcp/127.0.0.1:PORT"
+const port = Number(srv.address.split(":").pop());   // "tcp/0.0.0.0:PORT"
 // ... net.tcp.connect("127.0.0.1", port) to talk to it ...
 await srv.close();
 ```
 
-**Options:** `port` (required; `0` for ephemeral), `host` (default
-`127.0.0.1`), `readBuffer` (per-connection read chunk size, same meaning
-as `net.tcp.connect`).
+**Options:** `port` (required; `0` for ephemeral), `host` (default all
+interfaces — pass `"127.0.0.1"` for loopback-only), `readBuffer`
+(per-connection inbound channel capacity — frames buffered before
+backpressure, default `64`; same meaning as `net.tcp.connect`).
 
 #### `server.udp.listen({…}, (msg, reply) => {…})`
 
@@ -3556,12 +3569,14 @@ const srv = await server.udp.listen({ port: 0 }, (msg, reply) => {
   reply("ack:" + msg.text);     // string or Uint8Array; returns a Promise
 });
 
-const port = Number(srv.address.split(":").pop());   // "udp/127.0.0.1:PORT"
+const port = Number(srv.address.split(":").pop());   // "udp/0.0.0.0:PORT"
 await srv.close();
 ```
 
-**Options:** `port` (required; `0` for ephemeral), `host` (default
-`127.0.0.1`).
+**Options:** `port` (required; `0` for ephemeral), `host` (default all
+interfaces — pass `"127.0.0.1"` for loopback-only). UDP has no
+`readBuffer` option; inbound datagrams are read into a fixed 64 KiB
+buffer.
 
 **Lifecycle.** Identical to §6.6: vanilla `sercon script.ts` keeps the
 loop alive while bound and terminates abruptly on SIGINT; `sercon serve
@@ -3574,7 +3589,7 @@ listeners).
 - `server.icmp.listen(opts?, (msg, reply) => …)` — bind a raw ICMP listener.
   **Requires root / `CAP_NET_RAW`** (synchronous bind throws otherwise); raw
   ICMP has no ports, so the socket receives **all** host ICMP traffic. opts
-  `{ network?: "ip4" | "ip6" (default "ip4"), readBuffer? }`. The handler runs
+  `{ network?: "ip4" | "ip6" (default "ip4") }` (no `readBuffer`). The handler runs
   per received packet with `msg` `{ bytes, text, address, type, code }` and a
   `reply(opts?)` that sends an ICMP message back to the sender (or `opts.to`) —
   Echo mode `{ type?, code?, id?, seq?, payload? }` or raw mode
