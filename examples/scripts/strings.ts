@@ -23,6 +23,8 @@ runtime.log("htmlEntity: ", text.str.htmlEntityDecode("&lt;p&gt;&amp;"));
 // Base64 / URL round-trips.
 runtime.log("b64 encode: ", text.str.base64Encode("hello"));
 runtime.log("b64 decode: ", text.str.base64Decode("aGVsbG8="));
+runtime.log("b64url encode: ", text.str.base64UrlEncode("a?b"));   // URL-safe, no padding
+runtime.log("b64url decode: ", text.str.base64UrlDecode("YT9i")); // -> "a?b"
 runtime.log("url encode: ", text.str.urlEncode("a b/c"));
 runtime.log("url decode: ", text.str.urlDecode("a+b%2Fc"));
 

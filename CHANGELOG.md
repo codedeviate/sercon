@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- `text.str.base64UrlEncode` / `text.str.base64UrlDecode` — URL-safe base64
+  (RFC 4648 §5, `-`/`_` alphabet). Encode emits no padding (safe in URLs,
+  filenames, JWT segments); decode accepts both padded and unpadded input.
+  Complements the standard-alphabet `base64Encode`/`base64Decode`.
+
+### Fixed
+
+- `server` WebSocket: a peer close frame's code and reason are now surfaced on
+  the socket object as `ws.closeCode` / `ws.closeReason` once the message
+  iterator ends (previously discarded).
+- `codec.barcode.decode` auto-detect (no `format` hint) now also tries `upce`,
+  which was decodable only via an explicit hint before.
+
 ## [0.67.0] — 2026-06-24
 
 ### Changed

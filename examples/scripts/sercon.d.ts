@@ -402,7 +402,7 @@ declare const text: {
   };
   str: {
     /**
-     * Decode standard (RFC 4648) base64 with padding. The standard alphabet only — URL-safe input (containing `-` or `_`) is NOT auto-detected and will throw; pre-translate it to the standard alphabet first.
+     * Decode standard (RFC 4648) base64 with padding. The standard alphabet only — URL-safe input (containing `-` or `_`) is NOT auto-detected and will throw; use `base64UrlDecode` for that.
      * @param input Standard-alphabet base64 string with `=` padding. URL-safe characters (`-`/`_`) are not accepted.
      * @returns string — the decoded bytes interpreted as a UTF-8 string.
      */
@@ -413,6 +413,18 @@ declare const text: {
      * @returns string — RFC 4648 standard base64 with `=` padding.
      */
     base64Encode(input: string): string;
+    /**
+     * Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded input (trailing `=` is optional). Use `base64Decode` for the standard `+`/`/` alphabet.
+     * @param input URL-safe base64 string (`-`/`_` alphabet); `=` padding optional.
+     * @returns string — the decoded bytes interpreted as a UTF-8 string.
+     */
+    base64UrlDecode(input: string): string;
+    /**
+     * URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe to drop in URLs, filenames, or JWT segments.
+     * @param input UTF-8 string to encode (encoded as its raw bytes).
+     * @returns string — URL-safe base64 with no padding.
+     */
+    base64UrlEncode(input: string): string;
     /**
      * Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
      * @param input Source text. Any case-insensitive <br>, <br/>, or <br /> variant is matched.

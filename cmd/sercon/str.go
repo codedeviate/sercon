@@ -122,6 +122,20 @@ func strNamespace(vm *goja.Runtime) map[string]any {
 			}
 			return vm.ToValue(string(b))
 		},
+		"base64UrlEncode": func(call goja.FunctionCall) goja.Value {
+			s := requireString("base64UrlEncode", call.Argument(0))
+			return vm.ToValue(base64.RawURLEncoding.EncodeToString([]byte(s)))
+		},
+		"base64UrlDecode": func(call goja.FunctionCall) goja.Value {
+			s := requireString("base64UrlDecode", call.Argument(0))
+			// Accept both padded (URLEncoding) and unpadded (RawURLEncoding)
+			// URL-safe input so callers don't have to care which they got.
+			b, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(s, "="))
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("base64UrlDecode: %w", err)))
+			}
+			return vm.ToValue(string(b))
+		},
 		"urlEncode": func(call goja.FunctionCall) goja.Value {
 			s := requireString("urlEncode", call.Argument(0))
 			return vm.ToValue(url.QueryEscape(s))

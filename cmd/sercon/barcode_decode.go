@@ -110,7 +110,7 @@ func gozxingFormatString(f gozxing.BarcodeFormat) string {
 // permissive ones (Code 128, Codabar) that can decode noise.
 var autoDecodeOrder = []string{
 	"qr", "datamatrix", "aztec",
-	"ean13", "ean8", "upca",
+	"ean13", "ean8", "upca", "upce",
 	"code128", "code39", "code93",
 	"itf", "codabar",
 }

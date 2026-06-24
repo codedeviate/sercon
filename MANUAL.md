@@ -810,7 +810,8 @@ families are **synchronous**; `charset.*`, `jq.*`, and `diff.*` return
 
 - `text.str.*` — synchronous string helpers: `trim`, `ltrim`, `rtrim`,
   `reverse`, `stripHtml`, `nl2br`, `br2nl`, `base64Encode`,
-  `base64Decode`, `urlEncode`, `urlDecode`, `htmlEntityDecode`,
+  `base64Decode`, `base64UrlEncode`, `base64UrlDecode`,
+  `urlEncode`, `urlDecode`, `htmlEntityDecode`,
   `pad`/`lpad`/`rpad`, `sprintf`, `printf`, `normalizeNewlines`.
   - `trim`/`ltrim`/`rtrim` take a PHP-style **cutset** mask, not a prefix:
     every character in the mask is stripped (default mask is the whitespace
@@ -820,7 +821,10 @@ families are **synchronous**; `charset.*`, `jq.*`, and `diff.*` return
     `"both"`; `"both"` splits the deficit with the extra rune going right.
   - `base64Encode`/`base64Decode` are the **standard** RFC 4648 alphabet
     with padding — URL-safe input (`-`/`_`) is *not* auto-detected and
-    throws; translate it to the standard alphabet first.
+    throws. Use `base64UrlEncode`/`base64UrlDecode` for the URL-safe
+    alphabet (RFC 4648 §5, `-`/`_`): encode emits **no** padding (safe in
+    URLs, filenames, and JWT segments), and decode accepts both padded and
+    unpadded input.
   - `urlEncode`/`urlDecode` use `application/x-www-form-urlencoded` rules
     (space ↔ `+`); for path segments use goja's built-in
     `encodeURIComponent`. `sprintf`/`printf` use **Go's** `fmt` verbs
@@ -3211,8 +3215,18 @@ type WebSocket = AsyncIterable<WSMessage> & {
   send(data: string | Uint8Array): Promise<void>;
   close(code?: number, reason?: string): Promise<void>;
   remote:       string;
+  closeCode?:   number;   // set after the iterator ends on a peer close frame
+  closeReason?: string;
 };
 ```
+
+**Peer close info.** When the peer closes with a proper WebSocket close
+frame, the frame's code and reason are surfaced on the socket object as
+`ws.closeCode` (number) and `ws.closeReason` (string) once the message
+iterator ends — so a script can inspect *why* the peer left after its
+`for await` loop exits. They stay `undefined` for an abnormal disconnect
+that carried no close frame (and for a locally-initiated `ws.close()`,
+where the script already knows the code/reason it sent).
 
 **Library:** `github.com/coder/websocket` (the modern successor to
 `nhooyr.io/websocket`; gorilla/websocket is in maintenance mode).
@@ -8055,7 +8069,7 @@ text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 base64Decode(input: string): string
 ```
 
-Decode standard (RFC 4648) base64 with padding. The standard alphabet only — URL-safe input (containing `-` or `_`) is NOT auto-detected and will throw; pre-translate it to the standard alphabet first.
+Decode standard (RFC 4648) base64 with padding. The standard alphabet only — URL-safe input (containing `-` or `_`) is NOT auto-detected and will throw; use `base64UrlDecode` for that.
 
 **Parameters**
 
@@ -8087,6 +8101,46 @@ Standard base64 (with padding).
 
 ```ts
 text.str.base64Encode("hi"); // "aGk="
+```
+
+#### text.str.base64UrlDecode
+
+```
+base64UrlDecode(input: string): string
+```
+
+Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded input (trailing `=` is optional). Use `base64Decode` for the standard `+`/`/` alphabet.
+
+**Parameters**
+
+- `input` *(string)* — URL-safe base64 string (`-`/`_` alphabet); `=` padding optional.
+
+**Returns:** string — the decoded bytes interpreted as a UTF-8 string.
+
+**Throws:** Throws a TypeError if input is missing/null/undefined; throws if the input is not valid URL-safe base64.
+
+```ts
+text.str.base64UrlDecode("YT9i"); // "a?b"
+```
+
+#### text.str.base64UrlEncode
+
+```
+base64UrlEncode(input: string): string
+```
+
+URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe to drop in URLs, filenames, or JWT segments.
+
+**Parameters**
+
+- `input` *(string)* — UTF-8 string to encode (encoded as its raw bytes).
+
+**Returns:** string — URL-safe base64 with no padding.
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.str.base64UrlEncode("a?b"); // "YT9i"
 ```
 
 #### text.str.br2nl

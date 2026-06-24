@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -34,6 +35,10 @@ type wsState struct {
 	closed  atomic.Bool
 	eng     *scriptengine.Engine
 	release func()
+	// Populated from the peer's close frame (if any) when the reader sees a
+	// websocket.CloseError. closeCode is 0 until then (no valid WS code is 0).
+	closeCode   atomic.Int64
+	closeReason atomic.Value // string
 }
 
 // installAsyncIteratorProg is the compiled JS that installs the
@@ -95,6 +100,14 @@ func upgradeWebSocketImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scri
 		for {
 			mt, data, err := conn.Read(ctx)
 			if err != nil {
+				// Capture the peer's close code/reason if this was a clean
+				// WebSocket close frame, so the script can read ws.closeCode /
+				// ws.closeReason after the message iterator ends.
+				var ce websocket.CloseError
+				if errors.As(err, &ce) {
+					ws.closeCode.Store(int64(ce.Code))
+					ws.closeReason.Store(ce.Reason)
+				}
 				select {
 				case ws.recv <- wsMessage{err: err}:
 				case <-ctx.Done():
@@ -131,6 +144,14 @@ func upgradeWebSocketImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scri
 			loop.RunOnLoop(func(vm *goja.Runtime) {
 				if !ok || msg.err != nil {
 					// Channel closed or read error — terminate iterator.
+					// Surface the peer's close code/reason (when the close was
+					// a clean WebSocket close frame) on the socket object so the
+					// script can inspect them after the loop ends.
+					if c := ws.closeCode.Load(); c != 0 {
+						_ = obj.Set("closeCode", c)
+						reason, _ := ws.closeReason.Load().(string)
+						_ = obj.Set("closeReason", reason)
+					}
 					releaseOnce()
 					result := vm.NewObject()
 					_ = result.Set("done", true)

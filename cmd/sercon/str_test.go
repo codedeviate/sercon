@@ -50,6 +50,13 @@ eq("br2nl",       str.br2nl("a<br>b<br/>c<BR />d"),   "a\nb\nc\nd");
 eq("b64 encode", str.base64Encode("hello"),    "aGVsbG8=");
 eq("b64 decode", str.base64Decode("aGVsbG8="), "hello");
 
+// base64 url-safe round trip (no padding) + padding tolerance on decode
+eq("b64url encode",      str.base64UrlEncode("a?b"),     "YT9i");
+eq("b64url encode nopad", str.base64UrlEncode("Q"),      "UQ");
+eq("b64url decode",      str.base64UrlDecode("YT9i"),    "a?b");
+eq("b64url decode nopad", str.base64UrlDecode("UQ"),     "Q");
+eq("b64url decode padded", str.base64UrlDecode("UQ=="),  "Q");
+
 // url round trip (form-style: '+' for space)
 eq("url encode",      str.urlEncode("a b/c"),  "a+b%2Fc");
 eq("url decode plus", str.urlDecode("a+b"),    "a b");

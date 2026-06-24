@@ -14,7 +14,8 @@ import (
 )
 
 // This file holds the engine-agnostic database/sql handle shared by every
-// db.<engine> binding (sqlite, postgres, mysql, mssql). Each engine's
+// db.<engine> binding (sqlite, postgres, mysql, mssql, clickhouse, oracle).
+// Each engine's
 // namespace differs only in the registered driver, how it builds the DSN, and
 // the `engine` string that prefixes error labels — everything else (the
 // open→handle shape, transactions, prepared statements, row scanning) lives
