@@ -313,11 +313,11 @@ declare const text: {
      */
     decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>;
     /**
-     * Detect the most-likely charset of a byte sequence (saintfish/chardet). Returns top guess + candidates.
+     * Detect the most-likely charset of a byte sequence (saintfish/chardet). Resolves to the top guess plus the full candidate list, each scored 0–100.
      * @param input Bytes to sniff. A string is taken as its raw UTF-8 bytes.
-     * @returns Promise<{ charset: string, confidence: number, language?: string, candidates: { charset: string, confidence: number, language?: string }[] }> — the top match plus all candidates; confidence is chardet's 0–100 score. language is present only when chardet reports one.
+     * @returns Promise<{ charset, confidence, language?, candidates }> — the top match plus all candidates; confidence is chardet's 0–100 score. language is present only when chardet reports one.
      */
-    detect(input: string | Uint8Array | ArrayBuffer): Promise<Record<string, unknown>>;
+    detect(input: string | Uint8Array | ArrayBuffer): Promise<{ charset: string; confidence: number; language?: string; candidates: { charset: string; confidence: number; language?: string }[] }>;
     /**
      * Encode a UTF-8 string to bytes in the named charset.
      * @param input UTF-8 string to encode.
@@ -332,9 +332,9 @@ declare const text: {
      * @param a The 'from' / left side. A string is taken as its UTF-8 bytes.
      * @param b The 'to' / right side.
      * @param opts context is the number of unchanged lines around each hunk (default 3); fromFile / toFile are the header labels (default 'a' / 'b').
-     * @returns Promise<{ identical: boolean, binary: boolean, added: number, removed: number, diff: string, format: "unified" }> — diff holds the unified-diff text (empty when identical or binary); added/removed count body +/- lines excluding file headers; binary is true when either input has a NUL byte in its first 8 KB.
+     * @returns Promise<{ identical, binary, added, removed, diff, format }> — diff holds the unified-diff text (empty when identical or binary); added/removed count body +/- lines excluding file headers; binary is true when either input has a NUL byte in its first 8 KB.
      */
-    compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number, fromFile?: string, toFile?: string }): Promise<Record<string, unknown>>;
+    compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number; fromFile?: string; toFile?: string }): Promise<{ identical: boolean; binary: boolean; added: number; removed: number; diff: string; format: "unified" }>;
   };
   jq: {
     /**
@@ -402,8 +402,8 @@ declare const text: {
   };
   str: {
     /**
-     * Standard base64; URL-safe input is accepted via auto-detect.
-     * @param input Standard-alphabet base64 string (with padding).
+     * Decode standard (RFC 4648) base64 with padding. The standard alphabet only — URL-safe input (containing `-` or `_`) is NOT auto-detected and will throw; pre-translate it to the standard alphabet first.
+     * @param input Standard-alphabet base64 string with `=` padding. URL-safe characters (`-`/`_`) are not accepted.
      * @returns string — the decoded bytes interpreted as a UTF-8 string.
      */
     base64Decode(input: string): string;

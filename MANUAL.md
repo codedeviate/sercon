@@ -804,20 +804,61 @@ unsupported data type, or no identity matching the ciphertext.
 
 ### `text`
 
-String, regex, charset, and data manipulation. Members:
+String, regex, charset, and data manipulation. The `str.*` and `preg*.*`
+families are **synchronous**; `charset.*`, `jq.*`, and `diff.*` return
+**Promises** (`await` them). Members:
 
-- `text.str.*` — `trim`, `ltrim`, `rtrim`, `reverse`, `stripHtml`,
-  `nl2br`, `br2nl`, `base64Encode`, `base64Decode`, `urlEncode`,
-  `urlDecode`, `htmlEntityDecode`, `pad`/`lpad`/`rpad`, `sprintf`,
-  `printf`, `normalizeNewlines`.
-- `text.preg.*` and `text.preg2.*` — PCRE-style regex (PHP-compatible
-  named-capture, lookbehind, etc.).
+- `text.str.*` — synchronous string helpers: `trim`, `ltrim`, `rtrim`,
+  `reverse`, `stripHtml`, `nl2br`, `br2nl`, `base64Encode`,
+  `base64Decode`, `urlEncode`, `urlDecode`, `htmlEntityDecode`,
+  `pad`/`lpad`/`rpad`, `sprintf`, `printf`, `normalizeNewlines`.
+  - `trim`/`ltrim`/`rtrim` take a PHP-style **cutset** mask, not a prefix:
+    every character in the mask is stripped (default mask is the whitespace
+    set `" \t\n\r\v\f"`). `reverse` and the `pad` family count **runes**,
+    not bytes, so multi-byte text stays intact (`reverse("café")` →
+    `"éfac"`). `pad`'s `side` is `"right"` (default), `"left"`, or
+    `"both"`; `"both"` splits the deficit with the extra rune going right.
+  - `base64Encode`/`base64Decode` are the **standard** RFC 4648 alphabet
+    with padding — URL-safe input (`-`/`_`) is *not* auto-detected and
+    throws; translate it to the standard alphabet first.
+  - `urlEncode`/`urlDecode` use `application/x-www-form-urlencoded` rules
+    (space ↔ `+`); for path segments use goja's built-in
+    `encodeURIComponent`. `sprintf`/`printf` use **Go's** `fmt` verbs
+    (`%s`, `%d`, `%.2f`, `%v`, `%q`, …), not PHP's; `printf` writes
+    straight to stdout and returns nothing. `normalizeNewlines` rewrites
+    any mix of CRLF/CR/LF to `"lf"` (default), `"crlf"`, or `"cr"`.
+- `text.preg.*` and `text.preg2.*` — two distinct regex engines sharing a
+  PHP-style `/pattern/flags` syntax (forward-slash delimiter only) and a
+  `{ match, groups, index }` result shape. **`preg`** runs Go's **RE2**:
+  linear-time, no catastrophic backtracking, but **no** lookaround or
+  backreferences; flags `i`/`m`/`s` only (`u`/`U`/`x` are rejected).
+  **`preg2`** runs the `.NET`-flavoured `regexp2` engine: lookahead,
+  lookbehind, backreferences, and the extra `x` flag — at the cost of a
+  backtracking engine, so guard untrusted input with a timeout.
+  `match` returns the first hit or `null`; `matchAll` returns an array;
+  `replace` substitutes every match. Replacement templates use the
+  engine's **`$1`/`${1}`** group syntax — PHP's `\1` backref form is *not*
+  translated.
 - `text.charset.detect(data)` / `decode(data, charset)` /
-  `encode(text, charset)` — character-set detection and conversion.
-- `text.jq.query(json, expr)` / `queryAll(json, expr)` — jq filtering
-  against parsed JSON values.
-- `text.diff.compare(a, b, opts?)` — unified / patience / inline diffs
-  between two strings.
+  `encode(text, charset)` — **async** character-set detection and
+  conversion over a `string`, `Uint8Array`, or `ArrayBuffer`. `detect`
+  (saintfish/chardet) resolves `{ charset, confidence, language?,
+  candidates }` where confidence is a 0–100 score and `candidates` ranks
+  every guess. `decode`/`encode` map between a named WHATWG/HTML5 encoding
+  (UTF-8, ISO-8859-1, Windows-1252, Shift_JIS, GBK, …) and UTF-8; `encode`
+  has **no lossy fallback** — a character with no representation in the
+  target encoding rejects rather than being silently dropped.
+- `text.jq.query(json, expr)` / `queryAll(json, expr)` — **async** jq
+  filtering (itchyny/gojq) against any JSON-like JS value. `query` resolves
+  the **first** value the filter emits (or `null` when it emits nothing,
+  e.g. an optional path `.a.b?` that misses); `queryAll` drains the whole
+  stream into an array.
+- `text.diff.compare(a, b, opts?)` — **async** unified diff between two
+  text or byte inputs. `opts.context` (default 3) sets the surrounding
+  lines; `opts.fromFile`/`opts.toFile` (default `"a"`/`"b"`) label the
+  headers. Resolves `{ identical, binary, added, removed, diff, format:
+  "unified" }`; inputs with a NUL byte in their first 8 KB are reported as
+  `binary: true` with an empty `diff`.
 
 ### `codec`
 
@@ -7272,16 +7313,16 @@ const s = await text.charset.decode(bytes, "Windows-1252");
 #### text.charset.detect
 
 ```
-detect(input: string | Uint8Array | ArrayBuffer): Promise<Record<string, unknown>>
+detect(input: string | Uint8Array | ArrayBuffer): Promise<{ charset: string; confidence: number; language?: string; candidates: { charset: string; confidence: number; language?: string }[] }>
 ```
 
-Detect the most-likely charset of a byte sequence (saintfish/chardet). Returns top guess + candidates.
+Detect the most-likely charset of a byte sequence (saintfish/chardet). Resolves to the top guess plus the full candidate list, each scored 0–100.
 
 **Parameters**
 
 - `input` *(string | Uint8Array | ArrayBuffer)* — Bytes to sniff. A string is taken as its raw UTF-8 bytes.
 
-**Returns:** Promise<{ charset: string, confidence: number, language?: string, candidates: { charset: string, confidence: number, language?: string }[] }> — the top match plus all candidates; confidence is chardet's 0–100 score. language is present only when chardet reports one.
+**Returns:** Promise<{ charset, confidence, language?, candidates }> — the top match plus all candidates; confidence is chardet's 0–100 score. language is present only when chardet reports one.
 
 **Throws:** Rejects if input is empty, an unsupported type, or chardet finds no candidates.
 
@@ -7314,7 +7355,7 @@ const bytes = await text.charset.encode("café", "ISO-8859-1");
 #### text.diff.compare
 
 ```
-compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number, fromFile?: string, toFile?: string }): Promise<Record<string, unknown>>
+compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number; fromFile?: string; toFile?: string }): Promise<{ identical: boolean; binary: boolean; added: number; removed: number; diff: string; format: "unified" }>
 ```
 
 Unified-diff two text inputs. opts: context (default 3), fromFile / toFile (default 'a' / 'b'). Binary inputs return { binary: true } with an empty diff.
@@ -7323,9 +7364,9 @@ Unified-diff two text inputs. opts: context (default 3), fromFile / toFile (defa
 
 - `a` *(string | Uint8Array | ArrayBuffer)* — The 'from' / left side. A string is taken as its UTF-8 bytes.
 - `b` *(string | Uint8Array | ArrayBuffer)* — The 'to' / right side.
-- `opts` *({ context?: number, fromFile?: string, toFile?: string }, optional)* — context is the number of unchanged lines around each hunk (default 3); fromFile / toFile are the header labels (default 'a' / 'b').
+- `opts` *({ context?: number; fromFile?: string; toFile?: string }, optional)* — context is the number of unchanged lines around each hunk (default 3); fromFile / toFile are the header labels (default 'a' / 'b').
 
-**Returns:** Promise<{ identical: boolean, binary: boolean, added: number, removed: number, diff: string, format: "unified" }> — diff holds the unified-diff text (empty when identical or binary); added/removed count body +/- lines excluding file headers; binary is true when either input has a NUL byte in its first 8 KB.
+**Returns:** Promise<{ identical, binary, added, removed, diff, format }> — diff holds the unified-diff text (empty when identical or binary); added/removed count body +/- lines excluding file headers; binary is true when either input has a NUL byte in its first 8 KB.
 
 **Throws:** Rejects if either input is an unsupported type, or the unified-diff generation fails.
 
@@ -7510,15 +7551,15 @@ text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 base64Decode(input: string): string
 ```
 
-Standard base64; URL-safe input is accepted via auto-detect.
+Decode standard (RFC 4648) base64 with padding. The standard alphabet only — URL-safe input (containing `-` or `_`) is NOT auto-detected and will throw; pre-translate it to the standard alphabet first.
 
 **Parameters**
 
-- `input` *(string)* — Standard-alphabet base64 string (with padding).
+- `input` *(string)* — Standard-alphabet base64 string with `=` padding. URL-safe characters (`-`/`_`) are not accepted.
 
 **Returns:** string — the decoded bytes interpreted as a UTF-8 string.
 
-**Throws:** Throws a TypeError if input is missing/null/undefined; throws if the input is not valid standard base64.
+**Throws:** Throws a TypeError if input is missing/null/undefined; throws if the input is not valid standard base64 (including URL-safe alphabet input).
 
 ```ts
 text.str.base64Decode("aGk="); // "hi"
