@@ -1480,26 +1480,64 @@ Database / KV / directory clients:
 - `db.mssql.open(dsn | opts)` — Microsoft SQL Server via pure-Go `go-mssqldb`.
 - `db.clickhouse.open(dsn | opts)` — ClickHouse via pure-Go `clickhouse-go` v2 (`opts.secure` for TLS).
 - `db.oracle.open(dsn | opts)` — Oracle via pure-Go `go-ora` (`opts.database` is the service name).
-- `db.redis.open(addr, opts?)` — Redis client.
-- `db.valkey.open(url, opts?)` — Valkey client (the RESP-compatible Redis fork; same `{do, ping, close}` handle, accepts `valkey://` / `valkeys://` as well as `redis://`).
+- `db.redis.open(url)` — Redis client (`redis://` / `rediss://` URL).
+- `db.valkey.open(url)` — Valkey client (the RESP-compatible Redis fork; same `{do, ping, close}` handle, accepts `valkey://` / `valkeys://` as well as `redis://`).
 - `db.memcached.open(addr)` — Memcached client.
 - `db.ldap.open(url, opts?)` — LDAP client (search, bind).
 - `db.dict.{define, match}` — local dictionary lookup / fuzzy match.
 
-**SQL engines (`sqlite` / `postgres` / `mysql` / `mssql`)** share one
-handle: `open()` resolves to `{ exec, query, queryValue, begin,
-prepare, close }` (transactions via `begin()` → `{ exec, query,
-queryValue, commit, rollback }`; prepared statements via `prepare(sql)`
-→ `{ exec, query, queryValue, close }`). The server engines accept
-either a driver **DSN string** or a connection **options object**
-(`{ host, port, user, password, database }`, plus `sslmode` for
-postgres); credentials in the assembled URL DSNs are percent-escaped.
-The connection is pinged on `open()` so a bad DSN or unreachable server
-fails there, not at the first query. Bind parameters are positional and
+**SQL engines (`sqlite` / `postgres` / `mysql` / `mssql` /
+`clickhouse` / `oracle`)** share one handle: `open()` resolves to
+`{ exec, query, queryValue, begin, prepare, close }`. The three methods
+map onto the row shapes you'd expect — `exec(sql, ...params)` runs a
+non-`SELECT` statement and resolves to `{ rowsAffected, lastInsertId }`;
+`query(sql, ...params)` resolves to **one ordered object per row**, keyed
+by column name in column order (the key order is stable run-to-run, so a
+`JSON.stringify` of the result is reproducible for canonical-hash
+callers); `queryValue(sql, ...params)` resolves to the **first column of
+the first row**, or `null` when no rows match (handy for `COUNT(*)` /
+`EXISTS`-style probes). Transactions come from `begin()` →
+`{ exec, query, queryValue, commit, rollback }`, and prepared statements
+from `prepare(sql)` → `{ exec, query, queryValue, close }` (the same
+exec/query/queryValue surface, but the SQL is compiled once and the
+methods take only bind params). The server engines accept either a driver
+**DSN string** (used verbatim) or a connection **options object**
+(`{ host, port, user, password, database }`, plus `sslmode` for postgres
+and `secure` for clickhouse TLS; `database` is the *service name* for
+oracle); credentials in the assembled URL DSNs are percent-escaped. The
+connection is pinged on `open()` so a bad DSN or unreachable server fails
+there, not at the first query (and the underlying pool is closed on a
+failed ping rather than leaked). Bind parameters are positional and
 passed after the SQL string — write your engine's placeholder syntax:
-`?` (sqlite, mysql), `$1` (postgres), `@p1` (mssql). All four drivers are
+`?` (sqlite, mysql, clickhouse), `$1` (postgres), `@p1` (mssql), `:1`
+(oracle). Values cross to Go losslessly (JS numbers, strings, booleans,
+`null`, and `Uint8Array` → `[]byte`); on the way back, a `[]byte` column
+that is valid UTF-8 surfaces as a `string` (the common `TEXT` case) while
+genuinely binary bytes surface as a `Uint8Array`. All six drivers are
 pure Go (no cgo). Scripts must `close()` the handle (and commit/rollback
-transactions, close prepared statements) — there is no GC finalizer.
+transactions, close prepared statements) — there is no GC finalizer, so a
+leaked transaction pins a pooled connection.
+
+**KV / directory / lookup engines.** `redis` and `valkey` share the RESP
+handle `{ do, ping, close }`: `do(cmd, ...args)` runs an arbitrary
+command (`do("SET", "k", "v")`, `do("HGETALL", "h")`), so the binding
+stays small while covering the whole command surface — the reply is
+coerced to the obvious JS value (string / number / array / `null`), and a
+nil reply (missing key) resolves to `null` rather than throwing; RESP-level
+errors (`WRONGTYPE`, unknown command) do throw. Both ping on `open()`;
+`valkey` additionally accepts `valkey://` / `valkeys://` URLs (normalised
+to `redis://` / `rediss://`). `memcached` returns `{ get, set, delete }`
+— `get` resolves to the stored string or `null` on a miss, `set(key,
+value, expirySeconds?)` stores bytes (`0`/omitted = never expire), and
+`delete` resolves `true`/`false` for hit/miss; there is **no** ping-on-open
+and **no** `close` (gomemcache pools lazily, GC'd with the handle).
+`ldap` is a read-only directory inspector: `open()` does an anonymous bind
+(or `opts.bindDN` / `opts.password`) and returns `{ rootDSE, search,
+close }`, where `search(baseDN, filter, attrs?)` runs a whole-subtree
+search returning one ordered `{ dn, <attr>: string[] }` object per entry
+(multi-valued attributes stay arrays). `dict` is a one-shot RFC 2229
+client (`define` / `match`) — a "no match" is data (`found: false` /
+empty list), not a thrown error.
 
 **Integration testing.** The `db.*` tests above are unit-level. To exercise the
 networked bindings against real servers, point the `SERCON_TEST_*` env vars at a
@@ -4828,7 +4866,7 @@ Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server
 #### db.clickhouse.open
 
 ```
-open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, secure?: boolean }): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, secure?: boolean }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
 ```
 
 Connect to ClickHouse via the pure-Go clickhouse-go v2 driver. Arg is a clickhouse:// URL DSN string or an options object { host, port, user, password, database, secure }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses ? placeholders; default native port 9000 (set secure:true for TLS). Pings on open.
@@ -4850,7 +4888,7 @@ await db.close();
 #### db.dict.define
 
 ```
-define(host: string, word: string, opts?: { database?: string, port?: string, timeout?: number }): Promise<{ word: string; found: boolean; definitions: { db: string; dbName: string; text: string }[] }>
+define(host: string, word: string, opts?: { database?: string, port?: string, timeout?: number }): Promise<{ word: string, found: boolean, definitions: { db: string, dbName: string, text: string }[] }>
 ```
 
 RFC 2229 DICT word lookup. define(host, word, opts?) -> { word, found, definitions: [{ db, dbName, text }] }. found:false on no match (not an error). One-shot: connect, query, QUIT.
@@ -4873,7 +4911,7 @@ if (r.found) runtime.log(r.definitions[0].text);
 #### db.dict.match
 
 ```
-match(host: string, word: string, opts?: { strategy?: string, database?: string, port?: string, timeout?: number }): Promise<{ word: string; matches: { db: string; word: string }[] }>
+match(host: string, word: string, opts?: { strategy?: string, database?: string, port?: string, timeout?: number }): Promise<{ word: string, matches: { db: string, word: string }[] }>
 ```
 
 RFC 2229 word match. match(host, word, opts?) -> { word, matches: [{ db, word }] }. opts.strategy (default prefix), opts.database (default *), opts.port (default 2628). One-shot: connect, query, QUIT.
@@ -4896,7 +4934,7 @@ runtime.log(r.matches.map(m => m.word));
 #### db.ldap.open
 
 ```
-open(url: string, opts?: { bindDN?: string, password?: string }): Promise<Record<string, unknown>>
+open(url: string, opts?: { bindDN?: string, password?: string }): Promise<{ rootDSE(): Promise<Record<string, unknown>>; search(baseDN: string, filter?: string, attrs?: string[]): Promise<Record<string, unknown>[]>; close(): Promise<void> }>
 ```
 
 Dial LDAP (ldap://host:port or ldaps://...), anonymous bind by default (or opts.bindDN/password). Returns { rootDSE, search, close }. search(baseDN, filter, attrs?) -> entries; rootDSE -> server metadata.
@@ -4920,7 +4958,7 @@ await dir.close();
 #### db.memcached.open
 
 ```
-open(addr: string): Promise<Record<string, unknown>>
+open(addr: string): Promise<{ get(key: string): Promise<string | null>; set(key: string, value: unknown, expirySeconds?: number): Promise<void>; delete(key: string): Promise<boolean> }>
 ```
 
 Connect to memcached (host:port). Returns { get, set, delete }. get -> string or null (miss); delete -> bool (existed). set(key, value, expirySeconds?). No ping on open; the pool is lazy.
@@ -4943,7 +4981,7 @@ const existed = await mc.delete("session:42"); // true
 #### db.mssql.open
 
 ```
-open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
 ```
 
 Connect to Microsoft SQL Server via the pure-Go go-mssqldb driver. Arg is a sqlserver:// URL DSN string or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses @p1,@p2,… placeholders. Pings on open.
@@ -4965,7 +5003,7 @@ await db.close();
 #### db.mysql.open
 
 ```
-open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
 ```
 
 Connect to MySQL/MariaDB via the pure-Go go-sql-driver. Arg is a go-sql-driver DSN string (user:pass@tcp(host:port)/db) or an options object { host, port, user, password, database }. Returns the shared SQL handle. Uses ? placeholders. Pings on open.
@@ -4987,7 +5025,7 @@ await db.close();
 #### db.oracle.open
 
 ```
-open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
 ```
 
 Connect to Oracle via the pure-Go go-ora driver (no cgo). Arg is an oracle:// URL DSN string or an options object { host, port, user, password, database } where database is the service name. Returns the shared SQL handle. Uses :1,:2,… bind placeholders; default port 1521. Pings on open.
@@ -5009,7 +5047,7 @@ await db.close();
 #### db.postgres.open
 
 ```
-open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, sslmode?: string }): Promise<Record<string, unknown>>
+open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, sslmode?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
 ```
 
 Connect to PostgreSQL via the pure-Go pgx driver. Arg is a libpq DSN/URL string or an options object { host, port, user, password, database, sslmode }. Returns the shared SQL handle { exec, query, queryValue, begin, prepare, close }. Uses $1,$2,… placeholders. Pings on open.
@@ -5031,7 +5069,7 @@ await db.close();
 #### db.redis.open
 
 ```
-open(url: string): Promise<Record<string, unknown>>
+open(url: string): Promise<{ do(cmd: string, ...args: unknown[]): Promise<unknown>; ping(): Promise<string>; close(): Promise<void> }>
 ```
 
 Connect to Redis (redis://...). Returns { do, ping, close }. do(cmd, ...args) runs any RESP command; missing key -> null. Pings on open to surface bad addresses.
@@ -5055,7 +5093,7 @@ await r.close();
 #### db.sqlite.open
 
 ```
-open(path: string): Promise<Record<string, unknown>>
+open(path: string): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
 ```
 
 Open a SQLite database (':memory:' or a file path; created if absent). Resolves to a handle { exec, query, queryValue, begin, prepare, close }. Connection is Ping-ed before resolving.
@@ -5069,17 +5107,17 @@ Open a SQLite database (':memory:' or a file path; created if absent). Resolves 
 **Throws:** Throws if path is missing or empty, or if the connection ping fails (the *sql.DB is closed on ping failure rather than leaked). Subsequent exec/query/etc. throw the driver error on bad SQL or bind mismatch.
 
 ```ts
-const db = await db.sqlite.open(":memory:");
-await db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)");
-await db.exec("INSERT INTO t (name) VALUES (?)", "alice");
-const rows = await db.query("SELECT * FROM t WHERE name = ?", "alice");
-await db.close();
+const conn = await db.sqlite.open(":memory:");
+await conn.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)");
+await conn.exec("INSERT INTO t (name) VALUES (?)", "alice");
+const rows = await conn.query("SELECT * FROM t WHERE name = ?", "alice");
+await conn.close();
 ```
 
 #### db.valkey.open
 
 ```
-open(url: string): Promise<Record<string, unknown>>
+open(url: string): Promise<{ do(cmd: string, ...args: unknown[]): Promise<unknown>; ping(): Promise<string>; close(): Promise<void> }>
 ```
 
 Connect to Valkey (valkey:// or redis://...). Valkey is the RESP-compatible Redis fork, so this is db.redis with the same { do, ping, close } handle; valkey:// / valkeys:// URLs are accepted (normalised to redis:// / rediss://). Pings on open to surface bad addresses.
