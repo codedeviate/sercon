@@ -828,6 +828,31 @@ it checks out `codedeviate/homebrew-cli` and runs that tap's
 and rewrite `Formula/sercon.rb`. Requires a `HOMEBREW_TAP_GITHUB_TOKEN`
 secret; skips cleanly if absent. v0.35.1 was the last hand-bumped version.
 
+## 8. Documentation tooling
+
+### Typst PDF pipeline
+
+`make manual` moved off the earlier HTML-driven renderer onto recon's **typst**
+engine. The PDF now ships a `--cover` title page (title, subtitle, version, date,
+author), a page-number footer, and a page-numbered table of contents, set in
+recon-native **IBM Plex Sans** with no vendored font. MANUAL.md no longer carries
+a raw-HTML cover block or a hand-curated TOC — both are emitted by the renderer —
+so `make manual` dropped `--unsafe-html`. To keep the markdown source
+tooling-friendly while satisfying typst, the file is piped through
+`scripts/typst-safe.awk` at render time: it escapes prose angle brackets and strips
+HTML comments that fall outside code fences. `version-check` / `release-prep`
+collapsed to a single footer version marker.
+
+### Completeness sweep + guard
+
+Every binding member across all reserved-global namespaces (plus `console` and
+`server`) was brought to a full structured-docs standard — each carries a Summary,
+Params, ReturnType, Returns, Errors, and Example — which enriches both the §16
+binding reference and the `.d.ts` editor hovers. `paymentproviders` gained a full
+per-provider reference. `cmd/sercon/docs_completeness_test.go` makes this permanent:
+`TestDocsComplete` fails if any swept member is missing a field, and
+`TestDocsComplete_CoversAllNamespaces` fails if a namespace is left unswept.
+
 ## Bundled libraries
 
 ### `paymentproviders` (v0.63.0)

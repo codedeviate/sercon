@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Changed
+
+- Manual rendered via recon's **typst** engine: a `--cover` title page, page-number
+  footer, page-numbered table of contents, and a sans-serif body (recon-native
+  **IBM Plex Sans**, no vendored font). `make manual` no longer needs `--unsafe-html`;
+  MANUAL.md's raw-HTML cover and hand-curated TOC were removed, and the file is piped
+  through `scripts/typst-safe.awk` at render (escapes prose angle brackets + strips
+  HTML comments outside code) so the source stays tooling-friendly. `version-check`/
+  `release-prep` rework to a single footer version marker.
+- Whole-manual documentation sweep: every binding member across all reserved-global
+  namespaces (+ console, server) now carries full structured docs (params, return
+  type, returns, errors, example) — enriching both the §16 reference and the `.d.ts`
+  hovers. `paymentproviders` gained a full per-provider reference. A permanent
+  `TestDocsComplete` guard keeps every member documented.
+
 ## [0.66.0] — 2026-06-23
 
 ### Added

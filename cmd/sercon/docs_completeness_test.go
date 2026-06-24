@@ -74,3 +74,16 @@ func TestDocsComplete(t *testing.T) {
 		}
 	}
 }
+
+func TestDocsComplete_CoversAllNamespaces(t *testing.T) {
+	all := docsByNamespace()
+	swept := map[string]bool{}
+	for _, ns := range sweptNamespaces {
+		swept[ns] = true
+	}
+	for ns := range all {
+		if !swept[ns] {
+			t.Errorf("namespace %q is not in sweptNamespaces — its MemberDocs were not completed", ns)
+		}
+	}
+}
