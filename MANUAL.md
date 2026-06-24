@@ -3970,7 +3970,7 @@ deferred ideas.
 ### `paymentproviders`
 
 A TypeScript payments library compiled into the sercon binary and importable by
-scripts — no install needed:
+scripts — no install needed. It is **not** a reserved global; you `import` it:
 
 ```ts
 import { kcov3 } from "paymentproviders";
@@ -3979,41 +3979,231 @@ const order = await api.getPayment(orderId);
 await api.capturePayment(orderId, { amount: order.order_amount });
 ```
 
-**KCO v3** (`kcov3`) wraps Kustom's Order-Management + Checkout APIs:
-`getPayment`, `acknowledge`, `capturePayment`, `refundPayment`, `cancelPayment`,
-`releaseRemainingAuthorization`, and (bonus) `createCheckout` / `getCheckout`.
-`kcov3.client(overrides?)` reads credentials from the environment (or `.env` via
-`--env-file`): `KCO_MERCHANT_ID`, `KCO_SHARED_SECRET`, `KCO_ENV` (`test`|`prod`,
-selecting `api.playground.kustom.co` / `api.kustom.co`) or `KCO_BASE_URL`; any can
-be overridden per call. Auth is HTTP Basic (`merchantId:sharedSecret`); POST
-mutations carry an auto-generated `Klarna-Idempotency-Key`. A non-2xx response
-throws a `PaymentError` (`provider`, `status`, parsed `body`, `requestId?`).
-Amounts are integer minor units (öre). Additional providers (Nets, Svea, Qliro,
-SwedbankPay) are planned as additive namespaces.
+The module exposes one **version-labelled namespace per provider** — `kcov3`,
+`netsv1`, `sveacheckout2`, `qlirov2`, `swedbankpayv2`, `swedbankpayv3`. The
+version suffix is deliberate: a future API revision (e.g. `netsv2`) ships
+alongside the existing namespace instead of silently changing behaviour under
+callers, so a script pinned to `netsv1` keeps working.
 
-**Additional providers** (same `client()` + lifecycle shape):
+Each namespace exports a single `client(overrides?)` factory that returns a
+ready-to-use client object. `client()` is **synchronous** and throws plainly (a
+regular `Error`, not `PaymentError`) if a required credential is missing — every
+provider validates its env vars up front. The client methods are all `async` and
+return the parsed JSON response.
 
-- `netsv1` (Nexi/Nets Checkout Payment API v1) — `createPayment`/`getPayment`/
-  `capturePayment`/`refundPayment`/`cancelPayment`; env `NETS_SECRET_KEY`,
-  `NETS_ENV`; auth = the secret key in the `Authorization` header.
-- `sveacheckout2` (Svea Checkout) — `createOrder`/`getOrder`/`capturePayment`/
-  `refundPayment`/`cancelPayment`; env `SCO_MERCHANT_ID`, `SCO_SECRET_KEY`,
-  `SCO_ENV`; auth = `Svea base64(merchantId:UPPER(SHA512(body+secret+timestamp)))`
-  plus a `Timestamp` header.
-- `qlirov2` (Qliro One) — `createOrder`/`getOrder`/`getPayment`; env
-  `QLIRO_API_KEY`, `QLIRO_APIPASSWORD`, `QLIRO_ENV`; auth =
-  `Qliro base64(SHA256(body+secret))`.
-- `swedbankpayv3` / `swedbankpayv2` (SwedbankPay Checkout v3 / v2) — Bearer auth
-  plus HAL/hypermedia: `createPaymentOrder`, `getPaymentOrder`/`getPayment`, the
-  low-level `operation(paymentOrderOrUrl, rel, body?)` primitive (resolves the
-  rel's `href` in the payment-order response and POSTs to it), and convenience
-  `capturePayment`/`refundPayment`/`cancelPayment` (the `capture`/`reversal`/
-  `cancel` operations). Env `SWEDBANKPAY_ACCESS_TOKEN` (Bearer), `SWEDBANKPAY_MERCHANT_ID`
-  (the `payee.payeeId`), `SWEDBANKPAY_ENV`. Base URLs
-  `api.externalintegration.payex.com` (test) / `api.payex.com` (prod).
+#### Shared core
 
-Provider namespaces are version-labelled (e.g. `kcov3`, `netsv1`) so a future API
-version ships alongside (e.g. `netsv2`) without breaking callers.
+All six providers are built on a small shared core (`core/`):
+
+- **Config resolution.** Every credential and the environment selector can come
+  from the environment **or** be overridden per call. Precedence is
+  `overrides.X ?? env(PROVIDER_X)`. The base URL is chosen by
+  `pickBaseUrl`: an explicit `baseUrl` (override or `PROVIDER_BASE_URL`) always
+  wins and has trailing slashes trimmed; otherwise `env === "prod"` selects the
+  production URL and anything else (including unset) selects the test URL. So
+  **test is the default** when `*_ENV` is absent.
+- **Pluggable per-request signer.** Auth is not baked into the HTTP layer.
+  Each client supplies a `sign(method, path, bodyStr)` function that returns the
+  auth headers to merge for that request. This is what lets body-signing
+  providers (Svea, Qliro) compute a per-request hash over the serialized body,
+  while header/Bearer providers (KCO, Nets, SwedbankPay) ignore the arguments.
+- **`apiRequest`.** The single request path: sets `accept: application/json`,
+  serializes the body (when present) as JSON with `content-type: application/json`,
+  calls the signer, issues the call via `net.http.request` (`follow: true` so
+  redirects are honoured), and parses the response body as JSON (falling back to
+  the raw string if it is not valid JSON).
+- **Non-2xx throws `PaymentError`.** Any status outside 200–299 throws a
+  `PaymentError` instead of returning. Its shape:
+
+  ```ts
+  class PaymentError extends Error {
+    provider: string;   // e.g. "kcov3"
+    status: number;     // the HTTP status
+    body: unknown;      // parsed JSON error body (or raw string)
+    requestId?: string; // from x-correlation-id / klarna-correlation-id, if present
+  }
+  ```
+
+  Catch it to branch on `status` (e.g. distinguish a `404` from a `401`).
+- **Idempotency keys.** Mutating KCO calls send an auto-generated
+  `Klarna-Idempotency-Key`; the generator (`idempotencyKey()`) is a
+  timestamp+random base36 string.
+- **Amounts are integer minor units** (öre / cents), matching the provider APIs.
+  `core/money.ts` exposes `major`/`minor` helpers if you need to convert.
+
+What follows is a per-provider reference: auth model, env vars, base URLs, the
+method table, and a worked example.
+
+---
+
+#### `kcov3` — Kustom / Klarna Checkout v3
+
+Wraps Kustom's Order-Management v1 + Checkout v3 APIs.
+
+- **Auth.** HTTP Basic, `Authorization: Basic base64(merchantId:sharedSecret)`.
+- **Env vars.** `KCO_MERCHANT_ID`, `KCO_SHARED_SECRET` (both required),
+  `KCO_ENV` (`test`|`prod`), `KCO_BASE_URL` (overrides env selection).
+- **Base URLs.** test `https://api.playground.kustom.co` ·
+  prod `https://api.kustom.co`.
+- **Idempotency.** All POST mutations send a fresh `Klarna-Idempotency-Key`.
+
+| Method | Params | Returns | Throws |
+| --- | --- | --- | --- |
+| `getPayment(id)` | order id | the order-management order | `PaymentError` on non-2xx |
+| `acknowledge(id)` | order id | ack result | `PaymentError` |
+| `capturePayment(id, { amount, orderLines?, description? })` | id + capture input (sent as `captured_amount`/`order_lines`/`description`) | capture result | `PaymentError` |
+| `refundPayment(id, { amount, orderLines?, description? })` | id + refund input (sent as `refunded_amount`/`order_lines`/`description`) | refund result | `PaymentError` |
+| `cancelPayment(id)` | order id | cancel result | `PaymentError` |
+| `releaseRemainingAuthorization(id)` | order id | release result | `PaymentError` |
+| `createCheckout(order)` | checkout order object | created checkout order | `PaymentError` |
+| `getCheckout(id)` | checkout order id | checkout order | `PaymentError` |
+
+```ts
+import { kcov3 } from "paymentproviders";
+const api = kcov3.client();              // KCO_* from env (test by default)
+const order = await api.getPayment("ord_123");
+if (order.status === "AUTHORIZED") {
+  await api.capturePayment("ord_123", { amount: order.order_amount });
+}
+```
+
+---
+
+#### `netsv1` — Nexi / Nets Checkout Payment API v1
+
+- **Auth.** The secret key is sent **verbatim** as the `Authorization` header
+  value (no `Bearer` prefix — Nexi's scheme).
+- **Env vars.** `NETS_SECRET_KEY` (required), `NETS_ENV` (`test`|`prod`),
+  `NETS_BASE_URL`.
+- **Base URLs.** test `https://test.api.dibspayment.eu` ·
+  prod `https://api.dibspayment.eu`.
+
+| Method | Params | Returns | Throws |
+| --- | --- | --- | --- |
+| `createPayment(payment)` | full payment-create body | created payment (incl. `paymentId`) | `PaymentError` |
+| `getPayment(id)` | payment id | payment | `PaymentError` |
+| `capturePayment(id, { amount, orderItems? })` | id + charge input (posts to `/charges`) | charge result | `PaymentError` |
+| `refundPayment(id, { amount, orderItems? })` | id + refund input (posts to `/refunds`) | refund result | `PaymentError` |
+| `cancelPayment(id)` | payment id (PUT to `/terminate`) | termination result | `PaymentError` |
+
+```ts
+import { netsv1 } from "paymentproviders";
+const api = netsv1.client();
+const created = await api.createPayment({ /* checkout, order, ... */ });
+const p = await api.getPayment(created.paymentId);
+await api.capturePayment(created.paymentId, { amount: p.summary.reservedAmount });
+```
+
+---
+
+#### `sveacheckout2` — Svea Checkout
+
+- **Auth.** Body-signed. The signer computes
+  `hash = UPPER(SHA512(body + secretKey + timestamp))`, then
+  `token = base64(merchantId:hash)`, and sends
+  `Authorization: Svea <token>` plus a `Timestamp` header (UTC,
+  `YYYY-MM-DD HH:MM:SS`). For GETs the body string is `""`, so the hash signs
+  `secretKey + timestamp`.
+- **Env vars.** `SCO_MERCHANT_ID`, `SCO_SECRET_KEY` (both required),
+  `SCO_ENV` (`test`|`prod`), `SCO_BASE_URL`.
+- **Base URLs.** test `https://checkoutapistage.svea.com` ·
+  prod `https://checkoutapi.svea.com`.
+
+| Method | Params | Returns | Throws |
+| --- | --- | --- | --- |
+| `createOrder(order)` | order body (POST `/api/orders`) | created order | `PaymentError` |
+| `getOrder(id)` | order id | order | `PaymentError` |
+| `getPayment(id)` | order id (alias of `getOrder` — the order is the payment) | order | `PaymentError` |
+| `capturePayment(id, { amount, rows? })` | id + delivery input (POST `/deliveries`) | delivery result | `PaymentError` |
+| `refundPayment(id, { amount, rows? })` | id + credit input (POST `/credits`) | credit result | `PaymentError` |
+| `cancelPayment(id)` | order id (POST `/cancel`) | cancel result | `PaymentError` |
+
+```ts
+import { sveacheckout2 } from "paymentproviders";
+const api = sveacheckout2.client();
+const order = await api.getOrder("12345");
+await api.capturePayment("12345", { amount: order.OrderAmount });
+```
+
+---
+
+#### `qlirov2` — Qliro One
+
+- **Auth.** Body-signed. `token = base64(SHA256(body + apiPassword))` sent as
+  `Authorization: Qliro <token>`. For bodyless GETs the body string is `""`, so
+  the token signs just the secret — Qliro's scheme for GETs.
+- **Env vars.** `QLIRO_API_KEY`, `QLIRO_APIPASSWORD` (both required),
+  `QLIRO_ENV` (`test`|`prod`), `QLIRO_BASE_URL`.
+- **Base URLs.** test `https://pago.qit.nu` · prod `https://payments.qit.nu`.
+- **Management calls.** `capturePayment`/`refundPayment`/`cancelPayment` hit the
+  Admin API v2 (`MarkItemsAsShipped` / `ReturnItems` / `cancelOrder`). The
+  library injects `RequestId` (a UUID v4), `OrderId`, and `MerchantApiKey` into
+  the signed body for you; `MerchantApiKey` is injected last so a caller's
+  `input` cannot override it. `createOrder` likewise injects `MerchantApiKey`
+  last.
+
+| Method | Params | Returns | Throws |
+| --- | --- | --- | --- |
+| `createOrder(order)` | order body (`MerchantApiKey` injected) | created order | `PaymentError` |
+| `getOrder(id)` | order id (string\|number; GET) | order | `PaymentError` |
+| `getPayment(id)` | order id (alias of `getOrder`) | order | `PaymentError` |
+| `capturePayment(orderId, input?)` | order id + extra fields (→ `MarkItemsAsShipped`) | capture result | `PaymentError` |
+| `refundPayment(orderId, input?)` | order id + extra fields (→ `ReturnItems`) | refund result | `PaymentError` |
+| `cancelPayment(orderId)` | order id (→ `cancelOrder`) | cancel result | `PaymentError` |
+
+```ts
+import { qlirov2 } from "paymentproviders";
+const api = qlirov2.client();
+const order = await api.getOrder(987654);
+await api.capturePayment(987654, { /* OrderItemActions, etc. */ });
+```
+
+---
+
+#### `swedbankpayv2` / `swedbankpayv3` — SwedbankPay Checkout (HAL)
+
+Both versions share one client (`swedbankpay/common.ts`); they differ only in
+their `version` label — the create path (`/psp/paymentorders`) and the HAL model
+are identical. The request **payload** shape you supply to `createPaymentOrder`
+is where v2 and v3 diverge (that is the caller's responsibility).
+
+- **Auth.** `Authorization: Bearer <accessToken>`.
+- **Env vars.** `SWEDBANKPAY_ACCESS_TOKEN`, `SWEDBANKPAY_MERCHANT_ID` (both
+  required; the merchant id is the `payee.payeeId`), `SWEDBANKPAY_ENV`
+  (`test`|`prod`), `SWEDBANKPAY_BASE_URL`.
+- **Base URLs.** test `https://api.externalintegration.payex.com` ·
+  prod `https://api.payex.com`.
+- **HAL / hypermedia.** SwedbankPay responses carry an `operations` array of
+  `{ rel, href, method }` links. The `operation(paymentOrderOrUrl, rel, body?)`
+  primitive resolves a rel and POSTs (or uses the link's method) to its absolute
+  `href`. The first argument may be an already-fetched payment-order payload
+  **or** an id/URL string (which is GET-fetched first). Rel matching is exact or
+  by hyphen-suffix, so `"capture"` also matches a qualified rel like
+  `"create-paymentorder-capture"`. If the rel is not present on the payment
+  order, `operation` throws a plain `Error` (not `PaymentError`). The
+  `capturePayment`/`refundPayment`/`cancelPayment` convenience methods are thin
+  wrappers over `operation` using the `capture` / `reversal` / `cancel` rels.
+- The returned client also exposes `merchantId` as a plain string field.
+
+| Method | Params | Returns | Throws |
+| --- | --- | --- | --- |
+| `createPaymentOrder(body)` | full payment-order body (POST `/psp/paymentorders`) | created payment order (with `operations`) | `PaymentError` |
+| `getPaymentOrder(idOrUrl)` | id or absolute URL (GET) | payment order | `PaymentError` |
+| `getPayment(idOrUrl)` | alias of `getPaymentOrder` | payment order | `PaymentError` |
+| `operation(paymentOrderOrUrl, rel, body?)` | a fetched PO or id/URL, the HAL rel, optional body | the operation's response | `Error` if rel absent; `PaymentError` on non-2xx |
+| `capturePayment(paymentOrderOrUrl, body)` | PO/id/URL + capture body (rel `capture`) | capture result | `Error`/`PaymentError` |
+| `refundPayment(paymentOrderOrUrl, body)` | PO/id/URL + reversal body (rel `reversal`) | reversal result | `Error`/`PaymentError` |
+| `cancelPayment(paymentOrderOrUrl, body?)` | PO/id/URL + optional body (rel `cancel`) | cancel result | `Error`/`PaymentError` |
+
+```ts
+import { swedbankpayv3 } from "paymentproviders";
+const api = swedbankpayv3.client();
+const po = await api.getPaymentOrder("/psp/paymentorders/abc123");
+// Capture using the HAL operation resolved from the fetched payment order:
+await api.capturePayment(po, {
+  transaction: { amount: 1500, vatAmount: 300, description: "Capture", payeeReference: "cap-1" },
+});
+```
 
 ## 16. Binding reference (generated)
 
