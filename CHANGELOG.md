@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.68.0] — 2026-06-24
+
 ### Added
 
 - `text.str.base64UrlEncode` / `text.str.base64UrlDecode` — URL-safe base64
