@@ -67,7 +67,7 @@ val, err := eng.RunFile(ctx, "scripts/main.ts")
 
 ## 3. Library API — `pkg/scriptengine`
 
-### `Engine`, `Options`, `New`
+### 3.1 `Engine`, `Options`, `New`
 
 ```go
 type Options struct {
@@ -115,7 +115,7 @@ basis only by constructing a fresh `Engine`; see
 [Out-of-scope](./OUT-OF-SCOPE.md) for the per-Run override on the
 roadmap.
 
-### Registering bindings
+### 3.2 Registering bindings
 
 | Function | Use when… |
 |---|---|
@@ -158,7 +158,7 @@ eng.RegisterFactory("httpGet", func(vm *goja.Runtime, loop *eventloop.EventLoop)
 })
 ```
 
-### `Run`, `RunFile`
+### 3.3 `Run`, `RunFile`
 
 ```go
 func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption) (goja.Value, error)
@@ -173,7 +173,7 @@ Both methods respect `Options.Timeout` *and* `ctx` cancellation, whichever
 fires first; the resulting error is either `ErrScriptTimeout`, `ctx.Err()`,
 or the underlying JS exception.
 
-#### Per-Run options
+#### 3.3.1 Per-Run options
 
 ```go
 type RunOption func(*runConfig)
@@ -206,7 +206,7 @@ _, _ = eng.Run(ctx, "main.ts", source, scriptengine.WithArgs([]string{"--port", 
 // inside the script: runtime.argv === [ProgramName, "/abs/main.ts", "--port", "8080"]
 ```
 
-### `Reset`
+### 3.4 `Reset`
 
 ```go
 func (e *Engine) Reset()
@@ -216,7 +216,7 @@ Clears every registered binding. Useful when a long-lived Engine is
 reused across unrelated batches of scripts that each want a clean
 global namespace. **Not safe to call concurrently with Run / RunFile.**
 
-### `WriteTypes`
+### 3.5 `WriteTypes`
 
 ```go
 func (e *Engine) WriteTypes(w io.Writer) error
@@ -226,7 +226,7 @@ Emits a `.d.ts` describing the registered surface. See section
 [14. Type generation](#14-type-generation-dts) for what the mapping
 looks like.
 
-### `SetDocs` and `SetMemberDocs`
+### 3.6 `SetDocs` and `SetMemberDocs`
 
 ```go
 func (e *Engine) SetDocs(path, doc string)
@@ -268,7 +268,7 @@ eng.SetMemberDocs("math2", map[string]string{
 })
 ```
 
-### `PromisifyAsync[T]` and `AsyncBinding`
+### 3.7 `PromisifyAsync[T]` and `AsyncBinding`
 
 ```go
 type AsyncBinding struct {
@@ -297,7 +297,7 @@ the result into a `map[string]any` for `RegisterNamespace` /
 `RegisterNamespaceFactory` get the unwrap recursively too — no manual
 work required.
 
-### Version
+### 3.8 Version
 
 ```go
 import "github.com/codedeviate/sercon/pkg/scriptengine"
@@ -338,7 +338,7 @@ echo 'runtime.log(1 + 2);' | sercon -
 sercon prelude.ts -                 # prelude then stdin
 ```
 
-### Passing arguments: `--` and `runtime.argv`
+### 4.1 Passing arguments: `--` and `runtime.argv`
 
 Everything after a standalone `--` is the script argument vector,
 exposed to every script via `runtime.argv`:
@@ -379,7 +379,7 @@ mis-rewritten import is straightforward.
 
 The CLI registers twelve reserved top-level globals; see the next section.
 
-### `--watch`: re-run on file change
+### 4.2 `--watch`: re-run on file change
 
 `sercon --watch <script.ts>` runs the script once and then blocks,
 re-running it every time a watched file changes under the script
@@ -443,7 +443,7 @@ entry whose graph isn't known yet re-run unconditionally
 actually takes effect — the registry otherwise caches compiled
 bytecode across runs.
 
-### Editor autocomplete (`sercon init`)
+### 4.3 Editor autocomplete (`sercon init`)
 
 ```
 sercon init [dir]
@@ -469,7 +469,7 @@ bundled demos autocomplete out of the box. For a single file without a
 config, the no-setup fallback is a leading
 `/// <reference path="./sercon.d.ts" />`.
 
-### Shebang lines and executable scripts (`sercon run`)
+### 4.4 Shebang lines and executable scripts (`sercon run`)
 
 A script may begin with a `#!` shebang line. It is stripped before
 transpile (the line is blanked in place, so transpile/syntax error line
@@ -515,7 +515,7 @@ supported by GNU coreutils, macOS, and the BSDs.
 sercon run script.ts --port 8080 alice    # argv[2:] = ["--port","8080","alice"]
 ```
 
-### `sercon serve`: long-running scripts with production niceties
+### 4.5 `sercon serve`: long-running scripts with production niceties
 
 ```
 sercon serve [flags] <script.ts> [-- args...]
@@ -587,7 +587,7 @@ canonical serialization (payment signing, webhook signatures). The lone
 exception is `text.jq`, whose underlying engine discards key order
 internally.
 
-### `console` (browser/Node compatibility)
+### 5.1 `console` (browser/Node compatibility)
 
 Beyond the twelve reserved globals, sercon provides a `console` global so
 scripts pasted from a browser or Node run unchanged:
@@ -607,7 +607,7 @@ is the native equivalent of `console.log` (stdout) and formats the same
 way. Library embedders get the goja_nodejs console by default instead;
 toggle it with `Options.DisableConsole`.
 
-### `runtime`
+### 5.2 `runtime`
 
 Script-host scaffolding. Members:
 
@@ -708,11 +708,11 @@ runtime.assert.equal(2 + 2, 4);
 const args = runtime.argv.slice(2);   // post-`--` user args
 ```
 
-### `crypto`
+### 5.3 `crypto`
 
 Hashing, JWT, and age/PGP encryption. Three sub-namespaces:
 
-#### `crypto.hash.*`
+#### 5.3.1 `crypto.hash.*`
 
 `md5`, `sha1`, `sha256`, `sha384`, `sha512`, `sha3_256`, `sha3_512`,
 `blake3`, `crc32`. Each takes a single `string` (interpreted as a UTF-8
@@ -724,7 +724,7 @@ and deterministic. A missing/`null`/`undefined` argument throws a
 do not use them for security. BLAKE3 is `lukechampine.com/blake3`
 (256-bit output); the `sha3_*` underscore naming matches recon's binding.
 
-#### `crypto.jwt.*`
+#### 5.3.2 `crypto.jwt.*`
 
 `sign(claims, secret, opts?)`, `view(token)`, `validate(token, secret, opts?)`.
 
@@ -749,7 +749,7 @@ guard. It resolves `{ valid: true, claims }` or `{ valid: false, reason }`
 errors (empty token/secret, malformed token, key shape mismatching the
 token's algorithm) throw.
 
-#### `crypto.encrypt.*`
+#### 5.3.3 `crypto.encrypt.*`
 
 `keygen()`, `keygenPgp(opts?)`, `encrypt(data, recipients, opts?)`,
 `decrypt(ciphertext, identities)`, `rekey(ciphertext, oldIdentities,
@@ -779,7 +779,7 @@ The encrypt/decrypt/rekey calls throw on type/shape errors: wrong key kind
 (public where private is expected or vice versa), empty key lists, an
 unsupported data type, or no identity matching the ciphertext.
 
-### `text`
+### 5.4 `text`
 
 String, regex, charset, and data manipulation. The `str.*` and `preg*.*`
 families are **synchronous**; `charset.*`, `jq.*`, and `diff.*` return
@@ -841,7 +841,7 @@ families are **synchronous**; `charset.*`, `jq.*`, and `diff.*` return
   "unified" }`; inputs with a NUL byte in their first 8 KB are reported as
   `binary: true` with an empty `diff`.
 
-### `codec`
+### 5.5 `codec`
 
 Binary-format codecs (was `format` in v0.8.0). Members:
 
@@ -868,7 +868,7 @@ Binary-format codecs (was `format` in v0.8.0). Members:
   ordering is not preserved. Cycles, mismatched tags, multiple roots, and
   malformed XML throw.
 
-#### `codec.compression` — compress / decompress
+#### 5.5.1 `codec.compression` — compress / decompress
 
 Nine algorithms, exposed by name (case-insensitive). `codec.compression.algos()`
 returns them in registration order: `gzip`, `deflate`, `zlib`, `bzip2`, `zstd`,
@@ -889,7 +889,7 @@ block form (no streaming frame header), while `lz4` uses the LZ4 frame format
 `new TextDecoder().decode(bytes)`. Round-trips are byte-faithful for the same
 algorithm; cross-algorithm or truncated input throws.
 
-#### `codec.barcode` — encode / decode
+#### 5.5.2 `codec.barcode` — encode / decode
 
 - `codec.barcode.encode(format, data, opts?): Promise<Uint8Array>` — **async**;
   renders `data` into PNG bytes. Encodable formats (`codec.barcode.formats()`):
@@ -911,7 +911,7 @@ be decodable** — encode them with `quietZone: true` (or supply margin in the
 source image) before round-tripping through `decode`. Invalid payloads for a
 symbology (e.g. wrong EAN digit count) throw at encode time.
 
-#### `codec.checkdigit` — validate / compute / inspect
+#### 5.5.3 `codec.checkdigit` — validate / compute / inspect
 
 Six algorithms (`codec.checkdigit.algos()`): `luhn`, `isbn10`, `isbn13`,
 `ean13`, `ean8`, `upca`. `isbn13` is an alias for `ean13` (identical check-digit
@@ -932,7 +932,7 @@ math). Algorithm names are case-insensitive and trimmed.
   malformed input yields `valid: false` with an empty `computed`. ISBN-10 accepts
   a trailing `X` as the check digit.
 
-#### `codec.php` — PHP dump formats
+#### 5.5.4 `codec.php` — PHP dump formats
 
 Three PHP textual formats, each with an encoder and a matching parser:
 
@@ -972,7 +972,7 @@ marker, a length-truncated string (its declared byte length disagrees
 with the bytes present), or visibility-annotated property names
 (`["x":"Cls":private]`).
 
-#### `codec.perl` — Perl `Data::Dumper`
+#### 5.5.5 `codec.perl` — Perl `Data::Dumper`
 
 - `codec.perl.dumper(value, opts?): string` — emit a `Data::Dumper`-style
   dump (`$VAR1 = … ;`) with normalized indentation.
@@ -988,7 +988,7 @@ a JS boolean. A bare `1` / `0` stays a number. The class used on encode is
 `opts.perlBoolClass` (default `"JSON::XS::Boolean"`). Blessed hashes carry
 the `__class` sentinel, mirroring the PHP side. Cycles **throw**.
 
-#### `opts` and shared caveats
+#### 5.5.6 `opts` and shared caveats
 
 All `codec.php.*` / `codec.perl.*` functions accept an optional `opts` bag:
 
@@ -1004,7 +1004,7 @@ type, so `int` and `float` collapse the same way `JSON.stringify` does
 order, so re-encoding is byte-stable — safe for canonical-JSON / payment
 hashing.
 
-### `fs`
+### 5.6 `fs`
 
 Filesystem operations:
 
@@ -1050,7 +1050,7 @@ matching `image.save` and the WebDriver `screenshot` writers):
 first (Node-like); reads and `stat` reject when the target is absent. See
 `examples/scripts/fs-report.ts` for a per-step screenshot report built on these.
 
-### `net`
+### 5.7 `net`
 
 Network clients and probes:
 
@@ -1087,7 +1087,7 @@ Network clients and probes:
   (worker-pool, latency percentiles + error rate; public hosts need
   `confirm:true`).
 
-#### HTTP client (`net.http`)
+#### 5.7.1 HTTP client (`net.http`)
 
 Three entry points, all returning a `Promise`. **A 4xx/5xx response never
 rejects** — it resolves with the status set; only transport-level failures
@@ -1109,7 +1109,7 @@ rejects** — it resolves with the status set; only transport-level failures
   lower-cased name→value map (last value wins); `url` is the final URL after
   redirects.
 
-#### One-shot probes (`net.probe`)
+#### 5.7.2 One-shot probes (`net.probe`)
 
 Each `net.probe.*` helper performs a single handshake/lookup and resolves
 with a structured result. Connection-level failures reject; *findings* (an
@@ -1152,7 +1152,7 @@ tcp, tls, http }`. Each sub-probe is `{ ok, …, error? }` — sub-failures are
 `reachable` is `dns.ok && tcp.ok` (TLS/HTTP are reported but don't gate it).
 `opts.port` defaults to `"443"`.
 
-#### Email-authentication probes (`net.email`)
+#### 5.7.3 Email-authentication probes (`net.email`)
 
 DNS-based deliverability / anti-spoofing posture checks. Each takes a
 `domain` and resolves to a discriminated union — `{ present: false }` when
@@ -1178,7 +1178,7 @@ a missing record is the normal `{ present: false }` outcome, not a throw.
   surfaces as `{ error }` under its key rather than failing the aggregate, so
   this call always resolves.
 
-#### Stateful HTTP session (`net.browser`)
+#### 5.7.4 Stateful HTTP session (`net.browser`)
 
 `net.browser.open()` (no arguments) opens a **stateful HTTP session** — an
 `http.Client` with an automatic, public-suffix-scoped **cookie jar** and a
@@ -1248,7 +1248,7 @@ until it `close()`s. `sercon` scripts can't *bind* a listening TCP/UDP
 server socket yet — these are client sockets — so a TCP example needs a
 peer to dial; a UDP loopback pair is fully self-contained.
 
-#### Packet capture (`net.capture`)
+#### 5.7.5 Packet capture (`net.capture`)
 
 Packet capture and pcap file I/O, powered by **pure-Go gopacket** (no
 `libpcap`, no cgo). Five bindings:
@@ -1351,7 +1351,7 @@ The pcap file API round-trips: write raw frames with `toFile`, read them
 back decoded with `openFile`, no privileges required (see
 `examples/scripts/capture-file.ts`).
 
-#### Raw packets (`net.raw`)
+#### 5.7.6 Raw packets (`net.raw`)
 
 Craft and send raw IPv4 packets and receive the replies — for SYN scans,
 RST/port-state inference, custom-TTL probes, and exotic-packet testing.
@@ -1384,7 +1384,7 @@ bindings:
 > (`iptables -A OUTPUT -p tcp --tcp-flags RST RST -j DROP`, or the `pf`
 > equivalent). sercon does not modify your firewall.
 
-#### HTTP load / resilience self-test (`net.load`)
+#### 5.7.7 HTTP load / resilience self-test (`net.load`)
 
 `net.load.http(opts)` is an **authorized HTTP load / resilience self-test
 harness**: a worker pool drives a target you operate at a chosen
@@ -1451,7 +1451,7 @@ Transport `errors` are bucketed by kind (`timeout`, `refused`, `dns`,
 (Run end / `--timeout` aborts in-flight requests). See
 `examples/scripts/load.ts`.
 
-### `db`
+### 5.8 `db`
 
 Database / KV / directory clients:
 
@@ -1529,7 +1529,7 @@ fleet: it brings the fleet up, runs the tests (postgres / mysql / mariadb /
 clickhouse / redis / valkey / memcached / ldap), and tears it down. Requires
 Docker + Compose v2.
 
-### `services`
+### 5.9 `services`
 
 Subprocess and external-CLI / service wrappers (was `tools` in
 v0.8.0). Members:
@@ -1608,7 +1608,7 @@ unknown provider, or a timeout throw).
 - `services.pdf.*` — PDF render/extract via the external poppler-utils
   CLI tools. See the subsection below.
 
-#### `services.agentBrowser`
+#### 5.9.1 `services.agentBrowser`
 
 Bridge to the [`agent-browser`](https://github.com/codedeviate/agent-browser)
 headless-Chrome CLI. Every call shells out to `agent-browser --json --session
@@ -2101,7 +2101,7 @@ await b.close();
 All string opts except `password` map to the corresponding agent-browser flags;
 `password` is stripped from the option object and fed via stdin.
 
-#### `services.webdriver`
+#### 5.9.2 `services.webdriver`
 
 W3C WebDriver client backed by [`github.com/tebeka/selenium`](https://github.com/tebeka/selenium)
 (pure Go — no cgo). Drives a real browser via an installed `chromedriver` or
@@ -2355,7 +2355,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-##### Frames / iframes
+##### 5.9.2.1 Frames / iframes
 
 **WebDriver — nested + cross-origin.** `switchToFrame(target)` accepts a frame
 index (number), an iframe **element handle** from `find()`, **or a CSS-selector
@@ -2400,7 +2400,7 @@ or enabling late), not frame context — `find` already follows the chain.
 `clickWhenReady` is the fix: a wait (visible+enabled, in the active frame)
 followed by a trusted click.
 
-#### CDP trusted clicks (Chrome only)
+#### 5.9.3 CDP trusted clicks (Chrome only)
 
 Some elements cannot be activated by the standard WebDriver click: when a button
 lives inside a **nested cross-origin iframe**, the W3C Element Click hit-tests to
@@ -2453,7 +2453,7 @@ so sequential `frame()` calls won't reach an inner frame. For nested or
 cross-origin nesting, use WebDriver (`frameChain`). (A Klarna/KCO completion
 helper is out of scope — it needs the live payment widget.)
 
-#### `services.typst`
+#### 5.9.4 `services.typst`
 
 External-CLI binding to the [Typst](https://typst.app) compiler. Every call
 shells out to the local `typst` binary; nothing is linked into sercon (the
@@ -2522,7 +2522,7 @@ if (!services.typst.available) {
 }
 ```
 
-#### `services.pdf`
+#### 5.9.5 `services.pdf`
 
 External-CLI binding to [poppler-utils](https://poppler.freedesktop.org/).
 Every call shells out to the relevant poppler binary (`pdftoppm`,
@@ -2591,7 +2591,7 @@ if (!services.pdf.available) {
 }
 ```
 
-#### `services.doctor`
+#### 5.9.6 `services.doctor`
 
 `services.doctor(requires?)` reports on every external tool sercon can
 use and, optionally, asserts a script's prerequisites. It is the
@@ -2653,7 +2653,7 @@ const opt = await services.doctor(["typst", "webdriver"]);
 if (!opt.satisfied) runtime.log("skipping; unmet:", JSON.stringify(opt.unmet));
 ```
 
-### `tui`
+### 5.10 `tui`
 
 Multi-pane terminal UI (was `ui.tui` in v0.8.0). `tui.layout(tree)`
 declares panes; `tui.pane(name)` returns a pane handle with `write`,
@@ -2668,7 +2668,7 @@ Activation is **script-driven**: the first call to
 pipes, `make demo`), the same calls fall back to prefixed plain-text
 lines (`[paneName] line`) so the same script runs in both contexts.
 
-#### Layout
+#### 5.10.1 Layout
 
 ```ts
 tui.layout({
@@ -2693,7 +2693,7 @@ Each layout node is one of:
 `weight` defaults to 1. Pane names must be unique across the whole
 tree. `layout` may be called **once** per Run; a second call throws.
 
-#### Pane handles
+#### 5.10.2 Pane handles
 
 ```ts
 const log = tui.pane("log");
@@ -2707,7 +2707,7 @@ log.write("partial line ");
 `title`. Methods are synchronous from the script's perspective — they
 enqueue to the TUI goroutine.
 
-#### Subprocess routing
+#### 5.10.3 Subprocess routing
 
 `services.exec.shell(cmd, opts)` accepts `opts.pane` (a Pane handle or a
 pane name string):
@@ -2731,7 +2731,7 @@ spinners, which a `pane` renders (or, without a pane, are captured into
 on a TTY. A pty merges stdout and stderr onto one stream, so `stderr` is
 empty in pty mode. On Windows `pty` is ignored (pipe fallback, no color).
 
-#### Keybindings (TTY mode only)
+#### 5.10.4 Keybindings (TTY mode only)
 
 | Key                  | Action                          |
 |----------------------|---------------------------------|
@@ -2777,7 +2777,7 @@ open, which is the idiomatic "press any key to close" hold. `onKey` does
 **not** keep the Run alive on its own — pair it with an outstanding
 `await` (a `waitKey` or a sleep) if the script should stay interactive.
 
-#### Limitations (v1)
+#### 5.10.5 Limitations (v1)
 
 - `tui` is **incompatible with `--watch`**: calling
   `tui.layout()` under `--watch` throws. Use one or the other.
@@ -2785,7 +2785,7 @@ open, which is the idiomatic "press any key to close" hold. `onKey` does
   no snapshot-to-normal-screen on exit. The alt screen is restored at
   script end and the usual `PASS`/`FAIL` line prints.
 
-### `image`
+### 5.11 `image`
 
 Image I/O and manipulation, all pure-Go and synchronous. Decode a raster
 image (PNG/JPEG/GIF/TIFF/BMP/WebP) or rasterize an SVG subset, then chain
@@ -2847,7 +2847,7 @@ Pure-Go stack: `disintegration/imaging` + `golang.org/x/image`
 (webp/tiff/bmp decode) + `HugoSmits86/nativewebp` (webp encode) +
 `srwiley/oksvg`+`rasterx` (SVG). No cgo.
 
-### `web`
+### 5.12 `web`
 
 Fetch & parse web documents. Three families — `web.feed` (RSS/Atom/JSON
 feeds), `web.sitemap` (sitemaps), and `web.html` (lenient HTML scraping)
@@ -2863,7 +2863,7 @@ option surface — `timeout` (ms number or duration string), `headers`,
 — and sends a default `sercon-web/<version>` User-Agent unless you
 override it. A non-2xx response throws.
 
-#### `web.feed`
+#### 5.12.1 `web.feed`
 
 | Function | Returns | Notes |
 |---|---|---|
@@ -2878,7 +2878,7 @@ author, guid, categories[], raw }`. The `raw` object is the escape
 hatch carrying format-specific extras (enclosures, namespaced elements
 like `media:*` / `dc:*`) that the normalized model drops.
 
-#### `web.sitemap`
+#### 5.12.2 `web.sitemap`
 
 | Function | Returns | Notes |
 |---|---|---|
@@ -2895,7 +2895,7 @@ single-level expansion — a child that is itself a `sitemapindex` is
 not recursed) and merge their URLs into `urls`; per-child fetch/parse
 failures are collected in `errors[]` rather than thrown.
 
-#### `web.html`
+#### 5.12.3 `web.html`
 
 | Function | Returns | Notes |
 |---|---|---|
@@ -3305,7 +3305,7 @@ by goja. esbuild's `Supported` flag lowers both during transpile
 Symbol.for("@@asyncIterator")` so the lowered helper and user code
 agree on the same iteration key.
 
-#### Server-Sent Events (`res.sse`)
+#### 6.5.1 Server-Sent Events (`res.sse`)
 
 `res.sse(opts?)` starts a one-way `text/event-stream` response: the
 handler holds the connection open and pushes events until it (or the
@@ -3380,7 +3380,7 @@ at `DATA`. The inbound listener is `server.smtp.listen({…})`; the
 outbound side is `net.email.send({…})` (covered at the end of this
 section).
 
-#### `server.smtp.listen({…})`
+#### 6.7.1 `server.smtp.listen({…})`
 
 Synchronously binds the listening socket (so a port already in use throws
 immediately), then serves in the background. Returns a handle once the
@@ -3524,7 +3524,7 @@ runtime.assert.equal(captured!.subject, "round-trip demo", "subject");
 await srv.close();
 ```
 
-#### `net.email.send({…})` — outbound
+#### 6.7.2 `net.email.send({…})` — outbound
 
 The outbound counterpart lives under `net.email` (next to the `spf` /
 `dmarc` / … probes). It opens **one TCP connection per call** — no
@@ -3592,7 +3592,7 @@ srv.address;       // "tcp/0.0.0.0:54321"  or  "udp/0.0.0.0:54321"
 srv.close();       // Promise<void> — stop accepting, drain, release HoldRun
 ```
 
-#### `server.tcp.listen({…}, conn => {…})`
+#### 6.8.1 `server.tcp.listen({…}, conn => {…})`
 
 The second argument is a **connection handler** invoked once per accepted
 socket. The `conn` it receives is the **same handle shape** as
@@ -3618,7 +3618,7 @@ interfaces — pass `"127.0.0.1"` for loopback-only), `readBuffer`
 (per-connection inbound channel capacity — frames buffered before
 backpressure, default `64`; same meaning as `net.tcp.connect`).
 
-#### `server.udp.listen({…}, (msg, reply) => {…})`
+#### 6.8.2 `server.udp.listen({…}, (msg, reply) => {…})`
 
 UDP is connectionless, so the handler fires **once per inbound datagram**
 rather than once per connection. `msg` describes the datagram and its
@@ -3664,7 +3664,7 @@ listeners).
 `scriptengine` runs on goja, which implements **ES5.1 + a large subset of
 ES6+**. The following are present and behave per spec:
 
-### Globals
+### 7.1 Globals
 
 - `Object`, `Array`, `String`, `Number`, `Boolean`, `BigInt`
 - `Math`, `Date`, `JSON`, `RegExp`
@@ -3683,7 +3683,7 @@ runtime.log(JSON.stringify({ a: 1, b: [2, 3] }));
 runtime.log("abc".repeat(3), "abc".padStart(6, "_"));
 ```
 
-### Collections
+### 7.2 Collections
 
 - `Map`, `Set`, `WeakMap`, `WeakSet`
 
@@ -3693,7 +3693,7 @@ for (const ch of "banana") counts.set(ch, (counts.get(ch) ?? 0) + 1);
 runtime.log([...counts]); // [["b",1],["a",3],["n",2]]
 ```
 
-### Typed arrays
+### 7.3 Typed arrays
 
 - `ArrayBuffer`, `DataView`
 - `Int8Array`, `Uint8Array`, `Uint8ClampedArray`, `Int16Array`,
@@ -3705,7 +3705,7 @@ new DataView(buf).setUint32(0, 0xCAFEBABE);
 runtime.log(new Uint8Array(buf)[0].toString(16)); // ca
 ```
 
-### Iteration and generators
+### 7.4 Iteration and generators
 
 - `for…of`, `for…in`, spread, destructuring
 - Generator functions (`function*`)
@@ -3724,7 +3724,7 @@ const first10 = Array.from({ length: 10 }, () => it.next().value);
 runtime.log(first10);
 ```
 
-### Not (yet) provided
+### 7.5 Not (yet) provided
 
 - `fetch` — use `net.http.*` from the CLI, or register your own binding.
 - `Worker`, threading primitives.
@@ -3736,7 +3736,7 @@ runtime.log(first10);
 
 The event loop bundles a small Node-compatible runtime on top of goja:
 
-### Timers
+### 8.1 Timers
 
 ```ts
 setTimeout(() => runtime.log("after 50ms"), 50);
@@ -3749,7 +3749,7 @@ The event loop holds the script alive while *any* timer is pending. If
 your script ends with only `setTimeout` callbacks scheduled, the run
 will wait for them to fire before returning.
 
-### `console`
+### 8.2 `console`
 
 ```ts
 console.log("info");
@@ -3762,7 +3762,7 @@ console.debug("trace");
 Disable with `Options.DisableConsole = true` if you want a clean global
 namespace.
 
-### `require`
+### 8.3 `require`
 
 CommonJS require, with TS-aware extension fallback added by sercon (see
 [section 11](#11-module-resolution)):
@@ -3963,7 +3963,7 @@ sercon --emit-dts sercon.d.ts
 In your editor, place the resulting `.d.ts` next to your scripts (or
 reference it via `/// <reference path="..." />`) for autocomplete.
 
-### JSDoc comments on declarations
+### 14.1 JSDoc comments on declarations
 
 The emitter pulls JSDoc strings from the engine's doc map (set via
 `Engine.SetDocs` / `Engine.SetMemberDocs`) and renders them above
@@ -4029,7 +4029,7 @@ deferred ideas.
 
 ## 16. Bundled libraries
 
-### `paymentproviders`
+### 16.1 `paymentproviders`
 
 A TypeScript payments library compiled into the sercon binary and importable by
 scripts — no install needed. It is **not** a reserved global; you `import` it:
@@ -4053,7 +4053,7 @@ regular `Error`, not `PaymentError`) if a required credential is missing — eve
 provider validates its env vars up front. The client methods are all `async` and
 return the parsed JSON response.
 
-#### Shared core
+#### 16.1.1 Shared core
 
 All six providers are built on a small shared core (`core/`):
 
@@ -4098,7 +4098,7 @@ method table, and a worked example.
 
 ---
 
-#### `kcov3` — Kustom / Klarna Checkout v3
+#### 16.1.2 `kcov3` — Kustom / Klarna Checkout v3
 
 Wraps Kustom's Order-Management v1 + Checkout v3 APIs.
 
@@ -4131,7 +4131,7 @@ if (order.status === "AUTHORIZED") {
 
 ---
 
-#### `netsv1` — Nexi / Nets Checkout Payment API v1
+#### 16.1.3 `netsv1` — Nexi / Nets Checkout Payment API v1
 
 - **Auth.** The secret key is sent **verbatim** as the `Authorization` header
   value (no `Bearer` prefix — Nexi's scheme).
@@ -4158,7 +4158,7 @@ await api.capturePayment(created.paymentId, { amount: p.summary.reservedAmount }
 
 ---
 
-#### `sveacheckout2` — Svea Checkout
+#### 16.1.4 `sveacheckout2` — Svea Checkout
 
 - **Auth.** Body-signed. The signer computes
   `hash = UPPER(SHA512(body + secretKey + timestamp))`, then
@@ -4189,7 +4189,7 @@ await api.capturePayment("12345", { amount: order.OrderAmount });
 
 ---
 
-#### `qlirov2` — Qliro One
+#### 16.1.5 `qlirov2` — Qliro One
 
 - **Auth.** Body-signed. `token = base64(SHA256(body + apiPassword))` sent as
   `Authorization: Qliro <token>`. For bodyless GETs the body string is `""`, so
@@ -4222,7 +4222,7 @@ await api.capturePayment(987654, { /* OrderItemActions, etc. */ });
 
 ---
 
-#### `swedbankpayv2` / `swedbankpayv3` — SwedbankPay Checkout (HAL)
+#### 16.1.6 `swedbankpayv2` / `swedbankpayv3` — SwedbankPay Checkout (HAL)
 
 Both versions share one client (`swedbankpay/common.ts`); they differ only in
 their `version` label — the create path (`/psp/paymentorders`) and the HAL model
@@ -4279,11 +4279,11 @@ migrated show their one-line summary and a collapsed signature.
 <!-- BEGIN GENERATED REFERENCE -->
 <!-- AUTO-GENERATED by scriptengine.Engine.WriteReference — do not edit by hand. -->
 
-### codec
+### 17.1 codec
 
 Binary-format codecs: compression, barcodes, check digits.
 
-#### codec.barcode.decodableFormats
+#### 17.1.1 codec.barcode.decodableFormats
 
 ```
 decodableFormats(): string[]
@@ -4299,7 +4299,7 @@ Available decode formats (qr / datamatrix / aztec / code128 / code39 / code93 / 
 const fmts = codec.barcode.decodableFormats();
 ```
 
-#### codec.barcode.decode
+#### 17.1.2 codec.barcode.decode
 
 ```
 decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<{ format: string, text: string }>
@@ -4320,7 +4320,7 @@ Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hi
 const { format, text } = await codec.barcode.decode(png);
 ```
 
-#### codec.barcode.encode
+#### 17.1.3 codec.barcode.encode
 
 ```
 encode(format: string, data: string, opts?: { width?: number, height?: number, quietZone?: boolean | number }): Promise<Uint8Array>
@@ -4342,7 +4342,7 @@ Render data into a PNG of the chosen format. opts.width / opts.height default to
 const png = await codec.barcode.encode("qr", "https://example.com", { width: 320, height: 320 });
 ```
 
-#### codec.barcode.formats
+#### 17.1.4 codec.barcode.formats
 
 ```
 formats(): string[]
@@ -4358,7 +4358,7 @@ Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / 
 const fmts = codec.barcode.formats(); // ["qr", "datamatrix", ...]
 ```
 
-#### codec.checkdigit.algos
+#### 17.1.5 codec.checkdigit.algos
 
 ```
 algos(): string[]
@@ -4374,7 +4374,7 @@ Supported algorithms (luhn / isbn10 / isbn13 / ean13 / ean8 / upca).
 const algos = codec.checkdigit.algos();
 ```
 
-#### codec.checkdigit.compute
+#### 17.1.6 codec.checkdigit.compute
 
 ```
 compute(algo: string, partial: string): string
@@ -4395,7 +4395,7 @@ Compute the missing trailing check digit for a partial input.
 const cd = codec.checkdigit.compute("ean13", "123456789012"); // "8"
 ```
 
-#### codec.checkdigit.inspect
+#### 17.1.7 codec.checkdigit.inspect
 
 ```
 inspect(algo: string, input: string): { algo: string, input: string, valid: boolean, given: string, computed: string }
@@ -4417,7 +4417,7 @@ const r = codec.checkdigit.inspect("ean13", "1234567890128");
 // { algo: "ean13", input: "...", valid: true, given: "8", computed: "8" }
 ```
 
-#### codec.checkdigit.validate
+#### 17.1.8 codec.checkdigit.validate
 
 ```
 validate(algo: string, input: string): boolean
@@ -4438,7 +4438,7 @@ Return whether the input passes the named algorithm's check digit.
 const ok = codec.checkdigit.validate("luhn", "4539578763621486"); // true
 ```
 
-#### codec.compression.algos
+#### 17.1.9 codec.compression.algos
 
 ```
 algos(): string[]
@@ -4454,7 +4454,7 @@ Available compression algorithm names (gzip / deflate / zlib / bzip2 / zstd / br
 const algos = codec.compression.algos(); // ["gzip", "deflate", ...]
 ```
 
-#### codec.compression.compress
+#### 17.1.10 codec.compression.compress
 
 ```
 compress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>
@@ -4475,7 +4475,7 @@ Compress data with the named algorithm. Returns Uint8Array. Async.
 const packed = await codec.compression.compress("gzip", "hello world");
 ```
 
-#### codec.compression.decompress
+#### 17.1.11 codec.compression.decompress
 
 ```
 decompress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>
@@ -4497,7 +4497,7 @@ const raw = await codec.compression.decompress("gzip", packed);
 const text = new TextDecoder().decode(raw);
 ```
 
-#### codec.perl.dumper
+#### 17.1.12 codec.perl.dumper
 
 ```
 dumper(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -4518,7 +4518,7 @@ Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS boolean
 const d = codec.perl.dumper({ ok: true });
 ```
 
-#### codec.perl.parseDumper
+#### 17.1.13 codec.perl.parseDumper
 
 ```
 parseDumper(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -4539,7 +4539,7 @@ Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decod
 const v = codec.perl.parseDumper("$VAR1 = [1, 2];"); // [1, 2]
 ```
 
-#### codec.php.parseVarDump
+#### 17.1.14 codec.php.parseVarDump
 
 ```
 parseVarDump(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -4560,7 +4560,7 @@ Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, tru
 const v = codec.php.parseVarDump('int(42)'); // 42
 ```
 
-#### codec.php.parseVarExport
+#### 17.1.15 codec.php.parseVarExport
 
 ```
 parseVarExport(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -4581,7 +4581,7 @@ Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a
 const v = codec.php.parseVarExport("array (\n  0 => 1,\n)");
 ```
 
-#### codec.php.serialize
+#### 17.1.16 codec.php.serialize
 
 ```
 serialize(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -4602,7 +4602,7 @@ PHP serialize(): encode a value to PHP's canonical serialization string. Objects
 const s = codec.php.serialize({ a: 1, b: [2, 3] });
 ```
 
-#### codec.php.unserialize
+#### 17.1.17 codec.php.unserialize
 
 ```
 unserialize(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -4623,7 +4623,7 @@ PHP unserialize(): decode a serialize() string back to a value. r:/R: references
 const v = codec.php.unserialize('a:2:{i:0;i:1;i:1;i:2;}'); // [1, 2]
 ```
 
-#### codec.php.varDump
+#### 17.1.18 codec.php.varDump
 
 ```
 varDump(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -4644,7 +4644,7 @@ PHP var_dump(): human-readable debug output. String lengths are byte counts.
 const dump = codec.php.varDump({ name: "ok" });
 ```
 
-#### codec.php.varExport
+#### 17.1.19 codec.php.varExport
 
 ```
 varExport(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -4665,7 +4665,7 @@ PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-s
 const code = codec.php.varExport({ x: 1 }, { indent: "    " });
 ```
 
-#### codec.xml.decode
+#### 17.1.20 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -4686,7 +4686,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### codec.xml.encode
+#### 17.1.21 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string
@@ -4708,11 +4708,11 @@ const xml = codec.xml.encode({ note: { "@id": "5", "#text": "hi" } });
 // <note id="5">hi</note>
 ```
 
-### console
+### 17.2 console
 
 Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.
 
-#### console.debug
+#### 17.2.1 console.debug
 
 ```
 debug(args: ...unknown[]): void
@@ -4732,7 +4732,7 @@ Alias of console.log — stringified arguments, space-joined, to stdout.
 console.debug("cache hit", key);
 ```
 
-#### console.error
+#### 17.2.2 console.error
 
 ```
 error(args: ...unknown[]): void
@@ -4752,7 +4752,7 @@ Like console.log but writes to stderr.
 console.error("request failed", { status: 500 });
 ```
 
-#### console.info
+#### 17.2.3 console.info
 
 ```
 info(args: ...unknown[]): void
@@ -4772,7 +4772,7 @@ Alias of console.log — stringified arguments, space-joined, to stdout.
 console.info("listening on", 8080);
 ```
 
-#### console.log
+#### 17.2.4 console.log
 
 ```
 log(args: ...unknown[]): void
@@ -4792,7 +4792,7 @@ Print a space-joined line of the arguments to stdout. Primitives print raw; obje
 console.log("user", { id: 1, name: "ada" }); // user {"id":1,"name":"ada"}
 ```
 
-#### console.warn
+#### 17.2.5 console.warn
 
 ```
 warn(args: ...unknown[]): void
@@ -4812,11 +4812,11 @@ Like console.log but writes to stderr.
 console.warn("retrying in", 5, "seconds");
 ```
 
-### crypto
+### 17.3 crypto
 
 Hashing, JWT, age encryption — anything that produces a digest, signature, or ciphertext.
 
-#### crypto.encrypt.decrypt
+#### 17.3.1 crypto.encrypt.decrypt
 
 ```
 decrypt(ciphertext: string | Uint8Array | ArrayBuffer, identities: string | string[]): Uint8Array
@@ -4838,7 +4838,7 @@ const pt = crypto.encrypt.decrypt(ct, privateKey);
 const text = new TextDecoder().decode(pt);
 ```
 
-#### crypto.encrypt.detectBackend
+#### 17.3.2 crypto.encrypt.detectBackend
 
 ```
 detectBackend(input: string): { backend: string; kind?: string }
@@ -4858,7 +4858,7 @@ Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown'
 const info = crypto.encrypt.detectBackend("age1abc..."); // { backend: "age", kind: "public" }
 ```
 
-#### crypto.encrypt.encrypt
+#### 17.3.3 crypto.encrypt.encrypt
 
 ```
 encrypt(data: string | Uint8Array | ArrayBuffer, recipients: string | string[], opts?: { armored?: boolean }): Uint8Array
@@ -4880,7 +4880,7 @@ Seal data to recipients. age public keys (age1...) → age backend (opts.armored
 const ct = crypto.encrypt.encrypt("secret", publicKey, { armored: true });
 ```
 
-#### crypto.encrypt.keygen
+#### 17.3.4 crypto.encrypt.keygen
 
 ```
 keygen(): { publicKey: string; privateKey: string }
@@ -4896,7 +4896,7 @@ Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey:
 const { publicKey, privateKey } = crypto.encrypt.keygen();
 ```
 
-#### crypto.encrypt.keygenPgp
+#### 17.3.5 crypto.encrypt.keygenPgp
 
 ```
 keygenPgp(opts?: { name?: string, email?: string }): { publicKey: string; privateKey: string }
@@ -4916,7 +4916,7 @@ Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. 
 const { publicKey, privateKey } = crypto.encrypt.keygenPgp({ name: "Test", email: "t@example.com" });
 ```
 
-#### crypto.encrypt.rekey
+#### 17.3.6 crypto.encrypt.rekey
 
 ```
 rekey(ciphertext: string | Uint8Array | ArrayBuffer, oldIdentities: string | string[], newRecipients: string | string[], opts?: { armored?: boolean }): Uint8Array
@@ -4939,7 +4939,7 @@ Re-encrypt for a new recipient set without exposing plaintext to JS. Output form
 const rotated = crypto.encrypt.rekey(ct, oldKey, newPublicKey);
 ```
 
-#### crypto.hash.blake3
+#### 17.3.7 crypto.hash.blake3
 
 ```
 blake3(input: string): string
@@ -4959,7 +4959,7 @@ BLAKE3 hex digest (32-byte output, lukechampine.com/blake3).
 const d = crypto.hash.blake3("hello");
 ```
 
-#### crypto.hash.crc32
+#### 17.3.8 crypto.hash.crc32
 
 ```
 crc32(input: string): string
@@ -4979,7 +4979,7 @@ CRC-32 (IEEE polynomial), zero-padded to 8 hex chars.
 const c = crypto.hash.crc32("hello"); // "3610a686"
 ```
 
-#### crypto.hash.md5
+#### 17.3.9 crypto.hash.md5
 
 ```
 md5(input: string): string
@@ -4999,7 +4999,7 @@ MD5 hex digest of a UTF-8 input. Avoid for security purposes — exposed for com
 const d = crypto.hash.md5("hello"); // "5d41402abc4b2a76b9719d911017c592"
 ```
 
-#### crypto.hash.sha1
+#### 17.3.10 crypto.hash.sha1
 
 ```
 sha1(input: string): string
@@ -5019,7 +5019,7 @@ SHA-1 hex digest of a UTF-8 input. Avoid for security purposes.
 const d = crypto.hash.sha1("hello");
 ```
 
-#### crypto.hash.sha256
+#### 17.3.11 crypto.hash.sha256
 
 ```
 sha256(input: string): string
@@ -5039,7 +5039,7 @@ SHA-256 hex digest of a UTF-8 input.
 const d = crypto.hash.sha256("hello");
 ```
 
-#### crypto.hash.sha384
+#### 17.3.12 crypto.hash.sha384
 
 ```
 sha384(input: string): string
@@ -5059,7 +5059,7 @@ SHA-384 hex digest of a UTF-8 input.
 const d = crypto.hash.sha384("hello");
 ```
 
-#### crypto.hash.sha3_256
+#### 17.3.13 crypto.hash.sha3_256
 
 ```
 sha3_256(input: string): string
@@ -5079,7 +5079,7 @@ SHA-3 256-bit hex digest. The underscore in the name matches recon's binding.
 const d = crypto.hash.sha3_256("hello");
 ```
 
-#### crypto.hash.sha3_512
+#### 17.3.14 crypto.hash.sha3_512
 
 ```
 sha3_512(input: string): string
@@ -5099,7 +5099,7 @@ SHA-3 512-bit hex digest.
 const d = crypto.hash.sha3_512("hello");
 ```
 
-#### crypto.hash.sha512
+#### 17.3.15 crypto.hash.sha512
 
 ```
 sha512(input: string): string
@@ -5119,7 +5119,7 @@ SHA-512 hex digest of a UTF-8 input.
 const d = crypto.hash.sha512("hello");
 ```
 
-#### crypto.jwt.sign
+#### 17.3.16 crypto.jwt.sign
 
 ```
 sign(claims: Record<string, unknown>, secret: string, opts?: { algorithm?: string }): string
@@ -5141,7 +5141,7 @@ Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for R
 const tok = crypto.jwt.sign({ sub: "u1" }, "topsecret", { algorithm: "HS256" });
 ```
 
-#### crypto.jwt.validate
+#### 17.3.17 crypto.jwt.validate
 
 ```
 validate(token: string, secret: string, opts?: { algorithm?: string, audience?: string, issuer?: string }): { valid: boolean; claims?: object; reason?: string }
@@ -5164,7 +5164,7 @@ const r = crypto.jwt.validate(tok, "topsecret", { algorithm: "HS256" });
 if (r.valid) runtime.log(r.claims.sub);
 ```
 
-#### crypto.jwt.view
+#### 17.3.18 crypto.jwt.view
 
 ```
 view(token: string): { header: object; payload: object; signature: string }
@@ -5184,11 +5184,11 @@ Decode header + payload WITHOUT verifying the signature. Useful for inspection /
 const { header, payload } = crypto.jwt.view(tok);
 ```
 
-### db
+### 17.4 db
 
 Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, Valkey, memcached, LDAP, dict.
 
-#### db.clickhouse.open
+#### 17.4.1 db.clickhouse.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, secure?: boolean }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -5210,7 +5210,7 @@ const rows = await db.query("SELECT name, value FROM stats WHERE host = ?", "web
 await db.close();
 ```
 
-#### db.dict.define
+#### 17.4.2 db.dict.define
 
 ```
 define(host: string, word: string, opts?: { database?: string, port?: string, timeout?: number }): Promise<{ word: string, found: boolean, definitions: { db: string, dbName: string, text: string }[] }>
@@ -5233,7 +5233,7 @@ const r = await db.dict.define("dict.org", "serendipity");
 if (r.found) runtime.log(r.definitions[0].text);
 ```
 
-#### db.dict.match
+#### 17.4.3 db.dict.match
 
 ```
 match(host: string, word: string, opts?: { strategy?: string, database?: string, port?: string, timeout?: number }): Promise<{ word: string, matches: { db: string, word: string }[] }>
@@ -5256,7 +5256,7 @@ const r = await db.dict.match("dict.org", "seren", { strategy: "prefix" });
 runtime.log(r.matches.map(m => m.word));
 ```
 
-#### db.ldap.open
+#### 17.4.4 db.ldap.open
 
 ```
 open(url: string, opts?: { bindDN?: string, password?: string }): Promise<{ rootDSE(): Promise<Record<string, unknown>>; search(baseDN: string, filter?: string, attrs?: string[]): Promise<Record<string, unknown>[]>; close(): Promise<void> }>
@@ -5280,7 +5280,7 @@ const people = await dir.search("ou=people,dc=example,dc=com", "(uid=alice)", ["
 await dir.close();
 ```
 
-#### db.memcached.open
+#### 17.4.5 db.memcached.open
 
 ```
 open(addr: string): Promise<{ get(key: string): Promise<string | null>; set(key: string, value: unknown, expirySeconds?: number): Promise<void>; delete(key: string): Promise<boolean> }>
@@ -5303,7 +5303,7 @@ const v = await mc.get("session:42"); // "active" or null
 const existed = await mc.delete("session:42"); // true
 ```
 
-#### db.mssql.open
+#### 17.4.6 db.mssql.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -5325,7 +5325,7 @@ const rows = await db.query("SELECT TOP 5 id, name FROM users WHERE region = @p1
 await db.close();
 ```
 
-#### db.mysql.open
+#### 17.4.7 db.mysql.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -5347,7 +5347,7 @@ const n = await db.queryValue("SELECT COUNT(*) FROM orders WHERE status = ?", "p
 await db.close();
 ```
 
-#### db.oracle.open
+#### 17.4.8 db.oracle.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -5369,7 +5369,7 @@ const rows = await db.query("SELECT id, name FROM users WHERE id = :1", 42);
 await db.close();
 ```
 
-#### db.postgres.open
+#### 17.4.9 db.postgres.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, sslmode?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -5391,7 +5391,7 @@ const rows = await db.query("SELECT id, name FROM users WHERE id = $1", 42);
 await db.close();
 ```
 
-#### db.redis.open
+#### 17.4.10 db.redis.open
 
 ```
 open(url: string): Promise<{ do(cmd: string, ...args: unknown[]): Promise<unknown>; ping(): Promise<string>; close(): Promise<void> }>
@@ -5415,7 +5415,7 @@ const missing = await r.do("GET", "nope"); // null
 await r.close();
 ```
 
-#### db.sqlite.open
+#### 17.4.11 db.sqlite.open
 
 ```
 open(path: string): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -5439,7 +5439,7 @@ const rows = await conn.query("SELECT * FROM t WHERE name = ?", "alice");
 await conn.close();
 ```
 
-#### db.valkey.open
+#### 17.4.12 db.valkey.open
 
 ```
 open(url: string): Promise<{ do(cmd: string, ...args: unknown[]): Promise<unknown>; ping(): Promise<string>; close(): Promise<void> }>
@@ -5462,11 +5462,11 @@ const v = await r.do("GET", "greeting"); // "hi"
 await r.close();
 ```
 
-### fs
+### 17.5 fs
 
 Filesystem operations: path manipulation and archive create/extract.
 
-#### fs.archive.create
+#### 17.5.1 fs.archive.create
 
 ```
 create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<{ path: string; format: string; entries: string[]; bytes?: number }>
@@ -5488,7 +5488,7 @@ const r = await fs.archive.create("out.tar.gz", ["dist", { path: "README.md", na
 runtime.log(r.format, r.entries.length);
 ```
 
-#### fs.archive.extract
+#### 17.5.2 fs.archive.extract
 
 ```
 extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<{ path: string; format: string; dest: string; entries: string[] }>
@@ -5511,7 +5511,7 @@ const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true
 runtime.log(r.entries.length, "files extracted");
 ```
 
-#### fs.exists
+#### 17.5.3 fs.exists
 
 ```
 exists(path: string): Promise<boolean>
@@ -5531,7 +5531,7 @@ Report whether a path exists. Never throws for a missing path.
 if (!(await fs.exists("report"))) await fs.mkdir("report");
 ```
 
-#### fs.mkdir
+#### 17.5.4 fs.mkdir
 
 ```
 mkdir(path: string): Promise<{ path: string }>
@@ -5551,7 +5551,7 @@ Create a directory, including any missing parents (mkdir -p). Idempotent.
 await fs.mkdir("report/assets");
 ```
 
-#### fs.path.basename
+#### 17.5.5 fs.path.basename
 
 ```
 basename(path: string, suffix?: string): string
@@ -5572,7 +5572,7 @@ Final segment of a path; optional suffix is stripped if it matches.
 const b = fs.path.basename("/var/log/app.log", ".log"); // "app"
 ```
 
-#### fs.path.dirname
+#### 17.5.6 fs.path.dirname
 
 ```
 dirname(path: string): string
@@ -5592,7 +5592,7 @@ Directory portion of a path. POSIX-style; trailing slashes are stripped.
 const d = fs.path.dirname("/var/log/app.log"); // "/var/log"
 ```
 
-#### fs.readBytes
+#### 17.5.7 fs.readBytes
 
 ```
 readBytes(path: string): Promise<Uint8Array>
@@ -5612,7 +5612,7 @@ Read an entire file as bytes.
 const bytes = await fs.readBytes("shot.png");
 ```
 
-#### fs.readText
+#### 17.5.8 fs.readText
 
 ```
 readText(path: string): Promise<string>
@@ -5632,7 +5632,7 @@ Read an entire file as a UTF-8 string.
 const html = await fs.readText("report/index.html");
 ```
 
-#### fs.remove
+#### 17.5.9 fs.remove
 
 ```
 remove(path: string): Promise<{ path: string }>
@@ -5652,7 +5652,7 @@ Remove a file or a directory tree (recursive). No error if the path is already a
 await fs.remove("report"); // clean slate
 ```
 
-#### fs.stat
+#### 17.5.10 fs.stat
 
 ```
 stat(path: string): Promise<{ size: number; isDir: boolean; modifiedMs: number }>
@@ -5673,7 +5673,7 @@ const st = await fs.stat("report/index.html");
 runtime.log(st.size, st.isDir, st.modifiedMs);
 ```
 
-#### fs.writeBytes
+#### 17.5.11 fs.writeBytes
 
 ```
 writeBytes(path: string, data: Uint8Array): Promise<{ path: string; bytes: number }>
@@ -5695,7 +5695,7 @@ const shot = await d.screenshot();
 await fs.writeBytes("shot.png", new Uint8Array(shot.bytes));
 ```
 
-#### fs.writeText
+#### 17.5.12 fs.writeText
 
 ```
 writeText(path: string, text: string): Promise<{ path: string; bytes: number }>
@@ -5717,11 +5717,11 @@ await fs.mkdir("report");
 await fs.writeText("report/index.html", "<h1>Hi</h1>");
 ```
 
-### image
+### 17.6 image
 
 Image decode/encode (PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in) and a chainable Image handle: resize/crop/rotate/flip/adjust/filter/compose.
 
-#### image.decode
+#### 17.6.1 image.decode
 
 ```
 decode(data: Uint8Array): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -5741,7 +5741,7 @@ Decode in-memory image bytes into a chainable Image handle. The format is sniffe
 const im = image.decode(pngBytes);
 ```
 
-#### image.open
+#### 17.6.2 image.open
 
 ```
 open(path: string): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -5761,7 +5761,7 @@ Read an image file from disk and decode it into a chainable Image handle. The fo
 const im = image.open("avatar.jpg");
 ```
 
-#### image.rasterizeSVG
+#### 17.6.3 image.rasterizeSVG
 
 ```
 rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -5782,11 +5782,11 @@ Rasterize an SVG (a supported subset) to a raster Image at the requested pixel s
 const im = image.rasterizeSVG("logo.svg", { width: 256, height: 256 });
 ```
 
-### net
+### 17.7 net
 
 Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions.
 
-#### net.browser.open
+#### 17.7.1 net.browser.open
 
 ```
 open(...args: unknown[]): Promise<{ setUserAgent(ua: string): void, setHeader(name: string, value: string): void, get(url: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, post(url: string, body?: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, cookies(url: string): Promise<{ name: string, value: string }[]> }>
@@ -5806,7 +5806,7 @@ const home = await b.get("https://site/home");
 runtime.log(await b.cookies("https://site/"));
 ```
 
-#### net.capture.interfaces
+#### 17.7.2 net.capture.interfaces
 
 ```
 interfaces(): { name: string; addresses: string[]; up: boolean; loopback: boolean }[]
@@ -5822,7 +5822,7 @@ List the host's network interfaces synchronously: net.capture.interfaces() → a
 for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);
 ```
 
-#### net.capture.open
+#### 17.7.3 net.capture.open
 
 ```
 open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, vlan?: { id: number, priority: number, drop: boolean, type: string }, arp?: { operation: string, senderMac: string, senderIp: string, targetMac: string, targetIp: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, window: number, checksum: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean }, options?: { mss?: number, windowScale?: number, sackPermitted?: boolean, timestamps?: { val: number, ecr: number } } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, dns?: { id: number, qr: boolean, opcode: string, rcode: string, questions: { name: string, type: string }[], answers: { name: string, type: string, data: string }[] }, payload?: Uint8Array, bytes: Uint8Array }) => void): Promise<{ iface: string, link: string, close(): Promise<void> }>
@@ -5846,7 +5846,7 @@ const cap = await net.capture.open({ iface: "en0", filter: "tcp and port 443" },
 await cap.close();
 ```
 
-#### net.capture.openFile
+#### 17.7.4 net.capture.openFile
 
 ```
 openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, vlan?: object, arp?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, dns?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): Promise<void>
@@ -5868,7 +5868,7 @@ Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) →
 await net.capture.openFile("/tmp/dump.pcap", pkt => runtime.log(pkt.tcp?.dstPort), { filter: "tcp" });
 ```
 
-#### net.capture.routes
+#### 17.7.5 net.capture.routes
 
 ```
 routes(): { destination: string; gateway: string; interface: string; family: "ip" | "ip6"; metric: number }[]
@@ -5884,7 +5884,7 @@ List the host's IP routing table synchronously: net.capture.routes() → array o
 const def = net.capture.routes().find(r => r.destination === "0.0.0.0/0");\nruntime.log("default via", def?.gateway, "on", def?.interface);
 ```
 
-#### net.capture.toFile
+#### 17.7.6 net.capture.toFile
 
 ```
 toFile(path: string, opts?: { snaplen?: number, linkType?: number }): { write(bytes: string | Uint8Array, opts?: { ts?: number }): void; close(): Promise<void> }
@@ -5907,7 +5907,7 @@ w.write(frameBytes, { ts: Date.now() });
 await w.close();
 ```
 
-#### net.email.all
+#### 17.7.7 net.email.all
 
 ```
 all(domain: string): Promise<{ domain: string, spf: object, dmarc: object, mtaSts: object, tlsRpt: object, bimi: object }>
@@ -5927,7 +5927,7 @@ Run all five email probes in parallel — five-way handshake aggregate.
 const a = await net.email.all("example.com"); runtime.log(a.spf, a.dmarc);
 ```
 
-#### net.email.bimi
+#### 17.7.8 net.email.bimi
 
 ```
 bimi(domain: string, opts?: { selector?: string }): Promise<{ present: false, selector: string } | { present: true, selector: string, record: string, tags: Record<string, string>, l: string, a: string }>
@@ -5948,7 +5948,7 @@ Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'.
 const r = await net.email.bimi("example.com", { selector: "v1" }); runtime.log(r.present && r.l);
 ```
 
-#### net.email.dmarc
+#### 17.7.9 net.email.dmarc
 
 ```
 dmarc(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, policy: string, subdomain: string, percent: string, rua: string, ruf: string }>
@@ -5968,7 +5968,7 @@ Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.
 const r = await net.email.dmarc("example.com"); runtime.log(r.present && r.policy);
 ```
 
-#### net.email.mtaSts
+#### 17.7.10 net.email.mtaSts
 
 ```
 mtaSts(domain: string): Promise<{ present: false } | { present: true, record: string, txt: { v: string, id: string }, policy?: { version?: string, mode?: string, mx?: string[], maxAge?: number | string }, policyError?: string }>
@@ -5988,7 +5988,7 @@ Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file.
 const r = await net.email.mtaSts("example.com"); runtime.log(r.present && r.policy?.mode);
 ```
 
-#### net.email.send
+#### 17.7.11 net.email.send
 
 ```
 send(opts: { to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number }): Promise<{ accepted: string[], rejected: { address: string, reason: string }[] }>
@@ -6012,7 +6012,7 @@ const r = await net.email.send({
 runtime.log(r.accepted, r.rejected);
 ```
 
-#### net.email.spf
+#### 17.7.12 net.email.spf
 
 ```
 spf(domain: string): Promise<{ present: false } | { present: true, record: string, mechanisms: string[], allPolicy: string }>
@@ -6032,7 +6032,7 @@ Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.
 const r = await net.email.spf("example.com"); if (r.present) runtime.log(r.allPolicy);
 ```
 
-#### net.email.tlsRpt
+#### 17.7.13 net.email.tlsRpt
 
 ```
 tlsRpt(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, rua: string }>
@@ -6052,7 +6052,7 @@ Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua.
 const r = await net.email.tlsRpt("example.com"); runtime.log(r.present && r.rua);
 ```
 
-#### net.http.get
+#### 17.7.14 net.http.get
 
 ```
 get(url: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
@@ -6072,7 +6072,7 @@ Perform an HTTP GET with a 5-second default timeout. Returns { status, body, bod
 const r = await net.http.get("https://example.com"); runtime.log(r.status);
 ```
 
-#### net.http.post
+#### 17.7.15 net.http.post
 
 ```
 post(url: string, body?: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
@@ -6093,7 +6093,7 @@ Perform an HTTP POST with a 5-second default timeout. Returns { status, body, bo
 const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1 }));
 ```
 
-#### net.http.request
+#### 17.7.16 net.http.request
 
 ```
 request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
@@ -6115,7 +6115,7 @@ Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, user
 const r = await net.http.request("POST", "https://api.example.com", { headers: { "content-type": "application/json" }, body: "{}", retry: 2 });
 ```
 
-#### net.icmp.open
+#### 17.7.17 net.icmp.open
 
 ```
 open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array, body?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -6139,7 +6139,7 @@ await p.send({ to: "8.8.8.8", id: 1, seq: 1, payload: "ping" });
 await p.send({ to: "8.8.8.8", type: 3, code: 1, body: new Uint8Array([0, 0, 0, 0]) });
 ```
 
-#### net.load.http
+#### 17.7.18 net.load.http
 
 ```
 http(opts: { url: string, method?: string, headers?: Record<string, string>, body?: string, concurrency?: number, requests?: number, duration?: number, rps?: number, timeout?: number, confirm?: boolean }): Promise<{ target: string, method: string, concurrency: number, durationMs: number, sent: number, completed: number, failed: number, rps: number, errorRate: number, latency: { min: number, mean: number, p50: number, p90: number, p95: number, p99: number, max: number }, statusCounts: Record<string, number>, errors: Record<string, number> }>
@@ -6159,7 +6159,7 @@ Authorized HTTP load / resilience self-test: drive a target with a worker pool a
 const r = await net.load.http({ url: "http://127.0.0.1:8080/", requests: 200, concurrency: 10 }); runtime.log(r.rps, r.latency.p95, r.errorRate);
 ```
 
-#### net.netstatus.check
+#### 17.7.19 net.netstatus.check
 
 ```
 check(host: string, opts?: { port?: string, timeout?: number }): Promise<{ host: string, port: string, elapsedMs: number, reachable: boolean, dns: { ok: boolean, ips: string[], error?: string }, tcp: { ok: boolean, latencyMs: number, error?: string }, tls: { ok: boolean, daysRemaining: number, error?: string }, http: { ok: boolean, status: number, error?: string } }>
@@ -6180,7 +6180,7 @@ Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, d
 const s = await net.netstatus.check("example.com"); runtime.log(s.reachable);
 ```
 
-#### net.probe.dns
+#### 17.7.20 net.probe.dns
 
 ```
 dns(host: string, opts?: { types?: string[] }): Promise<{ a?: string[], aaaa?: string[], mx?: { preference: number, host: string }[], txt?: string[], cname?: string, ns?: string[] }>
@@ -6201,7 +6201,7 @@ Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five.
 const r = await net.probe.dns("example.com", { types: ["a", "mx"] });
 ```
 
-#### net.probe.ntp
+#### 17.7.21 net.probe.ntp
 
 ```
 ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<{ serverTime: string, offsetMs: number, rttMs: number, stratum: number, referenceTime: string, rootDelayMs: number, rootDispersionMs: number }>
@@ -6222,7 +6222,7 @@ Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / di
 const r = await net.probe.ntp("pool.ntp.org"); runtime.log(r.offsetMs);
 ```
 
-#### net.probe.ping
+#### 17.7.22 net.probe.ping
 
 ```
 ping(host: string, opts?: { mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }): Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }>
@@ -6243,7 +6243,7 @@ Reachability probe. mode tcp (default; dials host:port), icmp (real ICMP echo, n
 const p = await net.probe.ping("example.com", { count: 3 }); runtime.log(p.lossPercent);
 ```
 
-#### net.probe.smtp
+#### 17.7.23 net.probe.smtp
 
 ```
 smtp(host: string, opts?: { port?: string, timeout?: number, ehloName?: string }): Promise<{ host: string, port: string, banner: string, ehloDomain: string, extensions: string[], starttls: boolean, authMechanisms: string[], sizeLimit: number }>
@@ -6264,7 +6264,7 @@ SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner,
 const s = await net.probe.smtp("mail.example.com"); runtime.log(s.starttls, s.authMechanisms);
 ```
 
-#### net.probe.tcp
+#### 17.7.24 net.probe.tcp
 
 ```
 tcp(target: string, opts?: { timeout?: number, port?: string }): Promise<{ host: string, port: number, ip: string, latencyMs: number }>
@@ -6285,7 +6285,7 @@ Dial a TCP target and report latency + resolved IP. Default timeout 5s.
 const r = await net.probe.tcp("example.com:443"); runtime.log(r.latencyMs);
 ```
 
-#### net.probe.tls
+#### 17.7.25 net.probe.tls
 
 ```
 tls(target: string, opts?: { timeout?: number }): Promise<{ cn: string, issuer: string, notBefore: string, notAfter: string, daysRemaining: number, dnsNames: string[], serialNumber: string, fingerprintSha256: string }>
@@ -6306,7 +6306,7 @@ Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert
 const c = await net.probe.tls("example.com:443"); runtime.log(c.daysRemaining);
 ```
 
-#### net.probe.traceroute
+#### 17.7.26 net.probe.traceroute
 
 ```
 traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string | null; rttsMs: number[]; reached: boolean }[]>
@@ -6329,7 +6329,7 @@ const hops = await net.probe.traceroute("1.1.1.1", { protocol: "icmp", maxHops: 
 for (const h of hops) runtime.log(h.ttl, h.address ?? "*", h.rttsMs);
 ```
 
-#### net.probe.whois
+#### 17.7.27 net.probe.whois
 
 ```
 whois(domain: string, opts?: { timeout?: number }): Promise<{ raw: string, domain?: { name: string, punycode: string, whoisServer: string, nameServers: string[], status: string[], dnssec: boolean, createdDate: string, updatedDate: string, expirationDate: string }, registrar?: { name: string } }>
@@ -6350,7 +6350,7 @@ Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw re
 const w = await net.probe.whois("example.com"); runtime.log(w.domain?.expirationDate);
 ```
 
-#### net.probe.wss
+#### 17.7.28 net.probe.wss
 
 ```
 wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string, connected: boolean, subprotocol: string, status: number, handshakeMs: number, pingMs: number }>
@@ -6371,7 +6371,7 @@ WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT.
 const w = await net.probe.wss("wss://echo.websocket.org"); runtime.log(w.handshakeMs);
 ```
 
-#### net.raw.open
+#### 17.7.29 net.raw.open
 
 ```
 open(opts?: { iface?: string, filter?: string, readBuffer?: number }): Promise<{ link: string; send(spec: object | Uint8Array): Promise<{ bytesSent: number }>; onPacket(cb: (pkt: any) => void): void; onClose(cb: () => void): void; onError(cb: (msg: string) => void): void; close(): Promise<void> }>
@@ -6396,7 +6396,7 @@ await new Promise(r => setTimeout(r, 1000));
 await h.close();
 ```
 
-#### net.raw.tcp
+#### 17.7.30 net.raw.tcp
 
 ```
 tcp(host: string, port: number, opts?: { flags?: string[], srcPort?: number, src?: string, seq?: number, ttl?: number, payload?: Uint8Array | string, timeout?: number, iface?: string }): Promise<{ ts: number; link: string; ip: { src: string; dst: string; protocol: string; ttl: number }; tcp: { srcPort: number; dstPort: number; seq: number; ack: number; flags: { syn: boolean; ack: boolean; fin: boolean; rst: boolean; psh: boolean; urg: boolean } }; payload?: Uint8Array; bytes: Uint8Array } | null>
@@ -6422,7 +6422,7 @@ else if (reply && reply.tcp.flags.rst) runtime.log("closed");
 else runtime.log("filtered / no answer");
 ```
 
-#### net.tcp.connect
+#### 17.7.31 net.tcp.connect
 
 ```
 connect(host: string, port: string | number, opts?: { timeout?: number, readBuffer?: number }): Promise<{ remote: string, local: string, write(data: string | Uint8Array): Promise<void>, onData(cb: (ev: { bytes: Uint8Array, text: string }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -6446,7 +6446,7 @@ sock.onData(ev => runtime.log(ev.text));
 await sock.write("GET / HTTP/1.0\r\n\r\n");
 ```
 
-#### net.udp.open
+#### 17.7.32 net.udp.open
 
 ```
 open(opts: { host?: string, port?: string | number, bind?: string, readBuffer?: number }): Promise<{ local: string, send(data: string | Uint8Array): Promise<void>, sendTo(data: string | Uint8Array, host: string, port: string | number): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address?: string, port?: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -6468,11 +6468,11 @@ u.onMessage(ev => runtime.log(ev.bytes.length));
 await u.send(query);
 ```
 
-### runtime
+### 17.8 runtime
 
 Script-host scaffolding: logging, assertions, time, environment, runtime.argv.
 
-#### runtime.argv
+#### 17.8.1 runtime.argv
 
 ```
 argv: string[]
@@ -6488,7 +6488,7 @@ Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is t
 const target = runtime.argv[2] ?? "default-host";
 ```
 
-#### runtime.assert.equal
+#### 17.8.2 runtime.assert.equal
 
 ```
 equal(actual: unknown, expected: unknown, msg?: string): void
@@ -6510,7 +6510,7 @@ Throw when actual != expected (strict equality on primitives, deep equality on o
 runtime.assert.equal(1 + 1, 2, "math still works");
 ```
 
-#### runtime.assert.ok
+#### 17.8.3 runtime.assert.ok
 
 ```
 ok(cond: unknown, msg?: string): void
@@ -6531,7 +6531,7 @@ Throw when cond is falsy. Optional msg appears in the error.
 runtime.assert.ok(user.id, "user must have an id");
 ```
 
-#### runtime.clearDeadline
+#### 17.8.4 runtime.clearDeadline
 
 ```
 clearDeadline(): void
@@ -6547,7 +6547,7 @@ Remove the running script's wall-clock kill deadline entirely (equivalent to -ti
 runtime.clearDeadline(); // run without a timeout
 ```
 
-#### runtime.clipboard.available
+#### 17.8.5 runtime.clipboard.available
 
 ```
 available: boolean
@@ -6563,7 +6563,7 @@ True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-cl
 if (!runtime.clipboard.available) runtime.log("no clipboard — skipping");
 ```
 
-#### runtime.clipboard.imageAvailable
+#### 17.8.6 runtime.clipboard.imageAvailable
 
 ```
 imageAvailable: boolean
@@ -6579,7 +6579,7 @@ True when a PNG image clipboard backend is usable on this host (macOS pngpaste; 
 if (runtime.clipboard.imageAvailable) { /* … */ }
 ```
 
-#### runtime.clipboard.read
+#### 17.8.7 runtime.clipboard.read
 
 ```
 read(...args: unknown[]): Promise<string>
@@ -6595,7 +6595,7 @@ Read the host OS system clipboard as UTF-8 text. Async (shells out to the platfo
 const text = await runtime.clipboard.read();
 ```
 
-#### runtime.clipboard.readImage
+#### 17.8.8 runtime.clipboard.readImage
 
 ```
 readImage(...args: unknown[]): Promise<Uint8Array | null>
@@ -6611,7 +6611,7 @@ Read the host clipboard image as PNG bytes. Async (shells out). Resolves null wh
 const png = await runtime.clipboard.readImage();
 ```
 
-#### runtime.clipboard.write
+#### 17.8.9 runtime.clipboard.write
 
 ```
 write(text: string): Promise<void>
@@ -6631,7 +6631,7 @@ Replace the host OS system clipboard with the given text. Async (shells out to t
 await runtime.clipboard.write("copied from sercon");
 ```
 
-#### runtime.clipboard.writeImage
+#### 17.8.10 runtime.clipboard.writeImage
 
 ```
 writeImage(png: Uint8Array): Promise<void>
@@ -6651,7 +6651,7 @@ Set the host clipboard image from PNG bytes. Async (shells out). The input must 
 await runtime.clipboard.writeImage(pngBytes);
 ```
 
-#### runtime.env.get
+#### 17.8.11 runtime.env.get
 
 ```
 get(name: string): string | undefined
@@ -6671,7 +6671,7 @@ Read an environment variable. Returns undefined when unset (not empty string).
 const home = runtime.env.get("HOME") ?? "/tmp";
 ```
 
-#### runtime.getDeadline
+#### 17.8.12 runtime.getDeadline
 
 ```
 getDeadline(): number | null
@@ -6687,7 +6687,7 @@ Return the milliseconds remaining until the running script's kill deadline, or n
 const left = runtime.getDeadline(); // e.g. 9871, or null
 ```
 
-#### runtime.log
+#### 17.8.13 runtime.log
 
 ```
 log(args: unknown[]): void
@@ -6707,7 +6707,7 @@ Print one space-separated line of the arguments to stdout. Primitives print raw;
 runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}
 ```
 
-#### runtime.secrets.available
+#### 17.8.14 runtime.secrets.available
 
 ```
 available: boolean
@@ -6723,7 +6723,7 @@ True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows 
 if (!runtime.secrets.available) runtime.log("no keystore — skipping");
 ```
 
-#### runtime.secrets.delete
+#### 17.8.15 runtime.secrets.delete
 
 ```
 delete(name: string, account: string): Promise<boolean>
@@ -6744,7 +6744,7 @@ Remove a secret from the OS keystore under prefix + name / account. Async (keyst
 const removed = await runtime.secrets.delete("devshop", "tess@example.com");
 ```
 
-#### runtime.secrets.get
+#### 17.8.16 runtime.secrets.get
 
 ```
 get(name: string, account: string): Promise<string | null>
@@ -6765,7 +6765,7 @@ Read a string secret from the OS keystore. The keystore service is the configure
 const pw = await runtime.secrets.get("devshop", "tess@example.com");
 ```
 
-#### runtime.secrets.set
+#### 17.8.17 runtime.secrets.set
 
 ```
 set(name: string, account: string, secret: string): Promise<void>
@@ -6787,7 +6787,7 @@ Store or overwrite a string secret in the OS keystore under prefix + name / acco
 await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
 ```
 
-#### runtime.setDeadline
+#### 17.8.18 runtime.setDeadline
 
 ```
 setDeadline(ms: number): void
@@ -6807,7 +6807,7 @@ Set the running script's wall-clock kill deadline to now + ms (replacing any pri
 runtime.setDeadline(30000); // give this run 30s from now
 ```
 
-#### runtime.time.format
+#### 17.8.19 runtime.time.format
 
 ```
 format(ms: number, layout: string, tz?: string): string
@@ -6829,7 +6829,7 @@ Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Euro
 const s = runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC");
 ```
 
-#### runtime.time.nowMs
+#### 17.8.20 runtime.time.nowMs
 
 ```
 nowMs(): number
@@ -6845,7 +6845,7 @@ Wall-clock milliseconds since the Unix epoch.
 const t0 = runtime.time.nowMs();
 ```
 
-#### runtime.time.sleep
+#### 17.8.21 runtime.time.sleep
 
 ```
 sleep(ms: number): Promise<void>
@@ -6865,11 +6865,11 @@ Resolve after `ms` milliseconds. Cancellable via the engine timeout.
 await runtime.time.sleep(250);
 ```
 
-### server
+### 17.9 server
 
 Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.
 
-#### server.http.listen
+#### 17.9.1 server.http.listen
 
 ```
 listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -6894,7 +6894,7 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### server.http.static
+#### 17.9.2 server.http.static
 
 ```
 static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
@@ -6917,7 +6917,7 @@ server.http.listen({
 });
 ```
 
-#### server.https.listen
+#### 17.9.3 server.https.listen
 
 ```
 listen(opts: { port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -6942,7 +6942,7 @@ const srv = server.https.listen({
 });
 ```
 
-#### server.https.static
+#### 17.9.4 server.https.static
 
 ```
 static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
@@ -6965,7 +6965,7 @@ server.https.listen({
 });
 ```
 
-#### server.icmp.listen
+#### 17.9.5 server.icmp.listen
 
 ```
 listen(opts?: { network?: "ip4" | "ip6" }, handler: (msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void): { address: string; close(): Promise<void> }
@@ -6991,7 +6991,7 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### server.smtp.listen
+#### 17.9.6 server.smtp.listen
 
 ```
 listen(opts: { port: number; host?: string; hostname?: string; handlers: { onMail: (env: Envelope) => boolean | string | void | Promise<boolean | string | void>; onRcpt: (env: Envelope, to: string) => boolean | string | void | Promise<boolean | string | void>; onData: (env: Envelope, msg: Message) => boolean | string | void | Promise<boolean | string | void> }; auth?: (user: string, pass: string, env: Envelope) => boolean | Promise<boolean>; starttls?: { cert: string; key: string }; allowInsecureAuth?: boolean; maxMessageBytes?: number; maxRecipients?: number; sessionTimeout?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -7018,7 +7018,7 @@ const srv = server.smtp.listen({
 });
 ```
 
-#### server.tcp.listen
+#### 17.9.7 server.tcp.listen
 
 ```
 listen(opts: { port: number; host?: string; readBuffer?: number }, handler: (conn: { remote: string; local: string; write(data: string | Uint8Array): Promise<void>; onData(cb: (msg: { bytes: Uint8Array; text: string }) => void): void; onClose(cb: () => void): void; onError(cb: (err: unknown) => void): void; close(): void }) => void): { address: string; close(): Promise<void> }
@@ -7043,7 +7043,7 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### server.udp.listen
+#### 17.9.8 server.udp.listen
 
 ```
 listen(opts: { port: number; host?: string }, handler: (msg: { bytes: Uint8Array; text: string; address: string; port: number }, reply: (data: string | Uint8Array) => Promise<void>) => void): { address: string; close(): Promise<void> }
@@ -7068,39 +7068,39 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-### services
+### 17.10 services
 
 Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, poppler-backed PDF render/extract, external-requirement diagnostics (doctor).
 
-#### services.agentBrowser.auth
+#### 17.10.1 services.agentBrowser.auth
 
 Namespace object for the auth vault (session-independent): auth.save, auth.list, auth.show, auth.delete. Passwords are never placed in argv — auth.save sends the password via stdin (--password-stdin).
 
-#### services.agentBrowser.auth.delete
+#### 17.10.2 services.agentBrowser.auth.delete
 
 ```
 delete(...args: unknown[])
 ```
 
-#### services.agentBrowser.auth.list
+#### 17.10.3 services.agentBrowser.auth.list
 
 ```
 list(...args: unknown[])
 ```
 
-#### services.agentBrowser.auth.save
+#### 17.10.4 services.agentBrowser.auth.save
 
 ```
 save(...args: unknown[])
 ```
 
-#### services.agentBrowser.auth.show
+#### 17.10.5 services.agentBrowser.auth.show
 
 ```
 show(...args: unknown[])
 ```
 
-#### services.agentBrowser.available
+#### 17.10.6 services.agentBrowser.available
 
 ```
 available: boolean
@@ -7116,7 +7116,7 @@ True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run.
 if (!services.agentBrowser.available) runtime.log("install agent-browser first");
 ```
 
-#### services.agentBrowser.clearDefaultOptions
+#### 17.10.7 services.agentBrowser.clearDefaultOptions
 
 ```
 clearDefaultOptions(): void
@@ -7133,7 +7133,7 @@ services.agentBrowser.clearDefaultOptions();
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {}
 ```
 
-#### services.agentBrowser.defaultOptions
+#### 17.10.8 services.agentBrowser.defaultOptions
 
 ```
 defaultOptions(): object
@@ -7150,7 +7150,7 @@ services.agentBrowser.setDefaultOptions({ headed: false });
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed":false}
 ```
 
-#### services.agentBrowser.eval
+#### 17.10.9 services.agentBrowser.eval
 
 ```
 eval(url: string, js: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -7172,7 +7172,7 @@ const r = await services.agentBrowser.eval("data:text/html,<title>Hi</title>", "
 runtime.log(r.data?.result); // "Hi"
 ```
 
-#### services.agentBrowser.launch
+#### 17.10.10 services.agentBrowser.launch
 
 ```
 launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string, timeout?: number }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; frame(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: "Strict" | "Lax" | "None", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; trace: { start(): Promise<any>; stop(path?: string): Promise<any> }; profiler: { start(opts?: { categories?: string }): Promise<any>; stop(path?: string): Promise<any> }; inspect(): Promise<any>; clipboard(op: "read" | "write" | "copy" | "paste", text?: string): Promise<any>; vitals(url?: string): Promise<any>; pushstate(url: string): Promise<any>; react: { tree(): Promise<any>; inspect(id: string): Promise<any>; renders: { start(): Promise<any>; stop(): Promise<any> }; suspense(opts?: { onlyDynamic?: boolean }): Promise<any> }; stream: { enable(opts?: { port?: number }): Promise<any>; disable(): Promise<any>; status(): Promise<any> }; chat(message: string, opts?: { model?: string }): Promise<any>; cmd(command: string, ...args: string[]): Promise<any>; batch(cmds: string[], opts?: { bail?: boolean }): Promise<any>; auth: { login(name: string): Promise<any> }; close(): Promise<any> }
@@ -7196,7 +7196,7 @@ runtime.log(r.data?.title);
 await b.close();
 ```
 
-#### services.agentBrowser.pdf
+#### 17.10.11 services.agentBrowser.pdf
 
 ```
 pdf(url: string, path?: string): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
@@ -7218,7 +7218,7 @@ const pdf = await services.agentBrowser.pdf("data:text/html,<h1>Hi</h1>");
 runtime.log(new Uint8Array(pdf.bytes).length, pdf.format); // e.g. 5678 pdf
 ```
 
-#### services.agentBrowser.screenshot
+#### 17.10.12 services.agentBrowser.screenshot
 
 ```
 screenshot(url: string, path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
@@ -7241,7 +7241,7 @@ const shot = await services.agentBrowser.screenshot("data:text/html,<h1>Hi</h1>"
 runtime.log(new Uint8Array(shot.bytes).length, shot.format); // e.g. 12345 png
 ```
 
-#### services.agentBrowser.setDefaultOptions
+#### 17.10.13 services.agentBrowser.setDefaultOptions
 
 ```
 setDefaultOptions(opts: object): void
@@ -7262,7 +7262,7 @@ services.agentBrowser.setDefaultOptions({ headed: false, proxy: "http://proxy:31
 const b = services.agentBrowser.launch(); // headed:false + proxy inherited
 ```
 
-#### services.agentBrowser.snapshot
+#### 17.10.14 services.agentBrowser.snapshot
 
 ```
 snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): Promise<{ success: boolean, data: object, error: string | null }>
@@ -7284,7 +7284,7 @@ const snap = await services.agentBrowser.snapshot("data:text/html,<h1>Hi</h1>", 
 runtime.log(JSON.stringify(snap.data).slice(0, 100));
 ```
 
-#### services.agentBrowser.version
+#### 17.10.15 services.agentBrowser.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -7300,7 +7300,7 @@ The agent-browser CLI version string.
 runtime.log(await services.agentBrowser.version());
 ```
 
-#### services.ai.providers
+#### 17.10.16 services.ai.providers
 
 ```
 providers(): string[]
@@ -7316,7 +7316,7 @@ Which of claude / codex / copilot / gemini are on PATH, in preference order.
 const ps = services.ai.providers(); // e.g. ["claude", "gemini"]
 ```
 
-#### services.ai.send
+#### 17.10.17 services.ai.send
 
 ```
 send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<{ provider: string; output: string; exitCode: number }>
@@ -7337,7 +7337,7 @@ const r = await services.ai.send({ prompt: "Say hi", provider: "claude" });
 runtime.log(r.output);
 ```
 
-#### services.doctor
+#### 17.10.18 services.doctor
 
 ```
 doctor(requires?: string[]): Promise<{ ok: boolean; satisfied: boolean; unmet: string[]; tools: { name: string; category: string; purpose: string; installed: boolean; version: string | null; ok: boolean; detail?: string }[] }>
@@ -7360,7 +7360,7 @@ const opt = await services.doctor(["typst", "webdriver"]);
 runtime.log("unmet optional features:", JSON.stringify(opt.unmet));
 ```
 
-#### services.exec.http
+#### 17.10.19 services.exec.http
 
 ```
 http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<{ status: number; headers: Record<string, string>; body: string; durationMs: number; backend: "recon" | "curl" }>
@@ -7383,7 +7383,7 @@ const r = await services.exec.http("GET", "https://example.com");
 runtime.log(r.status, r.backend);
 ```
 
-#### services.exec.shell
+#### 17.10.20 services.exec.shell
 
 ```
 shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<{ stdout: string; stderr: string; exitCode: number; success: boolean; durationMs: number }>
@@ -7405,7 +7405,7 @@ const r = await services.exec.shell("echo hi");
 if (r.success) runtime.log(r.stdout.trim());
 ```
 
-#### services.exec.stream
+#### 17.10.21 services.exec.stream
 
 ```
 stream(cmd: string | string[], onLine: (line: string, stream: "stdout" | "stderr") => void, opts?: { cwd?: string, env?: Record<string, string>, stdin?: string, timeout?: number }): Promise<{ exitCode: number; success: boolean; durationMs: number }>
@@ -7430,7 +7430,7 @@ const r = await services.exec.stream("echo one; echo two", (line, stream) => {
 runtime.log("exit", r.exitCode);
 ```
 
-#### services.gh.authStatus
+#### 17.10.22 services.gh.authStatus
 
 ```
 authStatus(...args: unknown[]): Promise<{ authenticated: boolean; user: string; raw: string }>
@@ -7447,7 +7447,7 @@ const a = await services.gh.authStatus();
 if (a.authenticated) runtime.log("logged in as", a.user);
 ```
 
-#### services.gh.prList
+#### 17.10.23 services.gh.prList
 
 ```
 prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Array<{ number: number; title: string; state: string; author: string; headRefName: string; baseRefName: string; url: string; createdAt: string; updatedAt: string }>>
@@ -7468,7 +7468,7 @@ const prs = await services.gh.prList({ state: "open", limit: 5 });
 for (const pr of prs) runtime.log(pr.number, pr.title);
 ```
 
-#### services.gh.repoView
+#### 17.10.24 services.gh.repoView
 
 ```
 repoView(repo?: string, opts?: { cwd?: string }): Promise<{ name: string; owner: string; description: string; url: string; defaultBranch: string; visibility: string }>
@@ -7490,7 +7490,7 @@ const r = await services.gh.repoView("cli/cli");
 runtime.log(r.owner, r.defaultBranch);
 ```
 
-#### services.git.add
+#### 17.10.25 services.git.add
 
 ```
 add(paths: string | string[], opts?: { cwd?: string }): Promise<{ paths: string[] }>
@@ -7511,7 +7511,7 @@ Stage one path (string) or several (string[]).
 await services.git.add(["src/a.ts", "src/b.ts"]);
 ```
 
-#### services.git.branch
+#### 17.10.26 services.git.branch
 
 ```
 branch(opts?: { cwd?: string }): Promise<{ current: string; detached: boolean; all: string[] }>
@@ -7532,7 +7532,7 @@ const b = await services.git.branch();
 runtime.log(b.detached ? "(detached)" : b.current);
 ```
 
-#### services.git.commit
+#### 17.10.27 services.git.commit
 
 ```
 commit(message: string, opts?: { cwd?: string, allowEmpty?: boolean }): Promise<{ sha: string }>
@@ -7553,7 +7553,7 @@ Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --all
 const c = await services.git.commit("chore: bump", { allowEmpty: true });
 ```
 
-#### services.git.diffStat
+#### 17.10.28 services.git.diffStat
 
 ```
 diffStat(opts?: { cwd?: string, revRange?: string }): Promise<{ files: number; insertions: number; deletions: number }>
@@ -7574,7 +7574,7 @@ const d = await services.git.diffStat();
 runtime.log(d.files, d.insertions, d.deletions);
 ```
 
-#### services.git.isClean
+#### 17.10.29 services.git.isClean
 
 ```
 isClean(opts?: { cwd?: string }): Promise<boolean>
@@ -7594,7 +7594,7 @@ True iff `git status --porcelain` is empty.
 if (await services.git.isClean()) runtime.log("clean");
 ```
 
-#### services.git.log
+#### 17.10.30 services.git.log
 
 ```
 log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<Array<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }>>
@@ -7615,7 +7615,7 @@ const log = await services.git.log({ limit: 5 });
 runtime.log(log[0].subject);
 ```
 
-#### services.git.revParse
+#### 17.10.31 services.git.revParse
 
 ```
 revParse(rev: string, opts?: { cwd?: string }): Promise<string>
@@ -7636,7 +7636,7 @@ Full 40-char SHA for the given rev. Invalid refs throw.
 const sha = await services.git.revParse("HEAD");
 ```
 
-#### services.git.runText
+#### 17.10.32 services.git.runText
 
 ```
 runText(args: string | string[], opts?: { cwd?: string }): Promise<{ stdout: string; stderr: string; exitCode: number }>
@@ -7658,7 +7658,7 @@ const r = await services.git.runText(["tag", "--list"]);
 if (r.exitCode === 0) runtime.log(r.stdout);
 ```
 
-#### services.git.status
+#### 17.10.33 services.git.status
 
 ```
 status(opts?: { cwd?: string }): Promise<Array<{ path: string; indexStatus: string; workingStatus: string }>>
@@ -7679,7 +7679,7 @@ for (const e of await services.git.status())
   runtime.log(e.indexStatus + e.workingStatus, e.path);
 ```
 
-#### services.pdf.available
+#### 17.10.34 services.pdf.available
 
 ```
 available: boolean
@@ -7697,7 +7697,7 @@ if (!services.pdf.available) {
 }
 ```
 
-#### services.pdf.backend
+#### 17.10.35 services.pdf.backend
 
 ```
 backend: string | null
@@ -7713,7 +7713,7 @@ The active PDF backend name, or null when no backend is available. Currently "po
 runtime.log("pdf backend:", services.pdf.backend ?? "none");
 ```
 
-#### services.pdf.info
+#### 17.10.36 services.pdf.info
 
 ```
 info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; creationDate?: string; modDate?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>
@@ -7734,7 +7734,7 @@ const meta = await services.pdf.info("report.pdf");
 runtime.log("pages:", meta.pages, "encrypted:", meta.encrypted);
 ```
 
-#### services.pdf.toHtml
+#### 17.10.37 services.pdf.toHtml
 
 ```
 toHtml(src: string, opts?: { pages?: string, dest?: string }): Promise<string | { path: string }>
@@ -7756,7 +7756,7 @@ const html = await services.pdf.toHtml("report.pdf", { pages: "1" });
 runtime.log(html.length, "bytes of HTML");
 ```
 
-#### services.pdf.toImage
+#### 17.10.38 services.pdf.toImage
 
 ```
 toImage(src: string, opts?: { page?: number, firstPage?: number, lastPage?: number, format?: "png" | "jpeg" | "tiff", dpi?: number, dest?: string }): Promise<{ format: string; page?: number; bytes?: Uint8Array; paths?: string[] }>
@@ -7782,7 +7782,7 @@ const all = await services.pdf.toImage("report.pdf", { dest: "/tmp/page" });
 runtime.log("wrote", all.paths.length, "images");
 ```
 
-#### services.pdf.toText
+#### 17.10.39 services.pdf.toText
 
 ```
 toText(src: string, opts?: { pages?: string, layout?: boolean, dest?: string }): Promise<string | { path: string }>
@@ -7804,35 +7804,35 @@ const txt = await services.pdf.toText("report.pdf", { pages: "1-2" });
 runtime.log(txt.slice(0, 80));
 ```
 
-#### services.pdf.tools
+#### 17.10.40 services.pdf.tools
 
 Per-binary availability for the poppler tools sercon uses, so a partial install can still serve the operations it covers.
 
-#### services.pdf.tools.pdfinfo
+#### 17.10.41 services.pdf.tools.pdfinfo
 
 ```
 pdfinfo
 ```
 
-#### services.pdf.tools.pdftohtml
+#### 17.10.42 services.pdf.tools.pdftohtml
 
 ```
 pdftohtml
 ```
 
-#### services.pdf.tools.pdftoppm
+#### 17.10.43 services.pdf.tools.pdftoppm
 
 ```
 pdftoppm
 ```
 
-#### services.pdf.tools.pdftotext
+#### 17.10.44 services.pdf.tools.pdftotext
 
 ```
 pdftotext
 ```
 
-#### services.pdf.version
+#### 17.10.45 services.pdf.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -7848,7 +7848,7 @@ The poppler version string (from `pdftoppm -v`, falling back to `pdfinfo -v`).
 runtime.log(await services.pdf.version());
 ```
 
-#### services.typst.available
+#### 17.10.46 services.typst.available
 
 ```
 available: boolean
@@ -7866,7 +7866,7 @@ if (!services.typst.available) {
 }
 ```
 
-#### services.typst.compile
+#### 17.10.47 services.typst.compile
 
 ```
 compile(opts: { input?: string, source?: string, output?: string, format?: "pdf" | "png" | "svg", root?: string, inputs?: Record<string, string>, ppi?: number, fontPaths?: string[], timeout?: number }): Promise<{ format: string; bytes?: Uint8Array; path?: string }>
@@ -7891,7 +7891,7 @@ runtime.log(pdf.format, pdf.bytes.length);
 await services.typst.compile({ input: "report.typ", output: "/tmp/report.png", ppi: 144 });
 ```
 
-#### services.typst.fonts
+#### 17.10.48 services.typst.fonts
 
 ```
 fonts(...args: unknown[]): Promise<string[]>
@@ -7908,7 +7908,7 @@ const families = await services.typst.fonts();
 runtime.log("fonts:", families.length);
 ```
 
-#### services.typst.query
+#### 17.10.49 services.typst.query
 
 ```
 query(opts: { selector: string, input?: string, source?: string, field?: string, one?: boolean, root?: string, inputs?: Record<string, string>, timeout?: number }): Promise<unknown>
@@ -7932,7 +7932,7 @@ const v = await services.typst.query({
 runtime.log(v); // 42
 ```
 
-#### services.typst.version
+#### 17.10.50 services.typst.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -7948,7 +7948,7 @@ The typst CLI version string (from `typst --version`).
 runtime.log(await services.typst.version());
 ```
 
-#### services.webdriver.available
+#### 17.10.51 services.webdriver.available
 
 ```
 available: boolean
@@ -7966,7 +7966,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-#### services.webdriver.connect
+#### 17.10.52 services.webdriver.connect
 
 ```
 connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<{ get(url: string): Promise<{ ok: true }>; url(): Promise<string>; title(): Promise<string>; back(): Promise<{ ok: true }>; forward(): Promise<{ ok: true }>; refresh(): Promise<{ ok: true }>; find(by: string, value: string): Promise<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>; findAll(by: string, value: string): Promise<Array<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>>; source(): Promise<string>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }>; executeScript(js: string, args?: unknown[]): Promise<unknown>; executeScriptAsync(js: string, args?: unknown[]): Promise<unknown>; cookies(): Promise<object[]>; setCookie(c: { name: string; value: string; path?: string; domain?: string; secure?: boolean; httpOnly?: boolean; expiry?: number }): Promise<{ ok: true }>; deleteCookie(name: string): Promise<{ ok: true }>; deleteAllCookies(): Promise<{ ok: true }>; setImplicitWait(ms: number): Promise<{ ok: true }>; waitFor(by: string, value: string, opts?: { timeout?: number; visible?: boolean; enabled?: boolean }): Promise<any>; clickWhenReady(by: string, value: string, opts?: { timeout?: number; visible?: boolean; enabled?: boolean; poll?: number }): Promise<{ ok: true }>; windowHandles(): Promise<string[]>; currentWindow(): Promise<string>; switchToWindow(handle: string): Promise<{ ok: true }>; newWindow(type?: "tab" | "window"): Promise<{ handle: string; type: string }>; closeWindow(): Promise<string[]>; switchToFrame(target: number | string | object): Promise<{ ok: true }>; frameChain(targets: (number | string | object)[]): Promise<{ ok: true }>; switchToParentFrame(): Promise<{ ok: true }>; switchToDefaultContent(): Promise<{ ok: true }>; acceptAlert(): Promise<{ ok: true }>; dismissAlert(): Promise<{ ok: true }>; alertText(): Promise<string>; sendAlertText(text: string): Promise<{ ok: true }>; maximize(): Promise<{ x: number; y: number; width: number; height: number }>; minimize(): Promise<{ x: number; y: number; width: number; height: number }>; fullscreen(): Promise<{ x: number; y: number; width: number; height: number }>; setWindowRect(rect: { width?: number; height?: number; x?: number; y?: number }): Promise<{ x: number; y: number; width: number; height: number }>; getWindowRect(): Promise<{ x: number; y: number; width: number; height: number }>; hover(el: object): Promise<{ ok: true }>; dragAndDrop(src: object, dst: object): Promise<{ ok: true }>; keyChord(...keys: string[]): Promise<{ ok: true }>; performActions(sequence: unknown[]): Promise<{ ok: true }>; releaseActions(): Promise<{ ok: true }>; cdp(command: string, params?: object): Promise<unknown>; cdpClick(by: string, value: string, opts?: { timeout?: number; poll?: number; button?: "left" | "right" | "middle"; scrollIntoView?: boolean; offsetX?: number; offsetY?: number }): Promise<{ clicked: true; x: number; y: number; targetId?: string }>; targets(): Promise<Array<{ targetId: string; type: string; url: string; title: string }>>; attach(target: string | { targetId: string }): Promise<{ targetId: string; sessionId: string; cdp(method: string, params?: object): Promise<unknown>; detach(): Promise<{ detached: true }> }>; quit(): Promise<{ closed: true }> }>
@@ -7999,7 +7999,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-#### services.webdriver.probe
+#### 17.10.53 services.webdriver.probe
 
 ```
 probe(opts: { url: string }): Promise<{ ready: boolean; status?: number; error?: string }>
@@ -8020,11 +8020,11 @@ const r = await services.webdriver.probe({ url: "http://127.0.0.1:9515" });
 runtime.log("ready:", r.ready);
 ```
 
-### text
+### 17.11 text
 
 String / regex / charset / data manipulation — all text-shaped transforms.
 
-#### text.charset.decode
+#### 17.11.1 text.charset.decode
 
 ```
 decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>
@@ -8045,7 +8045,7 @@ Decode bytes in a named charset to a UTF-8 string.
 const s = await text.charset.decode(bytes, "Windows-1252");
 ```
 
-#### text.charset.detect
+#### 17.11.2 text.charset.detect
 
 ```
 detect(input: string | Uint8Array | ArrayBuffer): Promise<{ charset: string; confidence: number; language?: string; candidates: { charset: string; confidence: number; language?: string }[] }>
@@ -8066,7 +8066,7 @@ const r = await text.charset.detect(bytes);
 runtime.log(r.charset, r.confidence);
 ```
 
-#### text.charset.encode
+#### 17.11.3 text.charset.encode
 
 ```
 encode(input: string, charset: string): Promise<Uint8Array>
@@ -8087,7 +8087,7 @@ Encode a UTF-8 string to bytes in the named charset.
 const bytes = await text.charset.encode("café", "ISO-8859-1");
 ```
 
-#### text.diff.compare
+#### 17.11.4 text.diff.compare
 
 ```
 compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number; fromFile?: string; toFile?: string }): Promise<{ identical: boolean; binary: boolean; added: number; removed: number; diff: string; format: "unified" }>
@@ -8110,7 +8110,7 @@ const d = await text.diff.compare("a\n", "b\n");
 runtime.log(d.diff, d.added, d.removed);
 ```
 
-#### text.jq.query
+#### 17.11.5 text.jq.query
 
 ```
 query(data: unknown, filter: string): Promise<unknown>
@@ -8131,7 +8131,7 @@ Run a jq filter over data and return the first emitted value (or null).
 const name = await text.jq.query(obj, ".users[0].name");
 ```
 
-#### text.jq.queryAll
+#### 17.11.6 text.jq.queryAll
 
 ```
 queryAll(data: unknown, filter: string): Promise<unknown[]>
@@ -8152,7 +8152,7 @@ Run a jq filter and drain the iterator into an array.
 const ids = await text.jq.queryAll(obj, ".users[].id");
 ```
 
-#### text.preg.match
+#### 17.11.7 text.preg.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -8173,7 +8173,7 @@ First hit of /pattern/flags against subject, or null. Returns { match, groups, i
 const m = text.preg.match("/(\\d+)/", "x42"); // { match: "42", groups: ["42"], index: 1 }
 ```
 
-#### text.preg.matchAll
+#### 17.11.8 text.preg.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -8194,7 +8194,7 @@ Every hit of /pattern/flags against subject, as an array of { match, groups, ind
 const all = text.preg.matchAll("/\\d+/", "1 22 333"); // 3 matches
 ```
 
-#### text.preg.replace
+#### 17.11.9 text.preg.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -8216,7 +8216,7 @@ Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / 
 text.preg.replace("/(\\w+)@/", "${1}_at_", "a@b"); // "a_at_b"
 ```
 
-#### text.preg2.match
+#### 17.11.10 text.preg2.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -8237,7 +8237,7 @@ First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/ba
 const m = text.preg2.match("/(?<=@)\\w+/", "a@host"); // { match: "host", ... }
 ```
 
-#### text.preg2.matchAll
+#### 17.11.11 text.preg2.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -8258,7 +8258,7 @@ Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, 
 const all = text.preg2.matchAll("/\\w+/", "a b c"); // 3 matches
 ```
 
-#### text.preg2.replace
+#### 17.11.12 text.preg2.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -8280,7 +8280,7 @@ Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 /
 text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 ```
 
-#### text.str.base64Decode
+#### 17.11.13 text.str.base64Decode
 
 ```
 base64Decode(input: string): string
@@ -8300,7 +8300,7 @@ Decode standard (RFC 4648) base64 with padding. The standard alphabet only — U
 text.str.base64Decode("aGk="); // "hi"
 ```
 
-#### text.str.base64Encode
+#### 17.11.14 text.str.base64Encode
 
 ```
 base64Encode(input: string): string
@@ -8320,7 +8320,7 @@ Standard base64 (with padding).
 text.str.base64Encode("hi"); // "aGk="
 ```
 
-#### text.str.base64UrlDecode
+#### 17.11.15 text.str.base64UrlDecode
 
 ```
 base64UrlDecode(input: string): string
@@ -8340,7 +8340,7 @@ Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded inpu
 text.str.base64UrlDecode("YT9i"); // "a?b"
 ```
 
-#### text.str.base64UrlEncode
+#### 17.11.16 text.str.base64UrlEncode
 
 ```
 base64UrlEncode(input: string): string
@@ -8360,7 +8360,7 @@ URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe t
 text.str.base64UrlEncode("a?b"); // "YT9i"
 ```
 
-#### text.str.br2nl
+#### 17.11.17 text.str.br2nl
 
 ```
 br2nl(input: string): string
@@ -8380,7 +8380,7 @@ Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
 text.str.br2nl("a<br/>b"); // "a\nb"
 ```
 
-#### text.str.htmlEntityDecode
+#### 17.11.18 text.str.htmlEntityDecode
 
 ```
 htmlEntityDecode(input: string): string
@@ -8400,7 +8400,7 @@ Decode named and numeric HTML entities to their UTF-8 equivalents.
 text.str.htmlEntityDecode("a &amp; b"); // "a & b"
 ```
 
-#### text.str.lpad
+#### 17.11.19 text.str.lpad
 
 ```
 lpad(input: string, len: number, padChar?: string): string
@@ -8422,7 +8422,7 @@ Shortcut for pad(side: 'left').
 text.str.lpad("7", 3, "0"); // "007"
 ```
 
-#### text.str.ltrim
+#### 17.11.20 text.str.ltrim
 
 ```
 ltrim(input: string, mask?: string): string
@@ -8443,7 +8443,7 @@ Like trim, left side only.
 text.str.ltrim("--x", "-"); // "x"
 ```
 
-#### text.str.nl2br
+#### 17.11.21 text.str.nl2br
 
 ```
 nl2br(input: string, xhtml?: boolean): string
@@ -8464,7 +8464,7 @@ Replace newlines with <br> (or <br/> when xhtml=true).
 text.str.nl2br("a\nb"); // "a<br>\nb"
 ```
 
-#### text.str.normalizeNewlines
+#### 17.11.22 text.str.normalizeNewlines
 
 ```
 normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string
@@ -8485,7 +8485,7 @@ Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr
 text.str.normalizeNewlines("a\r\nb", "lf"); // "a\nb"
 ```
 
-#### text.str.pad
+#### 17.11.23 text.str.pad
 
 ```
 pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string
@@ -8508,7 +8508,7 @@ Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', 
 text.str.pad("7", 3, "0", "left"); // "007"
 ```
 
-#### text.str.printf
+#### 17.11.24 text.str.printf
 
 ```
 printf(format: string, args?: ...unknown): void
@@ -8529,7 +8529,7 @@ sprintf + write to stdout.
 text.str.printf("%d items\n", 3);
 ```
 
-#### text.str.reverse
+#### 17.11.25 text.str.reverse
 
 ```
 reverse(input: string): string
@@ -8549,7 +8549,7 @@ Rune-aware reversal — `reverse('café')` is `'éfac'`.
 text.str.reverse("café"); // "éfac"
 ```
 
-#### text.str.rpad
+#### 17.11.26 text.str.rpad
 
 ```
 rpad(input: string, len: number, padChar?: string): string
@@ -8571,7 +8571,7 @@ Shortcut for pad(side: 'right').
 text.str.rpad("7", 3, "."); // "7.."
 ```
 
-#### text.str.rtrim
+#### 17.11.27 text.str.rtrim
 
 ```
 rtrim(input: string, mask?: string): string
@@ -8592,7 +8592,7 @@ Like trim, right side only.
 text.str.rtrim("x...", "."); // "x"
 ```
 
-#### text.str.sprintf
+#### 17.11.28 text.str.sprintf
 
 ```
 sprintf(format: string, args?: ...unknown): string
@@ -8613,7 +8613,7 @@ Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 text.str.sprintf("%s=%d", "n", 5); // "n=5"
 ```
 
-#### text.str.stripHtml
+#### 17.11.29 text.str.stripHtml
 
 ```
 stripHtml(input: string): string
@@ -8633,7 +8633,7 @@ Remove HTML tags and decode common entities.
 text.str.stripHtml("<b>hi</b>"); // "hi"
 ```
 
-#### text.str.trim
+#### 17.11.30 text.str.trim
 
 ```
 trim(input: string, mask?: string): string
@@ -8654,7 +8654,7 @@ Strip whitespace (or any char in the optional mask string) from both ends.
 text.str.trim("  hi  "); // "hi"
 ```
 
-#### text.str.urlDecode
+#### 17.11.31 text.str.urlDecode
 
 ```
 urlDecode(input: string): string
@@ -8674,7 +8674,7 @@ Inverse of urlEncode.
 text.str.urlDecode("a+b%26c"); // "a b&c"
 ```
 
-#### text.str.urlEncode
+#### 17.11.32 text.str.urlEncode
 
 ```
 urlEncode(input: string): string
@@ -8694,11 +8694,11 @@ Form-encoding ('+' for space). For path segments use encodeURIComponent (provide
 text.str.urlEncode("a b&c"); // "a+b%26c"
 ```
 
-### tui
+### 17.12 tui
 
 Multi-pane terminal UI: layout, pane, write, focus.
 
-#### tui.layout
+#### 17.12.1 tui.layout
 
 ```
 layout(tree: { name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number }): void
@@ -8719,7 +8719,7 @@ tui.layout({ cols: [{ name: "log", title: "Log" }, { name: "out", weight: 2 }] }
 tui.pane("log").writeln("started");
 ```
 
-#### tui.onKey
+#### 17.12.2 tui.onKey
 
 ```
 onKey(handler: (key: { name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }) => void): () => void
@@ -8740,7 +8740,7 @@ tui.layout({ rows: [{ name: "log" }] });
 const off = tui.onKey((k) => { if (k.name === "Rune" && k.rune === "q") off(); });
 ```
 
-#### tui.pane
+#### 17.12.3 tui.pane
 
 ```
 pane(name: string): { write(text: string): void; writeln(text: string): void; clear(): void; title(text: string): void }
@@ -8762,7 +8762,7 @@ p.title("Output");
 p.writeln("hello");
 ```
 
-#### tui.waitKey
+#### 17.12.4 tui.waitKey
 
 ```
 waitKey(...args: unknown[]): Promise<{ name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }>
@@ -8780,11 +8780,11 @@ tui.pane("log").writeln("Done. Press any key to close.");
 await tui.waitKey();
 ```
 
-### web
+### 17.13 web
 
 Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).
 
-#### web.feed.load
+#### 17.13.1 web.feed.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>
@@ -8805,7 +8805,7 @@ Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option 
 const f = await web.feed.load("https://example.com/feed.xml");
 ```
 
-#### web.feed.parse
+#### 17.13.2 web.feed.parse
 
 ```
 parse(source: string): { feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }
@@ -8825,7 +8825,7 @@ Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-
 const f = web.feed.parse(xml); f.items[0].title;
 ```
 
-#### web.html.load
+#### 17.13.3 web.html.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>
@@ -8846,7 +8846,7 @@ Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the 
 const doc = await web.html.load("https://example.com"); doc.findAll("a").map(a => a.attr("href"));
 ```
 
-#### web.html.parse
+#### 17.13.4 web.html.parse
 
 ```
 parse(source: string): { find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }
@@ -8866,7 +8866,7 @@ Parse HTML leniently (real-world tag soup is accepted, never throws on bad marku
 const doc = web.html.parse(html); doc.find("h1").text();
 ```
 
-#### web.sitemap.load
+#### 17.13.5 web.sitemap.load
 
 ```
 load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>
@@ -8887,7 +8887,7 @@ Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic
 const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });
 ```
 
-#### web.sitemap.parse
+#### 17.13.6 web.sitemap.parse
 
 ```
 parse(source: string): { type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }

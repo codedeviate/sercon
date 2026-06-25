@@ -178,7 +178,9 @@ func run(args []string) int {
 			return exitUsage
 		}
 		defer f.Close()
-		if err := eng.WriteReference(f); err != nil {
+		// "17" = the MANUAL.md chapter the generated reference is spliced into,
+		// so namespace/member headings number as 17.N / 17.N.M (see § lockstep).
+		if err := eng.WriteReferenceNumbered(f, "17"); err != nil {
 			fmt.Fprintln(os.Stderr, "sercon:", err)
 			return exitUsage
 		}

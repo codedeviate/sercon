@@ -78,6 +78,35 @@ func TestWriteReference_SummaryOnly(t *testing.T) {
 	}
 }
 
+func TestWriteReferenceNumbered(t *testing.T) {
+	e := New(Options{})
+	_ = e.RegisterNamespace("crypto", map[string]any{"sha256": func(string) string { return "" }})
+	_ = e.RegisterNamespace("text", map[string]any{"upper": func(string) string { return "" }})
+	e.SetMemberDocsStructured("crypto", map[string]MemberDoc{"sha256": {Summary: "SHA-256."}})
+	e.SetMemberDocsStructured("text", map[string]MemberDoc{"upper": {Summary: "Uppercase."}})
+
+	var buf bytes.Buffer
+	if err := e.WriteReferenceNumbered(&buf, "17"); err != nil {
+		t.Fatalf("WriteReferenceNumbered: %v", err)
+	}
+	out := buf.String()
+	// crypto sorts before text → 17.1 / 17.2; members number within each.
+	for _, w := range []string{"### 17.1 crypto", "#### 17.1.1 crypto.sha256", "### 17.2 text", "#### 17.2.1 text.upper"} {
+		if !strings.Contains(out, w) {
+			t.Errorf("numbered output missing %q\n---\n%s", w, out)
+		}
+	}
+
+	// The unnumbered WriteReference must not carry section numbers.
+	var plain bytes.Buffer
+	if err := e.WriteReference(&plain); err != nil {
+		t.Fatalf("WriteReference: %v", err)
+	}
+	if strings.Contains(plain.String(), "### 17.") {
+		t.Errorf("WriteReference must be unnumbered:\n%s", plain.String())
+	}
+}
+
 func TestWriteReference_Deterministic(t *testing.T) {
 	build := func() string {
 		e := New(Options{})
