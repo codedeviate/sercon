@@ -2,9 +2,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // validatePDFFormat lowercases f, accepts png|jpeg|tiff (default png), and
@@ -143,4 +153,201 @@ func parsePdfInfo(out string) map[string]any {
 		}
 	}
 	return info
+}
+
+const pdfTimeout = 60 * time.Second
+const popplerInstallHint = "install poppler-utils: brew install poppler / apt install poppler-utils"
+
+// requirePDFSrc extracts the positional src path and optional opts map:
+// every pdf op is called as op(src, opts?).
+func requirePDFSrc(call goja.FunctionCall) (string, map[string]any, error) {
+	src, ok := call.Argument(0).Export().(string)
+	if !ok || strings.TrimSpace(src) == "" {
+		return "", nil, fmt.Errorf("first argument must be a PDF path (string)")
+	}
+	opts := map[string]any{}
+	if m, ok := call.Argument(1).Export().(map[string]any); ok {
+		opts = m
+	}
+	return src, opts, nil
+}
+
+func pdfVersionOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+	out, err := runTool(ctx, toolSpec{bin: "pdftoppm", argv: []string{"-v"}, timeout: 15 * time.Second, installHint: popplerInstallHint})
+	// pdftoppm -v prints to stderr and exits non-zero on some builds; fall back to pdfinfo -v.
+	if err != nil {
+		out, err = runTool(ctx, toolSpec{bin: "pdfinfo", argv: []string{"-v"}, timeout: 15 * time.Second, installHint: popplerInstallHint})
+		if err != nil {
+			return nil, fmt.Errorf("services.pdf.version: %w", err)
+		}
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func pdfInfoOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+	src, _, err := requirePDFSrc(call)
+	if err != nil {
+		return nil, fmt.Errorf("services.pdf.info: %w", err)
+	}
+	out, err := runTool(ctx, toolSpec{bin: "pdfinfo", argv: safePathArgs(nil, src), timeout: pdfTimeout, installHint: popplerInstallHint})
+	if err != nil {
+		return nil, fmt.Errorf("services.pdf.info: %w", err)
+	}
+	return parsePdfInfo(string(out)), nil
+}
+
+func pdfToImageOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+	src, opts, err := requirePDFSrc(call)
+	if err != nil {
+		return nil, fmt.Errorf("services.pdf.toImage: %w", err)
+	}
+	formatFlag, err := validatePDFFormat(optString(opts, "format", ""))
+	if err != nil {
+		return nil, fmt.Errorf("services.pdf.toImage: %w", err)
+	}
+	ext := strings.TrimPrefix(formatFlag, "-") // png|jpeg|tiff
+	// Page selection: page (single) OR firstPage/lastPage.
+	first, last := optInt(opts, "firstPage", 0), optInt(opts, "lastPage", 0)
+	if p := optInt(opts, "page", 0); p > 0 {
+		first, last = p, p
+	}
+	if first < 0 || last < 0 || (last > 0 && first > 0 && last < first) {
+		return nil, fmt.Errorf("services.pdf.toImage: invalid page range")
+	}
+	dest := optString(opts, "dest", "")
+	dpi := optInt(opts, "dpi", 0)
+
+	// Single page, no dest → render to a temp prefix and read the one file back.
+	returnBytes := dest == "" && first == last && first > 0
+	// A multi-page or whole-document render writes multiple files; without a
+	// dest they'd land in a temp dir we delete on return, handing the caller
+	// dead paths. Require an explicit dest for that case.
+	if dest == "" && !returnBytes {
+		return nil, fmt.Errorf("services.pdf.toImage: multi-page or whole-document render requires a `dest` path; pass a single `page` to get bytes back")
+	}
+	prefix := dest
+	var tmpDir string
+	if dest == "" {
+		d, derr := os.MkdirTemp("", "sercon-pdf-*")
+		if derr != nil {
+			return nil, fmt.Errorf("services.pdf.toImage: %w", derr)
+		}
+		tmpDir = d
+		defer os.RemoveAll(tmpDir)
+		prefix = filepath.Join(tmpDir, "page")
+	}
+	spec := pdfImageSpec{src: src, prefix: prefix, format: formatFlag, firstPage: first, lastPage: last, dpi: dpi}
+	if _, rerr := runTool(ctx, toolSpec{bin: "pdftoppm", argv: buildPdfImageArgs(spec), timeout: pdfTimeout, installHint: popplerInstallHint}); rerr != nil {
+		return nil, fmt.Errorf("services.pdf.toImage: %w", rerr)
+	}
+	written, gerr := globGenerated(prefix, ext)
+	if gerr != nil {
+		return nil, fmt.Errorf("services.pdf.toImage: %w", gerr)
+	}
+	if returnBytes {
+		if len(written) == 0 {
+			return nil, fmt.Errorf("services.pdf.toImage: no output produced for page %d", first)
+		}
+		data, rerr := os.ReadFile(written[0])
+		if rerr != nil {
+			return nil, fmt.Errorf("services.pdf.toImage: %w", rerr)
+		}
+		return scriptengine.NewOrdered().Set("format", ext).Set("page", first).Set("bytes", data), nil
+	}
+	paths := make([]any, len(written))
+	for i, p := range written {
+		paths[i] = p
+	}
+	return scriptengine.NewOrdered().Set("format", ext).Set("paths", paths), nil
+}
+
+// globGenerated returns the files pdftoppm produced for a prefix, sorted. It
+// matches "<prefix>-NN.<ext>" and the singleton "<prefix>.<ext>".
+func globGenerated(prefix, ext string) ([]string, error) {
+	matches, err := filepath.Glob(prefix + "*." + ext)
+	if err != nil {
+		return nil, err
+	}
+	// pdftoppm also writes <prefix>-1.png etc.; Glob above catches them. Sort.
+	sort.Strings(matches)
+	return matches, nil
+}
+
+func pdfToTextOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+	src, opts, err := requirePDFSrc(call)
+	if err != nil {
+		return nil, fmt.Errorf("services.pdf.toText: %w", err)
+	}
+	first, last, perr := parsePDFPages(optString(opts, "pages", ""))
+	if perr != nil {
+		return nil, fmt.Errorf("services.pdf.toText: %w", perr)
+	}
+	dest := optString(opts, "dest", "")
+	spec := pdfTextSpec{src: src, dest: dest, firstPage: first, lastPage: last, layout: optBool(opts, "layout", false)}
+	out, rerr := runTool(ctx, toolSpec{bin: "pdftotext", argv: buildPdfTextArgs(spec), timeout: pdfTimeout, installHint: popplerInstallHint})
+	if rerr != nil {
+		return nil, fmt.Errorf("services.pdf.toText: %w", rerr)
+	}
+	if dest != "" {
+		return scriptengine.NewOrdered().Set("path", dest), nil
+	}
+	return string(out), nil
+}
+
+func pdfToHTMLOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+	src, opts, err := requirePDFSrc(call)
+	if err != nil {
+		return nil, fmt.Errorf("services.pdf.toHtml: %w", err)
+	}
+	first, last, perr := parsePDFPages(optString(opts, "pages", ""))
+	if perr != nil {
+		return nil, fmt.Errorf("services.pdf.toHtml: %w", perr)
+	}
+	dest := optString(opts, "dest", "")
+	target := dest
+	var tmpDir string
+	if dest == "" {
+		d, derr := os.MkdirTemp("", "sercon-pdf-*")
+		if derr != nil {
+			return nil, fmt.Errorf("services.pdf.toHtml: %w", derr)
+		}
+		tmpDir = d
+		defer os.RemoveAll(tmpDir)
+		target = filepath.Join(tmpDir, "out.html")
+	}
+	spec := pdfHTMLSpec{src: src, dest: target, firstPage: first, lastPage: last}
+	if _, rerr := runTool(ctx, toolSpec{bin: "pdftohtml", argv: buildPdfHTMLArgs(spec), timeout: pdfTimeout, installHint: popplerInstallHint}); rerr != nil {
+		return nil, fmt.Errorf("services.pdf.toHtml: %w", rerr)
+	}
+	if dest != "" {
+		return scriptengine.NewOrdered().Set("path", dest), nil
+	}
+	data, rerr := os.ReadFile(target)
+	if rerr != nil {
+		return nil, fmt.Errorf("services.pdf.toHtml: read output: %w", rerr)
+	}
+	return string(data), nil
+}
+
+// pdfNamespace builds the services.pdf member map.
+func pdfNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+	backend := any(nil)
+	if toolAvailable("pdftoppm") {
+		backend = "poppler"
+	}
+	return map[string]any{
+		"available": toolAvailable("pdftoppm"),
+		"backend":   backend,
+		"tools": map[string]any{
+			"pdftoppm":  toolAvailable("pdftoppm"),
+			"pdftotext": toolAvailable("pdftotext"),
+			"pdftohtml": toolAvailable("pdftohtml"),
+			"pdfinfo":   toolAvailable("pdfinfo"),
+		},
+		"version": scriptengine.PromisifyAsync(vm, loop, pdfVersionOp),
+		"info":    scriptengine.PromisifyAsync(vm, loop, pdfInfoOp),
+		"toImage": scriptengine.PromisifyAsync(vm, loop, pdfToImageOp),
+		"toText":  scriptengine.PromisifyAsync(vm, loop, pdfToTextOp),
+		"toHtml":  scriptengine.PromisifyAsync(vm, loop, pdfToHTMLOp),
+	}
 }

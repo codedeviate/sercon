@@ -492,6 +492,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"agentBrowser": agentBrowserNamespace(vm, loop, e),
 			"webdriver":    webdriverNamespace(vm, loop, e),
 			"typst":        typstNamespace(vm, loop),
+			"pdf":          pdfNamespace(vm, loop),
 			"doctor":       scriptengine.PromisifyAsync(vm, loop, doctorOp),
 		}
 	}); err != nil {
