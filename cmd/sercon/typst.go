@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -20,12 +18,6 @@ import (
 )
 
 const typstTimeout = 60 * time.Second
-
-// typstAvailable reports whether the typst CLI is on PATH.
-func typstAvailable() bool {
-	_, err := exec.LookPath("typst")
-	return err == nil
-}
 
 // inferTypstFormat maps an output extension to a typst format name.
 func inferTypstFormat(path string) (string, error) {
@@ -137,30 +129,16 @@ func optStringSlice(opts map[string]any, key string) []string {
 	return out
 }
 
-// runTypst executes `typst <argv...>` and returns stdout, mapping a non-zero
-// exit (with trimmed stderr), missing binary, or context error to a clean error.
+// runTypst executes `typst <argv...>` via the shared helper and returns stdout.
 func runTypst(ctx context.Context, argv []string) (string, error) {
-	if !typstAvailable() {
-		return "", errors.New("typst not found on PATH (install from https://typst.app or `brew install typst`)")
+	out, err := runTool(ctx, toolSpec{
+		bin: "typst", argv: argv,
+		installHint: "install from https://typst.app or `brew install typst`",
+	})
+	if err != nil {
+		return "", err
 	}
-	cmd := exec.CommandContext(ctx, "typst", argv...) //nolint:gosec // fixed binary + validated args
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
-		}
-		msg := strings.TrimSpace(stderr.String())
-		if len(msg) > 500 {
-			msg = msg[:500]
-		}
-		if msg != "" {
-			return "", fmt.Errorf("typst failed: %w: %s", err, msg)
-		}
-		return "", fmt.Errorf("typst failed: %w", err)
-	}
-	return stdout.String(), nil
+	return string(out), nil
 }
 
 func typstVersionOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
@@ -315,7 +293,7 @@ func typstQueryOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 // typstNamespace builds the services.typst member map.
 func typstNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"available": typstAvailable(),
+		"available": toolAvailable("typst"),
 		"version":   scriptengine.PromisifyAsync(vm, loop, typstVersionOp),
 		"fonts":     scriptengine.PromisifyAsync(vm, loop, typstFontsOp),
 		"compile":   scriptengine.PromisifyAsync(vm, loop, typstCompileOp),
