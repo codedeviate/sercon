@@ -92,3 +92,15 @@ func TestPdfToHTMLOp(t *testing.T) {
 		t.Fatalf("expected HTML output, got %q", html[:min(60, len(html))])
 	}
 }
+
+func TestPdfVersionOp(t *testing.T) {
+	skipNoPoppler(t, "pdftoppm")
+	got, err := pdfVersionOp(context.Background(), goja.FunctionCall{})
+	if err != nil {
+		t.Fatalf("pdfVersionOp: %v", err)
+	}
+	v, _ := got.(string)
+	if !strings.Contains(strings.ToLower(v), "version") {
+		t.Fatalf("expected a version line, got %q", v)
+	}
+}

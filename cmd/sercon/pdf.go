@@ -173,15 +173,20 @@ func requirePDFSrc(call goja.FunctionCall) (string, map[string]any, error) {
 }
 
 func pdfVersionOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
-	out, err := runTool(ctx, toolSpec{bin: "pdftoppm", argv: []string{"-v"}, timeout: 15 * time.Second, installHint: popplerInstallHint})
-	// pdftoppm -v prints to stderr and exits non-zero on some builds; fall back to pdfinfo -v.
+	// poppler prints -v to stderr and exits 0; capture combined output so the
+	// version line is read regardless of which stream it lands on.
+	out, err := runTool(ctx, toolSpec{bin: "pdftoppm", argv: []string{"-v"}, timeout: 15 * time.Second, combinedOutput: true, installHint: popplerInstallHint})
 	if err != nil {
-		out, err = runTool(ctx, toolSpec{bin: "pdfinfo", argv: []string{"-v"}, timeout: 15 * time.Second, installHint: popplerInstallHint})
+		out, err = runTool(ctx, toolSpec{bin: "pdfinfo", argv: []string{"-v"}, timeout: 15 * time.Second, combinedOutput: true, installHint: popplerInstallHint})
 		if err != nil {
 			return nil, fmt.Errorf("services.pdf.version: %w", err)
 		}
 	}
-	return strings.TrimSpace(string(out)), nil
+	line := strings.TrimSpace(string(out))
+	if i := strings.IndexByte(line, '\n'); i >= 0 {
+		line = strings.TrimSpace(line[:i])
+	}
+	return line, nil
 }
 
 func pdfInfoOp(ctx context.Context, call goja.FunctionCall) (any, error) {

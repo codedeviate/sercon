@@ -18,11 +18,12 @@ const (
 // toolSpec is one external-CLI invocation: a fixed binary, explicit argv, and
 // limits. argv must already be validated by the caller (no shell is used).
 type toolSpec struct {
-	bin         string
-	argv        []string
-	timeout     time.Duration // 0 → no explicit timeout (caller should set one)
-	maxOutput   int           // 0 → defaultToolMaxOutput
-	installHint string        // surfaced when bin is not on PATH
+	bin            string
+	argv           []string
+	timeout        time.Duration // 0 → no explicit timeout (caller should set one)
+	maxOutput      int           // 0 → defaultToolMaxOutput
+	installHint    string        // surfaced when bin is not on PATH
+	combinedOutput bool          // capture stdout+stderr together (for tools that print to stderr, e.g. `-v` version probes)
 }
 
 // toolAvailable reports whether bin is resolvable on PATH.
@@ -71,7 +72,11 @@ func runTool(ctx context.Context, spec toolSpec) ([]byte, error) {
 	stdout.limit = outCap
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	if spec.combinedOutput {
+		cmd.Stderr = &stdout
+	} else {
+		cmd.Stderr = &stderr
+	}
 	err := cmd.Run()
 	// Surface a cancelled/timed-out run first: a timeout that coincides with
 	// large output must report the timeout, not the overflow.
@@ -83,6 +88,9 @@ func runTool(ctx context.Context, spec toolSpec) ([]byte, error) {
 	}
 	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
+		if msg == "" && spec.combinedOutput {
+			msg = strings.TrimSpace(stdout.String())
+		}
 		if len(msg) > toolStderrCap {
 			msg = msg[:toolStderrCap]
 		}
