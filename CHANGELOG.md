@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
-## [Unreleased]
+## [0.70.0] — 2026-06-25
 
 ### Added
 - `image.exif.read` / `image.exif.write` / `image.exif.replace` / `image.exif.clear` — synchronous EXIF read and write for JPEG/PNG (write targets); read is broad (JPEG/PNG/TIFF full + HEIC/AVIF/RAW curated). Tags grouped by IFD (`image`/`exif`/`gps`/`thumbnail`); rationals as `[num,den]`, GPS as signed decimals, binary values as base64.
