@@ -2796,8 +2796,8 @@ transforms on the returned **Image handle**. Each transform returns a
 
 | Function | Returns | Notes |
 |---|---|---|
-| `image.open(path)` | `Image` | Read + decode a file; format sniffed from magic bytes, not the extension. |
-| `image.decode(bytes)` | `Image` | Decode in-memory `Uint8Array` image bytes. |
+| `image.open(path, opts?)` | `Image` | Read + decode a file; format sniffed from magic bytes, not the extension. `opts.autoOrient: true` rotates pixels upright from the EXIF tag. |
+| `image.decode(bytes, opts?)` | `Image` | Decode in-memory `Uint8Array` image bytes. `opts.autoOrient: true` rotates pixels upright from the EXIF tag. |
 | `image.rasterizeSVG(src, { width, height })` | `Image` | Rasterize an SVG (subset) to a raster image at the given pixel size. `src` is a path or `Uint8Array`; both dimensions required (> 0). |
 
 **Handle properties** (read-only): `width`, `height`, `format` (the decoded
@@ -2814,6 +2814,7 @@ source format string, or `"svg"` for a rasterized SVG).
 | `rotate(deg)` | Rotate CCW by an arbitrary angle; corners filled transparent. |
 | `rotate90()` / `rotate180()` / `rotate270()` | Lossless quarter-turns (CCW). |
 | `flipH()` / `flipV()` | Mirror horizontally / vertically. |
+| `orient(n)` | Apply EXIF Orientation `n` (1..8) to pixels; 1 is a no-op copy. Throws `TypeError` if `n` is not an integer in 1..8. |
 | `brightness(pct)` / `contrast(pct)` / `saturation(pct)` | Adjust by a percentage in `[-100, 100]`. |
 | `gamma(g)` | Gamma correction (`<1` darkens, `>1` brightens). |
 | `sharpen(sigma)` / `blur(sigma)` | Unsharp-mask / Gaussian blur. |
@@ -2835,12 +2836,24 @@ source format string, or `"svg"` for a rasterized SVG).
 - **SVG is rasterize-in only** — there is no SVG *output*; `rasterizeSVG`
   renders a *subset* of SVG to a raster image you then encode as PNG/etc.
 - **GIF decode is first-frame** — animation is not preserved.
+- **`autoOrient`** (`open`/`decode` `opts.autoOrient: true`) reads the source's EXIF
+  `Orientation` tag and applies the corresponding pixel transform so the returned
+  handle is always upright. Absent or unreadable `Orientation` is silently treated
+  as 1 (no-op); the option never throws. **Strip-on-save is automatic** — the raster
+  handle re-encodes from pixels with no EXIF carry-through.
+- **`orient(n)`** applies one of the 8 EXIF pixel transforms directly (n 1..8;
+  1 is a no-op copy). Use this when you already know the orientation integer; use
+  `autoOrient` to drive it from the source file's tag.
 
 ```ts
 const im = image.open("avatar.png");
 const thumb = im.resize(128, 0).grayscale().blur(0.5);
 thumb.save("thumb.webp");                       // lossless webp
 const png = im.crop(0, 0, 64, 64).bytes("png"); // → Uint8Array
+// auto-orient a camera photo (reads EXIF Orientation, corrects pixels):
+const photo = image.open("photo.jpg", { autoOrient: true });
+// or apply an orientation value directly:
+const cw = image.decode(rawBytes).orient(6);    // 90° clockwise
 ```
 
 Pure-Go stack: `disintegration/imaging` + `golang.org/x/image`
@@ -5783,7 +5796,7 @@ Image decode/encode (PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in) and a chainab
 #### 17.6.1 image.decode
 
 ```
-decode(data: Uint8Array): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
+decode(data: Uint8Array, opts?: { autoOrient?: boolean }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
 ```
 
 Decode in-memory image bytes into a chainable Image handle. The format is sniffed from the magic bytes (PNG/JPEG/GIF/TIFF/BMP/WebP); GIF decodes the first frame only.
@@ -5791,13 +5804,14 @@ Decode in-memory image bytes into a chainable Image handle. The format is sniffe
 **Parameters**
 
 - `data` *(Uint8Array)* — The raw, encoded image bytes (e.g. from net.http, fs, or a clipboard read).
+- `opts` *({ autoOrient?: boolean }, optional)* — When autoOrient is true, the source's EXIF Orientation is read and the pixels are rotated upright; absent/unreadable Orientation is treated as a no-op (never throws).
 
 **Returns:** Image — a handle exposing read-only width/height/format and chainable transform methods.
 
 **Throws:** Throws a TypeError if data is not a Uint8Array, or ("image.decode: …") if the bytes are not a recognised/decodable image.
 
 ```ts
-const im = image.decode(pngBytes);
+const im = image.decode(pngBytes, { autoOrient: true });
 ```
 
 #### 17.6.2 image.exif.clear
@@ -5892,7 +5906,7 @@ const out = image.exif.write(jpegBytes, { image: { Artist: "Alice" } });
 #### 17.6.6 image.open
 
 ```
-open(path: string): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
+open(path: string, opts?: { autoOrient?: boolean }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
 ```
 
 Read an image file from disk and decode it into a chainable Image handle. The format is sniffed from the file's magic bytes (PNG/JPEG/GIF/TIFF/BMP/WebP), not the extension. GIF decodes the first frame only.
@@ -5900,19 +5914,20 @@ Read an image file from disk and decode it into a chainable Image handle. The fo
 **Parameters**
 
 - `path` *(string)* — Filesystem path to the image file to read and decode.
+- `opts` *({ autoOrient?: boolean }, optional)* — When autoOrient is true, the source's EXIF Orientation is read and the pixels are rotated upright; absent/unreadable Orientation is treated as a no-op (never throws).
 
 **Returns:** Image — a handle exposing read-only width/height/format and chainable transform methods.
 
 **Throws:** Throws ("image.open: …") if the file cannot be read, or ("image.decode: …") if the bytes are not a recognised/decodable image.
 
 ```ts
-const im = image.open("avatar.jpg");
+const im = image.open("avatar.jpg", { autoOrient: true });
 ```
 
 #### 17.6.7 image.rasterizeSVG
 
 ```
-rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
+rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
 ```
 
 Rasterize an SVG (a supported subset) to a raster Image at the requested pixel size. SVG is rasterize-IN only — there is no SVG output; the result is a raster image you then encode as PNG/JPEG/etc. The accepts a path string or in-memory SVG bytes.

@@ -30,4 +30,15 @@ const tmp = (runtime.env.get("TMPDIR") ?? "/tmp") + "/sercon-image-demo.png";
 im.crop(2, 2, 10, 10).save(tmp);
 const reread = image.open(tmp);
 runtime.assert.equal(reread.width, 10, "cropped+saved width");
+
+// Orientation: apply an EXIF orientation to pixels, and auto-orient on load.
+const oriented = image.decode(PNG).orient(6); // 90° CW: 16×16 → 16×16 (square)
+runtime.log("oriented:", oriented.width + "x" + oriented.height);
+runtime.assert.equal(oriented.width, 16, "orient(6) width");
+runtime.assert.equal(oriented.height, 16, "orient(6) height");
+// autoOrient reads the source's EXIF Orientation (no-op when absent):
+const up = image.decode(PNG, { autoOrient: true });
+runtime.log("auto-oriented:", up.width + "x" + up.height);
+runtime.assert.equal(up.width, 16, "autoOrient width (no-op, no EXIF in PNG)");
+
 runtime.log("image demo OK");

@@ -153,7 +153,6 @@ clipboard, clipboard watching. Re-promote on demand.
   PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in, and a chainable raster `Image`
   handle) intentionally leaves a second wave parked:
   - **Animated GIF / APNG** — decode/encode all frames (v1 is first-frame only).
-  - **EXIF auto-orient pixel transform** — rotate the raster pixel data according to the Orientation tag and strip the tag on save; the EXIF read/write API itself shipped in v0.70.0.
   - **Custom convolution / morphology / arbitrary filters** — user-supplied
     kernels, erode/dilate, edge detect beyond the fixed `sharpen`/`blur`.
   - **SVG output** — v1 is rasterize-*in* only; emitting SVG is a different

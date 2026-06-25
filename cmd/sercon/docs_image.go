@@ -21,6 +21,7 @@ const imageHandleTS = `{ ` +
 	`rotate(degrees: number): unknown; ` +
 	`rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; ` +
 	`flipH(): unknown; flipV(): unknown; ` +
+	`orient(n: number): unknown; ` +
 	`brightness(percent: number): unknown; contrast(percent: number): unknown; ` +
 	`gamma(gamma: number): unknown; saturation(percent: number): unknown; ` +
 	`sharpen(sigma: number): unknown; blur(sigma: number): unknown; ` +
@@ -43,21 +44,23 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Summary: "Read an image file from disk and decode it into a chainable Image handle. The format is sniffed from the file's magic bytes (PNG/JPEG/GIF/TIFF/BMP/WebP), not the extension. GIF decodes the first frame only.",
 			Params: []scriptengine.Param{
 				{Name: "path", Type: "string", Desc: "Filesystem path to the image file to read and decode."},
+				{Name: "opts", Type: "{ autoOrient?: boolean }", Optional: true, Desc: "When autoOrient is true, the source's EXIF Orientation is read and the pixels are rotated upright; absent/unreadable Orientation is treated as a no-op (never throws)."},
 			},
 			ReturnType: imageHandleTS,
 			Returns:    "Image — a handle exposing read-only width/height/format and chainable transform methods.",
 			Errors:     "Throws (\"image.open: …\") if the file cannot be read, or (\"image.decode: …\") if the bytes are not a recognised/decodable image.",
-			Example:    `const im = image.open("avatar.jpg");`,
+			Example:    `const im = image.open("avatar.jpg", { autoOrient: true });`,
 		},
 		"decode": {
 			Summary: "Decode in-memory image bytes into a chainable Image handle. The format is sniffed from the magic bytes (PNG/JPEG/GIF/TIFF/BMP/WebP); GIF decodes the first frame only.",
 			Params: []scriptengine.Param{
 				{Name: "data", Type: "Uint8Array", Desc: "The raw, encoded image bytes (e.g. from net.http, fs, or a clipboard read)."},
+				{Name: "opts", Type: "{ autoOrient?: boolean }", Optional: true, Desc: "When autoOrient is true, the source's EXIF Orientation is read and the pixels are rotated upright; absent/unreadable Orientation is treated as a no-op (never throws)."},
 			},
 			ReturnType: imageHandleTS,
 			Returns:    "Image — a handle exposing read-only width/height/format and chainable transform methods.",
 			Errors:     "Throws a TypeError if data is not a Uint8Array, or (\"image.decode: …\") if the bytes are not a recognised/decodable image.",
-			Example:    `const im = image.decode(pngBytes);`,
+			Example:    `const im = image.decode(pngBytes, { autoOrient: true });`,
 		},
 		"rasterizeSVG": {
 			Summary: "Rasterize an SVG (a supported subset) to a raster Image at the requested pixel size. SVG is rasterize-IN only — there is no SVG output; the result is a raster image you then encode as PNG/JPEG/etc. The accepts a path string or in-memory SVG bytes.",
@@ -134,6 +137,14 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 		"rotate270": {Summary: "Rotate 270° counter-clockwise / 90° clockwise (lossless). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — rotated 270° CCW.", Errors: "Does not throw.", Example: `const r = im.rotate270();`},
 		"flipH":     {Summary: "Flip horizontally (mirror left↔right). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — horizontally mirrored.", Errors: "Does not throw.", Example: `const m = im.flipH();`},
 		"flipV":     {Summary: "Flip vertically (mirror top↔bottom). Returns a fresh Image.", ReturnType: "Image", Returns: "Image — vertically mirrored.", Errors: "Does not throw.", Example: `const m = im.flipV();`},
+		"orient": {
+			Summary:    "Apply one of the 8 EXIF orientations to the raster pixels and return a fresh Image. n is the EXIF Orientation value (1=normal, 2=mirror-H, 3=180°, 4=mirror-V, 5/7=transpose/transverse, 6=90°CW, 8=90°CCW). 1 is a no-op copy. Pure raster — no EXIF is read (use open/decode { autoOrient: true } to drive this from a file's tag).",
+			Params:     []scriptengine.Param{{Name: "n", Type: "number", Desc: "EXIF orientation value, an integer 1..8."}},
+			ReturnType: "Image",
+			Returns:    "Image — the reoriented raster (dimensions swap for n in 5..8).",
+			Errors:     "Throws a TypeError if n is not an integer in 1..8.",
+			Example:    "const up = image.decode(bytes).orient(6); // 90° clockwise",
+		},
 		"brightness": {
 			Summary:    "Adjust brightness by a percentage in [-100, 100]; positive brightens, negative darkens, 0 is a no-op. Returns a fresh Image.",
 			Params:     []scriptengine.Param{{Name: "percent", Type: "number", Desc: "Brightness change in percent, -100 (black) .. 100 (white)."}},

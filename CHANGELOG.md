@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+- `image` handle `orient(n)` — apply one of 8 EXIF pixel orientations (1..8); throws `TypeError` on invalid `n`. `{ autoOrient: true }` option on `image.open` / `image.decode` reads the source EXIF `Orientation` tag and returns upright pixels (no-op when absent, never throws); strip-on-save is automatic.
+
 ## [0.70.0] — 2026-06-25
 
 ### Added
