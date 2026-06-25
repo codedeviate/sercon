@@ -7739,7 +7739,7 @@ runtime.log("pdf backend:", services.pdf.backend ?? "none");
 #### services.pdf.info
 
 ```
-info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>
+info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; creationDate?: string; modDate?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>
 ```
 
 Read a PDF's metadata via `pdfinfo`: page count, title/author, encryption, page size, PDF version, and tagging.
@@ -7748,7 +7748,7 @@ Read a PDF's metadata via `pdfinfo`: page count, title/author, encryption, page 
 
 - `src` *(string)* — Path to the source PDF.
 
-**Returns:** Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. Fields pdfinfo does not report are omitted.
+**Returns:** Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. creationDate/modDate are the raw pdfinfo date strings when present. Fields pdfinfo does not report are omitted.
 
 **Throws:** Throws if src is missing/empty; if pdfinfo is not on PATH; if pdfinfo exits non-zero (trimmed stderr included); or on timeout.
 
@@ -8933,7 +8933,7 @@ const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);
 
 ---
 
-*This manual covers sercon v0.68.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.69.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
