@@ -23,6 +23,25 @@ runtime.assert.equal(e1.image?.Make, "sercon", "Make after replace");
 runtime.assert.equal(e1.image?.Model, "demo", "Model after replace");
 runtime.log("after replace:", JSON.stringify(e1.image));
 
+// 2b. Numeric + GPS tags: Orientation is a number (not a string), ExposureTime
+//     is a single rational [num, den], and gps coords are decimal degrees.
+//     Catches the int64/flat-rational/GPS-path round-trip regressions.
+const outN = image.exif.replace(jpegBytes, {
+  image: { Make: "sercon", Orientation: 6 },
+  exif: { ExposureTime: [1, 250] },
+  gps: { GPSLatitude: 57.7089, GPSLongitude: 11.9746 },
+});
+const eN = image.exif.read(outN.bytes);
+runtime.assert.equal(eN.image?.Orientation, 6, "Orientation round-trips as a number");
+runtime.assert.ok(
+  Array.isArray(eN.exif?.ExposureTime) && eN.exif.ExposureTime.length === 2 &&
+  eN.exif.ExposureTime[0] === 1 && eN.exif.ExposureTime[1] === 250,
+  "ExposureTime reads back flat [1,250]",
+);
+runtime.assert.ok(Math.abs((eN.gps?.GPSLatitude ?? 0) - 57.7089) < 1e-3, "GPSLatitude round-trips");
+runtime.assert.ok(Math.abs((eN.gps?.GPSLongitude ?? 0) - 11.9746) < 1e-3, "GPSLongitude round-trips");
+runtime.log("numeric/gps:", JSON.stringify({ orientation: eN.image?.Orientation, exposure: eN.exif?.ExposureTime, lat: eN.gps?.GPSLatitude, lng: eN.gps?.GPSLongitude }));
+
 // 3. exif.write — merge: add Artist, null-delete Model, keep Make untouched.
 //    This is what distinguishes write (merge) from replace (whole block).
 const out2 = image.exif.write(out1.bytes, { image: { Artist: "Alice", Model: null } });

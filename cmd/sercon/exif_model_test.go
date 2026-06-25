@@ -9,7 +9,7 @@ import (
 )
 
 func TestIfdPathToGroup(t *testing.T) {
-	cases := map[string]string{"IFD": "image", "IFD/Exif": "exif", "IFD/GPS": "gps", "IFD1": "thumbnail"}
+	cases := map[string]string{"IFD": "image", "IFD/Exif": "exif", "IFD/GPSInfo": "gps", "IFD1": "thumbnail"}
 	for path, want := range cases {
 		got, ok := ifdPathToGroup(path)
 		if !ok || got != want {
@@ -22,8 +22,8 @@ func TestIfdPathToGroup(t *testing.T) {
 }
 
 func TestGroupToIfdPath(t *testing.T) {
-	if p, ok := groupToIfdPath("gps"); !ok || p != "IFD/GPS" {
-		t.Fatalf("groupToIfdPath(gps)=%q,%v want IFD/GPS,true", p, ok)
+	if p, ok := groupToIfdPath("gps"); !ok || p != "IFD/GPSInfo" {
+		t.Fatalf("groupToIfdPath(gps)=%q,%v want IFD/GPSInfo,true", p, ok)
 	}
 	if p, ok := groupToIfdPath("nope"); ok || p != "" {
 		t.Fatalf("groupToIfdPath(nope)=%q,%v want \"\",false", p, ok)

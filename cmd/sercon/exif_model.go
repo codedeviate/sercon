@@ -14,11 +14,14 @@ import (
 // backends. Keys: "image" (IFD0), "exif" (Exif sub-IFD), "gps", "thumbnail".
 type exifDoc map[string]map[string]any
 
+// The GPS sub-IFD path in dsoprea is "IFD/GPSInfo" (the IFD tag is named
+// "GPSInfo"), NOT "IFD/GPS" — using the wrong string makes
+// GetOrCreateIbFromRootIb fail on write and the group never map on read.
 var ifdGroupByPath = map[string]string{
-	"IFD": "image", "IFD/Exif": "exif", "IFD/GPS": "gps", "IFD1": "thumbnail",
+	"IFD": "image", "IFD/Exif": "exif", "IFD/GPSInfo": "gps", "IFD1": "thumbnail",
 }
 var ifdPathByGroup = map[string]string{
-	"image": "IFD", "exif": "IFD/Exif", "gps": "IFD/GPS", "thumbnail": "IFD1",
+	"image": "IFD", "exif": "IFD/Exif", "gps": "IFD/GPSInfo", "thumbnail": "IFD1",
 }
 
 func ifdPathToGroup(ifdPath string) (string, bool) { g, ok := ifdGroupByPath[ifdPath]; return g, ok }
@@ -32,17 +35,45 @@ func encodeExifValue(v any) any {
 	case exifcommon.SignedRational:
 		return []any{t.Numerator, t.Denominator}
 	case []exifcommon.Rational:
+		// A single rational reads back flat as [num, den] (matching the write
+		// shape) — wrapForEncoder writes scalars as a 1-element slice, so the
+		// nested form is reserved for genuine multi-value rationals (e.g. the
+		// GPS coordinate triple, len 3, which gpsDecimalize then consumes).
+		if len(t) == 1 {
+			return []any{t[0].Numerator, t[0].Denominator}
+		}
 		out := make([]any, len(t))
 		for i, r := range t {
 			out[i] = []any{r.Numerator, r.Denominator}
 		}
 		return out
 	case []exifcommon.SignedRational:
+		if len(t) == 1 {
+			return []any{t[0].Numerator, t[0].Denominator}
+		}
 		out := make([]any, len(t))
 		for i, r := range t {
 			out[i] = []any{r.Numerator, r.Denominator}
 		}
 		return out
+	case []uint16:
+		// SHORT decodes to []uint16; a single value reads back as a scalar to
+		// mirror the scalar write shape (wrapForEncoder wraps scalars in a
+		// 1-element slice for the dsoprea encoder).
+		if len(t) == 1 {
+			return t[0]
+		}
+		return v
+	case []uint32:
+		if len(t) == 1 {
+			return t[0]
+		}
+		return v
+	case []int32:
+		if len(t) == 1 {
+			return t[0]
+		}
+		return v
 	case []byte:
 		return base64.StdEncoding.EncodeToString(t)
 	default:
@@ -174,22 +205,47 @@ func decodeExifValue(group, tagName string, jsonVal any) (any, error) {
 	}
 }
 
+// toUint32 coerces a JSON/goja number to uint32 with a range guard. goja
+// exports whole-number JS integers as int64 (not float64), so int64 and int
+// must be accepted alongside float64 and the already-typed uint32.
 func toUint32(v any) (uint32, bool) {
-	if f, ok := v.(float64); ok && f >= 0 && f <= math.MaxUint32 {
-		return uint32(f), true
-	}
-	if u, ok := v.(uint32); ok {
-		return u, true
+	switch n := v.(type) {
+	case float64:
+		if n >= 0 && n <= math.MaxUint32 {
+			return uint32(n), true
+		}
+	case int64:
+		if n >= 0 && n <= math.MaxUint32 {
+			return uint32(n), true
+		}
+	case int:
+		if n >= 0 && int64(n) <= math.MaxUint32 {
+			return uint32(n), true
+		}
+	case uint32:
+		return n, true
 	}
 	return 0, false
 }
 
+// toInt32 coerces a JSON/goja number to int32 with a range guard. As with
+// toUint32, goja integer numbers arrive as int64, so int64/int are accepted.
 func toInt32(v any) (int32, bool) {
-	if f, ok := v.(float64); ok && f >= math.MinInt32 && f <= math.MaxInt32 {
-		return int32(f), true
-	}
-	if i, ok := v.(int32); ok {
-		return i, true
+	switch n := v.(type) {
+	case float64:
+		if n >= math.MinInt32 && n <= math.MaxInt32 {
+			return int32(n), true
+		}
+	case int64:
+		if n >= math.MinInt32 && n <= math.MaxInt32 {
+			return int32(n), true
+		}
+	case int:
+		if int64(n) >= math.MinInt32 && int64(n) <= math.MaxInt32 {
+			return int32(n), true
+		}
+	case int32:
+		return n, true
 	}
 	return 0, false
 }
