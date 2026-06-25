@@ -152,7 +152,7 @@ reference: build
 	@awk '/<!-- BEGIN GENERATED REFERENCE -->/{print; while ((getline line < ".manual-reference.tmp") > 0) print line; skip=1; next} /<!-- END GENERATED REFERENCE -->/{skip=0} !skip{print}' MANUAL.md > MANUAL.md.ref.tmp
 	@mv MANUAL.md.ref.tmp MANUAL.md
 	@rm -f .manual-reference.tmp
-	@echo "Regenerated the MANUAL.md '## 16. Binding reference' section."
+	@echo "Regenerated the MANUAL.md '## 17. Binding reference' section."
 
 manual: reference
 	awk -f scripts/typst-safe.awk MANUAL.md | $(RECON) --md-to-pdf - -o MANUAL.pdf \

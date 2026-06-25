@@ -33,7 +33,7 @@ const imageHandleTS = `{ ` +
 
 // imageDocs documents the `image` global. Only the module-level members
 // (open/decode/rasterizeSVG) are introspectable from the namespace factory, so
-// they drive the emitted d.ts + §16 reference. The handle-method entries below
+// they drive the emitted d.ts + §17 reference. The handle-method entries below
 // describe the chainable Image returned by those functions; they are carried
 // here for completeness and the long-form MANUAL.md prose (the runtime handle
 // is built per-call and is not reflected into the generated surface).

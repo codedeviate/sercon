@@ -607,29 +607,6 @@ is the native equivalent of `console.log` (stdout) and formats the same
 way. Library embedders get the goja_nodejs console by default instead;
 toggle it with `Options.DisableConsole`.
 
-### Migration from v0.8.0
-
-| v0.8.0 | v0.9.0 |
-|---|---|
-| `api.runtime.log` | `runtime.log` |
-| `api.crypto.hash.sha256` | `crypto.hash.sha256` |
-| `api.text.str.trim` | `text.str.trim` |
-| `api.format.barcode.encode` | `codec.barcode.encode` |
-| `api.fs.path.basename` | `fs.path.basename` |
-| `api.net.http.get` | `net.http.get` |
-| `api.db.sqlite.open` | `db.sqlite.open` |
-| `api.tools.exec.shell` | `services.exec.shell` |
-| `api.tools.git.commit` | `services.git.commit` |
-| `api.ui.tui.layout` | `tui.layout` |
-| `Sercon.argv` | `runtime.argv` |
-
-The `api` global no longer exists; reading it throws a
-`ReferenceError`. The `Sercon` global is also gone.
-
-A mechanical sed pass over your scripts handles the prefix drop and the
-three renames — see the `CHANGELOG.md` `[0.9.0]` "Changed" entry
-for a sketch.
-
 ### `runtime`
 
 Script-host scaffolding. Members:
@@ -4050,7 +4027,7 @@ the seventh artifact in that chain).
 See [OUT-OF-SCOPE.md](./OUT-OF-SCOPE.md) for the active backlog of
 deferred ideas.
 
-## Bundled libraries
+## 16. Bundled libraries
 
 ### `paymentproviders`
 
@@ -4290,7 +4267,7 @@ await api.capturePayment(po, {
 });
 ```
 
-## 16. Binding reference (generated)
+## 17. Binding reference (generated)
 
 The per-function reference below is generated from the structured binding
 docs (`MemberDoc`) by `sercon --emit-reference`, spliced in by `make
