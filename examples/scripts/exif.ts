@@ -23,11 +23,13 @@ runtime.assert.equal(e1.image?.Make, "sercon", "Make after replace");
 runtime.assert.equal(e1.image?.Model, "demo", "Model after replace");
 runtime.log("after replace:", JSON.stringify(e1.image));
 
-// 3. exif.write — merge: add a tag, leave Make/Model intact
-const out2 = image.exif.write(out1.bytes, { image: { Artist: "Alice" } });
+// 3. exif.write — merge: add Artist, null-delete Model, keep Make untouched.
+//    This is what distinguishes write (merge) from replace (whole block).
+const out2 = image.exif.write(out1.bytes, { image: { Artist: "Alice", Model: null } });
 const e2 = image.exif.read(out2.bytes);
 runtime.assert.equal(e2.image?.Make, "sercon", "Make preserved after write");
 runtime.assert.equal(e2.image?.Artist, "Alice", "Artist added by write");
+runtime.assert.ok(e2.image?.Model === undefined, "write null-deletes Model");
 runtime.log("after write:", JSON.stringify(e2.image));
 
 // 4. exif.clear — strip all EXIF
