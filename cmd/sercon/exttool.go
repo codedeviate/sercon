@@ -120,10 +120,11 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 	if c.overflow {
 		return len(p), nil
 	}
-	if c.Buffer.Len()+len(p) > c.limit {
+	if c.Len()+len(p) > c.limit {
 		c.overflow = true
-		remain := c.limit - c.Buffer.Len()
+		remain := c.limit - c.Len()
 		if remain > 0 {
+			// Explicit c.Buffer.Write avoids recursing into this override.
 			_, _ = c.Buffer.Write(p[:remain])
 		}
 		return len(p), nil

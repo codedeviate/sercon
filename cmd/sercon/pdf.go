@@ -251,7 +251,7 @@ func pdfToImageOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 			return nil, fmt.Errorf("services.pdf.toImage: %w", derr)
 		}
 		tmpDir = d
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 		prefix = filepath.Join(tmpDir, "page")
 	}
 	spec := pdfImageSpec{src: src, prefix: prefix, format: formatFlag, firstPage: first, lastPage: last, dpi: dpi}
@@ -330,7 +330,7 @@ func pdfToHTMLOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 			return nil, fmt.Errorf("services.pdf.toHtml: %w", derr)
 		}
 		tmpDir = d
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 		target = filepath.Join(tmpDir, "out.html")
 	}
 	spec := pdfHTMLSpec{src: src, dest: target, firstPage: first, lastPage: last}
