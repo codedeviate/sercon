@@ -62,7 +62,10 @@ func extractRawExif(data []byte, format string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		cs := mc.(*pngstructure.ChunkSlice)
+		cs, ok := mc.(*pngstructure.ChunkSlice)
+		if !ok {
+			return nil, fmt.Errorf("extractRawExif: unexpected media context type %T", mc)
+		}
 		// cs.Exif() returns (rootIfd, rawExifBytes, error)
 		_, rawExif, err := cs.Exif()
 		if err != nil {
@@ -187,7 +190,10 @@ func writeExifJPEG(data []byte, doc exifDoc, mode writeMode) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sl := mc.(*jpegstructure.SegmentList)
+	sl, ok := mc.(*jpegstructure.SegmentList)
+	if !ok {
+		return nil, fmt.Errorf("writeExifJPEG: unexpected media context type %T", mc)
+	}
 
 	if mode == modeClear {
 		// DropExif returns (wasDropped bool, err error)
@@ -235,7 +241,10 @@ func writeExifPNG(data []byte, doc exifDoc, mode writeMode) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	cs := mc.(*pngstructure.ChunkSlice)
+	cs, ok := mc.(*pngstructure.ChunkSlice)
+	if !ok {
+		return nil, fmt.Errorf("writeExifPNG: unexpected media context type %T", mc)
+	}
 
 	existing, _ := cs.ConstructExifBuilder()
 	rootIb, err := buildRootIb(existing, mode)
