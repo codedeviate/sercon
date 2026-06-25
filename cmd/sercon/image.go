@@ -154,6 +154,7 @@ func imageNamespace(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 			}
 			return newImageHandle(vm, img, format)
 		},
+		"exif": exifNamespace(vm),
 		"rasterizeSVG": func(call goja.FunctionCall) goja.Value {
 			var data []byte
 			arg := call.Argument(0)
