@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [0.69.1] — 2026-06-25
+
+### Changed
+- `MANUAL.md`: consistent hierarchical heading numbering across the whole
+  manual (`N` / `N.M` / `N.M.K` / `N.M.K.L`) so the table of contents reflects
+  the chapter hierarchy. Previously only chapter 6 numbered its subsections.
+  The generated binding reference (§17) is numbered by the generator;
+  chapters 1–16 are hand-numbered.
+- `MANUAL.md`: `Bundled libraries` is now numbered `§16` and the generated
+  `Binding reference` becomes `§17` (it was an unnumbered chapter wedged
+  between §15 and §16). Dropped the stale "Migration from v0.8.0" subsection
+  that interrupted the reserved-globals chapter (the v0.8.0→v0.9.0 rename is
+  still recorded in the `[0.9.0]` entry).
+
+### Added
+- `Engine.WriteReferenceNumbered(w, sectionPrefix)` — emits the markdown
+  binding reference with hierarchical section numbers (`### <prefix>.<N>`,
+  `#### <prefix>.<N>.<M>`). `WriteReference` is unchanged (unnumbered).
+
 ## [0.69.0] — 2026-06-25
 
 ### Added
