@@ -2847,6 +2847,65 @@ Pure-Go stack: `disintegration/imaging` + `golang.org/x/image`
 (webp/tiff/bmp decode) + `HugoSmits86/nativewebp` (webp encode) +
 `srwiley/oksvg`+`rasterx` (SVG). No cgo.
 
+#### 5.11.1 EXIF
+
+`image.exif` gives synchronous EXIF read/write for reconnaissance and
+metadata-aware tooling. Reads are broad (JPEG/PNG/TIFF full + HEIC/AVIF/RAW
+curated subset); writes are JPEG and PNG only.
+
+| Function | Returns | Notes |
+|---|---|---|
+| `image.exif.read(src)` | `ExifDoc` | Read grouped EXIF from a path or Uint8Array. Returns `{}` when no EXIF is present. |
+| `image.exif.write(src, data, opts?)` | `ExifResult` | Merge tags (null deletes a tag). JPEG/PNG only. |
+| `image.exif.replace(src, data, opts?)` | `ExifResult` | Replace the whole EXIF block. JPEG/PNG only. |
+| `image.exif.clear(src, opts?)` | `ExifResult` | Remove all EXIF. JPEG/PNG only. |
+
+**`src`** is a file path string or a `Uint8Array` of raw image bytes.
+
+**`ExifDoc`** — tags grouped by IFD:
+
+```ts
+{
+  image?:     Record<string, unknown>;   // IFD0  (camera/software metadata)
+  exif?:      Record<string, unknown>;   // ExifIFD (exposure, lens, …)
+  gps?:       Record<string, unknown>;   // GPSIFD
+  thumbnail?: Record<string, unknown>;   // IFD1 thumbnail
+}
+```
+
+**Value encoding** inside the groups:
+
+| EXIF type | JS representation |
+|---|---|
+| RATIONAL / SRATIONAL | `[numerator, denominator]` array |
+| GPS Latitude / Longitude | Signed decimal (`number`) |
+| Date/time strings | EXIF string `"YYYY:MM:DD HH:MM:SS"` |
+| UNDEFINED / BYTE arrays | base64 string |
+| Integer / Short / Long | `number` |
+| ASCII | `string` |
+
+**`ExifResult`** — returned by write/replace/clear:
+
+- `{ format: string; bytes: Uint8Array }` — when no `opts.dest` is given.
+- `{ format: string; path: string }` — when `opts.dest` names a destination path (the bytes are also written there).
+
+**Unsupported write targets:** Calling write/replace/clear on a format other than
+JPEG or PNG throws (`"image.exif.<op>: writing EXIF to … is unsupported"`).
+Read is broader and falls back to `imagemeta` for HEIC/AVIF/CR2/CR3/NEF/ARW/DNG/RAW.
+
+```ts
+// Replace EXIF block
+const out = image.exif.replace(jpegBytes, { image: { Make: "sercon" } });
+const e = image.exif.read(out.bytes);
+runtime.log(e.image?.Make);   // "sercon"
+
+// Merge / delete a tag
+const out2 = image.exif.write(out.bytes, { image: { Artist: "Alice", Model: null } });
+
+// Strip all
+const stripped = image.exif.clear(out2.bytes);
+```
+
 ### 5.12 `web`
 
 Fetch & parse web documents. Three families — `web.feed` (RSS/Atom/JSON
@@ -5741,7 +5800,96 @@ Decode in-memory image bytes into a chainable Image handle. The format is sniffe
 const im = image.decode(pngBytes);
 ```
 
-#### 17.6.2 image.open
+#### 17.6.2 image.exif.clear
+
+```
+clear(src: string | Uint8Array, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
+```
+
+Remove all EXIF metadata from an image (JPEG/PNG only). Returns {format, bytes} with the stripped image bytes, or writes to {format, path} when opts.dest is given.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — Image path or raw bytes. String values are read from disk; Uint8Array values are used directly.
+- `opts` *({ dest?: string }, optional)* — Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned.
+
+**Returns:** {format, bytes} with a stripped image (no EXIF) when no dest, or {format, path} when opts.dest is given.
+
+**Throws:** Throws if the format is not JPEG or PNG (unsupported write target), if src cannot be read, or if dest cannot be written.
+
+```ts
+const out = image.exif.clear(jpegBytes);
+const e = image.exif.read(out.bytes); // e === {}
+```
+
+#### 17.6.3 image.exif.read
+
+```
+read(src: string | Uint8Array): { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }
+```
+
+Read an image's EXIF metadata into a grouped-by-IFD object (image/exif/gps/thumbnail). JPEG/PNG/TIFF return all tags; HEIC/AVIF/RAW return a curated subset. Returns {} when the image has no EXIF.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — Image path or raw bytes. String values are read from disk; Uint8Array values are parsed in-memory.
+
+**Returns:** An object grouped by IFD; rationals serialised as [num,den] arrays, GPS latitude/longitude as signed decimals, dates as EXIF strings, binary/undefined-type values as base64.
+
+**Throws:** Throws if the path cannot be read or the image bytes cannot be parsed.
+
+```ts
+const e = image.exif.read("photo.jpg");
+runtime.log(e.image?.Make, e.gps?.GPSLatitude);
+```
+
+#### 17.6.4 image.exif.replace
+
+```
+replace(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
+```
+
+Replace an image's entire EXIF block with the supplied tags (JPEG/PNG only). All pre-existing EXIF is discarded; only the tags in data are written. Returns {format, bytes} or writes to {format, path} when opts.dest is given.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — Image path or raw bytes. String values are read from disk; Uint8Array values are used directly.
+- `data` *({ image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> })* — The complete new EXIF block grouped by IFD. Any tag not listed is absent from the output.
+- `opts` *({ dest?: string }, optional)* — Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned.
+
+**Returns:** {format, bytes} with the updated image bytes when no dest, or {format, path} when opts.dest is given.
+
+**Throws:** Throws if the format is not JPEG or PNG (unsupported write target), if src cannot be read, or if dest cannot be written.
+
+```ts
+const out = image.exif.replace(jpegBytes, { image: { Make: "sercon" } });
+const e = image.exif.read(out.bytes); // e.image.Make === "sercon"
+```
+
+#### 17.6.5 image.exif.write
+
+```
+write(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
+```
+
+Merge EXIF tags into an image (JPEG/PNG only). Existing tags not mentioned in data are preserved; pass null for a tag value to delete that tag. Returns {format, bytes} or writes to {format, path} when opts.dest is given.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — Image path or raw bytes. String values are read from disk; Uint8Array values are used directly.
+- `data` *({ image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> })* — Tags to merge, grouped by IFD. A null value deletes that tag from the output.
+- `opts` *({ dest?: string }, optional)* — Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned.
+
+**Returns:** {format, bytes} with the updated image bytes when no dest, or {format, path} when opts.dest is given.
+
+**Throws:** Throws if the format is not JPEG or PNG (unsupported write target), if src cannot be read, or if dest cannot be written.
+
+```ts
+const out = image.exif.write(jpegBytes, { image: { Artist: "Alice" } });
+// out.bytes is the updated JPEG
+```
+
+#### 17.6.6 image.open
 
 ```
 open(path: string): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -5761,7 +5909,7 @@ Read an image file from disk and decode it into a chainable Image handle. The fo
 const im = image.open("avatar.jpg");
 ```
 
-#### 17.6.3 image.rasterizeSVG
+#### 17.6.7 image.rasterizeSVG
 
 ```
 rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }

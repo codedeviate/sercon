@@ -231,5 +231,50 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Throws (\"image: cannot infer format from path …\") when the extension is unknown and no opts.format is given, or (\"image.save: …\") if the file cannot be written.",
 			Example:    `im.resize(64, 64).save("out.png");`,
 		},
+
+		// --- EXIF sub-namespace ---
+		"exif.read": {
+			Summary:    "Read an image's EXIF metadata into a grouped-by-IFD object (image/exif/gps/thumbnail). JPEG/PNG/TIFF return all tags; HEIC/AVIF/RAW return a curated subset. Returns {} when the image has no EXIF.",
+			Params:     []scriptengine.Param{{Name: "src", Type: "string | Uint8Array", Desc: "Image path or raw bytes. String values are read from disk; Uint8Array values are parsed in-memory."}},
+			ReturnType: "{ image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }",
+			Returns:    "An object grouped by IFD; rationals serialised as [num,den] arrays, GPS latitude/longitude as signed decimals, dates as EXIF strings, binary/undefined-type values as base64.",
+			Errors:     "Throws if the path cannot be read or the image bytes cannot be parsed.",
+			Example:    "const e = image.exif.read(\"photo.jpg\");\nruntime.log(e.image?.Make, e.gps?.GPSLatitude);",
+		},
+		"exif.write": {
+			Summary: "Merge EXIF tags into an image (JPEG/PNG only). Existing tags not mentioned in data are preserved; pass null for a tag value to delete that tag. Returns {format, bytes} or writes to {format, path} when opts.dest is given.",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string | Uint8Array", Desc: "Image path or raw bytes. String values are read from disk; Uint8Array values are used directly."},
+				{Name: "data", Type: "{ image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }", Desc: "Tags to merge, grouped by IFD. A null value deletes that tag from the output."},
+				{Name: "opts", Type: "{ dest?: string }", Optional: true, Desc: "Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned."},
+			},
+			ReturnType: "{ format: string; bytes: Uint8Array } | { format: string; path: string }",
+			Returns:    "{format, bytes} with the updated image bytes when no dest, or {format, path} when opts.dest is given.",
+			Errors:     "Throws if the format is not JPEG or PNG (unsupported write target), if src cannot be read, or if dest cannot be written.",
+			Example:    "const out = image.exif.write(jpegBytes, { image: { Artist: \"Alice\" } });\n// out.bytes is the updated JPEG",
+		},
+		"exif.replace": {
+			Summary: "Replace an image's entire EXIF block with the supplied tags (JPEG/PNG only). All pre-existing EXIF is discarded; only the tags in data are written. Returns {format, bytes} or writes to {format, path} when opts.dest is given.",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string | Uint8Array", Desc: "Image path or raw bytes. String values are read from disk; Uint8Array values are used directly."},
+				{Name: "data", Type: "{ image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }", Desc: "The complete new EXIF block grouped by IFD. Any tag not listed is absent from the output."},
+				{Name: "opts", Type: "{ dest?: string }", Optional: true, Desc: "Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned."},
+			},
+			ReturnType: "{ format: string; bytes: Uint8Array } | { format: string; path: string }",
+			Returns:    "{format, bytes} with the updated image bytes when no dest, or {format, path} when opts.dest is given.",
+			Errors:     "Throws if the format is not JPEG or PNG (unsupported write target), if src cannot be read, or if dest cannot be written.",
+			Example:    "const out = image.exif.replace(jpegBytes, { image: { Make: \"sercon\" } });\nconst e = image.exif.read(out.bytes); // e.image.Make === \"sercon\"",
+		},
+		"exif.clear": {
+			Summary: "Remove all EXIF metadata from an image (JPEG/PNG only). Returns {format, bytes} with the stripped image bytes, or writes to {format, path} when opts.dest is given.",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string | Uint8Array", Desc: "Image path or raw bytes. String values are read from disk; Uint8Array values are used directly."},
+				{Name: "opts", Type: "{ dest?: string }", Optional: true, Desc: "Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned."},
+			},
+			ReturnType: "{ format: string; bytes: Uint8Array } | { format: string; path: string }",
+			Returns:    "{format, bytes} with a stripped image (no EXIF) when no dest, or {format, path} when opts.dest is given.",
+			Errors:     "Throws if the format is not JPEG or PNG (unsupported write target), if src cannot be read, or if dest cannot be written.",
+			Example:    "const out = image.exif.clear(jpegBytes);\nconst e = image.exif.read(out.bytes); // e === {}",
+		},
 	}
 }

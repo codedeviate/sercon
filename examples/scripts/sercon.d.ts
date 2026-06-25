@@ -1457,6 +1457,37 @@ declare const image: {
    * @returns Image — a handle exposing read-only width/height/format and chainable transform methods.
    */
   decode(data: Uint8Array): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void };
+  exif: {
+    /**
+     * Remove all EXIF metadata from an image (JPEG/PNG only). Returns {format, bytes} with the stripped image bytes, or writes to {format, path} when opts.dest is given.
+     * @param src Image path or raw bytes. String values are read from disk; Uint8Array values are used directly.
+     * @param opts Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned.
+     * @returns {format, bytes} with a stripped image (no EXIF) when no dest, or {format, path} when opts.dest is given.
+     */
+    clear(src: string | Uint8Array, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string };
+    /**
+     * Read an image's EXIF metadata into a grouped-by-IFD object (image/exif/gps/thumbnail). JPEG/PNG/TIFF return all tags; HEIC/AVIF/RAW return a curated subset. Returns {} when the image has no EXIF.
+     * @param src Image path or raw bytes. String values are read from disk; Uint8Array values are parsed in-memory.
+     * @returns An object grouped by IFD; rationals serialised as [num,den] arrays, GPS latitude/longitude as signed decimals, dates as EXIF strings, binary/undefined-type values as base64.
+     */
+    read(src: string | Uint8Array): { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> };
+    /**
+     * Replace an image's entire EXIF block with the supplied tags (JPEG/PNG only). All pre-existing EXIF is discarded; only the tags in data are written. Returns {format, bytes} or writes to {format, path} when opts.dest is given.
+     * @param src Image path or raw bytes. String values are read from disk; Uint8Array values are used directly.
+     * @param data The complete new EXIF block grouped by IFD. Any tag not listed is absent from the output.
+     * @param opts Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned.
+     * @returns {format, bytes} with the updated image bytes when no dest, or {format, path} when opts.dest is given.
+     */
+    replace(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string };
+    /**
+     * Merge EXIF tags into an image (JPEG/PNG only). Existing tags not mentioned in data are preserved; pass null for a tag value to delete that tag. Returns {format, bytes} or writes to {format, path} when opts.dest is given.
+     * @param src Image path or raw bytes. String values are read from disk; Uint8Array values are used directly.
+     * @param data Tags to merge, grouped by IFD. A null value deletes that tag from the output.
+     * @param opts Optional. When opts.dest is a path, the result is written there and {format, path} is returned; otherwise {format, bytes} is returned.
+     * @returns {format, bytes} with the updated image bytes when no dest, or {format, path} when opts.dest is given.
+     */
+    write(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string };
+  };
   /**
    * Read an image file from disk and decode it into a chainable Image handle. The format is sniffed from the file's magic bytes (PNG/JPEG/GIF/TIFF/BMP/WebP), not the extension. GIF decodes the first frame only.
    * @param path Filesystem path to the image file to read and decode.
