@@ -777,8 +777,8 @@ runtime.log(v); // 42`,
 			Params: []scriptengine.Param{
 				{Name: "src", Type: "string", Desc: "Path to the source PDF."},
 			},
-			ReturnType: "Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>",
-			Returns:    "Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. Fields pdfinfo does not report are omitted.",
+			ReturnType: "Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; creationDate?: string; modDate?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>",
+			Returns:    "Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. creationDate/modDate are the raw pdfinfo date strings when present. Fields pdfinfo does not report are omitted.",
 			Errors:     "Throws if src is missing/empty; if pdfinfo is not on PATH; if pdfinfo exits non-zero (trimmed stderr included); or on timeout.",
 			Example: `const meta = await services.pdf.info("report.pdf");
 runtime.log("pages:", meta.pages, "encrypted:", meta.encrypted);`,

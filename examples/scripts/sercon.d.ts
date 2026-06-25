@@ -1332,9 +1332,9 @@ declare const services: {
     /**
      * Read a PDF's metadata via `pdfinfo`: page count, title/author, encryption, page size, PDF version, and tagging.
      * @param src Path to the source PDF.
-     * @returns Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. Fields pdfinfo does not report are omitted.
+     * @returns Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. creationDate/modDate are the raw pdfinfo date strings when present. Fields pdfinfo does not report are omitted.
      */
-    info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>;
+    info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; creationDate?: string; modDate?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>;
     /**
      * Convert a PDF to a single self-contained HTML document via `pdftohtml` (-i -noframes). Without `dest`, returns the HTML string; with `dest`, writes it there.
      * @param src Path to the source PDF.

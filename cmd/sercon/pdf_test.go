@@ -85,4 +85,12 @@ func TestParsePdfInfo(t *testing.T) {
 	if info["pageSize"] != "300 x 144 pts" || info["pdfVersion"] != "1.4" {
 		t.Fatalf("pageSize/pdfVersion = %v/%v", info["pageSize"], info["pdfVersion"])
 	}
+
+	dated := parsePdfInfo("CreationDate:   Mon Jan  1 00:00:00 2024\nModDate:        Tue Jan  2 00:00:00 2024\n")
+	if dated["creationDate"] != "Mon Jan  1 00:00:00 2024" {
+		t.Fatalf("creationDate = %v", dated["creationDate"])
+	}
+	if dated["modDate"] != "Tue Jan  2 00:00:00 2024" {
+		t.Fatalf("modDate = %v", dated["modDate"])
+	}
 }

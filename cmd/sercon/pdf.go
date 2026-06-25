@@ -127,7 +127,7 @@ func parsePdfInfo(out string) map[string]any {
 	keyMap := map[string]string{
 		"Title": "title", "Author": "author", "Creator": "creator",
 		"Producer": "producer", "Page size": "pageSize", "File size": "fileSize",
-		"PDF version": "pdfVersion",
+		"PDF version": "pdfVersion", "CreationDate": "creationDate", "ModDate": "modDate",
 	}
 	info := map[string]any{}
 	for _, line := range strings.Split(out, "\n") {
@@ -157,6 +157,19 @@ func parsePdfInfo(out string) map[string]any {
 
 const pdfTimeout = 60 * time.Second
 const popplerInstallHint = "install poppler-utils: brew install poppler / apt install poppler-utils"
+
+// optPages reads the pages option, accepting a string ("1-3") or a JS number
+// (coerced to its integer string). Returns "" when absent.
+func optPages(opts map[string]any) string {
+	switch v := opts["pages"].(type) {
+	case string:
+		return v
+	case float64:
+		return strconv.Itoa(int(v))
+	default:
+		return ""
+	}
+}
 
 // requirePDFSrc extracts the positional src path and optional opts map:
 // every pdf op is called as op(src, opts?).
@@ -283,13 +296,13 @@ func pdfToTextOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("services.pdf.toText: %w", err)
 	}
-	first, last, perr := parsePDFPages(optString(opts, "pages", ""))
+	first, last, perr := parsePDFPages(optPages(opts))
 	if perr != nil {
 		return nil, fmt.Errorf("services.pdf.toText: %w", perr)
 	}
 	dest := optString(opts, "dest", "")
 	spec := pdfTextSpec{src: src, dest: dest, firstPage: first, lastPage: last, layout: optBool(opts, "layout", false)}
-	out, rerr := runTool(ctx, toolSpec{bin: "pdftotext", argv: buildPdfTextArgs(spec), timeout: pdfTimeout, installHint: popplerInstallHint})
+	out, rerr := runTool(ctx, toolSpec{bin: "pdftotext", argv: buildPdfTextArgs(spec), timeout: pdfTimeout, installHint: popplerInstallHint, capHint: "pass a dest path to write large output to a file"})
 	if rerr != nil {
 		return nil, fmt.Errorf("services.pdf.toText: %w", rerr)
 	}
@@ -304,7 +317,7 @@ func pdfToHTMLOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("services.pdf.toHtml: %w", err)
 	}
-	first, last, perr := parsePDFPages(optString(opts, "pages", ""))
+	first, last, perr := parsePDFPages(optPages(opts))
 	if perr != nil {
 		return nil, fmt.Errorf("services.pdf.toHtml: %w", perr)
 	}

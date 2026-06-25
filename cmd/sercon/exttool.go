@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -24,6 +25,7 @@ type toolSpec struct {
 	maxOutput      int           // 0 → defaultToolMaxOutput
 	installHint    string        // surfaced when bin is not on PATH
 	combinedOutput bool          // capture stdout+stderr together (for tools that print to stderr, e.g. `-v` version probes)
+	capHint        string        // appended to the output-overflow error (e.g. how to redirect to a file); generic message when empty
 }
 
 // toolAvailable reports whether bin is resolvable on PATH.
@@ -84,7 +86,11 @@ func runTool(ctx context.Context, spec toolSpec) ([]byte, error) {
 		return nil, runCtx.Err()
 	}
 	if stdout.overflow {
-		return nil, fmt.Errorf("%s produced more than %d bytes of output; write to a file (dest) instead", spec.bin, outCap)
+		msg := fmt.Sprintf("%s produced more than %d bytes of output", spec.bin, outCap)
+		if spec.capHint != "" {
+			msg += "; " + spec.capHint
+		}
+		return nil, errors.New(msg)
 	}
 	if err != nil {
 		msg := strings.TrimSpace(stderr.String())

@@ -67,6 +67,38 @@ func TestPdfToImageOp_Bytes(t *testing.T) {
 	}
 }
 
+func TestPdfToImageOp_DestPaths(t *testing.T) {
+	skipNoPoppler(t, "pdftoppm")
+	vm := goja.New()
+	dir := t.TempDir()
+	got, err := pdfToImageOp(context.Background(), callArgs(vm, samplePDF, map[string]any{
+		"dest": dir + "/page", "format": "png",
+	}))
+	if err != nil {
+		t.Fatalf("pdfToImageOp(dest): %v", err)
+	}
+	o, ok := got.(*scriptengine.Ordered)
+	if !ok {
+		t.Fatalf("want *scriptengine.Ordered, got %T", got)
+	}
+	pv, _ := o.Get("paths")
+	paths, _ := pv.([]any)
+	if len(paths) < 1 {
+		t.Fatalf("expected at least one written path, got %v", pv)
+	}
+}
+
+func TestPdfToImageOp_MultiPageRequiresDest(t *testing.T) {
+	// Pure-validation path: no poppler needed (it throws before spawning).
+	vm := goja.New()
+	_, err := pdfToImageOp(context.Background(), callArgs(vm, samplePDF, map[string]any{
+		"firstPage": 1, "lastPage": 2, // a range with no dest must throw
+	}))
+	if err == nil {
+		t.Fatal("multi-page render with no dest must throw")
+	}
+}
+
 func TestPdfToTextOp(t *testing.T) {
 	skipNoPoppler(t, "pdftotext")
 	vm := goja.New()
