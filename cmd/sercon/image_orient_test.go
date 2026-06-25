@@ -25,6 +25,19 @@ func isRed(c color.Color) bool {
 	return r > 0x8000 && g < 0x4000 && b < 0x4000
 }
 
+// redAt returns the (x,y) of the first red pixel in im, or (-1,-1) if none.
+func redAt(im image.Image) (int, int) {
+	bb := im.Bounds()
+	for y := bb.Min.Y; y < bb.Max.Y; y++ {
+		for x := bb.Min.X; x < bb.Max.X; x++ {
+			if isRed(im.At(x, y)) {
+				return x, y
+			}
+		}
+	}
+	return -1, -1
+}
+
 func TestApplyOrientation_Dimensions(t *testing.T) {
 	src := markerImg() // 3x2
 	// 1-4 preserve W x H; 5-8 swap to H x W.
@@ -65,21 +78,32 @@ func TestApplyOrientation_6and8Differ(t *testing.T) {
 	// 6 (90° CW) and 8 (90° CCW) must not produce the same marker position.
 	a := applyOrientation(markerImg(), 6)
 	b := applyOrientation(markerImg(), 8)
-	redAt := func(im image.Image) (int, int) {
-		bb := im.Bounds()
-		for y := bb.Min.Y; y < bb.Max.Y; y++ {
-			for x := bb.Min.X; x < bb.Max.X; x++ {
-				if isRed(im.At(x, y)) {
-					return x, y
-				}
-			}
-		}
-		return -1, -1
-	}
 	ax, ay := redAt(a)
 	bx, by := redAt(b)
 	if ax == bx && ay == by {
 		t.Fatalf("orient(6) and orient(8) put red at the same spot (%d,%d)", ax, ay)
+	}
+}
+
+func TestApplyOrientation_MarkerPositions(t *testing.T) {
+	// Pin the red-marker destination for ALL 8 orientations so a future swap
+	// of (3↔4) or (5↔7) — which preserves dims and would pass the coarser
+	// tests — is caught. Expected coords are the EXIF-defined upright result
+	// for a marker at the source top-left (0,0) of a 3x2 image.
+	cases := []struct{ n, w, h, rx, ry int }{
+		{1, 3, 2, 0, 0}, {2, 3, 2, 2, 0}, {3, 3, 2, 2, 1}, {4, 3, 2, 0, 1},
+		{5, 2, 3, 0, 0}, {6, 2, 3, 1, 0}, {7, 2, 3, 1, 2}, {8, 2, 3, 0, 2},
+	}
+	for _, c := range cases {
+		out := applyOrientation(markerImg(), c.n)
+		b := out.Bounds()
+		if b.Dx() != c.w || b.Dy() != c.h {
+			t.Errorf("orient(%d) dims = %dx%d, want %dx%d", c.n, b.Dx(), b.Dy(), c.w, c.h)
+		}
+		rx, ry := redAt(out)
+		if rx != c.rx || ry != c.ry {
+			t.Errorf("orient(%d) red at (%d,%d), want (%d,%d)", c.n, rx, ry, c.rx, c.ry)
+		}
 	}
 }
 
