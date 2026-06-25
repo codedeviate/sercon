@@ -91,6 +91,10 @@ func doctorRegistry(goos string) []doctorCheck {
 		{name: "chromedriver", category: "webdriver", purpose: "services.webdriver — Chrome driver (must match Chrome major)", binaries: []string{"chromedriver"}},
 		{name: "geckodriver", category: "webdriver", purpose: "services.webdriver — Firefox driver", binaries: []string{"geckodriver"}},
 		{name: "typst", category: "typst", purpose: "services.typst — typesetting compiler", binaries: []string{"typst"}},
+		{name: "pdftoppm", category: "pdf", purpose: "services.pdf — PDF page → image", binaries: []string{"pdftoppm"}, versionArgs: []string{"-v"}},
+		{name: "pdftotext", category: "pdf", purpose: "services.pdf — PDF → text", binaries: []string{"pdftotext"}, versionArgs: []string{"-v"}},
+		{name: "pdftohtml", category: "pdf", purpose: "services.pdf — PDF → HTML", binaries: []string{"pdftohtml"}, versionArgs: []string{"-v"}},
+		{name: "pdfinfo", category: "pdf", purpose: "services.pdf — PDF metadata", binaries: []string{"pdfinfo"}, versionArgs: []string{"-v"}},
 		{name: "recon", category: "http", purpose: "services.exec.http — recon backend", binaries: []string{"recon"}},
 		{name: "curl", category: "http", purpose: "services.exec.http — curl backend", binaries: []string{"curl"}},
 	}

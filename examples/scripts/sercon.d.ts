@@ -1119,7 +1119,7 @@ declare const db: {
   };
 };
 
-/** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, external-requirement diagnostics (doctor). */
+/** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, poppler-backed PDF render/extract, external-requirement diagnostics (doctor). */
 declare const services: {
   agentBrowser: {
     /**
@@ -1317,6 +1317,60 @@ declare const services: {
      * @returns Promise<Array<{ path: string, indexStatus: string, workingStatus: string }>> — one entry per changed path; indexStatus / workingStatus are the porcelain v1 X / Y status characters (e.g. "M", "A", "?"). An empty array means a clean tree.
      */
     status(opts?: { cwd?: string }): Promise<Array<{ path: string; indexStatus: string; workingStatus: string }>>;
+  };
+  pdf: {
+    /**
+     * True when the poppler `pdftoppm` binary is on PATH (the core PDF capability). Sync boolean, resolved once per Run. Gate calls on this — every pdf operation throws a clean error when its binary is absent.
+     * @returns boolean — true if `pdftoppm` is found on PATH.
+     */
+    available: boolean;
+    /**
+     * The active PDF backend name, or null when no backend is available. Currently "poppler" when pdftoppm is on PATH; future-proofs against a backend swap.
+     * @returns string|null — "poppler" when available, otherwise null.
+     */
+    backend: string;
+    /**
+     * Read a PDF's metadata via `pdfinfo`: page count, title/author, encryption, page size, PDF version, and tagging.
+     * @param src Path to the source PDF.
+     * @returns Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. Fields pdfinfo does not report are omitted.
+     */
+    info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>;
+    /**
+     * Convert a PDF to a single self-contained HTML document via `pdftohtml` (-i -noframes). Without `dest`, returns the HTML string; with `dest`, writes it there.
+     * @param src Path to the source PDF.
+     * @param opts pages limits conversion to "N" or "F-L" (1-based). dest writes the HTML to that path instead of returning a string.
+     * @returns Promise<string|{path}> — the HTML when no dest; { path } when dest is set.
+     */
+    toHtml(src: string, opts?: { pages?: string, dest?: string }): Promise<string | { path: string }>;
+    /**
+     * Render PDF page(s) to PNG/JPEG/TIFF via `pdftoppm`. With a single `page` and no `dest`, returns the rendered image as bytes; with a `dest` prefix or a page range, writes files and returns their paths.
+     * @param src Path to the source PDF.
+     * @param opts page selects a single 1-based page; firstPage/lastPage select a range (page wins when set). format defaults to png. dpi sets resolution (default poppler's 150). dest is an output path/prefix; when omitted, a single `page` is returned as bytes; a multi-page/whole-document render REQUIRES `dest` (omitting it throws).
+     * @returns Promise<object> — single page + no dest: { format, page, bytes }. With dest: { format, paths } listing the written files (sorted).
+     */
+    toImage(src: string, opts?: { page?: number, firstPage?: number, lastPage?: number, format?: "png" | "jpeg" | "tiff", dpi?: number, dest?: string }): Promise<{ format: string; page?: number; bytes?: Uint8Array; paths?: string[] }>;
+    /**
+     * Extract text from a PDF via `pdftotext`. Without `dest`, returns the extracted text string; with `dest`, writes it to that file.
+     * @param src Path to the source PDF.
+     * @param opts pages limits extraction to "N" or "F-L" (1-based). layout preserves the original physical layout (-layout). dest writes to a file instead of returning a string (use it for very large documents).
+     * @returns Promise<string|{path}> — the extracted text when no dest; { path } when dest is set.
+     */
+    toText(src: string, opts?: { pages?: string, layout?: boolean, dest?: string }): Promise<string | { path: string }>;
+    /**
+     * Per-binary availability for the poppler tools sercon uses, so a partial install can still serve the operations it covers.
+     * @returns object — each poppler binary mapped to whether it is on PATH.
+     */
+    tools: {
+      pdfinfo: boolean;
+      pdftohtml: boolean;
+      pdftoppm: boolean;
+      pdftotext: boolean;
+    };
+    /**
+     * The poppler version string (from `pdftoppm -v`, falling back to `pdfinfo -v`).
+     * @returns Promise<string> — the trimmed poppler version line.
+     */
+    version(...args: unknown[]): Promise<string>;
   };
   typst: {
     /**

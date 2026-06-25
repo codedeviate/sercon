@@ -535,7 +535,7 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("net", netDocs())
 	e.SetDocs("db", "Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, Valkey, memcached, LDAP, dict.")
 	e.SetMemberDocsStructured("db", dbDocs())
-	e.SetDocs("services", "Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, external-requirement diagnostics (doctor).")
+	e.SetDocs("services", "Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, poppler-backed PDF render/extract, external-requirement diagnostics (doctor).")
 	e.SetMemberDocsStructured("services", servicesDocs())
 	e.SetDocs("tui", "Multi-pane terminal UI: layout, pane, write, focus.")
 	e.SetMemberDocsStructured("tui", tuiDocs())

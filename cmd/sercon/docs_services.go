@@ -741,6 +741,88 @@ await services.typst.compile({ input: "report.typ", output: "/tmp/report.png", p
 });
 runtime.log(v); // 42`,
 		},
+		// pdf namespace docs (poppler-backed external-CLI fallback)
+		"pdf.available": {
+			Summary:    "True when the poppler `pdftoppm` binary is on PATH (the core PDF capability). Sync boolean, resolved once per Run. Gate calls on this — every pdf operation throws a clean error when its binary is absent.",
+			ReturnType: "boolean",
+			Returns:    "boolean — true if `pdftoppm` is found on PATH.",
+			Errors:     "Never throws.",
+			Example: `if (!services.pdf.available) {
+  runtime.log("install poppler-utils first (brew install poppler / apt install poppler-utils)");
+}`,
+		},
+		"pdf.backend": {
+			Summary:    "The active PDF backend name, or null when no backend is available. Currently \"poppler\" when pdftoppm is on PATH; future-proofs against a backend swap.",
+			ReturnType: "string | null",
+			Returns:    "string|null — \"poppler\" when available, otherwise null.",
+			Errors:     "Never throws.",
+			Example:    `runtime.log("pdf backend:", services.pdf.backend ?? "none");`,
+		},
+		"pdf.tools": {
+			Summary:    "Per-binary availability for the poppler tools sercon uses, so a partial install can still serve the operations it covers.",
+			ReturnType: "{ pdftoppm: boolean; pdftotext: boolean; pdftohtml: boolean; pdfinfo: boolean }",
+			Returns:    "object — each poppler binary mapped to whether it is on PATH.",
+			Errors:     "Never throws.",
+			Example:    `if (!services.pdf.tools.pdftotext) runtime.log("text extraction unavailable");`,
+		},
+		"pdf.version": {
+			Summary:    "The poppler version string (from `pdftoppm -v`, falling back to `pdfinfo -v`).",
+			ReturnType: "Promise<string>",
+			Returns:    "Promise<string> — the trimmed poppler version line.",
+			Errors:     "Throws if no poppler binary is on PATH, or on timeout / context cancellation.",
+			Example:    `runtime.log(await services.pdf.version());`,
+		},
+		"pdf.info": {
+			Summary: "Read a PDF's metadata via `pdfinfo`: page count, title/author, encryption, page size, PDF version, and tagging.",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string", Desc: "Path to the source PDF."},
+			},
+			ReturnType: "Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>",
+			Returns:    "Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. Fields pdfinfo does not report are omitted.",
+			Errors:     "Throws if src is missing/empty; if pdfinfo is not on PATH; if pdfinfo exits non-zero (trimmed stderr included); or on timeout.",
+			Example: `const meta = await services.pdf.info("report.pdf");
+runtime.log("pages:", meta.pages, "encrypted:", meta.encrypted);`,
+		},
+		"pdf.toImage": {
+			Summary: "Render PDF page(s) to PNG/JPEG/TIFF via `pdftoppm`. With a single `page` and no `dest`, returns the rendered image as bytes; with a `dest` prefix or a page range, writes files and returns their paths.",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string", Desc: "Path to the source PDF."},
+				{Name: "opts", Type: "{ page?: number, firstPage?: number, lastPage?: number, format?: \"png\" | \"jpeg\" | \"tiff\", dpi?: number, dest?: string }", Optional: true, Desc: "page selects a single 1-based page; firstPage/lastPage select a range (page wins when set). format defaults to png. dpi sets resolution (default poppler's 150). dest is an output path/prefix; when omitted, a single `page` is returned as bytes; a multi-page/whole-document render REQUIRES `dest` (omitting it throws)."},
+			},
+			ReturnType: "Promise<{ format: string; page?: number; bytes?: Uint8Array; paths?: string[] }>",
+			Returns:    "Promise<object> — single page + no dest: { format, page, bytes }. With dest: { format, paths } listing the written files (sorted).",
+			Errors:     "Throws if src is missing; if format is not png/jpeg/tiff; if the page range is invalid; if pdftoppm is not on PATH; if pdftoppm exits non-zero; if a multi-page/whole-document render is requested without a `dest`; or on timeout.",
+			Example: `// Single page → PNG bytes.
+const img = await services.pdf.toImage("report.pdf", { page: 1, format: "png" });
+runtime.log(img.format, img.bytes.length);
+// All pages → files on disk.
+const all = await services.pdf.toImage("report.pdf", { dest: "/tmp/page" });
+runtime.log("wrote", all.paths.length, "images");`,
+		},
+		"pdf.toText": {
+			Summary: "Extract text from a PDF via `pdftotext`. Without `dest`, returns the extracted text string; with `dest`, writes it to that file.",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string", Desc: "Path to the source PDF."},
+				{Name: "opts", Type: "{ pages?: string, layout?: boolean, dest?: string }", Optional: true, Desc: "pages limits extraction to \"N\" or \"F-L\" (1-based). layout preserves the original physical layout (-layout). dest writes to a file instead of returning a string (use it for very large documents)."},
+			},
+			ReturnType: "Promise<string | { path: string }>",
+			Returns:    "Promise<string|{path}> — the extracted text when no dest; { path } when dest is set.",
+			Errors:     "Throws if src is missing; if pages is malformed; if pdftotext is not on PATH; if pdftotext exits non-zero; if the buffered output exceeds the size cap (use dest); or on timeout.",
+			Example: `const txt = await services.pdf.toText("report.pdf", { pages: "1-2" });
+runtime.log(txt.slice(0, 80));`,
+		},
+		"pdf.toHtml": {
+			Summary: "Convert a PDF to a single self-contained HTML document via `pdftohtml` (-i -noframes). Without `dest`, returns the HTML string; with `dest`, writes it there.",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string", Desc: "Path to the source PDF."},
+				{Name: "opts", Type: "{ pages?: string, dest?: string }", Optional: true, Desc: "pages limits conversion to \"N\" or \"F-L\" (1-based). dest writes the HTML to that path instead of returning a string."},
+			},
+			ReturnType: "Promise<string | { path: string }>",
+			Returns:    "Promise<string|{path}> — the HTML when no dest; { path } when dest is set.",
+			Errors:     "Throws if src is missing; if pages is malformed; if pdftohtml is not on PATH; if pdftohtml exits non-zero; or on timeout.",
+			Example: `const html = await services.pdf.toHtml("report.pdf", { pages: "1" });
+runtime.log(html.length, "bytes of HTML");`,
+		},
 		"doctor": {
 			Summary: "Report on every external tool sercon can use (git, gh, AI providers, agent-browser, chromedriver/geckodriver, typst, recon/curl, clipboard/image tools): installed?, version, purpose — and validate the chromedriver↔Chrome major-version match. Optionally assert a script's prerequisites via `requires`.",
 			Params: []scriptengine.Param{
