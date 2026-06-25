@@ -128,6 +128,19 @@ func filterByName(name string) imaging.ResampleFilter {
 	}
 }
 
+// optAutoOrient reports whether opts is an object with autoOrient === true.
+func optAutoOrient(vm *goja.Runtime, arg goja.Value) bool {
+	if arg == nil || goja.IsUndefined(arg) || goja.IsNull(arg) {
+		return false
+	}
+	o, ok := arg.Export().(map[string]any)
+	if !ok {
+		return false
+	}
+	b, _ := o["autoOrient"].(bool)
+	return b
+}
+
 // imageNamespace builds the top-level `image` global.
 func imageNamespace(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 	return map[string]any{
@@ -141,6 +154,9 @@ func imageNamespace(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 			if err != nil {
 				panic(vm.NewGoError(err))
 			}
+			if optAutoOrient(vm, call.Argument(1)) {
+				img = applyOrientation(img, exifOrientation(data, format))
+			}
 			return newImageHandle(vm, img, format)
 		},
 		"decode": func(call goja.FunctionCall) goja.Value {
@@ -151,6 +167,9 @@ func imageNamespace(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 			img, format, err := decodeImage(data)
 			if err != nil {
 				panic(vm.NewGoError(err))
+			}
+			if optAutoOrient(vm, call.Argument(1)) {
+				img = applyOrientation(img, exifOrientation(data, format))
 			}
 			return newImageHandle(vm, img, format)
 		},
@@ -244,6 +263,14 @@ func newImageHandle(vm *goja.Runtime, img image.Image, srcFormat string) goja.Va
 	_ = obj.Set("rotate270", func(goja.FunctionCall) goja.Value { return wrap(imaging.Rotate270(img)) })
 	_ = obj.Set("flipH", func(goja.FunctionCall) goja.Value { return wrap(imaging.FlipH(img)) })
 	_ = obj.Set("flipV", func(goja.FunctionCall) goja.Value { return wrap(imaging.FlipV(img)) })
+	_ = obj.Set("orient", func(call goja.FunctionCall) goja.Value {
+		nf := call.Argument(0).ToFloat()
+		n := int(nf)
+		if float64(n) != nf || n < 1 || n > 8 {
+			panic(vm.NewTypeError("image.orient: n must be an integer 1..8 (EXIF orientation)"))
+		}
+		return wrap(applyOrientation(img, n))
+	})
 	_ = obj.Set("brightness", func(call goja.FunctionCall) goja.Value { return wrap(imaging.AdjustBrightness(img, argFloat(call, 0))) })
 	_ = obj.Set("contrast", func(call goja.FunctionCall) goja.Value { return wrap(imaging.AdjustContrast(img, argFloat(call, 0))) })
 	_ = obj.Set("gamma", func(call goja.FunctionCall) goja.Value { return wrap(imaging.AdjustGamma(img, argFloat(call, 0))) })
