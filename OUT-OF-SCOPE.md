@@ -31,16 +31,6 @@ slipped in).
   effort with no demand signal. Re-promote if a library appears or
   someone actually needs PDF417 round-tripping.
 
-## Archives & document handling
-
-- **`pdf_export_page(src, page, dest_or_opts?, opts?)`** — Render one
-  PDF page to PNG/JPEG/WEBP. No trustworthy *pure-Go* PDF renderer exists
-  today (`unidoc/unipdf` is commercial-licensed; MuPDF/Poppler are C/cgo, so
-  out). **Viable path:** the **External-CLI fallbacks** direction below —
-  shell out to `pdftoppm` (or `mutool`), feature-detected. **Reason parked:**
-  waits on that fallback mechanism landing first. Re-promote alongside it, or
-  sooner if a pure-Go renderer appears.
-
 ## Databases
 
 The native pure-Go SQL engines have all shipped (`db.sqlite`, `db.postgres`,
@@ -120,51 +110,44 @@ read+write, interface enumeration, layer decode — all pure-Go; see
 
 ## External-CLI fallbacks
 
-A direction shift worth recording: allow **optional, feature-detected
-fallbacks to well-known external commands** for capabilities that have no
-trustworthy pure-Go path. This mirrors the pattern `services.git` /
-`services.gh` / `services.ai` / `services.agentBrowser` already use — gate on
-the binary being on `PATH` (an `available` boolean over `exec.LookPath`) and
-trap with a clean thrown error when it's absent. The static pure-Go binary
-stays fully functional without any of these; they only enrich behaviour when
-the tool is installed.
+**Settled pattern.** External-CLI bindings are **optional, feature-detected
+fallbacks** for capabilities that have no trustworthy pure-Go path. The
+established charter (codified via `services.pdf`):
 
-**Each tool is opt-in per explicit maintainer authorization** — listing one
-here is a candidate, not a green light. Don't wire any of these in without an
-explicit go-ahead for that specific tool. Candidate tools and what they'd
-unlock:
-- **poppler-utils** — `pdftoppm` (PDF page → PNG/JPEG), `pdftohtml`,
-  `pdftotext`. Unblocks the deferred `pdf_export_page` plus PDF text/HTML
-  extraction.
+- Namespaced under a capability-named `services.*` global (e.g. `services.pdf`,
+  `services.typst`).
+- Sync `available` boolean (over `exec.LookPath`) + `backend` string for
+  introspection; per-binary `tools` map when multiple binaries are involved.
+- **No shell.** All execs go through the shared `runTool` helper: no shell
+  interpretation, `--` separator before path args to prevent flag injection,
+  per-call timeout, and an output-cap to prevent memory overruns.
+- **Each new tool requires explicit maintainer authorization** — listing a
+  candidate here is not a green light. The static pure-Go binary stays fully
+  functional without any of these; they only enrich behaviour when the tool
+  is installed.
+
+**Already wired (authorized):**
+- **Clipboard tools** (`pbcopy`/`pbpaste`, `xclip`/`xsel`/`wl-clipboard`,
+  `clip`/PowerShell `Get-Clipboard`) — back `runtime.clipboard` (text +
+  PNG image), feature-detected.
+- **poppler-utils** (`pdftoppm`/`pdftotext`/`pdftohtml`/`pdfinfo`) — backs
+  `services.pdf.*` (render/extract PDFs: `info`, `toImage`, `toText`,
+  `toHtml`). Shipped in v0.69.0; PDF render/extraction is now fully handled
+  by this namespace.
+- **typst** CLI — backs `services.typst.*`, refactored onto the shared
+  `runTool` helper in the same release.
+
+**Remaining candidates** (follow the `services.pdf` pattern when authorized):
 - **LaTeX** — `pdflatex` / `xelatex` / `tectonic` for `.tex` → PDF.
 - **ImageMagick / GraphicsMagick** — `magick` / `convert` for image
   transforms beyond the pure-Go image stack.
 - **Ghostscript** (`gs`), **pandoc** (document conversion), **ffmpeg**
   (media) — same opt-in, feature-detected model.
 
-**Design calls to settle:** where these live (a `services.tools.*` /
-`services.pdf.*` namespace vs. per-capability bindings); how strictly to
-validate args (they shell out — no shell injection, no arbitrary paths
-without intent); and whether to expose a generic "run a known tool with
-structured args" escape hatch alongside typed per-tool bindings.
-**Reason it's parked:** the stance is "minimise external-CLI dependencies
-unless the maintainer requests one," so each tool wants an explicit go-ahead
-plus a spec + guardrail design before building. (The dual-use boundary is
-lighter here than for the security harness below, but the same "intentional,
-authorized, documented" rule applies.)
-
-**Already wired (authorized):** the clipboard tools — `pbcopy`/`pbpaste`
-(macOS), `xclip`/`xsel`/`wl-clipboard` (Linux), `clip`/PowerShell `Get-Clipboard`
-(Windows) — now back `runtime.clipboard` (text), feature-detected on PATH with a
-clean thrown error and `available: false` when none is installed.
-
-- **Clipboard image (PNG).** Shipped — `runtime.clipboard` now does both text
-  and PNG image I/O (`imageAvailable`, `readImage()`, `writeImage(png)`).
-  Backends: macOS `pngpaste` (read) + `osascript` (write), Linux
-  `wl-paste`/`xclip -t image/png`, Windows PowerShell; feature-detected with a
-  clean thrown error when no image backend is present. Residual (still parked):
-  non-PNG formats (JPEG/TIFF), RTF/HTML/file-list clipboard, clipboard
-  watching. Re-promote on demand.
+**Residual clipboard items (still parked):** `runtime.clipboard` covers text
+and PNG image I/O (macOS `pngpaste`/`osascript`, Linux `wl-paste`/`xclip`,
+Windows PowerShell). Remaining: non-PNG formats (JPEG/TIFF), RTF/HTML/file-list
+clipboard, clipboard watching. Re-promote on demand.
 
 - **`image` v2 (parked).** The v1 `image` global (shipped — decode/encode
   PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in, and a chainable raster `Image`

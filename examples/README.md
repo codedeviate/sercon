@@ -76,6 +76,7 @@ Or pick individual scripts:
 | `webdriver-cdp-oopif.ts` | `services.webdriver` `cdpClick` across a true out-of-process iframe (cross-*site*), plus `targets()`/`attach()` — routes input over a browser-level CDP connection (the Klarna "Pay order" case). Chrome-only. |
 | `fs-report.ts` | `fs` file API (`writeText`/`writeBytes`/`readText`/`readBytes`/`mkdir`/`exists`/`remove`/`stat`) — builds an illustrated per-step screenshot report; captures real screenshots when a WebDriver is present, else records steps without images. |
 | `typst.ts` | `services.typst` — compile inline Typst to PDF bytes + PNG file, version/fonts/query; self-skips without the typst CLI. |
+| `pdf-extract.ts` | Render/extract PDFs via poppler (`services.pdf`): `info`, `toImage` (page 1 → PNG bytes), `toText`; self-skips without poppler. |
 | `doctor.ts` | `services.doctor()` — report external tool requirements (installed/version/conflict) and assert required features (e.g. `["git"]`); `--doctor` is the CLI form. |
 | `server-http.ts` | `server.http.listen` — minimal HTTP server with routing and middleware (logger); self-tests routes via `net.http.get` then closes. |
 | `server-static.ts` | `server.http.static` — mount a directory tree at a URL prefix; self-tests via `net.http.get` then closes. |

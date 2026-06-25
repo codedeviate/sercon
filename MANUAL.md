@@ -1628,6 +1628,8 @@ unknown provider, or a timeout throw).
   See the subsection below.
 - `services.typst.*` — Typst typesetting via the external `typst` CLI.
   See the subsection below.
+- `services.pdf.*` — PDF render/extract via the external poppler-utils
+  CLI tools. See the subsection below.
 
 #### `services.agentBrowser`
 
@@ -2540,6 +2542,75 @@ if (!services.typst.available) {
     selector: "<answer>", field: "value", one: true,
   });
   runtime.log("answer:", v); // 42
+}
+```
+
+#### `services.pdf`
+
+External-CLI binding to [poppler-utils](https://poppler.freedesktop.org/).
+Every call shells out to the relevant poppler binary (`pdftoppm`,
+`pdftotext`, `pdftohtml`, `pdfinfo`) via the shared `runTool` helper — no
+shell, no cgo. Follows the same opt-in, feature-detected model as
+`services.typst` / `services.git` / `services.agentBrowser`.
+
+**Availability gate.** `services.pdf.available` is a sync boolean —
+true when `pdfinfo` is on PATH. Gate on it; every other pdf binding throws
+a clean error when the tool is absent. Install with `brew install poppler`
+(macOS) or `apt install poppler-utils` (Debian/Ubuntu).
+
+**Granular tool availability.** `services.pdf.tools` exposes per-binary
+flags (`pdftoppm`, `pdftotext`, `pdftohtml`, `pdfinfo`) so scripts can
+adapt when only a subset of poppler is installed.
+
+**Surface.**
+
+- `services.pdf.available` — `boolean`. True when `pdfinfo` is on PATH.
+- `services.pdf.backend` — `string`. Always `"poppler"`.
+- `services.pdf.tools` — `{ pdftoppm, pdftotext, pdftohtml, pdfinfo: boolean }`.
+  Per-binary availability flags.
+- `services.pdf.version()` — `Promise<string>`. The trimmed `pdfinfo -v`
+  version line.
+- `services.pdf.info(src)` — `Promise<{ pages, title?, author?, subject?, creator?, producer?, creationDate?, modDate? }>`.
+  Document metadata from `pdfinfo`.
+- `services.pdf.toImage(src, opts?)` — `Promise<{ format, bytes?, path? }>`.
+  Render one or more pages to raster images via `pdftoppm`.
+  - **Single-page, no `dest`:** `{ page: N }` (1-based) returns
+    `{ format, bytes: Uint8Array }` — PNG bytes in memory.
+  - **Any other case:** a `dest` path is required; the file(s) are written
+    there and `{ format, path }` is returned. Omitting `dest` when
+    rendering multiple pages throws.
+  - Options: `page` (1-based integer), `pages` (range `[first, last]`),
+    `format` (`"png"` | `"jpeg"` | `"tiff"`, default `"png"`), `dpi`
+    (resolution, default 150), `dest` (output path), `timeout` (ms,
+    default 60 000).
+- `services.pdf.toText(src, opts?)` — `Promise<string>`. Extract plain
+  text via `pdftotext`. Options: `pages` (`[first, last]`), `layout`
+  (`boolean`, preserve physical layout), `timeout` (ms).
+- `services.pdf.toHtml(src, opts?)` — `Promise<string>`. Extract HTML via
+  `pdftohtml`. Options: `pages` (`[first, last]`), `noFrames` (boolean),
+  `timeout` (ms).
+
+```ts
+if (!services.pdf.available) {
+  runtime.log("install poppler (brew install poppler) first");
+} else {
+  runtime.log("pdf backend:", services.pdf.backend,
+              "| version:", await services.pdf.version());
+
+  const src = "cmd/sercon/testdata/sample.pdf";
+  const meta = await services.pdf.info(src);
+  runtime.log("pages:", meta.pages);
+
+  // Render page 1 to PNG bytes (single-page + no dest → bytes).
+  const img = await services.pdf.toImage(src, { page: 1, format: "png" });
+  runtime.log(img.format, "bytes:", img.bytes.length); // e.g. "png bytes: 4459"
+
+  // Render all pages to disk (multi-page requires a dest path).
+  await services.pdf.toImage(src, { dest: "/tmp/out.png" });
+
+  // Extract text.
+  const txt = await services.pdf.toText(src);
+  runtime.log("text snippet:", txt.trim().slice(0, 40));
 }
 ```
 
@@ -7022,7 +7093,7 @@ await srv.close();
 
 ### services
 
-Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, external-requirement diagnostics (doctor).
+Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, poppler-backed PDF render/extract, external-requirement diagnostics (doctor).
 
 #### services.agentBrowser.auth
 
@@ -7629,6 +7700,175 @@ Parsed `git status --porcelain` entries: { path, indexStatus, workingStatus }.
 ```ts
 for (const e of await services.git.status())
   runtime.log(e.indexStatus + e.workingStatus, e.path);
+```
+
+#### services.pdf.available
+
+```
+available: boolean
+```
+
+True when the poppler `pdftoppm` binary is on PATH (the core PDF capability). Sync boolean, resolved once per Run. Gate calls on this — every pdf operation throws a clean error when its binary is absent.
+
+**Returns:** boolean — true if `pdftoppm` is found on PATH.
+
+**Throws:** Never throws.
+
+```ts
+if (!services.pdf.available) {
+  runtime.log("install poppler-utils first (brew install poppler / apt install poppler-utils)");
+}
+```
+
+#### services.pdf.backend
+
+```
+backend: string | null
+```
+
+The active PDF backend name, or null when no backend is available. Currently "poppler" when pdftoppm is on PATH; future-proofs against a backend swap.
+
+**Returns:** string|null — "poppler" when available, otherwise null.
+
+**Throws:** Never throws.
+
+```ts
+runtime.log("pdf backend:", services.pdf.backend ?? "none");
+```
+
+#### services.pdf.info
+
+```
+info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>
+```
+
+Read a PDF's metadata via `pdfinfo`: page count, title/author, encryption, page size, PDF version, and tagging.
+
+**Parameters**
+
+- `src` *(string)* — Path to the source PDF.
+
+**Returns:** Promise<object> — best-effort metadata; `pages` is the page count and drives multi-page loops. Fields pdfinfo does not report are omitted.
+
+**Throws:** Throws if src is missing/empty; if pdfinfo is not on PATH; if pdfinfo exits non-zero (trimmed stderr included); or on timeout.
+
+```ts
+const meta = await services.pdf.info("report.pdf");
+runtime.log("pages:", meta.pages, "encrypted:", meta.encrypted);
+```
+
+#### services.pdf.toHtml
+
+```
+toHtml(src: string, opts?: { pages?: string, dest?: string }): Promise<string | { path: string }>
+```
+
+Convert a PDF to a single self-contained HTML document via `pdftohtml` (-i -noframes). Without `dest`, returns the HTML string; with `dest`, writes it there.
+
+**Parameters**
+
+- `src` *(string)* — Path to the source PDF.
+- `opts` *({ pages?: string, dest?: string }, optional)* — pages limits conversion to "N" or "F-L" (1-based). dest writes the HTML to that path instead of returning a string.
+
+**Returns:** Promise<string|{path}> — the HTML when no dest; { path } when dest is set.
+
+**Throws:** Throws if src is missing; if pages is malformed; if pdftohtml is not on PATH; if pdftohtml exits non-zero; or on timeout.
+
+```ts
+const html = await services.pdf.toHtml("report.pdf", { pages: "1" });
+runtime.log(html.length, "bytes of HTML");
+```
+
+#### services.pdf.toImage
+
+```
+toImage(src: string, opts?: { page?: number, firstPage?: number, lastPage?: number, format?: "png" | "jpeg" | "tiff", dpi?: number, dest?: string }): Promise<{ format: string; page?: number; bytes?: Uint8Array; paths?: string[] }>
+```
+
+Render PDF page(s) to PNG/JPEG/TIFF via `pdftoppm`. With a single `page` and no `dest`, returns the rendered image as bytes; with a `dest` prefix or a page range, writes files and returns their paths.
+
+**Parameters**
+
+- `src` *(string)* — Path to the source PDF.
+- `opts` *({ page?: number, firstPage?: number, lastPage?: number, format?: "png" | "jpeg" | "tiff", dpi?: number, dest?: string }, optional)* — page selects a single 1-based page; firstPage/lastPage select a range (page wins when set). format defaults to png. dpi sets resolution (default poppler's 150). dest is an output path/prefix; when omitted, a single `page` is returned as bytes; a multi-page/whole-document render REQUIRES `dest` (omitting it throws).
+
+**Returns:** Promise<object> — single page + no dest: { format, page, bytes }. With dest: { format, paths } listing the written files (sorted).
+
+**Throws:** Throws if src is missing; if format is not png/jpeg/tiff; if the page range is invalid; if pdftoppm is not on PATH; if pdftoppm exits non-zero; if a multi-page/whole-document render is requested without a `dest`; or on timeout.
+
+```ts
+// Single page → PNG bytes.
+const img = await services.pdf.toImage("report.pdf", { page: 1, format: "png" });
+runtime.log(img.format, img.bytes.length);
+// All pages → files on disk.
+const all = await services.pdf.toImage("report.pdf", { dest: "/tmp/page" });
+runtime.log("wrote", all.paths.length, "images");
+```
+
+#### services.pdf.toText
+
+```
+toText(src: string, opts?: { pages?: string, layout?: boolean, dest?: string }): Promise<string | { path: string }>
+```
+
+Extract text from a PDF via `pdftotext`. Without `dest`, returns the extracted text string; with `dest`, writes it to that file.
+
+**Parameters**
+
+- `src` *(string)* — Path to the source PDF.
+- `opts` *({ pages?: string, layout?: boolean, dest?: string }, optional)* — pages limits extraction to "N" or "F-L" (1-based). layout preserves the original physical layout (-layout). dest writes to a file instead of returning a string (use it for very large documents).
+
+**Returns:** Promise<string|{path}> — the extracted text when no dest; { path } when dest is set.
+
+**Throws:** Throws if src is missing; if pages is malformed; if pdftotext is not on PATH; if pdftotext exits non-zero; if the buffered output exceeds the size cap (use dest); or on timeout.
+
+```ts
+const txt = await services.pdf.toText("report.pdf", { pages: "1-2" });
+runtime.log(txt.slice(0, 80));
+```
+
+#### services.pdf.tools
+
+Per-binary availability for the poppler tools sercon uses, so a partial install can still serve the operations it covers.
+
+#### services.pdf.tools.pdfinfo
+
+```
+pdfinfo
+```
+
+#### services.pdf.tools.pdftohtml
+
+```
+pdftohtml
+```
+
+#### services.pdf.tools.pdftoppm
+
+```
+pdftoppm
+```
+
+#### services.pdf.tools.pdftotext
+
+```
+pdftotext
+```
+
+#### services.pdf.version
+
+```
+version(...args: unknown[]): Promise<string>
+```
+
+The poppler version string (from `pdftoppm -v`, falling back to `pdfinfo -v`).
+
+**Returns:** Promise<string> — the trimmed poppler version line.
+
+**Throws:** Throws if no poppler binary is on PATH, or on timeout / context cancellation.
+
+```ts
+runtime.log(await services.pdf.version());
 ```
 
 #### services.typst.available

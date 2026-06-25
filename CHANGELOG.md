@@ -8,6 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `services.pdf.*` — poppler-backed PDF render/extract (`available`, `backend`,
+  `tools`, `version()`, `info()`, `toImage()`, `toText()`, `toHtml()`),
+  feature-detected and enrichment-only. Backed by poppler-utils (pdftoppm /
+  pdftotext / pdftohtml / pdfinfo); registered in `services.doctor` under a
+  `pdf` category.
+- Shared external-CLI helper (`runTool` / `toolAvailable` / `safePathArgs`):
+  no-shell exec with timeout, output cap, and a `--` flag-injection guard.
+
+### Changed
+- `services.typst` now runs through the shared external-CLI helper
+  (behaviour-preserving internal refactor).
+
 ## [0.68.0] — 2026-06-24
 
 ### Added

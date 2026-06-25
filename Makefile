@@ -114,6 +114,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/webdriver-cdp-oopif.ts \
 	examples/scripts/fs-report.ts \
 	examples/scripts/typst.ts \
+	examples/scripts/pdf-extract.ts \
 	examples/scripts/doctor.ts \
 	examples/scripts/paymentproviders-kcov3.ts \
 	examples/scripts/paymentproviders-nets.ts \
