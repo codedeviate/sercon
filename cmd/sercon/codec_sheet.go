@@ -252,6 +252,14 @@ func toRows(vm *goja.Runtime, rowsAny []any) [][]any {
 		if !ok {
 			panic(vm.NewTypeError("codec.sheet.write: each row must be an array of cells"))
 		}
+		for _, c := range cells {
+			switch c.(type) {
+			case nil, string, bool, float64, int64, int:
+				// ok: a primitive Cell value (string|number|boolean|null)
+			default:
+				panic(vm.NewTypeError(fmt.Sprintf("codec.sheet.write: each cell must be string|number|boolean|null, got %T", c)))
+			}
+		}
 		rows[i] = cells
 	}
 	return rows

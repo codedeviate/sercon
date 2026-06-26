@@ -117,3 +117,15 @@ func TestSheetGoja_WriteNoOptsThrowsFormatRequired(t *testing.T) {
 		t.Fatalf("error should mention format, got: %v", err)
 	}
 }
+
+// A non-primitive cell (object/array) must throw a clean TypeError rather than
+// silently serializing Go-syntax garbage like "map[a:1]" or "[1 2]".
+func TestSheetGoja_NonPrimitiveCellThrows(t *testing.T) {
+	vm := sheetVM(t)
+	if _, err := vm.RunString(`sheet.write([[ {a:1} ]], { format: "csv" })`); err == nil {
+		t.Fatal("an object cell should throw")
+	}
+	if _, err := vm.RunString(`sheet.write([[ [1,2] ]], { format: "xlsx" })`); err == nil {
+		t.Fatal("an array cell should throw")
+	}
+}
