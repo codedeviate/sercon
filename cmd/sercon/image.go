@@ -38,6 +38,14 @@ func decodeImage(data []byte) (image.Image, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("image.decode: unsupported or corrupt image: %w", err)
 	}
+	if format == "apng" {
+		// kettek/apng registers an "apng" matcher sharing PNG's magic bytes;
+		// sercon treats the container as png — animated decoding is handled
+		// explicitly by decodeFrames. Containing the normalization here keeps
+		// EXIF dispatch, autoOrient, exif.write, and the .format property all
+		// reporting "png" without scattering "apng" cases across the codebase.
+		format = "png"
+	}
 	return img, format, nil
 }
 
@@ -308,7 +316,7 @@ func jsToAnimDoc(vm *goja.Runtime, specArg goja.Value) animDoc {
 		panic(vm.NewTypeError("image.encodeFrames: spec.frames is required"))
 	}
 	arr := framesV.ToObject(vm)
-	n := int(arr.Get("length").ToInteger())
+	n := jsInt(arr, "length") // nil-safe: an object with no length yields 0, not a crash
 	for i := 0; i < n; i++ {
 		fo := arr.Get(fmt.Sprintf("%d", i)).ToObject(vm)
 		gi := fo.Get("image")

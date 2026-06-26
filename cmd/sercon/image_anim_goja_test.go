@@ -53,3 +53,13 @@ func TestEncodeFrames_BadFrameImageThrows(t *testing.T) {
 		t.Fatal("a frame without a real Image handle should throw")
 	}
 }
+
+// TestEncodeFrames_NonArrayFramesThrows guards the unguarded length access:
+// spec.frames as a plain object (no length property) must throw cleanly, not
+// SIGSEGV on a nil goja.Value from arr.Get("length").
+func TestEncodeFrames_NonArrayFramesThrows(t *testing.T) {
+	vm := animVM(t)
+	if _, err := vm.RunString(`image.encodeFrames({ frames: {} }, { format: "gif" })`); err == nil {
+		t.Fatal("frames object with no length should throw (empty → gif requires a frame), not crash")
+	}
+}

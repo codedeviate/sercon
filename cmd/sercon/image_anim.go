@@ -229,7 +229,7 @@ func decodeFramesAny(data []byte) (animDoc, error) {
 	switch format {
 	case "gif":
 		return decodeFramesGIF(data)
-	case "png", "apng":
+	case "png":
 		return decodeFramesAPNG(data)
 	default:
 		img, _, derr := decodeImage(data)
