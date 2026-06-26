@@ -140,7 +140,8 @@ examples/scripts/server-sse.ts \
 	examples/scripts/advanced/sse-stream.ts \
 	examples/scripts/web-feed.ts \
 	examples/scripts/web-sitemap.ts \
-	examples/scripts/web-html.ts
+	examples/scripts/web-html.ts \
+	examples/scripts/sheet.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon

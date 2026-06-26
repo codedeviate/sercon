@@ -867,6 +867,10 @@ Binary-format codecs (was `format` in v0.8.0). Members:
   string form); surrounding whitespace is trimmed and mixed text/element
   ordering is not preserved. Cycles, mismatched tags, multiple roots, and
   malformed XML throw.
+- `codec.sheet.read(src, opts?)` / `codec.sheet.write(model, opts)` —
+  tabular data (CSV / TSV / XLSX) to/from a workbook model. XLSX cells are
+  typed (numbers → `number`, bools → `boolean`, empty → `null`); CSV/TSV
+  cells are always `string`. See §5.5.7 below.
 
 #### 5.5.1 `codec.compression` — compress / decompress
 
@@ -1003,6 +1007,72 @@ type, so `int` and `float` collapse the same way `JSON.stringify` does
 (e.g. `1.0` may re-emit as `1`). Decoded objects preserve a stable key
 order, so re-encoding is byte-stable — safe for canonical-JSON / payment
 hashing.
+
+#### 5.5.7 `codec.sheet` — tabular CSV / TSV / XLSX
+
+Read and write spreadsheet data. Both functions are **synchronous**.
+
+**Workbook model:**
+
+```
+{
+  format: "csv" | "tsv" | "xlsx",
+  sheets: [
+    { name: string, rows: (string | number | boolean | null)[][] },
+    …
+  ]
+}
+```
+
+A *cell* is a typed primitive. XLSX files preserve types: numeric cells come
+back as `number`, boolean cells as `boolean`, and empty cells as `null`.
+CSV and TSV are untyped text formats — every cell is always a `string`.
+
+---
+
+- `codec.sheet.read(src, opts?): { format, sheets }` — reads a file path
+  **or** `Uint8Array` bytes. Format is auto-detected (XLSX by its ZIP magic
+  bytes `PK\x03\x04`; everything else as CSV). A `.tsv` file extension also
+  triggers TSV. Pass `opts.format` to override the detection (e.g. force
+  `"tsv"` for tab-delimited bytes with no extension). CSV/TSV produces a
+  single-sheet workbook; the sheet name is the file's basename (or `"Sheet1"`
+  when reading raw bytes). XLSX produces all sheets in document order.
+
+- `codec.sheet.write(model, opts): { format, bytes? } | { format, path? }` —
+  encodes to XLSX, CSV, or TSV. `model` is either:
+  - A workbook object: `{ sheets: [{ name?, rows }] }` — one or more named
+    sheets (name defaults to `Sheet1`, `Sheet2`, …).
+  - A bare 2D array: `(string | number | boolean | null)[][]` — shorthand for
+    a single sheet.
+
+  `opts.format` is required unless it can be inferred from a `opts.dest`
+  extension (`.xlsx`, `.csv`, `.tsv`). Without `opts.dest` the encoded bytes
+  are returned as `{ format, bytes: Uint8Array }`; with `opts.dest` the file
+  is written and `{ format, path }` is returned.
+
+  **CSV/TSV single-sheet rule:** writing more than one sheet to CSV or TSV
+  throws immediately — use XLSX or split the sheets yourself.
+
+  **Type fidelity in XLSX:** `number` → numeric cell, `boolean` → boolean
+  cell, `string` → text cell, `null` → empty (no cell written). Round-trips
+  through XLSX are therefore type-preserving. Round-trips through CSV/TSV
+  coerce everything to strings via `cellToStr` (numbers formatted without
+  unnecessary decimals, booleans as `"true"`/`"false"`, `null` as `""`).
+
+```ts
+// XLSX round-trip (types preserved)
+const xlsx = codec.sheet.write({ sheets: [{ name: "Data", rows: [
+  ["item", "qty", "active"],
+  ["widget", 42, true],
+] }] }, { format: "xlsx" });
+const wb = codec.sheet.read(xlsx.bytes);
+// wb.sheets[0].rows[1] => ["widget", 42, true]  (number + bool, not strings)
+
+// CSV round-trip (cells become strings)
+const csv = codec.sheet.write([["a", 1, true]], { format: "csv" });
+const back = codec.sheet.read(csv.bytes, { format: "csv" });
+// back.sheets[0].rows[0] => ["a", "1", "true"]
+```
 
 ### 5.6 `fs`
 
@@ -4828,7 +4898,51 @@ PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-s
 const code = codec.php.varExport({ x: 1 }, { indent: "    " });
 ```
 
-#### 17.1.20 codec.xml.decode
+#### 17.1.20 codec.sheet.read
+
+```
+read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }
+```
+
+Read tabular data (CSV/TSV/XLSX) into a workbook model: { format, sheets:[{ name, rows }] }. Cells are typed primitives — XLSX numbers/bools come back as number/boolean (empty → null); CSV/TSV cells are always strings (CSV is untyped). Format is sniffed (XLSX by its ZIP magic, else CSV) unless opts.format is given.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — A file path or the encoded bytes (csv/tsv/xlsx).
+- `opts` *({ format?: "csv" | "tsv" | "xlsx" }, optional)* — Override the auto-detected format (e.g. force tsv for tab-delimited bytes).
+
+**Returns:** A workbook: format echoes the detected/forced format; sheets has one entry for CSV/TSV (name from the file basename) or all sheets for XLSX, each with a rows grid of typed cells.
+
+**Throws:** Throws if src is neither a path string nor Uint8Array, if the file can't be read, if the format is unsupported, or if the bytes can't be parsed.
+
+```ts
+const wb = codec.sheet.read("data.xlsx");
+runtime.log(wb.sheets[0].name, wb.sheets[0].rows.length);
+```
+
+#### 17.1.21 codec.sheet.write
+
+```
+write(model: { sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][], opts: { format: "csv" | "tsv" | "xlsx"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
+```
+
+Write a workbook to CSV/TSV/XLSX. Pass { sheets:[{ name?, rows }] } or a bare 2D array (one sheet). XLSX preserves types (number→numeric cell, boolean→bool, string→text, null→empty) and all sheets; CSV/TSV stringify cells and support a single sheet only (>1 throws). Without opts.dest the encoded bytes are returned; with dest they're written there.
+
+**Parameters**
+
+- `model` *({ sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][])* — The workbook ({ sheets } with optional names) or a bare 2D array of cells (becomes a single sheet).
+- `opts` *({ format: "csv" | "tsv" | "xlsx"; dest?: string })* — format selects the writer (or is inferred from a dest extension); dest, when set, writes the file and returns its path instead of bytes.
+
+**Returns:** { format, bytes } with the encoded workbook, or { format, path } when opts.dest is set.
+
+**Throws:** Throws if the model isn't an object-with-sheets or a 2D array, if format is missing/unsupported, if a CSV/TSV write has more than one sheet, or on an encode/write failure.
+
+```ts
+const out = codec.sheet.write([["a", 1, true]], { format: "xlsx" });
+runtime.log(out.format, out.bytes.length);
+```
+
+#### 17.1.22 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -4849,7 +4963,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### 17.1.21 codec.xml.encode
+#### 17.1.23 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string

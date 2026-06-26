@@ -223,5 +223,27 @@ const text = new TextDecoder().decode(raw);`,
 			Example: `const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }`,
 		},
+		"sheet.read": {
+			Summary: "Read tabular data (CSV/TSV/XLSX) into a workbook model: { format, sheets:[{ name, rows }] }. Cells are typed primitives — XLSX numbers/bools come back as number/boolean (empty → null); CSV/TSV cells are always strings (CSV is untyped). Format is sniffed (XLSX by its ZIP magic, else CSV; a .tsv path is read as TSV) unless opts.format is given.",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string | Uint8Array", Desc: "A file path or the encoded bytes (csv/tsv/xlsx)."},
+				{Name: "opts", Type: "{ format?: \"csv\" | \"tsv\" | \"xlsx\" }", Optional: true, Desc: "Override the auto-detected format (e.g. force tsv for tab-delimited bytes)."},
+			},
+			ReturnType: "{ format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }",
+			Returns:    "A workbook: format echoes the detected/forced format; sheets has one entry for CSV/TSV (name from the file basename) or all sheets for XLSX, each with a rows grid of typed cells.",
+			Errors:     "Throws if src is neither a path string nor Uint8Array, if the file can't be read, if the format is unsupported, or if the bytes can't be parsed.",
+			Example:    "const wb = codec.sheet.read(\"data.xlsx\");\nruntime.log(wb.sheets[0].name, wb.sheets[0].rows.length);",
+		},
+		"sheet.write": {
+			Summary: "Write a workbook to CSV/TSV/XLSX. Pass { sheets:[{ name?, rows }] } or a bare 2D array (one sheet). XLSX preserves types (number→numeric cell, boolean→bool, string→text, null→empty) and all sheets; CSV/TSV stringify cells and support a single sheet only (>1 throws). Without opts.dest the encoded bytes are returned; with dest they're written there.",
+			Params: []scriptengine.Param{
+				{Name: "model", Type: "{ sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][]", Desc: "The workbook ({ sheets } with optional names) or a bare 2D array of cells (becomes a single sheet)."},
+				{Name: "opts", Type: "{ format: \"csv\" | \"tsv\" | \"xlsx\"; dest?: string }", Desc: "format selects the writer (or is inferred from a dest extension); dest, when set, writes the file and returns its path instead of bytes."},
+			},
+			ReturnType: "{ format: string; bytes?: Uint8Array; path?: string }",
+			Returns:    "{ format, bytes } with the encoded workbook, or { format, path } when opts.dest is set.",
+			Errors:     "Throws if the model isn't an object-with-sheets or a 2D array, if format is missing/unsupported, if a CSV/TSV write has more than one sheet, or on an encode/write failure.",
+			Example:    "const out = codec.sheet.write([[\"a\", 1, true]], { format: \"xlsx\" });\nruntime.log(out.format, out.bytes.length);",
+		},
 	}
 }

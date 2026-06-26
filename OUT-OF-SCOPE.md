@@ -31,6 +31,30 @@ slipped in).
   effort with no demand signal. Re-promote if a library appears or
   someone actually needs PDF417 round-tripping.
 
+## Spreadsheets / tabular
+
+`codec.sheet` shipped CSV / TSV / XLSX read+write (see CHANGELOG). Deferred formats:
+
+- **ODS** (OpenDocument Spreadsheet) — pure-Go path exists (zip + XML, similar
+  to XLSX); deferred for now, no demand signal. **Reason:** added scope; promote
+  when someone needs LibreOffice/Google-Sheets interchange.
+- **Legacy XLS** (BIFF binary, Excel 97–2003) — `github.com/extrame/xls` is
+  pure-Go but read-only; no pure-Go writer exists. **Reason:** write path
+  requires cgo or is unavailable; read-only path promotable on demand.
+- **XLSB** (Excel binary workbook) — no maintained pure-Go reader/writer.
+  **Reason:** format is underdocumented and cgo-only today.
+- **Parquet** — `github.com/parquet-go/parquet-go` is pure Go; data-engineering
+  domain rather than spreadsheet. **Reason:** different audience + heavier
+  dependency; promote when there's a data-pipeline request.
+- **Numbers / .gsheet** — Apple Numbers and Google Sheets pointer files have no
+  pure-Go read/write path. **Reason:** no viable pure-Go or external-CLI path
+  today (Numbers is a proprietary zip+protobuf format; .gsheet is a cloud
+  pointer, not a local format).
+
+Deferred document formats (`.docx`, `.odt`, `.rtf`, `.pages`, `.gdoc`): same
+section applies — no pure-Go round-trip writer exists for any of them; promote
+each individually when demand + a viable pure-Go path align.
+
 ## Databases
 
 The native pure-Go SQL engines have all shipped (`db.sqlite`, `db.postgres`,
