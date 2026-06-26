@@ -399,6 +399,8 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 				switch strings.ToLower(filepath.Ext(dest)) {
 				case ".xlsx":
 					format = "xlsx"
+				case ".ods":
+					format = "ods"
 				case ".tsv":
 					format = "tsv"
 				case ".csv":
@@ -410,12 +412,14 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 			switch format {
 			case "xlsx":
 				out, err = writeXLSX(book)
+			case "ods":
+				out, err = writeODS(book)
 			case "tsv":
 				out, err = writeDelimited(book, '\t')
 			case "csv":
 				out, err = writeDelimited(book, ',')
 			default:
-				return throwErr(fmt.Errorf("codec.sheet.write: format is required (csv, tsv, xlsx)"))
+				return throwErr(fmt.Errorf("codec.sheet.write: format is required (csv, tsv, xlsx, ods)"))
 			}
 			if err != nil {
 				return throwErr(err)

@@ -225,3 +225,125 @@ func odsExpandCells(cells []odsCell) ([]any, error) {
 	}
 	return row, nil
 }
+
+// --- ODS writer ---
+
+const odsManifest = `<?xml version="1.0" encoding="UTF-8"?>` +
+	`<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">` +
+	`<manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="` + odsMimetype + `"/>` +
+	`<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>` +
+	`</manifest:manifest>`
+
+// writeODS renders a sheetBook to ODS bytes (values + types only).
+func writeODS(book sheetBook) ([]byte, error) {
+	if len(book.tabs) == 0 {
+		return nil, fmt.Errorf("codec.sheet.write: ods requires at least one sheet")
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+
+	// 1. mimetype — first entry, stored uncompressed.
+	mw, err := zw.CreateHeader(&zip.FileHeader{Name: "mimetype", Method: zip.Store})
+	if err != nil {
+		return nil, fmt.Errorf("codec.sheet.write: %w", err)
+	}
+	if _, err := mw.Write([]byte(odsMimetype)); err != nil {
+		return nil, fmt.Errorf("codec.sheet.write: %w", err)
+	}
+	// 2. manifest.
+	if err := odsWriteEntry(zw, "META-INF/manifest.xml", odsManifest); err != nil {
+		return nil, err
+	}
+	// 3. content.xml.
+	if err := odsWriteEntry(zw, "content.xml", odsContentXML(book)); err != nil {
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, fmt.Errorf("codec.sheet.write: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func odsWriteEntry(zw *zip.Writer, name, body string) error {
+	w, err := zw.Create(name)
+	if err != nil {
+		return fmt.Errorf("codec.sheet.write: %w", err)
+	}
+	if _, err := w.Write([]byte(body)); err != nil {
+		return fmt.Errorf("codec.sheet.write: %w", err)
+	}
+	return nil
+}
+
+// odsContentXML emits the content.xml document for a book.
+func odsContentXML(book sheetBook) string {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
+	b.WriteString(`<office:document-content ` +
+		`xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" ` +
+		`xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" ` +
+		`xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" ` +
+		`office:version="1.2">`)
+	b.WriteString(`<office:body><office:spreadsheet>`)
+	for i, tab := range book.tabs {
+		name := tab.name
+		if name == "" {
+			name = fmt.Sprintf("Sheet%d", i+1)
+		}
+		b.WriteString(`<table:table table:name="`)
+		b.WriteString(odsAttrEscape(name))
+		b.WriteString(`">`)
+		for _, row := range tab.rows {
+			b.WriteString(`<table:table-row>`)
+			for _, cell := range row {
+				b.WriteString(odsCellXML(cell))
+			}
+			b.WriteString(`</table:table-row>`)
+		}
+		b.WriteString(`</table:table>`)
+	}
+	b.WriteString(`</office:spreadsheet></office:body></office:document-content>`)
+	return b.String()
+}
+
+// odsCellXML renders one typed cell.
+func odsCellXML(cell any) string {
+	switch v := cell.(type) {
+	case nil:
+		return `<table:table-cell/>`
+	case bool:
+		s := "false"
+		disp := "FALSE"
+		if v {
+			s, disp = "true", "TRUE"
+		}
+		return `<table:table-cell office:value-type="boolean" office:boolean-value="` + s + `"><text:p>` + disp + `</text:p></table:table-cell>`
+	case float64, int64, int:
+		num := cellToStr(v) // reuse the numeric formatter
+		return `<table:table-cell office:value-type="float" office:value="` + num + `"><text:p>` + num + `</text:p></table:table-cell>`
+	case string:
+		esc := xmlEscape(v)
+		return `<table:table-cell office:value-type="string"><text:p>` + esc + `</text:p></table:table-cell>`
+	default:
+		esc := xmlEscape(fmt.Sprintf("%v", v))
+		return `<table:table-cell office:value-type="string"><text:p>` + esc + `</text:p></table:table-cell>`
+	}
+}
+
+// xmlEscape escapes element text content.
+func xmlEscape(s string) string {
+	var b bytes.Buffer
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
+}
+
+// odsAttrEscape escapes a value for use inside a double-quoted XML attribute.
+func odsAttrEscape(s string) string {
+	r := strings.NewReplacer(
+		`&`, "&amp;",
+		`<`, "&lt;",
+		`>`, "&gt;",
+		`"`, "&quot;",
+	)
+	return r.Replace(s)
+}

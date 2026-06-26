@@ -2,6 +2,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"testing"
 )
 
@@ -141,5 +143,65 @@ func TestReadODS_MissingContent(t *testing.T) {
 	z := makeZip(t, [][2]string{{"mimetype", "application/vnd.oasis.opendocument.spreadsheet"}}, true)
 	if _, err := readODS(z); err == nil {
 		t.Fatal("expected error when content.xml is absent")
+	}
+}
+
+func TestWriteODS_MimetypeFirstStored(t *testing.T) {
+	book := sheetBook{tabs: []sheetTab{{name: "S", rows: [][]any{{"a"}}}}}
+	data, err := writeODS(book)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(zr.File) == 0 || zr.File[0].Name != "mimetype" {
+		t.Fatalf("first entry = %v, want mimetype", zr.File)
+	}
+	if zr.File[0].Method != zip.Store {
+		t.Errorf("mimetype method = %d, want Store (%d)", zr.File[0].Method, zip.Store)
+	}
+}
+
+func TestWriteODS_ZeroSheetsErrors(t *testing.T) {
+	if _, err := writeODS(sheetBook{}); err == nil {
+		t.Fatal("writeODS with no sheets should error")
+	}
+}
+
+func TestODS_RoundTripTyped(t *testing.T) {
+	book := sheetBook{tabs: []sheetTab{
+		{name: "Data", rows: [][]any{
+			{"Name", "Qty", "InStock"},
+			{"Widget", 42.0, true},
+			{"Gadget", 7.5, false},
+			{"Empty", nil, "x"},
+		}},
+		{name: "Second", rows: [][]any{{"only"}}},
+	}}
+	data, err := writeODS(book)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := readODS(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.tabs) != 2 || back.tabs[0].name != "Data" || back.tabs[1].name != "Second" {
+		t.Fatalf("tabs = %+v", back.tabs)
+	}
+	r := back.tabs[0].rows
+	if r[0][0] != "Name" {
+		t.Errorf("header = %#v, want string", r[0][0])
+	}
+	if r[1][1] != 42.0 || r[2][1] != 7.5 {
+		t.Errorf("numbers = %#v / %#v", r[1][1], r[2][1])
+	}
+	if r[1][2] != true || r[2][2] != false {
+		t.Errorf("bools = %#v / %#v", r[1][2], r[2][2])
+	}
+	if r[3][1] != nil {
+		t.Errorf("blank cell = %#v, want nil", r[3][1])
 	}
 }
