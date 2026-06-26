@@ -11,6 +11,9 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	"os"
+
+	"github.com/dop251/goja"
 )
 
 const (
@@ -260,4 +263,74 @@ func stegoCapacityOf(carrier []byte) (int, error) {
 		return 0, err
 	}
 	return stegoCapacity(img), nil
+}
+
+// stegoNamespace returns the image.stego sub-namespace.
+func stegoNamespace(vm *goja.Runtime) map[string]any {
+	return map[string]any{
+		"embed": func(call goja.FunctionCall) goja.Value {
+			carrier := imageSrcBytes(vm, call.Argument(0), "stego.embed")
+			payload, isText := stegoPayloadArg(vm, call.Argument(1))
+
+			password, dest := "", ""
+			if o := call.Argument(2); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
+				obj := o.ToObject(vm)
+				if p := obj.Get("password"); p != nil && !goja.IsUndefined(p) {
+					password = p.String()
+				}
+				if d := obj.Get("dest"); d != nil && !goja.IsUndefined(d) {
+					dest = d.String()
+				}
+			}
+			out, err := stegoEmbed(carrier, payload, isText, password)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			if dest != "" {
+				if werr := os.WriteFile(dest, out, 0o644); werr != nil { //nolint:gosec
+					panic(vm.NewGoError(fmt.Errorf("image.stego.embed: %w", werr)))
+				}
+				return vm.ToValue(map[string]any{"path": dest})
+			}
+			return vm.ToValue(map[string]any{"bytes": out})
+		},
+		"extract": func(call goja.FunctionCall) goja.Value {
+			carrier := imageSrcBytes(vm, call.Argument(0), "stego.extract")
+			password := ""
+			if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
+				if p := o.ToObject(vm).Get("password"); p != nil && !goja.IsUndefined(p) {
+					password = p.String()
+				}
+			}
+			data, isText, err := stegoExtract(carrier, password)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			if isText {
+				return vm.ToValue(string(data))
+			}
+			return vm.ToValue(data) // []byte → Uint8Array
+		},
+		"capacity": func(call goja.FunctionCall) goja.Value {
+			carrier := imageSrcBytes(vm, call.Argument(0), "stego.capacity")
+			n, err := stegoCapacityOf(carrier)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return vm.ToValue(map[string]any{"bytes": n})
+		},
+	}
+}
+
+// stegoPayloadArg coerces the payload argument: a JS string → UTF-8 bytes
+// (text), a Uint8Array → raw bytes (binary). Anything else is a TypeError.
+func stegoPayloadArg(vm *goja.Runtime, arg goja.Value) ([]byte, bool) {
+	switch v := arg.Export().(type) {
+	case string:
+		return []byte(v), true
+	case []byte:
+		return v, false
+	default:
+		panic(vm.NewTypeError("image.stego.embed: payload must be a string or Uint8Array"))
+	}
 }
