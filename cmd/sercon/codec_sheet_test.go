@@ -57,3 +57,47 @@ func TestCellToStr(t *testing.T) {
 		}
 	}
 }
+
+func TestXLSX_RoundTrip_Typed(t *testing.T) {
+	book := sheetBook{format: "xlsx", tabs: []sheetTab{{name: "Data", rows: [][]any{
+		{"Name", "Qty", "InStock"},
+		{"Widget", 42.0, true},
+		{"Gadget", 7.0, false},
+	}}}}
+	data, err := writeXLSX(book)
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	back, err := readXLSX(data)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(back.tabs) != 1 || back.tabs[0].name != "Data" {
+		t.Fatalf("tabs = %+v", back.tabs)
+	}
+	r := back.tabs[0].rows
+	if r[1][1] != 42.0 {
+		t.Fatalf("Qty cell = %#v (want number 42)", r[1][1])
+	}
+	if r[1][2] != true || r[2][2] != false {
+		t.Fatalf("InStock cells = %#v / %#v (want bools)", r[1][2], r[2][2])
+	}
+	if r[0][0] != "Name" {
+		t.Fatalf("header = %#v (want string)", r[0][0])
+	}
+}
+
+func TestXLSX_MultiSheet(t *testing.T) {
+	book := sheetBook{format: "xlsx", tabs: []sheetTab{
+		{name: "First", rows: [][]any{{"a"}}},
+		{name: "Second", rows: [][]any{{"b"}}},
+	}}
+	data, _ := writeXLSX(book)
+	back, err := readXLSX(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back.tabs) != 2 || back.tabs[0].name != "First" || back.tabs[1].name != "Second" {
+		t.Fatalf("sheets = %+v", back.tabs)
+	}
+}
