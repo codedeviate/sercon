@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.73.0] — 2026-06-26
+
 ### Added
 - `codec.sheet.read` / `codec.sheet.write` — tabular CSV/TSV + XLSX, typed cells.
 

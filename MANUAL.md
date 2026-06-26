@@ -4904,7 +4904,7 @@ const code = codec.php.varExport({ x: 1 }, { indent: "    " });
 read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }
 ```
 
-Read tabular data (CSV/TSV/XLSX) into a workbook model: { format, sheets:[{ name, rows }] }. Cells are typed primitives — XLSX numbers/bools come back as number/boolean (empty → null); CSV/TSV cells are always strings (CSV is untyped). Format is sniffed (XLSX by its ZIP magic, else CSV) unless opts.format is given.
+Read tabular data (CSV/TSV/XLSX) into a workbook model: { format, sheets:[{ name, rows }] }. Cells are typed primitives — XLSX numbers/bools come back as number/boolean (empty → null); CSV/TSV cells are always strings (CSV is untyped). Format is sniffed (XLSX by its ZIP magic, else CSV; a .tsv path is read as TSV) unless opts.format is given.
 
 **Parameters**
 
@@ -9322,7 +9322,7 @@ const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);
 
 ---
 
-*This manual covers sercon v0.72.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.73.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
