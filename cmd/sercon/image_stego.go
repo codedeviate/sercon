@@ -2,6 +2,11 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/pbkdf2"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"image"
@@ -103,4 +108,156 @@ func parseStegoHeader(b []byte) (flags byte, length uint32, err error) {
 		return 0, 0, fmt.Errorf("stego: unsupported version %d", b[4])
 	}
 	return b[5], binary.BigEndian.Uint32(b[6:10]), nil
+}
+
+const (
+	stegoPBKDF2Iter = 210000
+	stegoSaltLen    = 16
+	stegoNonceLen   = 12
+	stegoKeyLen     = 32 // AES-256
+)
+
+// stegoDeriveKey derives a 32-byte AES key from password + salt via PBKDF2.
+func stegoDeriveKey(password string, salt []byte) ([]byte, error) {
+	return pbkdf2.Key(sha256.New, password, salt, stegoPBKDF2Iter, stegoKeyLen)
+}
+
+// stegoSeal encrypts plaintext with AES-256-GCM, returning salt‖nonce‖sealed.
+func stegoSeal(password string, plaintext []byte) ([]byte, error) {
+	salt := make([]byte, stegoSaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, err
+	}
+	key, err := stegoDeriveKey(password, salt)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, stegoNonceLen)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	sealed := gcm.Seal(nil, nonce, plaintext, nil)
+	out := make([]byte, 0, stegoSaltLen+stegoNonceLen+len(sealed))
+	out = append(out, salt...)
+	out = append(out, nonce...)
+	out = append(out, sealed...)
+	return out, nil
+}
+
+// stegoOpen reverses stegoSeal. A wrong password fails the GCM auth check.
+func stegoOpen(password string, blob []byte) ([]byte, error) {
+	if len(blob) < stegoSaltLen+stegoNonceLen {
+		return nil, fmt.Errorf("decryption failed (wrong password or corrupt data)")
+	}
+	salt := blob[:stegoSaltLen]
+	nonce := blob[stegoSaltLen : stegoSaltLen+stegoNonceLen]
+	ct := blob[stegoSaltLen+stegoNonceLen:]
+	key, err := stegoDeriveKey(password, salt)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	pt, err := gcm.Open(nil, nonce, ct, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decryption failed (wrong password or corrupt data)")
+	}
+	return pt, nil
+}
+
+// stegoEmbed hides payload in carrier and returns PNG bytes. isText marks the
+// payload as UTF-8 text so extract can return a string. A non-empty password
+// triggers AES-256-GCM encryption.
+func stegoEmbed(carrier, payload []byte, isText bool, password string) ([]byte, error) {
+	img, _, err := decodeImage(carrier)
+	if err != nil {
+		return nil, err
+	}
+	rgba := toRGBA(img)
+
+	flags := byte(0)
+	blob := payload
+	if isText {
+		flags |= flagText
+	}
+	if password != "" {
+		sealed, serr := stegoSeal(password, payload)
+		if serr != nil {
+			return nil, fmt.Errorf("image.stego.embed: %w", serr)
+		}
+		blob = sealed
+		flags |= flagEncrypted
+	}
+
+	if avail := stegoCapacity(rgba); len(blob) > avail {
+		return nil, fmt.Errorf("image.stego.embed: payload too large (need %d bytes, capacity %d)", len(blob), avail)
+	}
+
+	stream := append(marshalStegoHeader(flags, uint32(len(blob))), blob...)
+	if werr := writeLSBStream(rgba, stream); werr != nil {
+		return nil, fmt.Errorf("image.stego.embed: %w", werr)
+	}
+	out, err := encodeImage(rgba, "png", encodeOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("image.stego.embed: %w", err)
+	}
+	return out, nil
+}
+
+// stegoExtract recovers a payload previously embedded by stegoEmbed.
+func stegoExtract(carrier []byte, password string) ([]byte, bool, error) {
+	img, _, err := decodeImage(carrier)
+	if err != nil {
+		return nil, false, err
+	}
+	rgba := toRGBA(img)
+
+	header, err := readLSBBytes(rgba, stegoHeaderLen)
+	if err != nil {
+		return nil, false, fmt.Errorf("image.stego.extract: %w", err)
+	}
+	flags, length, err := parseStegoHeader(header)
+	if err != nil {
+		return nil, false, fmt.Errorf("image.stego.extract: %w", err)
+	}
+	all, err := readLSBBytes(rgba, stegoHeaderLen+int(length))
+	if err != nil {
+		return nil, false, fmt.Errorf("image.stego.extract: truncated payload: %w", err)
+	}
+	blob := all[stegoHeaderLen:]
+
+	if flags&flagEncrypted != 0 {
+		if password == "" {
+			return nil, false, fmt.Errorf("image.stego.extract: payload is encrypted — password required")
+		}
+		pt, oerr := stegoOpen(password, blob)
+		if oerr != nil {
+			return nil, false, fmt.Errorf("image.stego.extract: %w", oerr)
+		}
+		blob = pt
+	}
+	return blob, flags&flagText != 0, nil
+}
+
+// stegoCapacityOf decodes carrier and returns its payload capacity in bytes.
+func stegoCapacityOf(carrier []byte) (int, error) {
+	img, _, err := decodeImage(carrier)
+	if err != nil {
+		return 0, err
+	}
+	return stegoCapacity(img), nil
 }

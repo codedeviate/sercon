@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"image"
+	"image/png"
 	"testing"
 )
 
@@ -95,5 +96,105 @@ func TestParseStegoHeaderBadVersion(t *testing.T) {
 	h[4] = 2 // unsupported version
 	if _, _, err := parseStegoHeader(h); err == nil {
 		t.Fatal("expected error on bad version")
+	}
+}
+
+// helper: a fresh opaque PNG carrier of the given size.
+func stegoCarrierPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for i := 0; i < len(img.Pix); i += 4 {
+		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = 120, 90, 200, 255
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestStegoEmbedExtract_Plaintext(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 64, 64)
+	out, err := stegoEmbed(carrier, []byte("attack at dawn"), true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, isText, err := stegoExtract(out, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isText || string(data) != "attack at dawn" {
+		t.Fatalf("got %q isText=%v", data, isText)
+	}
+}
+
+func TestStegoEmbedExtract_Binary(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 64, 64)
+	payload := []byte{0, 1, 2, 250, 255, 0}
+	out, err := stegoEmbed(carrier, payload, false, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, isText, err := stegoExtract(out, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isText || !bytes.Equal(data, payload) {
+		t.Fatalf("got %v isText=%v", data, isText)
+	}
+}
+
+func TestStegoEmbedExtract_Encrypted(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 64, 64)
+	out, err := stegoEmbed(carrier, []byte("top secret"), true, "hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, isText, err := stegoExtract(out, "hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isText || string(data) != "top secret" {
+		t.Fatalf("got %q", data)
+	}
+}
+
+func TestStegoExtract_WrongPassword(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 64, 64)
+	out, _ := stegoEmbed(carrier, []byte("top secret"), true, "hunter2")
+	if _, _, err := stegoExtract(out, "wrong"); err == nil {
+		t.Fatal("expected auth failure on wrong password")
+	}
+}
+
+func TestStegoExtract_EncryptedNoPassword(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 64, 64)
+	out, _ := stegoEmbed(carrier, []byte("x"), false, "pw")
+	if _, _, err := stegoExtract(out, ""); err == nil {
+		t.Fatal("expected error: encrypted payload needs a password")
+	}
+}
+
+func TestStegoEmbed_TooLarge(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 8, 8) // capacity = 8*8*3/8 - 10 = 14 bytes
+	if _, err := stegoEmbed(carrier, bytes.Repeat([]byte{1}, 100), false, ""); err == nil {
+		t.Fatal("expected payload-too-large error")
+	}
+}
+
+func TestStegoExtract_NoMagic(t *testing.T) {
+	// A plain PNG with no embedded payload.
+	if _, _, err := stegoExtract(stegoCarrierPNG(t, 32, 32), ""); err == nil {
+		t.Fatal("expected 'no sercon stego payload found'")
+	}
+}
+
+func TestStegoCapacityOf(t *testing.T) {
+	n, err := stegoCapacityOf(stegoCarrierPNG(t, 10, 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 27 {
+		t.Fatalf("capacity = %d, want 27", n)
 	}
 }
