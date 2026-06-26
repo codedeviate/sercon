@@ -15,3 +15,14 @@ const csv = codec.sheet.write(wb, { format: "csv" });
 const backC = codec.sheet.read(csv.bytes, { format: "csv" });
 runtime.assert.equal(backC.sheets[0].rows[1][1], "42", "csv cells are strings");
 runtime.log("sheet demo OK:", backX.format, "/", backC.format);
+
+// --- ODS (OpenDocument Spreadsheet) ---
+const odsOut = codec.sheet.write(
+  { sheets: [{ name: "Sales", rows: [["Item", "Qty", "Active"], ["Widget", 42, true]] }] },
+  { format: "ods" },
+);
+const odsBack = codec.sheet.read(odsOut.bytes);
+runtime.assert.equal(odsBack.format, "ods", "sniffed as ods");
+runtime.assert.equal(odsBack.sheets[0].rows[1][1], 42, "ods keeps numbers typed");
+runtime.assert.equal(odsBack.sheets[0].rows[1][2], true, "ods keeps bools typed");
+runtime.log("sheet ODS round-trip OK:", odsBack.sheets[0].name);
