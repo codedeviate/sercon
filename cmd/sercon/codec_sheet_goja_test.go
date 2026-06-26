@@ -2,6 +2,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -75,5 +77,43 @@ func TestSheetGoja_EmptySheetModelThrows(t *testing.T) {
 	_, err = vm.RunString(`sheet.write([], { format: "csv" })`)
 	if err == nil {
 		t.Fatal("write with bare empty array should throw")
+	}
+}
+
+// A .tsv path with no explicit format must be read as tsv, not mis-parsed as
+// csv (sniffSheetFormat returns csv for non-PK data; the .tsv ext must win).
+func TestSheetGoja_TSVPathHonored(t *testing.T) {
+	vm := sheetVM(t)
+	dir := t.TempDir()
+	tsvPath := filepath.Join(dir, "data.tsv")
+	if err := os.WriteFile(tsvPath, []byte("a\tb\nc\td\n"), 0o644); err != nil {
+		t.Fatalf("write temp tsv: %v", err)
+	}
+	if err := vm.Set("tsvPath", tsvPath); err != nil {
+		t.Fatalf("set tsvPath: %v", err)
+	}
+	v, err := vm.RunString(`
+		const back = sheet.read(tsvPath);   // no opts.format — must honor .tsv extension
+		back.format + "|" + back.sheets[0].rows[0].length + "|" + back.sheets[0].rows[0][0] + "|" + back.sheets[0].rows[0][1];
+	`)
+	if err != nil {
+		t.Fatalf("read .tsv path: %v", err)
+	}
+	// If mis-parsed as csv, the tab-delimited row would be a single cell "a\tb".
+	if got := v.String(); got != "tsv|2|a|b" {
+		t.Fatalf("got %q (want tsv|2|a|b — .tsv path was not honored)", got)
+	}
+}
+
+// write(model) with no opts must reach the clean "format is required" error,
+// not a goja "Cannot convert undefined to object" panic.
+func TestSheetGoja_WriteNoOptsThrowsFormatRequired(t *testing.T) {
+	vm := sheetVM(t)
+	_, err := vm.RunString(`sheet.write([["a"]])`)
+	if err == nil {
+		t.Fatal("write with no opts should throw (format is required)")
+	}
+	if !strings.Contains(err.Error(), "format") {
+		t.Fatalf("error should mention format, got: %v", err)
 	}
 }

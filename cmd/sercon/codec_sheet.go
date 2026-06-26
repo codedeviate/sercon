@@ -214,19 +214,19 @@ func sniffSheetFormat(data []byte) string {
 	return "csv"
 }
 
-// sheetSrcBytes reads a path string (returning its basename as the sheet name)
-// or a Uint8Array (name "Sheet1").
-func sheetSrcBytes(vm *goja.Runtime, arg goja.Value) (data []byte, name string) {
+// sheetSrcBytes reads a path string (returning its basename as the sheet name
+// and its lowercased extension) or a Uint8Array (name "Sheet1", no extension).
+func sheetSrcBytes(vm *goja.Runtime, arg goja.Value) (data []byte, name, ext string) {
 	if s, ok := arg.Export().(string); ok {
 		b, err := os.ReadFile(s) //nolint:gosec // user-provided path is intentional
 		if err != nil {
 			panic(vm.NewGoError(fmt.Errorf("codec.sheet.read: %w", err)))
 		}
 		base := filepath.Base(s)
-		return b, strings.TrimSuffix(base, filepath.Ext(base))
+		return b, strings.TrimSuffix(base, filepath.Ext(base)), strings.ToLower(filepath.Ext(s))
 	}
 	if b, ok := arg.Export().([]byte); ok {
-		return b, "Sheet1"
+		return b, "Sheet1", ""
 	}
 	panic(vm.NewTypeError("codec.sheet.read: expected a path string or Uint8Array"))
 }
@@ -275,7 +275,11 @@ func jsToBook(vm *goja.Runtime, arg goja.Value) sheetBook {
 	if !ok {
 		panic(vm.NewTypeError("codec.sheet.write: model must be an object with sheets or a 2D array"))
 	}
-	sheetsAny, ok := m["sheets"].([]any)
+	sheetsRaw, present := m["sheets"]
+	if !present {
+		panic(vm.NewTypeError("codec.sheet.write: model.sheets is required ({ sheets:[{name?,rows}] } or a 2D array)"))
+	}
+	sheetsAny, ok := sheetsRaw.([]any)
 	if !ok {
 		panic(vm.NewTypeError("codec.sheet.write: model.sheets must be an array"))
 	}
@@ -306,7 +310,7 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 	throwErr := func(err error) goja.Value { panic(vm.NewGoError(err)) }
 	return map[string]any{
 		"read": func(call goja.FunctionCall) goja.Value {
-			data, name := sheetSrcBytes(vm, call.Argument(0))
+			data, name, ext := sheetSrcBytes(vm, call.Argument(0))
 			format := ""
 			if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
 				if fv := o.ToObject(vm).Get("format"); fv != nil && !goja.IsUndefined(fv) {
@@ -314,7 +318,10 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 				}
 			}
 			if format == "" {
-				format = sniffSheetFormat(data)
+				format = sniffSheetFormat(data) // PK→xlsx else csv
+				if format == "csv" && ext == ".tsv" {
+					format = "tsv" // honor a .tsv path extension
+				}
 			}
 			var book sheetBook
 			var err error
@@ -335,7 +342,10 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 		},
 		"write": func(call goja.FunctionCall) goja.Value {
 			book := jsToBook(vm, call.Argument(0))
-			opts := call.Argument(1).ToObject(vm)
+			var opts *goja.Object
+			if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
+				opts = o.ToObject(vm)
+			}
 			format, dest := "", ""
 			if opts != nil {
 				if fv := opts.Get("format"); fv != nil && !goja.IsUndefined(fv) {
