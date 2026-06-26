@@ -366,6 +366,8 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 			switch format {
 			case "xlsx":
 				book, err = readXLSX(data)
+			case "ods":
+				book, err = readODS(data)
 			case "tsv":
 				book, err = readDelimited(data, '\t', name)
 			case "csv":
