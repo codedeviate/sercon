@@ -129,3 +129,18 @@ func TestSheetGoja_NonPrimitiveCellThrows(t *testing.T) {
 		t.Fatal("an array cell should throw")
 	}
 }
+
+func TestSheetGoja_ODSRoundTrip(t *testing.T) {
+	vm := sheetVM(t)
+	v, err := vm.RunString(`
+		const out = sheet.write({ sheets: [{ name: "S", rows: [["n","ok"],["a", true],["b", 3]] }] }, { format: "ods" });
+		const back = sheet.read(out.bytes);   // sniffed as ods
+		back.format + "|" + back.sheets[0].name + "|" + (typeof back.sheets[0].rows[1][1]) + "|" + (typeof back.sheets[0].rows[2][1]);
+	`)
+	if err != nil {
+		t.Fatalf("ods round-trip: %v", err)
+	}
+	if got := v.String(); got != "ods|S|boolean|number" {
+		t.Fatalf("got %q (want ods|S|boolean|number)", got)
+	}
+}

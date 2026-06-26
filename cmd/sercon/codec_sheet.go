@@ -2,9 +2,11 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -205,10 +207,30 @@ func writeXLSX(book sheetBook) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// sniffSheetFormat detects xlsx by the ZIP magic bytes (PK\x03\x04); everything
-// else is treated as csv (tsv only via an explicit opts.format or .tsv extension).
+// odsMimetype is the OpenDocument Spreadsheet package mediatype, stored as the
+// first (uncompressed) zip entry named "mimetype".
+const odsMimetype = "application/vnd.oasis.opendocument.spreadsheet"
+
+// sniffSheetFormat detects the format from the leading bytes. PK-zip archives
+// are inspected for an ODS "mimetype" entry (→ ods) and otherwise treated as
+// xlsx. Non-zip data is csv (tsv only via explicit opts.format or .tsv ext).
 func sniffSheetFormat(data []byte) string {
 	if len(data) >= 4 && data[0] == 'P' && data[1] == 'K' && data[2] == 0x03 && data[3] == 0x04 {
+		// The ODS spec requires "mimetype" to be the FIRST zip entry, so we
+		// inspect only index 0 — a later stray "mimetype" must not match.
+		if zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data))); err == nil {
+			if len(zr.File) > 0 && zr.File[0].Name == "mimetype" {
+				if rc, err := zr.File[0].Open(); err == nil {
+					// Bound the read: a real mimetype is ~60 bytes, so cap at
+					// 256 to avoid a decompression bomb on caller-supplied data.
+					mt, _ := io.ReadAll(io.LimitReader(rc, 256))
+					_ = rc.Close()
+					if strings.TrimSpace(string(mt)) == odsMimetype {
+						return "ods"
+					}
+				}
+			}
+		}
 		return "xlsx"
 	}
 	return "csv"
@@ -326,9 +348,17 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 				}
 			}
 			if format == "" {
-				format = sniffSheetFormat(data) // PK→xlsx else csv
-				if format == "csv" && ext == ".tsv" {
-					format = "tsv" // honor a .tsv path extension
+				switch ext {
+				case ".xlsx":
+					format = "xlsx"
+				case ".ods":
+					format = "ods"
+				case ".csv":
+					format = "csv"
+				case ".tsv":
+					format = "tsv"
+				default:
+					format = sniffSheetFormat(data) // PK→ods/xlsx else csv
 				}
 			}
 			var book sheetBook
@@ -336,12 +366,14 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 			switch format {
 			case "xlsx":
 				book, err = readXLSX(data)
+			case "ods":
+				book, err = readODS(data)
 			case "tsv":
 				book, err = readDelimited(data, '\t', name)
 			case "csv":
 				book, err = readDelimited(data, ',', name)
 			default:
-				return throwErr(fmt.Errorf("codec.sheet.read: unsupported format %q (csv, tsv, xlsx)", format))
+				return throwErr(fmt.Errorf("codec.sheet.read: unsupported format %q (csv, tsv, xlsx, ods)", format))
 			}
 			if err != nil {
 				return throwErr(err)
@@ -367,6 +399,8 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 				switch strings.ToLower(filepath.Ext(dest)) {
 				case ".xlsx":
 					format = "xlsx"
+				case ".ods":
+					format = "ods"
 				case ".tsv":
 					format = "tsv"
 				case ".csv":
@@ -378,12 +412,14 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 			switch format {
 			case "xlsx":
 				out, err = writeXLSX(book)
+			case "ods":
+				out, err = writeODS(book)
 			case "tsv":
 				out, err = writeDelimited(book, '\t')
 			case "csv":
 				out, err = writeDelimited(book, ',')
 			default:
-				return throwErr(fmt.Errorf("codec.sheet.write: format is required (csv, tsv, xlsx)"))
+				return throwErr(fmt.Errorf("codec.sheet.write: format is required (csv, tsv, xlsx, ods)"))
 			}
 			if err != nil {
 				return throwErr(err)

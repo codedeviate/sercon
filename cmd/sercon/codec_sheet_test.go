@@ -2,9 +2,64 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"reflect"
 	"testing"
 )
+
+// makeZip builds an in-memory zip; the first entry is stored uncompressed
+// (mimetype convention) when storeFirst is true.
+func makeZip(t *testing.T, entries [][2]string, storeFirst bool) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for i, e := range entries {
+		var w interface{ Write([]byte) (int, error) }
+		var err error
+		if i == 0 && storeFirst {
+			w, err = zw.CreateHeader(&zip.FileHeader{Name: e[0], Method: zip.Store})
+		} else {
+			w, err = zw.Create(e[0])
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(e[1])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestSniffSheetFormat(t *testing.T) {
+	ods := makeZip(t, [][2]string{
+		{"mimetype", "application/vnd.oasis.opendocument.spreadsheet"},
+		{"content.xml", "<x/>"},
+	}, true)
+	xlsx := makeZip(t, [][2]string{
+		{"[Content_Types].xml", "<x/>"},
+		{"xl/workbook.xml", "<x/>"},
+	}, false)
+	cases := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{"ods", ods, "ods"},
+		{"xlsx", xlsx, "xlsx"},
+		{"text", []byte("a,b,c\n1,2,3\n"), "csv"},
+		{"short", []byte("ab"), "csv"},
+	}
+	for _, c := range cases {
+		if got := sniffSheetFormat(c.data); got != c.want {
+			t.Errorf("sniffSheetFormat(%s) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
 
 func TestReadDelimited_CSV(t *testing.T) {
 	book, err := readDelimited([]byte("a,b,c\n1,2,3\n"), ',', "data")

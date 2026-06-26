@@ -8,6 +8,9 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `codec.sheet` ODS (OpenDocument Spreadsheet) read + write — typed cells (numbers, booleans, ISO-8601 date strings on read), pure-Go (no new dependency).
+
 ## [0.73.0] — 2026-06-26
 
 ### Added
