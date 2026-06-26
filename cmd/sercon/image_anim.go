@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
+	"image/color/palette"
+	"image/draw"
 	"image/gif"
 
 	"github.com/kettek/apng"
@@ -118,6 +121,89 @@ func frameExtent(frames []animFrame) (int, int) {
 		}
 	}
 	return w, h
+}
+
+func strToGifDisposal(s string) byte {
+	switch s {
+	case "background":
+		return gif.DisposalBackground
+	case "previous":
+		return gif.DisposalPrevious
+	default:
+		return gif.DisposalNone
+	}
+}
+
+func strToApngDispose(s string) byte {
+	switch s {
+	case "background":
+		return 1
+	case "previous":
+		return 2
+	default:
+		return 0
+	}
+}
+
+func strToApngBlend(s string) byte {
+	if s == "over" {
+		return 1
+	}
+	return 0
+}
+
+// palettize converts img to a paletted frame at the given bounds (offset+size)
+// using the Plan9 256-color palette with Floyd–Steinberg dithering.
+func palettize(img image.Image, bounds image.Rectangle) *image.Paletted {
+	p := image.NewPaletted(bounds, palette.Plan9)
+	draw.FloydSteinberg.Draw(p, bounds, img, img.Bounds().Min)
+	return p
+}
+
+func encodeFramesGIF(doc animDoc) ([]byte, error) {
+	if len(doc.frames) == 0 {
+		return nil, fmt.Errorf("image.encodeFrames: gif requires at least one frame")
+	}
+	w, h := doc.width, doc.height
+	if w == 0 || h == 0 {
+		w, h = frameExtent(doc.frames)
+	}
+	g := &gif.GIF{LoopCount: doc.loopCount, Config: image.Config{ColorModel: color.Palette(palette.Plan9), Width: w, Height: h}}
+	for _, f := range doc.frames {
+		fb := f.img.Bounds()
+		bounds := image.Rect(f.xOffset, f.yOffset, f.xOffset+fb.Dx(), f.yOffset+fb.Dy())
+		g.Image = append(g.Image, palettize(f.img, bounds))
+		g.Delay = append(g.Delay, f.delayMs/10)
+		g.Disposal = append(g.Disposal, strToGifDisposal(f.disposal))
+	}
+	var b bytes.Buffer
+	if err := gif.EncodeAll(&b, g); err != nil {
+		return nil, fmt.Errorf("image.encodeFrames: gif: %w", err)
+	}
+	return b.Bytes(), nil
+}
+
+func encodeFramesAPNG(doc animDoc) ([]byte, error) {
+	if len(doc.frames) == 0 {
+		return nil, fmt.Errorf("image.encodeFrames: apng requires at least one frame")
+	}
+	a := apng.APNG{LoopCount: uint(doc.loopCount)}
+	for _, f := range doc.frames {
+		a.Frames = append(a.Frames, apng.Frame{
+			Image:            f.img,
+			XOffset:          f.xOffset,
+			YOffset:          f.yOffset,
+			DelayNumerator:   uint16(f.delayMs),
+			DelayDenominator: 1000,
+			DisposeOp:        strToApngDispose(f.disposal),
+			BlendOp:          strToApngBlend(f.blend),
+		})
+	}
+	var b bytes.Buffer
+	if err := apng.Encode(&b, a); err != nil {
+		return nil, fmt.Errorf("image.encodeFrames: apng: %w", err)
+	}
+	return b.Bytes(), nil
 }
 
 // decodeFramesAny sniffs the container and dispatches. GIF → all frames; PNG →

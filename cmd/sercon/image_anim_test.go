@@ -89,6 +89,57 @@ func TestDecodeFramesAPNG(t *testing.T) {
 	}
 }
 
+func solidFrame(c color.Color) animFrame {
+	m := image.NewNRGBA(image.Rect(0, 0, 3, 2))
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 3; x++ {
+			m.Set(x, y, c)
+		}
+	}
+	return animFrame{img: m, delayMs: 40, disposal: "none", blend: "over"}
+}
+
+func TestEncodeDecodeGIF_RoundTrip(t *testing.T) {
+	doc := animDoc{format: "gif", width: 3, height: 2, loopCount: 0,
+		frames: []animFrame{solidFrame(color.NRGBA{255, 0, 0, 255}), solidFrame(color.NRGBA{0, 255, 0, 255})}}
+	data, err := encodeFramesGIF(doc)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	back, err := decodeFramesGIF(data)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(back.frames) != 2 {
+		t.Fatalf("round-trip frames = %d, want 2", len(back.frames))
+	}
+	if back.frames[0].delayMs != 40 {
+		t.Fatalf("delayMs = %d, want 40", back.frames[0].delayMs)
+	}
+}
+
+func TestEncodeDecodeAPNG_RoundTrip(t *testing.T) {
+	doc := animDoc{format: "apng", width: 3, height: 2, loopCount: 0,
+		frames: []animFrame{solidFrame(color.NRGBA{255, 0, 0, 255}), solidFrame(color.NRGBA{0, 255, 0, 255})}}
+	data, err := encodeFramesAPNG(doc)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	back, err := decodeFramesAPNG(data)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(back.frames) != 2 || back.frames[1].delayMs != 40 {
+		t.Fatalf("round-trip frames=%d delay=%d", len(back.frames), back.frames[1].delayMs)
+	}
+}
+
+func TestEncodeFramesGIF_Empty(t *testing.T) {
+	if _, err := encodeFramesGIF(animDoc{format: "gif"}); err == nil {
+		t.Fatal("empty frames should error")
+	}
+}
+
 func TestDecodeFramesAny_NonAnimated(t *testing.T) {
 	// plainPNG is defined in exif_engine_test.go (same package).
 	doc, err := decodeFramesAny(plainPNG(t))
