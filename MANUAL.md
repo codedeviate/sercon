@@ -2799,6 +2799,8 @@ transforms on the returned **Image handle**. Each transform returns a
 | `image.open(path, opts?)` | `Image` | Read + decode a file; format sniffed from magic bytes, not the extension. `opts.autoOrient: true` rotates pixels upright from the EXIF tag. |
 | `image.decode(bytes, opts?)` | `Image` | Decode in-memory `Uint8Array` image bytes. `opts.autoOrient: true` rotates pixels upright from the EXIF tag. |
 | `image.rasterizeSVG(src, { width, height })` | `Image` | Rasterize an SVG (subset) to a raster image at the given pixel size. `src` is a path or `Uint8Array`; both dimensions required (> 0). |
+| `image.decodeFrames(src)` | `AnimDoc` | Decode all frames of an animated GIF or APNG into a normalized frame model (see §5.11.2). A non-animated image yields a single frame. `src` is a path string or `Uint8Array`. |
+| `image.encodeFrames(spec, opts?)` | `AnimResult` | Encode a frame set to an animated GIF or APNG (see §5.11.2). `opts.format` selects the encoder (`"gif"` / `"apng"`, default `"gif"`); `opts.dest` writes the file and returns a path. |
 
 **Handle properties** (read-only): `width`, `height`, `format` (the decoded
 source format string, or `"svg"` for a rasterized SVG).
@@ -2835,7 +2837,7 @@ source format string, or `"svg"` for a rasterized SVG).
   symmetry but ignored.
 - **SVG is rasterize-in only** — there is no SVG *output*; `rasterizeSVG`
   renders a *subset* of SVG to a raster image you then encode as PNG/etc.
-- **GIF decode is first-frame** — animation is not preserved.
+- **`image.open` / `image.decode` GIF decode is first-frame** — use `image.decodeFrames` to get all animation frames.
 - **`autoOrient`** (`open`/`decode` `opts.autoOrient: true`) reads the source's EXIF
   `Orientation` tag and applies the corresponding pixel transform so the returned
   handle is always upright. Absent or unreadable `Orientation` is silently treated
@@ -2858,9 +2860,95 @@ const cw = image.decode(rawBytes).orient(6);    // 90° clockwise
 
 Pure-Go stack: `disintegration/imaging` + `golang.org/x/image`
 (webp/tiff/bmp decode) + `HugoSmits86/nativewebp` (webp encode) +
-`srwiley/oksvg`+`rasterx` (SVG). No cgo.
+`srwiley/oksvg`+`rasterx` (SVG) + `kettek/apng` (APNG). No cgo.
 
-#### 5.11.1 EXIF
+#### 5.11.1 Animated frames (GIF / APNG)
+
+`image.decodeFrames` and `image.encodeFrames` provide full animated
+image support for GIF (stdlib) and APNG (`kettek/apng`). Both functions
+are synchronous.
+
+**`image.decodeFrames(src)`** decodes every frame of an animated GIF or
+APNG and returns an **`AnimDoc`** object:
+
+```ts
+{
+  format:    string;   // "gif" | "apng" | (source format for non-animated)
+  width:     number;   // canvas width in pixels
+  height:    number;   // canvas height in pixels
+  loopCount: number;   // 0 = loop forever; n > 0 = play n times
+  frames: {
+    image:    Image;   // chainable Image handle for this frame's pixels
+    delayMs:  number;  // display time in milliseconds
+    xOffset:  number;  // frame's left edge on the canvas
+    yOffset:  number;  // frame's top edge on the canvas
+    disposal: "none" | "background" | "previous";
+    blend?:   "source" | "over";  // APNG only
+  }[];
+}
+```
+
+Frames are returned *as stored* in the container — sub-rectangles with
+their placement metadata — not composited onto the canvas. Composite
+them yourself if you need the final rendered pixels.
+
+A **non-animated input** (any image that is not a multi-frame GIF or
+APNG, including static PNGs, JPEGs, TIFFs, WebP, etc.) returns a
+single-element `frames` array so callers can treat all images uniformly.
+
+**`image.encodeFrames(spec, opts?)`** encodes a frame set into an
+animated GIF or APNG. The `spec` object mirrors `AnimDoc`:
+
+```ts
+{
+  width?:     number;   // canvas width (derived from frame extents if omitted)
+  height?:    number;   // canvas height (derived from frame extents if omitted)
+  loopCount?: number;   // default 0 (loop forever)
+  frames: {
+    image:     Image;   // required — an Image handle
+    delayMs?:  number;  // default 0
+    xOffset?:  number;  // default 0
+    yOffset?:  number;  // default 0
+    disposal?: "none" | "background" | "previous";  // default "none"
+    blend?:    "source" | "over";  // APNG only, default "over"
+  }[];
+}
+```
+
+`opts.format` selects the encoder (`"gif"` or `"apng"`, default `"gif"`).
+Without `opts.dest` the result is `{ format, bytes }` (bytes as a
+`Uint8Array`-compatible array). With `opts.dest` the file is written and
+`{ format, path }` is returned instead.
+
+**GIF palettization:** GIF requires an indexed (paletted) color model.
+Each frame is quantized to the 256-color Plan 9 palette with
+Floyd–Steinberg dithering, which handles photographic content
+reasonably but loses subtle gradients. For full-color animations use
+APNG.
+
+**APNG full-color:** APNG frames are encoded at full RGBA color depth
+with no palette reduction.
+
+```ts
+// Decode all frames of an animated GIF:
+const anim = image.decodeFrames("banner.gif");
+runtime.log(anim.format, anim.frames.length, "frames");
+runtime.log("first frame delay:", anim.frames[0].delayMs, "ms");
+
+// Re-encode as APNG (full-color):
+const out = image.encodeFrames(anim, { format: "apng" });
+runtime.log(out.format, out.bytes.length, "bytes");
+
+// Build a two-frame animation from scratch:
+const frameA = image.open("a.png");
+const frameB = image.open("b.png");
+image.encodeFrames({
+  loopCount: 3,
+  frames: [{ image: frameA, delayMs: 500 }, { image: frameB, delayMs: 500 }],
+}, { format: "gif", dest: "out.gif" });
+```
+
+#### 5.11.2 EXIF
 
 `image.exif` gives synchronous EXIF read/write for reconnaissance and
 metadata-aware tooling. Reads are broad (JPEG/PNG/TIFF full + HEIC/AVIF/RAW
@@ -5814,7 +5902,51 @@ Decode in-memory image bytes into a chainable Image handle. The format is sniffe
 const im = image.decode(pngBytes, { autoOrient: true });
 ```
 
-#### 17.6.2 image.exif.clear
+#### 17.6.2 image.decodeFrames
+
+```
+decodeFrames(src: string | Uint8Array): { format: string; width: number; height: number; loopCount: number; frames: { image: { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }; delayMs: number; xOffset: number; yOffset: number; disposal: "none" | "background" | "previous"; blend?: "source" | "over" }[] }
+```
+
+Decode all frames of an animated image (GIF or APNG) into a raw, normalized frame model. Frames are returned as stored (sub-rectangles, not composited) with per-frame timing/placement metadata; the caller composites if needed. A non-animated image returns a single frame.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — Image path or encoded bytes (GIF/APNG/PNG/JPEG/…).
+
+**Returns:** An object with the container format/size/loopCount and a frames array; each frame's image is a chainable Image handle, delayMs the display time, xOffset/yOffset the placement, disposal the dispose method, and blend (APNG only) the blend op. loopCount 0 = loop forever.
+
+**Throws:** Throws if the path can't be read or the bytes can't be decoded.
+
+```ts
+const a = image.decodeFrames("anim.gif");
+runtime.log(a.format, a.frames.length, a.frames[0].delayMs);
+```
+
+#### 17.6.3 image.encodeFrames
+
+```
+encodeFrames(spec: { width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] }, opts?: { format: "gif" | "apng"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
+```
+
+Encode a frame set into an animated GIF or APNG. Pass a spec shaped like decodeFrames' result (frames[], optional width/height/loopCount); choose the format via opts.format. GIF frames are palettized to 256 colors with Floyd–Steinberg dithering; APNG is full-color. Without opts.dest the encoded bytes are returned; with dest they're written to that path.
+
+**Parameters**
+
+- `spec` *({ width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] })* — The animation: a frames array (each with an Image handle + optional delayMs/offsets/disposal/blend) and optional canvas width/height (derived from frame extents when omitted) and loopCount (default 0 = forever).
+- `opts` *({ format: "gif" | "apng"; dest?: string }, optional)* — format selects the encoder (default gif); dest, when set, writes the file and returns its path instead of bytes.
+
+**Returns:** { format, bytes } with the encoded animation, or { format, path } when opts.dest is set.
+
+**Throws:** Throws if format is not gif/apng, if frames is empty, if a frame's image is not an Image handle, or on an encode/write failure.
+
+```ts
+const a = image.decodeFrames("in.gif");
+const out = image.encodeFrames(a, { format: "apng" });
+runtime.log(out.format, out.bytes.length);
+```
+
+#### 17.6.4 image.exif.clear
 
 ```
 clear(src: string | Uint8Array, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -5836,7 +5968,7 @@ const out = image.exif.clear(jpegBytes);
 const e = image.exif.read(out.bytes); // e === {}
 ```
 
-#### 17.6.3 image.exif.read
+#### 17.6.5 image.exif.read
 
 ```
 read(src: string | Uint8Array): { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }
@@ -5857,7 +5989,7 @@ const e = image.exif.read("photo.jpg");
 runtime.log(e.image?.Make, e.gps?.GPSLatitude);
 ```
 
-#### 17.6.4 image.exif.replace
+#### 17.6.6 image.exif.replace
 
 ```
 replace(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -5880,7 +6012,7 @@ const out = image.exif.replace(jpegBytes, { image: { Make: "sercon" } });
 const e = image.exif.read(out.bytes); // e.image.Make === "sercon"
 ```
 
-#### 17.6.5 image.exif.write
+#### 17.6.7 image.exif.write
 
 ```
 write(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -5903,7 +6035,7 @@ const out = image.exif.write(jpegBytes, { image: { Artist: "Alice" } });
 // out.bytes is the updated JPEG
 ```
 
-#### 17.6.6 image.open
+#### 17.6.8 image.open
 
 ```
 open(path: string, opts?: { autoOrient?: boolean }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -5924,7 +6056,7 @@ Read an image file from disk and decode it into a chainable Image handle. The fo
 const im = image.open("avatar.jpg", { autoOrient: true });
 ```
 
-#### 17.6.7 image.rasterizeSVG
+#### 17.6.9 image.rasterizeSVG
 
 ```
 rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }

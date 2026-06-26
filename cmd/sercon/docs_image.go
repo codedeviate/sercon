@@ -243,6 +243,26 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Example:    `im.resize(64, 64).save("out.png");`,
 		},
 
+		"decodeFrames": {
+			Summary: "Decode all frames of an animated image (GIF or APNG) into a raw, normalized frame model. Frames are returned as stored (sub-rectangles, not composited) with per-frame timing/placement metadata; the caller composites if needed. A non-animated image returns a single frame.",
+			Params:  []scriptengine.Param{{Name: "src", Type: "string | Uint8Array", Desc: "Image path or encoded bytes (GIF/APNG/PNG/JPEG/…)."}},
+			ReturnType: "{ format: string; width: number; height: number; loopCount: number; frames: { image: " + imageHandleTS + "; delayMs: number; xOffset: number; yOffset: number; disposal: \"none\" | \"background\" | \"previous\"; blend?: \"source\" | \"over\" }[] }",
+			Returns: "An object with the container format/size/loopCount and a frames array; each frame's image is a chainable Image handle, delayMs the display time, xOffset/yOffset the placement, disposal the dispose method, and blend (APNG only) the blend op. loopCount 0 = loop forever.",
+			Errors:  "Throws if the path can't be read or the bytes can't be decoded.",
+			Example: "const a = image.decodeFrames(\"anim.gif\");\nruntime.log(a.format, a.frames.length, a.frames[0].delayMs);",
+		},
+		"encodeFrames": {
+			Summary: "Encode a frame set into an animated GIF or APNG. Pass a spec shaped like decodeFrames' result (frames[], optional width/height/loopCount); choose the format via opts.format. GIF frames are palettized to 256 colors with Floyd–Steinberg dithering; APNG is full-color. Without opts.dest the encoded bytes are returned; with dest they're written to that path.",
+			Params: []scriptengine.Param{
+				{Name: "spec", Type: "{ width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: \"none\" | \"background\" | \"previous\"; blend?: \"source\" | \"over\" }[] }", Desc: "The animation: a frames array (each with an Image handle + optional delayMs/offsets/disposal/blend) and optional canvas width/height (derived from frame extents when omitted) and loopCount (default 0 = forever)."},
+				{Name: "opts", Type: "{ format: \"gif\" | \"apng\"; dest?: string }", Optional: true, Desc: "format selects the encoder (default gif); dest, when set, writes the file and returns its path instead of bytes."},
+			},
+			ReturnType: "{ format: string; bytes?: Uint8Array; path?: string }",
+			Returns:    "{ format, bytes } with the encoded animation, or { format, path } when opts.dest is set.",
+			Errors:     "Throws if format is not gif/apng, if frames is empty, if a frame's image is not an Image handle, or on an encode/write failure.",
+			Example:    "const a = image.decodeFrames(\"in.gif\");\nconst out = image.encodeFrames(a, { format: \"apng\" });\nruntime.log(out.format, out.bytes.length);",
+		},
+
 		// --- EXIF sub-namespace ---
 		"exif.read": {
 			Summary:    "Read an image's EXIF metadata into a grouped-by-IFD object (image/exif/gps/thumbnail). JPEG/PNG/TIFF return all tags; HEIC/AVIF/RAW return a curated subset. Returns {} when the image has no EXIF.",

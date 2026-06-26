@@ -149,18 +149,18 @@ and PNG image I/O (macOS `pngpaste`/`osascript`, Linux `wl-paste`/`xclip`,
 Windows PowerShell). Remaining: non-PNG formats (JPEG/TIFF), RTF/HTML/file-list
 clipboard, clipboard watching. Re-promote on demand.
 
-- **`image` v2 (parked).** The v1 `image` global (shipped — decode/encode
-  PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in, and a chainable raster `Image`
-  handle) intentionally leaves a second wave parked:
-  - **Animated GIF / APNG** — decode/encode all frames (v1 is first-frame only).
+- **`image` v2 (partially parked).** The v1 `image` global (shipped — decode/encode
+  PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in, animated GIF + APNG via
+  `decodeFrames`/`encodeFrames`, and a chainable raster `Image` handle)
+  intentionally leaves a third wave parked:
   - **Custom convolution / morphology / arbitrary filters** — user-supplied
     kernels, erode/dilate, edge detect beyond the fixed `sharpen`/`blur`.
   - **SVG output** — v1 is rasterize-*in* only; emitting SVG is a different
     (vector) pipeline.
   - **ICC colour profiles** — profile-aware decode/encode + conversion.
-  **Reason parked:** v1 covers the common reconnaissance/troubleshooting needs
-  (resize/crop/convert/inspect); these add scope (extra deps, larger surface)
-  better promoted on demand.
+  **Reason parked:** existing surface covers the common reconnaissance/troubleshooting
+  needs (resize/crop/convert/inspect/animate); these add scope (extra deps, larger
+  surface) better promoted on demand.
 
 - **`services.typst` v2 (parked).** The v1 binding (shipped —
   `available`/`version`/`fonts`/`compile`/`query`, inline `source` or `.typ`

@@ -100,6 +100,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/load.ts \
 	examples/scripts/capture-file.ts \
 	examples/scripts/image.ts \
+	examples/scripts/image-anim.ts \
 	examples/scripts/exif.ts \
 	examples/scripts/tui-keys.ts \
 	examples/scripts/agent-browser-core.ts \
