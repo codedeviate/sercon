@@ -100,8 +100,11 @@ func solidFrame(c color.Color) animFrame {
 }
 
 func TestEncodeDecodeGIF_RoundTrip(t *testing.T) {
+	f0 := solidFrame(color.NRGBA{255, 0, 0, 255})
+	f1 := solidFrame(color.NRGBA{0, 255, 0, 255})
+	f1.disposal = "background"
 	doc := animDoc{format: "gif", width: 3, height: 2, loopCount: 0,
-		frames: []animFrame{solidFrame(color.NRGBA{255, 0, 0, 255}), solidFrame(color.NRGBA{0, 255, 0, 255})}}
+		frames: []animFrame{f0, f1}}
 	data, err := encodeFramesGIF(doc)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
@@ -116,11 +119,18 @@ func TestEncodeDecodeGIF_RoundTrip(t *testing.T) {
 	if back.frames[0].delayMs != 40 {
 		t.Fatalf("delayMs = %d, want 40", back.frames[0].delayMs)
 	}
+	if back.frames[1].disposal != "background" {
+		t.Fatalf("disposal[1] = %q, want background", back.frames[1].disposal)
+	}
 }
 
 func TestEncodeDecodeAPNG_RoundTrip(t *testing.T) {
+	f0 := solidFrame(color.NRGBA{255, 0, 0, 255})
+	f1 := solidFrame(color.NRGBA{0, 255, 0, 255})
+	f1.disposal = "previous"
+	f1.blend = "source"
 	doc := animDoc{format: "apng", width: 3, height: 2, loopCount: 0,
-		frames: []animFrame{solidFrame(color.NRGBA{255, 0, 0, 255}), solidFrame(color.NRGBA{0, 255, 0, 255})}}
+		frames: []animFrame{f0, f1}}
 	data, err := encodeFramesAPNG(doc)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
@@ -131,6 +141,34 @@ func TestEncodeDecodeAPNG_RoundTrip(t *testing.T) {
 	}
 	if len(back.frames) != 2 || back.frames[1].delayMs != 40 {
 		t.Fatalf("round-trip frames=%d delay=%d", len(back.frames), back.frames[1].delayMs)
+	}
+	if back.frames[1].disposal != "previous" {
+		t.Fatalf("disposal[1] = %q, want previous", back.frames[1].disposal)
+	}
+	if back.frames[1].blend != "source" {
+		t.Fatalf("blend[1] = %q, want source", back.frames[1].blend)
+	}
+}
+
+func TestEncodeDecodeAPNG_LongDelay(t *testing.T) {
+	f := solidFrame(color.NRGBA{255, 0, 0, 255})
+	f.delayMs = 70000 // > 65535: forces centisecond rescale to avoid uint16 wrap
+	doc := animDoc{format: "apng", width: 3, height: 2, loopCount: 0,
+		frames: []animFrame{f}}
+	data, err := encodeFramesAPNG(doc)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	back, err := decodeFramesAPNG(data)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(back.frames) != 1 {
+		t.Fatalf("frames = %d, want 1", len(back.frames))
+	}
+	// At centisecond granularity the round-trip is exact to within 10ms.
+	if d := back.frames[0].delayMs; d < 69990 || d > 70010 {
+		t.Fatalf("delayMs = %d, want ~70000 (±10)", d)
 	}
 }
 

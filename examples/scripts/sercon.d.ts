@@ -1470,7 +1470,7 @@ declare const image: {
    * @param opts format selects the encoder (default gif); dest, when set, writes the file and returns its path instead of bytes.
    * @returns { format, bytes } with the encoded animation, or { format, path } when opts.dest is set.
    */
-  encodeFrames(spec: { width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] }, opts?: { format: "gif" | "apng"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string };
+  encodeFrames(spec: { width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] }, opts?: { format?: "gif" | "apng"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string };
   exif: {
     /**
      * Remove all EXIF metadata from an image (JPEG/PNG only). Returns {format, bytes} with the stripped image bytes, or writes to {format, path} when opts.dest is given.

@@ -191,7 +191,7 @@ func encodeFramesGIF(doc animDoc) ([]byte, error) {
 	}
 	var b bytes.Buffer
 	if err := gif.EncodeAll(&b, g); err != nil {
-		return nil, fmt.Errorf("image.encodeFrames: gif: %w", err)
+		return nil, fmt.Errorf("image.encodeFrames: %w", err)
 	}
 	return b.Bytes(), nil
 }
@@ -202,19 +202,26 @@ func encodeFramesAPNG(doc animDoc) ([]byte, error) {
 	}
 	a := apng.APNG{LoopCount: uint(doc.loopCount)}
 	for _, f := range doc.frames {
+		num, den := f.delayMs, 1000
+		if num > 65535 { // exact-ms denominator would overflow uint16; rescale to centiseconds
+			num, den = (f.delayMs+5)/10, 100
+			if num > 65535 {
+				num = 65535 // cap ~655s
+			}
+		}
 		a.Frames = append(a.Frames, apng.Frame{
 			Image:            f.img,
 			XOffset:          f.xOffset,
 			YOffset:          f.yOffset,
-			DelayNumerator:   uint16(f.delayMs),
-			DelayDenominator: 1000,
+			DelayNumerator:   uint16(num),
+			DelayDenominator: uint16(den),
 			DisposeOp:        strToApngDispose(f.disposal),
 			BlendOp:          strToApngBlend(f.blend),
 		})
 	}
 	var b bytes.Buffer
 	if err := apng.Encode(&b, a); err != nil {
-		return nil, fmt.Errorf("image.encodeFrames: apng: %w", err)
+		return nil, fmt.Errorf("image.encodeFrames: %w", err)
 	}
 	return b.Bytes(), nil
 }

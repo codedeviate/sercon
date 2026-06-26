@@ -2924,7 +2924,10 @@ Without `opts.dest` the result is `{ format, bytes }` (bytes as a
 Each frame is quantized to the 256-color Plan 9 palette with
 Floyd–Steinberg dithering, which handles photographic content
 reasonably but loses subtle gradients. For full-color animations use
-APNG.
+APNG. GIF frame delays are stored in hundredths of a second, so
+`delayMs` quantizes to the nearest 10 ms on encode (`delayMs / 10`);
+APNG preserves exact-millisecond delays (up to ~65 s, beyond which it
+falls back to 10 ms granularity).
 
 **APNG full-color:** APNG frames are encoded at full RGBA color depth
 with no palette reduction.
@@ -5926,7 +5929,7 @@ runtime.log(a.format, a.frames.length, a.frames[0].delayMs);
 #### 17.6.3 image.encodeFrames
 
 ```
-encodeFrames(spec: { width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] }, opts?: { format: "gif" | "apng"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
+encodeFrames(spec: { width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] }, opts?: { format?: "gif" | "apng"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
 ```
 
 Encode a frame set into an animated GIF or APNG. Pass a spec shaped like decodeFrames' result (frames[], optional width/height/loopCount); choose the format via opts.format. GIF frames are palettized to 256 colors with Floyd–Steinberg dithering; APNG is full-color. Without opts.dest the encoded bytes are returned; with dest they're written to that path.
@@ -5934,7 +5937,7 @@ Encode a frame set into an animated GIF or APNG. Pass a spec shaped like decodeF
 **Parameters**
 
 - `spec` *({ width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] })* — The animation: a frames array (each with an Image handle + optional delayMs/offsets/disposal/blend) and optional canvas width/height (derived from frame extents when omitted) and loopCount (default 0 = forever).
-- `opts` *({ format: "gif" | "apng"; dest?: string }, optional)* — format selects the encoder (default gif); dest, when set, writes the file and returns its path instead of bytes.
+- `opts` *({ format?: "gif" | "apng"; dest?: string }, optional)* — format selects the encoder (default gif); dest, when set, writes the file and returns its path instead of bytes.
 
 **Returns:** { format, bytes } with the encoded animation, or { format, path } when opts.dest is set.
 
