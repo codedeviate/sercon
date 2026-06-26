@@ -173,6 +173,48 @@ func imageNamespace(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 			}
 			return newImageHandle(vm, img, format)
 		},
+		"decodeFrames": func(call goja.FunctionCall) goja.Value {
+			data := imageSrcBytes(vm, call.Argument(0), "decodeFrames")
+			doc, err := decodeFramesAny(data)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return framesToJS(vm, doc)
+		},
+		"encodeFrames": func(call goja.FunctionCall) goja.Value {
+			doc := jsToAnimDoc(vm, call.Argument(0))
+			format := "gif"
+			dest := ""
+			if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
+				obj := o.ToObject(vm)
+				if f := obj.Get("format"); f != nil && !goja.IsUndefined(f) {
+					format = strings.ToLower(f.String())
+				}
+				if d := obj.Get("dest"); d != nil && !goja.IsUndefined(d) {
+					dest = d.String()
+				}
+			}
+			var out []byte
+			var err error
+			switch format {
+			case "gif":
+				out, err = encodeFramesGIF(doc)
+			case "apng":
+				out, err = encodeFramesAPNG(doc)
+			default:
+				panic(vm.NewGoError(fmt.Errorf("image.encodeFrames: unsupported format %q (gif, apng)", format)))
+			}
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			if dest != "" {
+				if werr := os.WriteFile(dest, out, 0o644); werr != nil { //nolint:gosec
+					panic(vm.NewGoError(fmt.Errorf("image.encodeFrames: %w", werr)))
+				}
+				return vm.ToValue(map[string]any{"format": format, "path": dest})
+			}
+			return vm.ToValue(map[string]any{"format": format, "bytes": out})
+		},
 		"exif": exifNamespace(vm),
 		"rasterizeSVG": func(call goja.FunctionCall) goja.Value {
 			var data []byte
@@ -201,6 +243,98 @@ func imageNamespace(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 			return newImageHandle(vm, img, "svg")
 		},
 	}
+}
+
+// imageSrcBytes reads a path string or Uint8Array into bytes (shared by the
+// frame ops); mirrors the open/decode arg handling.
+func imageSrcBytes(vm *goja.Runtime, arg goja.Value, op string) []byte {
+	if s, ok := arg.Export().(string); ok {
+		b, err := os.ReadFile(s) //nolint:gosec // user-provided path is intentional
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("image.%s: %w", op, err)))
+		}
+		return b
+	}
+	if b, ok := arg.Export().([]byte); ok {
+		return b
+	}
+	panic(vm.NewTypeError("image.%s: expected a path string or Uint8Array", op))
+}
+
+// framesToJS renders an animDoc as the script-facing { format, width, height,
+// loopCount, frames:[{image, delayMs, xOffset, yOffset, disposal, blend}] }.
+func framesToJS(vm *goja.Runtime, doc animDoc) goja.Value {
+	frames := make([]any, len(doc.frames))
+	for i, f := range doc.frames {
+		fr := map[string]any{
+			"image":    newImageHandle(vm, f.img, doc.format),
+			"delayMs":  f.delayMs,
+			"xOffset":  f.xOffset,
+			"yOffset":  f.yOffset,
+			"disposal": f.disposal,
+		}
+		if doc.format == "apng" {
+			fr["blend"] = f.blend
+		}
+		frames[i] = fr
+	}
+	return vm.ToValue(map[string]any{
+		"format": doc.format, "width": doc.width, "height": doc.height,
+		"loopCount": doc.loopCount, "frames": frames,
+	})
+}
+
+// jsToAnimDoc parses the JS spec object into an animDoc, recovering each
+// frame's Go image via the handle's __goimage field (as overlay/paste do).
+func jsToAnimDoc(vm *goja.Runtime, specArg goja.Value) animDoc {
+	if specArg == nil || goja.IsUndefined(specArg) || goja.IsNull(specArg) {
+		panic(vm.NewTypeError("image.encodeFrames: spec object with a frames array is required"))
+	}
+	spec := specArg.ToObject(vm)
+	jsInt := func(o *goja.Object, key string) int {
+		v := o.Get(key)
+		if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+			return 0
+		}
+		return int(v.ToInteger())
+	}
+	doc := animDoc{
+		width:     jsInt(spec, "width"),
+		height:    jsInt(spec, "height"),
+		loopCount: jsInt(spec, "loopCount"),
+	}
+	framesV := spec.Get("frames")
+	if framesV == nil || goja.IsUndefined(framesV) {
+		panic(vm.NewTypeError("image.encodeFrames: spec.frames is required"))
+	}
+	arr := framesV.ToObject(vm)
+	n := int(arr.Get("length").ToInteger())
+	for i := 0; i < n; i++ {
+		fo := arr.Get(fmt.Sprintf("%d", i)).ToObject(vm)
+		gi := fo.Get("image")
+		if gi == nil || goja.IsUndefined(gi) {
+			panic(vm.NewTypeError("image.encodeFrames: each frame needs an Image handle"))
+		}
+		giObj := gi.ToObject(vm).Get("__goimage")
+		if giObj == nil || goja.IsUndefined(giObj) {
+			panic(vm.NewTypeError("image.encodeFrames: frame.image must be an Image handle"))
+		}
+		img, ok := giObj.Export().(image.Image)
+		if !ok {
+			panic(vm.NewTypeError("image.encodeFrames: frame.image must be an Image handle"))
+		}
+		f := animFrame{img: img,
+			delayMs: jsInt(fo, "delayMs"), xOffset: jsInt(fo, "xOffset"), yOffset: jsInt(fo, "yOffset"),
+			disposal: "none", blend: "over"}
+		if d := fo.Get("disposal"); d != nil && !goja.IsUndefined(d) && !goja.IsNull(d) {
+			f.disposal = d.String()
+		}
+		if bl := fo.Get("blend"); bl != nil && !goja.IsUndefined(bl) && !goja.IsNull(bl) {
+			f.blend = bl.String()
+		}
+		doc.frames = append(doc.frames, f)
+	}
+	return doc
 }
 
 // rasterizeSVG renders an SVG subset to an RGBA image at w×h (oksvg/rasterx).

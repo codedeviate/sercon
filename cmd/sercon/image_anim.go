@@ -104,6 +104,19 @@ func decodeFramesAPNG(data []byte) (animDoc, error) {
 			disposal: apngDisposeToStr(f.DisposeOp), blend: apngBlendToStr(f.BlendOp),
 		})
 	}
+	// Static PNG: all frames are IsDefault — use the default frame as a single
+	// animation frame so decodeFramesAny always returns at least one frame.
+	if len(doc.frames) == 0 {
+		for _, f := range a.Frames {
+			if f.IsDefault && f.Image != nil {
+				b := f.Image.Bounds()
+				doc.format = "png"
+				doc.frames = []animFrame{{img: f.Image, disposal: "none", blend: "over"}}
+				doc.width, doc.height = b.Dx(), b.Dy()
+				return doc, nil
+			}
+		}
+	}
 	doc.width, doc.height = frameExtent(doc.frames)
 	return doc, nil
 }
@@ -216,7 +229,7 @@ func decodeFramesAny(data []byte) (animDoc, error) {
 	switch format {
 	case "gif":
 		return decodeFramesGIF(data)
-	case "png":
+	case "png", "apng":
 		return decodeFramesAPNG(data)
 	default:
 		img, _, derr := decodeImage(data)
