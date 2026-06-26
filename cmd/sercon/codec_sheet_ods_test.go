@@ -4,6 +4,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"io"
 	"testing"
 )
 
@@ -162,6 +163,15 @@ func TestWriteODS_MimetypeFirstStored(t *testing.T) {
 	if zr.File[0].Method != zip.Store {
 		t.Errorf("mimetype method = %d, want Store (%d)", zr.File[0].Method, zip.Store)
 	}
+	rc, err := zr.File[0].Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mt, _ := io.ReadAll(rc)
+	_ = rc.Close()
+	if string(mt) != odsMimetype {
+		t.Errorf("mimetype content = %q, want %q", mt, odsMimetype)
+	}
 }
 
 func TestWriteODS_ZeroSheetsErrors(t *testing.T) {
@@ -203,5 +213,8 @@ func TestODS_RoundTripTyped(t *testing.T) {
 	}
 	if r[3][1] != nil {
 		t.Errorf("blank cell = %#v, want nil", r[3][1])
+	}
+	if r[3][2] != "x" {
+		t.Errorf("trailing cell after blank = %#v, want %q", r[3][2], "x")
 	}
 }
