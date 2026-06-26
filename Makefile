@@ -165,7 +165,7 @@ manual: reference
 		--doc-subtitle "Embeddable TypeScript script engine — reference and guide" \
 		--doc-version "$(MANUAL_VERSION)" \
 		--doc-date "$(MANUAL_DATE)" \
-		--doc-author "Thomas Bjork" \
+		--doc-author "Thomas Björk" \
 		--doc-keywords "sercon, typescript, scripting, goja, esbuild, embedded"
 # Manual is rendered by recon's typst engine: page-number footer, a page-numbered
 # table of contents (--toc), a flag-generated cover, and a sans-serif body via

@@ -3783,7 +3783,7 @@ additions; no library dependencies were added.
 
 ### Added
 
-- `LICENSE` — MIT, copyright 2026 Thomas Bjork.
+- `LICENSE` — MIT, copyright 2026 Thomas Björk.
 - Badge row at the top of `README.md`: GitHub repo, license, Go version,
   latest release, pkg.go.dev. Style mirrors the
   [`codedeviate/webrunner`](https://github.com/codedeviate/webrunner)
