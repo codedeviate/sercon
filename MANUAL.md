@@ -320,7 +320,8 @@ sercon --examples | --help | --version
 | `-timeout DURATION` | Wall-clock limit per script (default `10s`; `0` disables). |
 | `-root DIR` | Override the script root for `require`/`import` resolution. |
 | `-emit-dts PATH` | Write the example bindings' `.d.ts` to `PATH` and exit. |
-| `-v` | Verbose: trace the rewritten entry-script JS and each module resolution to stderr; also print duration on failure. |
+| `-v`, `--verbose` | Print a `PASS <name> (<time>)` line per script on success (default is quiet — only failures print). Also traces the rewritten entry-script JS and each module resolution to stderr, and prints duration on failure. |
+| `--silent` | Suppress the runner's `PASS`/`FAIL` status lines entirely. Script console output and the export-default result still print; failure is signalled only by the exit code. |
 | `-h`, `--help` | In-depth colorized help. |
 | `--examples` | In-depth colorized walkthrough of every feature. |
 | `--no-pager` | Don't page `--help` / `--examples`. By default, when stdout is a terminal they pipe through `$PAGER` (falling back to `less` with `LESS=FRX`, color preserved); a pipe/redirect, `--no-pager`, or `PAGER=cat` renders directly. |
@@ -371,8 +372,14 @@ When several scripts run, the highest applicable code wins:
 | `4` | at least one script ran and threw a JS exception. |
 | `5` | `--doctor` detected a compatibility conflict (e.g. chromedriver↔Chrome major mismatch). |
 
-`-v` writes lines prefixed with `[sercon] ` to stderr. The traces
-include the full rewritten entry-script JS (the form goja actually
+The multi-script runner is **quiet on success by default** — it only prints
+`FAIL <name>: <error>` lines. Pass `-v`/`--verbose` to also print a
+`PASS <name> (<time>)` line per script. `--silent` suppresses both status
+lines; the script's own `runtime.log` / `console.log` output and any
+`export default` result still appear, and the exit code is unchanged.
+
+`-v` additionally writes lines prefixed with `[sercon] ` to stderr. The
+traces include the full rewritten entry-script JS (the form goja actually
 runs, after the ESM→CJS rewrite + async IIFE wrapper) and every
 module-resolution event, so debugging an unexpected resolve target or a
 mis-rewritten import is straightforward.
@@ -5002,7 +5009,47 @@ const out = codec.sheet.write([["a", 1, true]], { format: "ods" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.1.22 codec.xml.decode
+#### 17.1.22 codec.toml.parse
+
+```
+parse(text: string): Record<string, unknown>
+```
+
+Parse a TOML document string into a JS object. Tables become nested objects, arrays become arrays, and TOML integers/floats/booleans/strings map to the corresponding JS types (datetimes come back as strings).
+
+**Parameters**
+
+- `text` *(string)* — The TOML document text.
+
+**Returns:** The parsed document as a plain object.
+
+**Throws:** Throws ("codec.toml.parse: …") on malformed TOML.
+
+```ts
+const cfg = codec.toml.parse('port = 8080\n[db]\nhost = "localhost"');
+```
+
+#### 17.1.23 codec.toml.stringify
+
+```
+stringify(value: Record<string, unknown>): string
+```
+
+Serialize a JS value to a TOML document string. The top-level value must be an object (TOML documents are tables); nested objects become tables, arrays become TOML arrays.
+
+**Parameters**
+
+- `value` *(Record<string, unknown>)* — An object to serialize as a TOML table.
+
+**Returns:** The TOML document text.
+
+**Throws:** Throws ("codec.toml.stringify: …") if the value can't be represented as TOML (e.g. a non-object top level).
+
+```ts
+const text = codec.toml.stringify({ port: 8080, db: { host: "localhost" } });
+```
+
+#### 17.1.24 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -5023,7 +5070,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### 17.1.23 codec.xml.encode
+#### 17.1.25 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string

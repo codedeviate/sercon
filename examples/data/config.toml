@@ -1,0 +1,14 @@
+title = "sercon demo app"
+version = "1.0.0"
+
+[server]
+host = "0.0.0.0"
+port = 8080
+hosts = ["a.example", "b.example"]
+
+[server.tls]
+enabled = false
+
+[logging]
+level = "info"
+sinks = ["stdout", "file"]

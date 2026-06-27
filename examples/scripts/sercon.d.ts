@@ -692,6 +692,20 @@ declare const codec: {
      */
     write(model: { sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][], opts: { format: "csv" | "tsv" | "xlsx" | "ods"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string };
   };
+  toml: {
+    /**
+     * Parse a TOML document string into a JS object. Tables become nested objects, arrays become arrays, and TOML integers/floats/booleans/strings map to the corresponding JS types (datetimes come back as strings).
+     * @param text The TOML document text.
+     * @returns The parsed document as a plain object.
+     */
+    parse(text: string): Record<string, unknown>;
+    /**
+     * Serialize a JS value to a TOML document string. The top-level value must be an object (TOML documents are tables); nested objects become tables, arrays become TOML arrays.
+     * @param value An object to serialize as a TOML table.
+     * @returns The TOML document text.
+     */
+    stringify(value: Record<string, unknown>): string;
+  };
   xml: {
     /**
      * Parse an XML string to a value using the same @-prefix + #text convention as xml.encode. Attributes become @-keys, text becomes #text (or a bare string for a text-only element), child elements become keys, and repeated same-name siblings become an array. Empty/self-closing elements decode to null. Namespace prefixes are kept literally; all values are strings (no type coercion). Mismatched tags, multiple roots, and malformed XML throw.

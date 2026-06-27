@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Changed
+- The script runner is now quiet on success across all modes (bare `sercon a.ts b.ts`, `sercon run`, and `--watch`): the per-script `PASS <name> (<time>)` line prints only with `-v`/`--verbose`. Failures still print `FAIL …` by default.
+
+### Added
+- `-v` gained a `--verbose` long alias; new `--silent` flag suppresses the runner's PASS/FAIL status lines (exit code and script output unaffected).
+- `codec.toml.parse` / `codec.toml.stringify` — TOML ↔ object (pure-Go, `pelletier/go-toml/v2`).
+- `examples/data/` sample-data corpus and `examples/recipes/` — eight task-shaped example scripts (sales report, config read, image pipeline, format convert, inventory, log scan, stego, barcode batch) that consume the corpus.
+
 ## [0.75.0] — 2026-06-27
 
 ### Added

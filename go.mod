@@ -46,6 +46,7 @@ require (
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/mmcdole/gofeed v1.3.0
+	github.com/pelletier/go-toml/v2 v2.4.2
 	github.com/pierrec/lz4/v4 v4.1.26
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/prometheus-community/pro-bing v0.8.0

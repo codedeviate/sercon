@@ -42,6 +42,7 @@ Or pick individual scripts:
 | `checkdigit.ts` | `checkdigit.validate/compute/inspect` over Luhn, ISBN-10/13, EAN-13/8, UPC-A. |
 | `dump-codec.ts` | `codec.php.*` / `codec.perl.*` — round-trip a value through PHP serialize / var_export / var_dump and Perl Data::Dumper. |
 | `codec-xml.ts` | `codec.xml.encode` / `decode` — value ↔ XML (@-attributes, #text, arrays as repeated siblings). Round-trips an object and self-checks. |
+| `codec-toml.ts` | `codec.toml.parse` / `stringify` — value ↔ TOML (pure-Go, `pelletier/go-toml/v2`). Parses a document, asserts typed fields, and round-trips through stringify. |
 | `archive.ts` | `archive.create/extract` round-trip over zip / tar / tar.gz. |
 | `diff.ts` | `diff.compare` — unified diff of two text inputs. |
 | `jq.ts` | `jq.query/queryAll` — jq filters over JS data structures. |
@@ -132,6 +133,23 @@ external service self-skip.
 | `advanced/sqlite-migration.ts` | Idempotent versioned schema migration (a `schema_version` gate, v1 create + v2 `ALTER TABLE`/lookup) then a three-table JOIN (`orders ⋈ customers ⋈ regions`) with `GROUP BY` aggregation; asserts per-region totals and per-tier counts. Self-contained (in CI). |
 | `advanced/sse-stream.ts` | Live-metrics stream over `res.sse` — pushes JSON `tick` events on a timer plus a named `alert`, stops the timer via `stream.closed`, and closes after N ticks; self-tests the accumulated `text/event-stream` via a buffered `net.http.request`. Self-contained, offline. |
 | `advanced/tui-dashboard.ts` | Live multi-pane `tui` dashboard — streams a bounded subprocess into one pane + periodic status ticks in another; runs a fixed number of cycles then exits. **Manual run** (takes over a real terminal); falls back to prefixed lines in non-TTY; not in `make demo`. |
+
+## Recipes (`recipes/`)
+
+Task-shaped scripts that consume the `examples/data/` sample-data corpus.
+Each script writes any output under `$TMPDIR` and announces the paths via
+`runtime.log`; every script self-verifies with `runtime.assert`.
+
+| Script | Demonstrates |
+| --- | --- |
+| `recipes/sales-report.ts` | Read `sales.csv`, aggregate revenue by category, write XLSX + ODS report to `$TMPDIR`. |
+| `recipes/config-read.ts` | Load `config.toml` (`codec.toml.parse`) and `config.json`, assert matching fields. |
+| `recipes/image-pipeline.ts` | Decode `medium.png`, resize to 200 px wide and grayscale, write PNG + JPEG thumbnail to `$TMPDIR`. |
+| `recipes/format-convert.ts` | CSV → object records → JSON + XML round-trip; write both to `$TMPDIR`. |
+| `recipes/inventory.ts` | Read `products.xlsx`, find rows where `stock < 10`, assert at least one low-stock item. |
+| `recipes/log-scan.ts` | Parse `server.log`, tally HTTP status codes and collect unique client IPs. |
+| `recipes/stego-hide.ts` | Embed a password-protected secret in `small.png`, write stego PNG to `$TMPDIR`, extract and assert round-trip. |
+| `recipes/barcode-batch.ts` | Generate a Code128 barcode per region from `regions.tsv`, write PNGs to `$TMPDIR`, decode one back. |
 
 ## DevShop flows (`sws6/`)
 

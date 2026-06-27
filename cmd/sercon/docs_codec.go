@@ -245,5 +245,25 @@ const text = new TextDecoder().decode(raw);`,
 			Errors:     "Throws if the model isn't an object-with-sheets or a 2D array, if format is missing/unsupported, if a CSV/TSV write has more than one sheet, or on an encode/write failure.",
 			Example:    "const out = codec.sheet.write([[\"a\", 1, true]], { format: \"ods\" });\nruntime.log(out.format, out.bytes.length);",
 		},
+		"toml.parse": {
+			Summary: "Parse a TOML document string into a JS object. Tables become nested objects, arrays become arrays, and TOML integers/floats/booleans/strings map to the corresponding JS types (datetimes come back as strings).",
+			Params: []scriptengine.Param{
+				{Name: "text", Type: "string", Desc: "The TOML document text."},
+			},
+			ReturnType: "Record<string, unknown>",
+			Returns:    "The parsed document as a plain object.",
+			Errors:     "Throws (\"codec.toml.parse: …\") on malformed TOML.",
+			Example:    "const cfg = codec.toml.parse('port = 8080\\n[db]\\nhost = \"localhost\"');",
+		},
+		"toml.stringify": {
+			Summary: "Serialize a JS value to a TOML document string. The top-level value must be an object (TOML documents are tables); nested objects become tables, arrays become TOML arrays.",
+			Params: []scriptengine.Param{
+				{Name: "value", Type: "Record<string, unknown>", Desc: "An object to serialize as a TOML table."},
+			},
+			ReturnType: "string",
+			Returns:    "The TOML document text.",
+			Errors:     "Throws (\"codec.toml.stringify: …\") if the value can't be represented as TOML (e.g. a non-object top level).",
+			Example:    "const text = codec.toml.stringify({ port: 8080, db: { host: \"localhost\" } });",
+		},
 	}
 }

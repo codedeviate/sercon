@@ -40,7 +40,7 @@ RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 MANUAL_VERSION    := $(shell sed -nE 's|^const Version = "([^"]+)".*|\1|p' pkg/scriptengine/version.go)
 MANUAL_DATE       := $(shell date +%F)
 
-.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check paymentproviders paymentproviders-check clean
+.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check paymentproviders paymentproviders-check sample-data clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -68,6 +68,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/checkdigit.ts \
 	examples/scripts/dump-codec.ts \
 	examples/scripts/codec-xml.ts \
+	examples/scripts/codec-toml.ts \
 	examples/scripts/archive.ts \
 	examples/scripts/diff.ts \
 	examples/scripts/jq.ts \
@@ -142,7 +143,15 @@ examples/scripts/server-sse.ts \
 	examples/scripts/web-feed.ts \
 	examples/scripts/web-sitemap.ts \
 	examples/scripts/web-html.ts \
-	examples/scripts/sheet.ts
+	examples/scripts/sheet.ts \
+	examples/recipes/sales-report.ts \
+	examples/recipes/config-read.ts \
+	examples/recipes/image-pipeline.ts \
+	examples/recipes/format-convert.ts \
+	examples/recipes/inventory.ts \
+	examples/recipes/log-scan.ts \
+	examples/recipes/stego-hide.ts \
+	examples/recipes/barcode-batch.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon
@@ -200,7 +209,7 @@ demo: build
 	@# the run is killed before ai.ts's own timeout + try/catch can degrade
 	@# gracefully. Every other demo finishes in milliseconds, so the larger
 	@# ceiling only matters for ai.ts.
-	@./$(BIN) -timeout 90s $(DEMO_SCRIPTS)
+	@./$(BIN) --verbose -timeout 90s $(DEMO_SCRIPTS)
 	@echo "All example scripts passed. (hang.ts is the timeout demo — run separately.)"
 
 # Opt-in integration tests against the dbplayground fleet
@@ -255,6 +264,9 @@ release-prep:
 	@echo "  3) git commit -am 'chore: cut v$(VERSION)'"
 	@echo "  4) git tag -a v$(VERSION) -m 'release v$(VERSION)'"
 	@echo "  5) git push origin master v$(VERSION)  # CI publishes binaries via goreleaser"
+
+sample-data: build
+	./$(BIN) examples/data/generate.ts
 
 paymentproviders:        ## bundle the embedded paymentproviders TS library
 	go run ./cmd/ppbundle

@@ -29,7 +29,7 @@ func runRun(args []string) int {
 	fs.SetOutput(os.Stderr)
 	timeout := fs.Duration("timeout", 10*time.Second, "Per-script timeout")
 	root := fs.String("root", "", "Script root for require resolution (default: dirname of the script)")
-	verbose := fs.Bool("v", false, "Verbose: trace transpile output and module resolutions to stderr")
+	verbose := fs.Bool("v", false, "Verbose: print a PASS line on success (default is quiet); also trace transpile output and module resolutions to stderr")
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: sercon run [flags] <script> [args...]")
 		fmt.Fprintln(os.Stderr, "  Runs one script; tokens after <script> become runtime.argv[2:].")
@@ -74,7 +74,7 @@ func runRun(args []string) int {
 		return exitUsage
 	}
 
-	if err := runOne(eng, script, *verbose, userArgs); err != nil {
+	if err := runOne(eng, script, *verbose, false, userArgs); err != nil {
 		label := script
 		if script == "-" {
 			label = "<stdin>"
