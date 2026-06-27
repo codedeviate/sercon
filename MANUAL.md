@@ -3093,6 +3093,53 @@ const out2 = image.exif.write(out.bytes, { image: { Artist: "Alice", Model: null
 const stripped = image.exif.clear(out2.bytes);
 ```
 
+#### 5.11.3 Steganography (`image.stego`)
+
+`image.stego` hides and recovers payloads inside lossless images using
+**least-significant-bit (LSB)** steganography. One bit is stored per
+R/G/B channel; the alpha channel is **never modified** (opaque PNG
+carriers are recommended). The carrier can be any supported format
+(PNG/JPEG/GIF/TIFF/BMP/WebP), but the output of `embed` is always PNG —
+re-encoding to a lossy format would destroy the hidden data.
+
+An optional **AES-256-GCM** password encrypts the payload before
+embedding (PBKDF2-SHA256 key derivation). Without a password the payload
+is stored as plain bytes. A fixed 10-byte header (`sercon` magic,
+version, flags, and a 4-byte payload length) is prepended to every LSB
+stream, so `extract` can detect foreign or corrupt carriers and report a
+clean error.
+
+| Function | Returns | Notes |
+|---|---|---|
+| `image.stego.embed(carrier, payload, opts?)` | `{ bytes: Uint8Array } \| { path: string }` | Hide `payload` in `carrier`. `opts.password` encrypts; `opts.dest` writes the PNG to disk. |
+| `image.stego.extract(carrier, opts?)` | `string \| Uint8Array` | Recover the payload. Returns a `string` for text payloads, `Uint8Array` for binary. `opts.password` required when encrypted. |
+| `image.stego.capacity(carrier)` | `{ bytes: number }` | Maximum plaintext payload size in bytes (after the 10-byte header). Encryption adds ~44 bytes of overhead. |
+
+```ts
+// Check how many bytes a carrier can hold
+const room = image.stego.capacity("cover.png").bytes;
+
+// Embed a password-protected secret
+const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });
+// out.bytes is the stego PNG as a Uint8Array
+
+// Recover it
+const msg = image.stego.extract(out.bytes, { password: "s3cret" });
+// msg === "meet at noon"
+```
+
+**Worth knowing:**
+
+- `payload` may be a `string` (stored as UTF-8, extracted as `string`) or a
+  `Uint8Array` (stored as binary, extracted as `Uint8Array`).
+- The carrier must be large enough: embed throws
+  `"payload too large (need N bytes, capacity M)"` when it isn't.
+- `extract` throws `"no sercon stego payload found"` on a carrier that
+  wasn't produced by `embed`, and `"wrong password or corrupt data"` on
+  a decryption failure — so authentication errors are explicit.
+- For write-to-disk, pass `opts.dest`:
+  `image.stego.embed("cover.png", data, { dest: "stego.png" })` → `{ path: "stego.png" }`.
+
 ### 5.12 `web`
 
 Fetch & parse web documents. Three families — `web.feed` (RSS/Atom/JSON
@@ -6205,6 +6252,69 @@ Rasterize an SVG (a supported subset) to a raster Image at the requested pixel s
 
 ```ts
 const im = image.rasterizeSVG("logo.svg", { width: 256, height: 256 });
+```
+
+#### 17.6.10 image.stego.capacity
+
+```
+capacity(carrier: string | Uint8Array): { bytes: number }
+```
+
+Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — one bit per R/G/B channel. Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.
+
+**Parameters**
+
+- `carrier` *(string | Uint8Array)* — The carrier image: a file path or raw image bytes.
+
+**Returns:** An object whose bytes field is the maximum plaintext payload size in bytes.
+
+**Throws:** Throws if the carrier cannot be decoded.
+
+```ts
+const room = image.stego.capacity("cover.png").bytes;
+```
+
+#### 17.6.11 image.stego.embed
+
+```
+embed(carrier: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string }): { bytes: Uint8Array } | { path: string }
+```
+
+Hide a payload inside a lossless image using least-significant-bit (LSB) steganography, returning PNG bytes. The carrier is decoded (PNG/JPEG/GIF/TIFF/BMP/WebP) and re-encoded as PNG (output is always PNG — re-encoding to a lossy format would destroy the hidden data). One bit is stored per R/G/B channel; the alpha channel is never modified (opaque carriers recommended). A non-empty password encrypts the payload with AES-256-GCM (PBKDF2-SHA256 key derivation).
+
+**Parameters**
+
+- `carrier` *(string | Uint8Array)* — The carrier image: a file path (string) or raw image bytes (Uint8Array).
+- `payload` *(string | Uint8Array)* — The data to hide. A string is stored as UTF-8 and marked as text (extract returns a string); a Uint8Array is stored as binary (extract returns a Uint8Array).
+- `opts` *({ password?: string; dest?: string }, optional)* — password: encrypt the payload with AES-256-GCM. dest: write the resulting PNG to this path instead of returning its bytes.
+
+**Returns:** An object with the PNG bytes ({ bytes }), or { path } when opts.dest was given.
+
+**Throws:** Throws if the carrier cannot be decoded, if the payload is neither a string nor Uint8Array, if the payload exceeds the carrier capacity ("payload too large (need N bytes, capacity M)"), or if writing opts.dest fails.
+
+```ts
+const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });
+```
+
+#### 17.6.12 image.stego.extract
+
+```
+extract(carrier: string | Uint8Array, opts?: { password?: string }): string | Uint8Array
+```
+
+Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check.
+
+**Parameters**
+
+- `carrier` *(string | Uint8Array)* — The stego image (must be the lossless PNG produced by embed, or an identical copy): a file path or raw bytes.
+- `opts` *({ password?: string }, optional)* — The password used at embed time, required when the payload was encrypted.
+
+**Returns:** The recovered payload — a string when embedded as text, otherwise a Uint8Array.
+
+**Throws:** Throws if the carrier cannot be decoded, if no sercon stego payload is present ("no sercon stego payload found"), if the payload is truncated, if the payload is encrypted but no password is given, or if decryption fails ("wrong password or corrupt data").
+
+```ts
+const msg = image.stego.extract("cover.png", { password: "s3cret" });
 ```
 
 ### 17.7 net

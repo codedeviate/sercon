@@ -223,7 +223,8 @@ func imageNamespace(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 			}
 			return vm.ToValue(map[string]any{"format": format, "bytes": out})
 		},
-		"exif": exifNamespace(vm),
+		"exif":  exifNamespace(vm),
+		"stego": stegoNamespace(vm),
 		"rasterizeSVG": func(call goja.FunctionCall) goja.Value {
 			var data []byte
 			arg := call.Argument(0)

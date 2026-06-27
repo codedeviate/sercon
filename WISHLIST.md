@@ -7,5 +7,3 @@ file's terse, **Reason:**-carrying style) and resets this file to this scaffold.
 This file having only this scaffold below means "inbox empty — nothing pending".
 
 <!-- Write ideas below this line -->
-
-- Steganography

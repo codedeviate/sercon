@@ -307,5 +307,40 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Throws if the format is not JPEG or PNG (unsupported write target), if src cannot be read, or if dest cannot be written.",
 			Example:    "const out = image.exif.clear(jpegBytes);\nconst e = image.exif.read(out.bytes); // e === {}",
 		},
+
+		// --- Steganography sub-namespace ---
+		"stego.embed": {
+			Summary: "Hide a payload inside a lossless image using least-significant-bit (LSB) steganography, returning PNG bytes. The carrier is decoded (PNG/JPEG/GIF/TIFF/BMP/WebP) and re-encoded as PNG (output is always PNG — re-encoding to a lossy format would destroy the hidden data). One bit is stored per R/G/B channel; the alpha channel is never modified (opaque carriers recommended). A non-empty password encrypts the payload with AES-256-GCM (PBKDF2-SHA256 key derivation).",
+			Params: []scriptengine.Param{
+				{Name: "carrier", Type: "string | Uint8Array", Desc: "The carrier image: a file path (string) or raw image bytes (Uint8Array)."},
+				{Name: "payload", Type: "string | Uint8Array", Desc: "The data to hide. A string is stored as UTF-8 and marked as text (extract returns a string); a Uint8Array is stored as binary (extract returns a Uint8Array)."},
+				{Name: "opts", Type: "{ password?: string; dest?: string }", Optional: true, Desc: "password: encrypt the payload with AES-256-GCM. dest: write the resulting PNG to this path instead of returning its bytes."},
+			},
+			ReturnType: "{ bytes: Uint8Array } | { path: string }",
+			Returns:    "An object with the PNG bytes ({ bytes }), or { path } when opts.dest was given.",
+			Errors:     "Throws if the carrier cannot be decoded, if the payload is neither a string nor Uint8Array, if the payload exceeds the carrier capacity (\"payload too large (need N bytes, capacity M)\"), or if writing opts.dest fails.",
+			Example:    `const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });`,
+		},
+		"stego.extract": {
+			Summary:    "Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check.",
+			Params: []scriptengine.Param{
+				{Name: "carrier", Type: "string | Uint8Array", Desc: "The stego image (must be the lossless PNG produced by embed, or an identical copy): a file path or raw bytes."},
+				{Name: "opts", Type: "{ password?: string }", Optional: true, Desc: "The password used at embed time, required when the payload was encrypted."},
+			},
+			ReturnType: "string | Uint8Array",
+			Returns:    "The recovered payload — a string when embedded as text, otherwise a Uint8Array.",
+			Errors:     "Throws if the carrier cannot be decoded, if no sercon stego payload is present (\"no sercon stego payload found\"), if the payload is truncated, if the payload is encrypted but no password is given, or if decryption fails (\"wrong password or corrupt data\").",
+			Example:    `const msg = image.stego.extract("cover.png", { password: "s3cret" });`,
+		},
+		"stego.capacity": {
+			Summary:    "Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — one bit per R/G/B channel. Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.",
+			Params: []scriptengine.Param{
+				{Name: "carrier", Type: "string | Uint8Array", Desc: "The carrier image: a file path or raw image bytes."},
+			},
+			ReturnType: "{ bytes: number }",
+			Returns:    "An object whose bytes field is the maximum plaintext payload size in bytes.",
+			Errors:     "Throws if the carrier cannot be decoded.",
+			Example:    `const room = image.stego.capacity("cover.png").bytes;`,
+		},
 	}
 }
