@@ -143,7 +143,15 @@ examples/scripts/server-sse.ts \
 	examples/scripts/web-feed.ts \
 	examples/scripts/web-sitemap.ts \
 	examples/scripts/web-html.ts \
-	examples/scripts/sheet.ts
+	examples/scripts/sheet.ts \
+	examples/recipes/sales-report.ts \
+	examples/recipes/config-read.ts \
+	examples/recipes/image-pipeline.ts \
+	examples/recipes/format-convert.ts \
+	examples/recipes/inventory.ts \
+	examples/recipes/log-scan.ts \
+	examples/recipes/stego-hide.ts \
+	examples/recipes/barcode-batch.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon
