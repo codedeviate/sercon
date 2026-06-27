@@ -40,7 +40,7 @@ RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 MANUAL_VERSION    := $(shell sed -nE 's|^const Version = "([^"]+)".*|\1|p' pkg/scriptengine/version.go)
 MANUAL_DATE       := $(shell date +%F)
 
-.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check paymentproviders paymentproviders-check clean
+.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check paymentproviders paymentproviders-check sample-data clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -256,6 +256,9 @@ release-prep:
 	@echo "  3) git commit -am 'chore: cut v$(VERSION)'"
 	@echo "  4) git tag -a v$(VERSION) -m 'release v$(VERSION)'"
 	@echo "  5) git push origin master v$(VERSION)  # CI publishes binaries via goreleaser"
+
+sample-data: build
+	./$(BIN) examples/data/generate.ts
 
 paymentproviders:        ## bundle the embedded paymentproviders TS library
 	go run ./cmd/ppbundle

@@ -1,0 +1,11 @@
+date,region,category,units,revenue
+2026-01-03,North,Hardware,12,2400.00
+2026-01-05,South,Software,40,3990.50
+2026-01-07,North,Software,25,2487.75
+2026-01-09,East,Hardware,8,1600.00
+2026-01-12,West,Services,15,4500.00
+2026-01-15,South,Hardware,20,4000.00
+2026-01-18,East,Software,33,3286.67
+2026-01-21,West,Software,11,1095.89
+2026-01-24,North,Services,9,2700.00
+2026-01-27,South,Services,14,4200.00
