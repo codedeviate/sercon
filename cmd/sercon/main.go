@@ -67,7 +67,9 @@ func run(args []string) int {
 	root := fs.String("root", "", "Script root for require resolution (default: dirname of first script)")
 	emitDTS := fs.String("emit-dts", "", "Write the .d.ts for the example bindings to this path and exit")
 	emitReference := fs.String("emit-reference", "", "Write the markdown binding reference to this path and exit")
-	verbose := fs.Bool("v", false, "Verbose: trace transpile output and module resolutions to stderr; also print duration on script failure")
+	verbose := fs.Bool("v", false, "Verbose: print a PASS line per script, trace transpile output and module resolutions to stderr, and print duration on script failure")
+	fs.BoolVar(verbose, "verbose", false, "Alias of -v")
+	silent := fs.Bool("silent", false, "Suppress the runner's PASS/FAIL status lines (script console output and exit code are unaffected)")
 	helpShort := fs.Bool("h", false, "Show in-depth, colorized help and exit")
 	helpLong := fs.Bool("help", false, "Show in-depth, colorized help and exit")
 	examples := fs.Bool("examples", false, "Show in-depth, colorized script examples of all features and exit")
@@ -200,7 +202,7 @@ func run(args []string) int {
 
 	worst := exitOK
 	for _, s := range scripts {
-		err := runOne(eng, s, *verbose, userArgs)
+		err := runOne(eng, s, *verbose, *silent, userArgs)
 		if err == nil {
 			continue
 		}
@@ -212,14 +214,17 @@ func run(args []string) int {
 		if s == "-" {
 			label = "<stdin>"
 		}
-		fmt.Printf("FAIL %s: %s\n", label, err)
+		if !*silent {
+			fmt.Printf("FAIL %s: %s\n", label, err)
+		}
 	}
 	return worst
 }
 
 // runOne executes a single script source, either a file path or "-" for
-// stdin. On success it prints a PASS line and returns nil.
-func runOne(eng *scriptengine.Engine, path string, verbose bool, userArgs []string) error {
+// stdin. On success it optionally prints a PASS line (only when verbose &&
+// !silent) and returns nil.
+func runOne(eng *scriptengine.Engine, path string, verbose, silent bool, userArgs []string) error {
 	start := time.Now()
 	var err error
 	var val goja.Value
@@ -242,7 +247,9 @@ func runOne(eng *scriptengine.Engine, path string, verbose bool, userArgs []stri
 		return err
 	}
 	printRunResult(val)
-	fmt.Printf("PASS %s (%s)\n", label, dur.Round(time.Millisecond))
+	if verbose && !silent {
+		fmt.Printf("PASS %s (%s)\n", label, dur.Round(time.Millisecond))
+	}
 	return nil
 }
 

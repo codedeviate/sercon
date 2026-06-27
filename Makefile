@@ -200,7 +200,7 @@ demo: build
 	@# the run is killed before ai.ts's own timeout + try/catch can degrade
 	@# gracefully. Every other demo finishes in milliseconds, so the larger
 	@# ceiling only matters for ai.ts.
-	@./$(BIN) -timeout 90s $(DEMO_SCRIPTS)
+	@./$(BIN) --verbose -timeout 90s $(DEMO_SCRIPTS)
 	@echo "All example scripts passed. (hang.ts is the timeout demo — run separately.)"
 
 # Opt-in integration tests against the dbplayground fleet

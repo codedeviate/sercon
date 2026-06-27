@@ -184,7 +184,7 @@ func runOnceForWatch(eng *scriptengine.Engine, scripts []string, graphs map[stri
 			}
 		}
 		eng.SetResolveHook(func(abs string) { deps[abs] = true })
-		err := runOne(eng, s, verbose, userArgs)
+		err := runOne(eng, s, verbose, false, userArgs)
 		eng.SetResolveHook(nil)
 		graphs[s] = deps
 
