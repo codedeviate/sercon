@@ -5009,7 +5009,47 @@ const out = codec.sheet.write([["a", 1, true]], { format: "ods" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.1.22 codec.xml.decode
+#### 17.1.22 codec.toml.parse
+
+```
+parse(text: string): Record<string, unknown>
+```
+
+Parse a TOML document string into a JS object. Tables become nested objects, arrays become arrays, and TOML integers/floats/booleans/strings map to the corresponding JS types (datetimes come back as strings).
+
+**Parameters**
+
+- `text` *(string)* — The TOML document text.
+
+**Returns:** The parsed document as a plain object.
+
+**Throws:** Throws ("codec.toml.parse: …") on malformed TOML.
+
+```ts
+const cfg = codec.toml.parse('port = 8080\n[db]\nhost = "localhost"');
+```
+
+#### 17.1.23 codec.toml.stringify
+
+```
+stringify(value: Record<string, unknown>): string
+```
+
+Serialize a JS value to a TOML document string. The top-level value must be an object (TOML documents are tables); nested objects become tables, arrays become TOML arrays.
+
+**Parameters**
+
+- `value` *(Record<string, unknown>)* — An object to serialize as a TOML table.
+
+**Returns:** The TOML document text.
+
+**Throws:** Throws ("codec.toml.stringify: …") if the value can't be represented as TOML (e.g. a non-object top level).
+
+```ts
+const text = codec.toml.stringify({ port: 8080, db: { host: "localhost" } });
+```
+
+#### 17.1.24 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -5030,7 +5070,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### 17.1.23 codec.xml.encode
+#### 17.1.25 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string

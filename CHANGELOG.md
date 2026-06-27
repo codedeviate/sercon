@@ -13,6 +13,7 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ### Added
 - `-v` gained a `--verbose` long alias; new `--silent` flag suppresses the runner's PASS/FAIL status lines (exit code and script output unaffected).
+- `codec.toml.parse` / `codec.toml.stringify` — TOML ↔ object (pure-Go, `pelletier/go-toml/v2`).
 
 ## [0.75.0] — 2026-06-27
 

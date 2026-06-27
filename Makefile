@@ -68,6 +68,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/checkdigit.ts \
 	examples/scripts/dump-codec.ts \
 	examples/scripts/codec-xml.ts \
+	examples/scripts/codec-toml.ts \
 	examples/scripts/archive.ts \
 	examples/scripts/diff.ts \
 	examples/scripts/jq.ts \
