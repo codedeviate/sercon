@@ -1532,6 +1532,29 @@ declare const image: {
    * @returns Image — a raster handle (format reported as "svg") sized to opts.width × opts.height.
    */
   rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void };
+  stego: {
+    /**
+     * Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — one bit per R/G/B channel. Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.
+     * @param carrier The carrier image: a file path or raw image bytes.
+     * @returns An object whose bytes field is the maximum plaintext payload size in bytes.
+     */
+    capacity(carrier: string | Uint8Array): { bytes: number };
+    /**
+     * Hide a payload inside a lossless image using least-significant-bit (LSB) steganography, returning PNG bytes. The carrier is decoded (PNG/JPEG/GIF/TIFF/BMP/WebP) and re-encoded as PNG (output is always PNG — re-encoding to a lossy format would destroy the hidden data). One bit is stored per R/G/B channel; the alpha channel is never modified (opaque carriers recommended). A non-empty password encrypts the payload with AES-256-GCM (PBKDF2-SHA256 key derivation).
+     * @param carrier The carrier image: a file path (string) or raw image bytes (Uint8Array).
+     * @param payload The data to hide. A string is stored as UTF-8 and marked as text (extract returns a string); a Uint8Array is stored as binary (extract returns a Uint8Array).
+     * @param opts password: encrypt the payload with AES-256-GCM. dest: write the resulting PNG to this path instead of returning its bytes.
+     * @returns An object with the PNG bytes ({ bytes }), or { path } when opts.dest was given.
+     */
+    embed(carrier: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string }): { bytes: Uint8Array } | { path: string };
+    /**
+     * Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check.
+     * @param carrier The stego image (must be the lossless PNG produced by embed, or an identical copy): a file path or raw bytes.
+     * @param opts The password used at embed time, required when the payload was encrypted.
+     * @returns The recovered payload — a string when embedded as text, otherwise a Uint8Array.
+     */
+    extract(carrier: string | Uint8Array, opts?: { password?: string }): string | Uint8Array;
+  };
 };
 
 /** Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?). */

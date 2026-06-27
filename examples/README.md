@@ -91,6 +91,7 @@ Or pick individual scripts:
 | `image.ts` | `image` — decode/transform/encode: resize (aspect), grayscale, blur, crop, save/open round-trip, PNG + WebP output. |
 | `image-anim.ts` | `image.decodeFrames` / `image.encodeFrames` — encode a 2-frame GIF and APNG from an embedded PNG, decode both back, assert frame counts and timing; also demonstrates non-animated PNG → single frame. Fully offline and self-contained. |
 | `exif.ts` | `image.exif` — read/write/replace/clear EXIF metadata: builds a JPEG in-memory, round-trips EXIF through replace/write/clear, asserts each step. Fully offline and self-contained. |
+| `stego.ts` | `image.stego` — LSB steganography: check capacity on an embedded PNG carrier, embed a password-encrypted secret, extract and assert round-trip equality. Fully offline and self-contained. |
 | `tui-keys.ts` | `tui.*` — autoscroll (panes follow the tail), `{ autoscroll: false }` per-pane opt-out, `{ mouse: true }` root option, `tui.onKey` persistent callback, `tui.waitKey` awaitable keypress. Falls back to prefixed lines in non-TTY. |
 | `pty-color.ts` | `services.exec.shell` `{ pty: true }` — run a command under a pseudo-terminal so TTY-gated color output reaches the pane; contrasts with the same command without `pty` (monochrome). Unix only; falls back to pipes on Windows. **Run separately in a real terminal** — headless the PTY pane renders blank (CRLF), so the color contrast only shows on a TTY. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |

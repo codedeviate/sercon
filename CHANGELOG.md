@@ -8,6 +8,9 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `image.stego.embed` / `image.stego.extract` / `image.stego.capacity` — LSB steganography in PNG (1 bit per R/G/B channel, alpha untouched), with optional AES-256-GCM (PBKDF2) payload encryption. Pure-Go, no new dependency.
+
 ## [0.74.0] — 2026-06-26
 
 ### Added
