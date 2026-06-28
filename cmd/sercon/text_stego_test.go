@@ -15,7 +15,7 @@ func TestTextStego_RoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The visible text (zero-width chars stripped) is unchanged.
-	stripped := strings.NewReplacer("​", "", "‌", "").Replace(out)
+	stripped := strings.NewReplacer("\u200b", "", "\u200c", "").Replace(out)
 	if stripped != cover {
 		t.Fatalf("visible text changed: %q", stripped)
 	}
