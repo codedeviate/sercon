@@ -28,6 +28,7 @@ require (
 	github.com/emersion/go-smtp v0.24.0
 	github.com/evanoberholster/imagemeta v1.0.0
 	github.com/evanw/esbuild v0.28.0
+	github.com/extrame/xls v0.0.1
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gdamore/tcell/v2 v2.13.10
 	github.com/go-audio/aiff v1.1.0
@@ -96,6 +97,7 @@ require (
 	github.com/dsoprea/go-photoshop-info-format v0.0.0-20200609050348-3db9b63b202c // indirect
 	github.com/dsoprea/go-utility/v2 v2.0.0-20221003172846-a3e1774ef349 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/extrame/ole2 v0.0.0-20160812065207-d69429661ad7 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
 	github.com/go-audio/riff v1.0.0 // indirect
