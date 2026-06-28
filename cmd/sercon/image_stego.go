@@ -335,6 +335,41 @@ func stegoNamespace(vm *goja.Runtime) map[string]any {
 			}
 			return vm.ToValue(m)
 		},
+		"bitplane": func(call goja.FunctionCall) goja.Value {
+			carrier := imageSrcBytes(vm, call.Argument(0), "stego.bitplane")
+			channel, plane, dest := "rgb", 0, ""
+			if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
+				obj := o.ToObject(vm)
+				if cv := obj.Get("channel"); cv != nil && !goja.IsUndefined(cv) {
+					channel = cv.String()
+				}
+				if pv := obj.Get("plane"); pv != nil && !goja.IsUndefined(pv) {
+					plane = int(pv.ToInteger())
+				}
+				if dv := obj.Get("dest"); dv != nil && !goja.IsUndefined(dv) {
+					dest = dv.String()
+				}
+			}
+			switch channel {
+			case "r", "g", "b", "rgb":
+			default:
+				panic(vm.NewTypeError(`image.stego.bitplane: channel must be "r", "g", "b", or "rgb"`))
+			}
+			if plane < 0 || plane > 7 {
+				panic(vm.NewTypeError("image.stego.bitplane: plane must be 0..7"))
+			}
+			out, err := stegoBitplane(carrier, channel, plane)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			if dest != "" {
+				if werr := os.WriteFile(dest, out, 0o644); werr != nil { //nolint:gosec
+					panic(vm.NewGoError(fmt.Errorf("image.stego.bitplane: %w", werr)))
+				}
+				return vm.ToValue(map[string]any{"path": dest})
+			}
+			return vm.ToValue(map[string]any{"bytes": out})
+		},
 	}
 }
 

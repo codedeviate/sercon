@@ -154,3 +154,59 @@ func TestStegoAnalyze_Shape(t *testing.T) {
 		t.Fatalf("analyze must return verdict map")
 	}
 }
+
+func TestStegoBitplane_AllSetWhite(t *testing.T) {
+	// Carrier with every R LSB set to 1 → plane-0 single-channel output all white.
+	img := gradientRGBA(32, 32)
+	for p := 0; p < len(img.Pix)/4; p++ {
+		img.Pix[p*4] |= 1 // set R LSB
+	}
+	out, err := stegoBitplane(encodePNGForTest(t, img), "r", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, _, err := decodeImage(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rgba := toRGBA(dec)
+	for p := 0; p < len(rgba.Pix)/4; p++ {
+		if rgba.Pix[p*4] != 255 || rgba.Pix[p*4+1] != 255 || rgba.Pix[p*4+2] != 255 {
+			t.Fatalf("pixel %d not white: %v", p, rgba.Pix[p*4:p*4+4])
+		}
+	}
+}
+
+func TestStegoBitplane_Dimensions(t *testing.T) {
+	out, err := stegoBitplane(encodePNGForTest(t, gradientRGBA(40, 24)), "rgb", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, _, err := decodeImage(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dec.Bounds().Dx() != 40 || dec.Bounds().Dy() != 24 {
+		t.Fatalf("bitplane dims = %v, want 40x24", dec.Bounds())
+	}
+}
+
+// TestStegoBitplane_RGBIsolation locks the "rgb" composite channel→colour
+// mapping: an R-bit set (G/B clear) must yield pure red, catching any
+// channel-swap regression.
+func TestStegoBitplane_RGBIsolation(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Pix = []byte{1, 0, 0, 255} // R LSB set, G/B LSB clear
+	out, err := stegoBitplane(encodePNGForTest(t, img), "rgb", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, _, err := decodeImage(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rgba := toRGBA(dec)
+	if got := rgba.Pix[0:4]; got[0] != 255 || got[1] != 0 || got[2] != 0 || got[3] != 255 {
+		t.Fatalf("rgb plane-0 pixel = %v, want {255,0,0,255} (R-bit -> red only)", got)
+	}
+}

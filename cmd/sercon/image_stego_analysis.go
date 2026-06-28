@@ -375,6 +375,52 @@ func stegoAnalyze(carrier []byte) (map[string]any, error) {
 	}, nil
 }
 
+// stegoBitplane renders bit `plane` (0=LSB..7=MSB) of carrier as a PNG. For a
+// single channel ("r"/"g"/"b") a set bit → white, unset → black (grayscale);
+// for "rgb" each channel's bit maps to its colour component. Caller validates
+// channel/plane.
+func stegoBitplane(carrier []byte, channel string, plane int) ([]byte, error) {
+	img, _, err := decodeImage(carrier)
+	if err != nil {
+		return nil, err
+	}
+	rgba := toRGBA(img)
+	b := rgba.Bounds()
+	out := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	bit := byte(1) << uint(plane)
+	set := func(on bool) byte {
+		if on {
+			return 255
+		}
+		return 0
+	}
+	n := len(rgba.Pix) / 4
+	for p := 0; p < n; p++ {
+		r := rgba.Pix[p*4]&bit != 0
+		g := rgba.Pix[p*4+1]&bit != 0
+		bl := rgba.Pix[p*4+2]&bit != 0
+		var or, og, ob byte
+		switch channel {
+		case "r":
+			v := set(r)
+			or, og, ob = v, v, v
+		case "g":
+			v := set(g)
+			or, og, ob = v, v, v
+		case "b":
+			v := set(bl)
+			or, og, ob = v, v, v
+		default: // "rgb"
+			or, og, ob = set(r), set(g), set(bl)
+		}
+		out.Pix[p*4] = or
+		out.Pix[p*4+1] = og
+		out.Pix[p*4+2] = ob
+		out.Pix[p*4+3] = 255
+	}
+	return encodeImage(out, "png", encodeOpts{})
+}
+
 // stegoDetect returns the quick-answer summary map.
 func stegoDetect(carrier []byte) (map[string]any, error) {
 	insp, err := stegoInspect(carrier)
