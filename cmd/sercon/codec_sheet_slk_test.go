@@ -65,3 +65,10 @@ func TestReadSYLK_EscapedSemicolon(t *testing.T) {
 		t.Fatalf("unescaped = %q, want %q", book.tabs[0].rows[0][0], "a;b")
 	}
 }
+
+func TestReadSYLK_GridTooLarge(t *testing.T) {
+	src := "ID;P\nC;Y100000;X100000;K1\nE\n"
+	if _, err := readSYLK([]byte(src), "S"); err == nil {
+		t.Fatal("expected error for an oversized SYLK grid")
+	}
+}

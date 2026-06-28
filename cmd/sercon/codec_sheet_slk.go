@@ -113,6 +113,10 @@ func readSYLK(data []byte, name string) (sheetBook, error) {
 	if !sawID {
 		return sheetBook{}, fmt.Errorf("codec.sheet: not a SYLK document (missing ID record)")
 	}
+	const maxSYLKRows, maxSYLKCols, maxSYLKCells = 1048576, 16384, 10_000_000
+	if maxR > maxSYLKRows || maxC > maxSYLKCols || int64(maxR)*int64(maxC) > maxSYLKCells {
+		return sheetBook{}, fmt.Errorf("codec.sheet: SYLK grid too large (%dx%d)", maxR, maxC)
+	}
 	rows := make([][]any, maxR)
 	for i := range rows {
 		rows[i] = make([]any, maxC)
