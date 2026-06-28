@@ -695,12 +695,17 @@ declare const codec: {
   };
   sheet: {
     /**
-     * Read tabular data (CSV/TSV/XLSX/ODS) into a workbook model: { format, sheets:[{ name, rows }] }. Cells are typed primitives — XLSX and ODS numbers/bools come back as number/boolean (empty → null); ODS dates come back as ISO-8601 strings; CSV/TSV cells are always strings (CSV is untyped). Format is sniffed (XLSX/ODS by their ZIP magic, else CSV; a .tsv path is read as TSV) unless opts.format is given.
-     * @param src A file path or the encoded bytes (csv/tsv/xlsx/ods).
-     * @param opts Override the auto-detected format (e.g. force tsv for tab-delimited bytes).
-     * @returns A workbook: format echoes the detected/forced format; sheets has one entry for CSV/TSV (name from the file basename) or all sheets for XLSX/ODS, each with a rows grid of typed cells.
+     * Report the read/write capability of every spreadsheet format codec.sheet supports. Read-only formats (xls/slk/dif) have write:false.
+     * @returns An object keyed by format name (csv/tsv/xlsx/ods/xls/slk/dif), each with read and write booleans.
      */
-    read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" | "ods" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] };
+    formats(): { [format: string]: { read: boolean; write: boolean } };
+    /**
+     * Read tabular data (CSV/TSV/XLSX/ODS) into a workbook model: { format, sheets:[{ name, rows }] }. Cells are typed primitives — XLSX and ODS numbers/bools come back as number/boolean (empty → null); ODS dates come back as ISO-8601 strings; CSV/TSV cells are always strings (CSV is untyped). Format is sniffed (XLSX/ODS by their ZIP magic, else CSV; a .tsv path is read as TSV) unless opts.format is given. Also reads legacy formats **read-only** — XLS (Excel 97–2003), SYLK (.slk), and DIF (.dif) — for extracting data to convert up; XLS cells come back as the library's formatted strings (extraction-grade). Detection: OLE2 magic (\xD0\xCF)→xls, `ID;`→slk, `TABLE` header→dif, plus .xls/.slk/.dif extensions and opts.format.
+     * @param src A file path or the encoded bytes (csv/tsv/xlsx/ods/xls/slk/dif).
+     * @param opts Override the auto-detected format (e.g. force slk for a SYLK file with no extension).
+     * @returns A workbook: format echoes the detected/forced format; sheets has one entry for CSV/TSV (name from the file basename) or all sheets for XLSX/ODS/XLS, each with a rows grid of typed cells.
+     */
+    read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" | "ods" | "xls" | "slk" | "dif" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] };
     /**
      * Write a workbook to CSV/TSV/XLSX/ODS. Pass { sheets:[{ name?, rows }] } or a bare 2D array (one sheet). XLSX and ODS preserve types (number→numeric cell, boolean→bool, string→text, null→empty) and all sheets; ODS writes values+types only (no styles or formulas); CSV/TSV stringify cells and support a single sheet only (>1 throws). Without opts.dest the encoded bytes are returned; with dest they're written there.
      * @param model The workbook ({ sheets } with optional names) or a bare 2D array of cells (becomes a single sheet).

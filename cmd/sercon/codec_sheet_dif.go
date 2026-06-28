@@ -65,7 +65,6 @@ func readDIF(data []byte, name string) (sheetBook, error) {
 			case "EOD":
 				if started {
 					rows = append(rows, cur)
-					started = false
 				}
 				return sheetBook{format: "dif", tabs: []sheetTab{{name: name, rows: rows}}}, nil
 			}

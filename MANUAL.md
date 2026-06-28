@@ -885,11 +885,14 @@ Binary-format codecs (was `format` in v0.8.0). Members:
   string form); surrounding whitespace is trimmed and mixed text/element
   ordering is not preserved. Cycles, mismatched tags, multiple roots, and
   malformed XML throw.
-- `codec.sheet.read(src, opts?)` / `codec.sheet.write(model, opts)` —
-  tabular data (CSV / TSV / XLSX / ODS) to/from a workbook model. XLSX and
-  ODS cells are typed (numbers → `number`, bools → `boolean`, empty → `null`);
-  ODS dates come back as ISO-8601 strings; CSV/TSV
-  cells are always `string`. See §5.5.7 below.
+- `codec.sheet.read(src, opts?)` / `codec.sheet.write(model, opts)` /
+  `codec.sheet.formats()` —
+  tabular data (CSV / TSV / XLSX / ODS) to/from a workbook model; plus
+  read-only legacy formats (XLS / SYLK / DIF) for extraction and convert-up
+  workflows. XLSX and ODS cells are typed (numbers → `number`, bools →
+  `boolean`, empty → `null`); ODS dates come back as ISO-8601 strings; CSV/TSV
+  cells are always `string`. XLS cells come back as formatted strings
+  (extraction-grade). See §5.5.7 below.
 
 #### 5.5.1 `codec.compression` — compress / decompress
 
@@ -1027,15 +1030,15 @@ type, so `int` and `float` collapse the same way `JSON.stringify` does
 order, so re-encoding is byte-stable — safe for canonical-JSON / payment
 hashing.
 
-#### 5.5.7 `codec.sheet` — tabular CSV / TSV / XLSX / ODS
+#### 5.5.7 `codec.sheet` — tabular CSV / TSV / XLSX / ODS / XLS / SYLK / DIF
 
-Read and write spreadsheet data. Both functions are **synchronous**.
+Read and write spreadsheet data. All three functions are **synchronous**.
 
 **Workbook model:**
 
 ```
 {
-  format: "csv" | "tsv" | "xlsx" | "ods",
+  format: "csv" | "tsv" | "xlsx" | "ods" | "xls" | "slk" | "dif",
   sheets: [
     { name: string, rows: (string | number | boolean | null)[][] },
     …
@@ -1048,16 +1051,32 @@ cells come back as `number`, boolean cells as `boolean`, and empty cells as
 `null`. ODS date cells come back as ISO-8601 strings (e.g. `"2024-03-15"`).
 CSV and TSV are untyped text formats — every cell is always a `string`.
 
+**Legacy read-only formats (XLS / SYLK / DIF):** `codec.sheet.read` also
+reads three legacy formats for extract-and-convert-up workflows. These
+formats are **read-only** — passing `"xls"`, `"slk"`, or `"dif"` to
+`codec.sheet.write` throws `"<fmt> is read-only (extract/convert only)"`.
+Use `codec.sheet.formats()` to query the capability matrix at runtime.
+
+- **XLS** (Excel 97–2003, BIFF8) — detected by the OLE2 magic bytes
+  `\xD0\xCF\x11\xE0` at the start of the file. Cells come back as the
+  library's formatted strings (extraction-grade: numbers are strings like
+  `"42"`, not JS numbers). Pure-Go via `github.com/extrame/xls`.
+- **SYLK** (`.slk`) — detected by an `ID;` first line or a `.slk` extension.
+  Cells come back as strings or numbers (SYLK's `K` field is typed).
+- **DIF** (Data Interchange Format, `.dif`) — detected by a `TABLE` header
+  line or a `.dif` extension. Cells come back as strings or numbers.
+
 ---
 
 - `codec.sheet.read(src, opts?): { format, sheets }` — reads a file path
   **or** `Uint8Array` bytes. Format is auto-detected (XLSX and ODS by their
   ZIP magic bytes `PK\x03\x04`, then distinguished by the `mimetype` entry;
-  everything else as CSV). A `.tsv` file extension also triggers TSV. Pass
-  `opts.format` to override the detection (e.g. force `"tsv"` for
-  tab-delimited bytes with no extension). CSV/TSV produces a single-sheet
-  workbook; the sheet name is the file's basename (or `"Sheet1"` when reading
-  raw bytes). XLSX and ODS produce all sheets in document order.
+  OLE2 magic `\xD0\xCF` → XLS; `ID;` first line → SYLK; `TABLE` first line
+  → DIF; everything else as CSV). A `.tsv`/`.slk`/`.dif`/`.xls` file
+  extension also triggers the corresponding format. Pass `opts.format` to
+  override the detection. CSV/TSV produces a single-sheet workbook; the sheet
+  name is the file's basename (or `"Sheet1"` when reading raw bytes). XLSX,
+  ODS, and XLS produce all sheets in document order.
 
 - `codec.sheet.write(model, opts): { format, bytes? } | { format, path? }` —
   encodes to XLSX, ODS, CSV, or TSV. `model` is either:
@@ -1070,6 +1089,7 @@ CSV and TSV are untyped text formats — every cell is always a `string`.
   extension (`.xlsx`, `.ods`, `.csv`, `.tsv`). Without `opts.dest` the
   encoded bytes are returned as `{ format, bytes: Uint8Array }`; with
   `opts.dest` the file is written and `{ format, path }` is returned.
+  Writing `"xls"`, `"slk"`, or `"dif"` throws immediately (read-only).
 
   **CSV/TSV single-sheet rule:** writing more than one sheet to CSV or TSV
   throws immediately — use XLSX/ODS or split the sheets yourself.
@@ -1081,6 +1101,12 @@ CSV and TSV are untyped text formats — every cell is always a `string`.
   through CSV/TSV coerce everything to strings via `cellToStr` (numbers
   formatted without unnecessary decimals, booleans as `"true"`/`"false"`,
   `null` as `""`).
+
+- `codec.sheet.formats(): { [format: string]: { read: boolean, write: boolean } }` —
+  returns the capability matrix for every supported format. Read-only formats
+  (`xls`, `slk`, `dif`) have `write: false`; read+write formats (`csv`, `tsv`,
+  `xlsx`, `ods`) have both `true`. Use this to branch on format support at
+  runtime rather than hard-coding format names.
 
 ```ts
 // XLSX round-trip (types preserved)
@@ -1103,6 +1129,17 @@ const odsWb = codec.sheet.read(ods.bytes);
 const csv = codec.sheet.write([["a", 1, true]], { format: "csv" });
 const back = codec.sheet.read(csv.bytes, { format: "csv" });
 // back.sheets[0].rows[0] => ["a", "1", "true"]
+
+// Read a SYLK legacy file and convert up to XLSX
+const slkBytes = new Uint8Array(slkString.length);
+for (let i = 0; i < slkString.length; i++) slkBytes[i] = slkString.charCodeAt(i);
+const slkWb = codec.sheet.read(slkBytes, { format: "slk" });
+const converted = codec.sheet.write(slkWb, { format: "xlsx" });
+
+// Capability matrix
+const f = codec.sheet.formats();
+// f.xlsx => { read: true, write: true }
+// f.xls  => { read: true, write: false }
 ```
 
 ### 5.6 `fs`
@@ -5269,20 +5306,36 @@ PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-s
 const code = codec.php.varExport({ x: 1 }, { indent: "    " });
 ```
 
-#### 17.2.20 codec.sheet.read
+#### 17.2.20 codec.sheet.formats
 
 ```
-read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" | "ods" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }
+formats(): { [format: string]: { read: boolean; write: boolean } }
 ```
 
-Read tabular data (CSV/TSV/XLSX/ODS) into a workbook model: { format, sheets:[{ name, rows }] }. Cells are typed primitives — XLSX and ODS numbers/bools come back as number/boolean (empty → null); ODS dates come back as ISO-8601 strings; CSV/TSV cells are always strings (CSV is untyped). Format is sniffed (XLSX/ODS by their ZIP magic, else CSV; a .tsv path is read as TSV) unless opts.format is given.
+Report the read/write capability of every spreadsheet format codec.sheet supports. Read-only formats (xls/slk/dif) have write:false.
+
+**Returns:** An object keyed by format name (csv/tsv/xlsx/ods/xls/slk/dif), each with read and write booleans.
+
+**Throws:** Does not throw.
+
+```ts
+const f = codec.sheet.formats(); if (!f.xls.write) console.log("xls is read-only");
+```
+
+#### 17.2.21 codec.sheet.read
+
+```
+read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" | "ods" | "xls" | "slk" | "dif" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }
+```
+
+Read tabular data (CSV/TSV/XLSX/ODS) into a workbook model: { format, sheets:[{ name, rows }] }. Cells are typed primitives — XLSX and ODS numbers/bools come back as number/boolean (empty → null); ODS dates come back as ISO-8601 strings; CSV/TSV cells are always strings (CSV is untyped). Format is sniffed (XLSX/ODS by their ZIP magic, else CSV; a .tsv path is read as TSV) unless opts.format is given. Also reads legacy formats **read-only** — XLS (Excel 97–2003), SYLK (.slk), and DIF (.dif) — for extracting data to convert up; XLS cells come back as the library's formatted strings (extraction-grade). Detection: OLE2 magic (\xD0\xCF)→xls, `ID;`→slk, `TABLE` header→dif, plus .xls/.slk/.dif extensions and opts.format.
 
 **Parameters**
 
-- `src` *(string | Uint8Array)* — A file path or the encoded bytes (csv/tsv/xlsx/ods).
-- `opts` *({ format?: "csv" | "tsv" | "xlsx" | "ods" }, optional)* — Override the auto-detected format (e.g. force tsv for tab-delimited bytes).
+- `src` *(string | Uint8Array)* — A file path or the encoded bytes (csv/tsv/xlsx/ods/xls/slk/dif).
+- `opts` *({ format?: "csv" | "tsv" | "xlsx" | "ods" | "xls" | "slk" | "dif" }, optional)* — Override the auto-detected format (e.g. force slk for a SYLK file with no extension).
 
-**Returns:** A workbook: format echoes the detected/forced format; sheets has one entry for CSV/TSV (name from the file basename) or all sheets for XLSX/ODS, each with a rows grid of typed cells.
+**Returns:** A workbook: format echoes the detected/forced format; sheets has one entry for CSV/TSV (name from the file basename) or all sheets for XLSX/ODS/XLS, each with a rows grid of typed cells.
 
 **Throws:** Throws if src is neither a path string nor Uint8Array, if the file can't be read, if the format is unsupported, or if the bytes can't be parsed.
 
@@ -5291,7 +5344,7 @@ const wb = codec.sheet.read("data.ods");
 runtime.log(wb.sheets[0].name, wb.sheets[0].rows.length);
 ```
 
-#### 17.2.21 codec.sheet.write
+#### 17.2.22 codec.sheet.write
 
 ```
 write(model: { sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][], opts: { format: "csv" | "tsv" | "xlsx" | "ods"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
@@ -5306,14 +5359,14 @@ Write a workbook to CSV/TSV/XLSX/ODS. Pass { sheets:[{ name?, rows }] } or a bar
 
 **Returns:** { format, bytes } with the encoded workbook, or { format, path } when opts.dest is set.
 
-**Throws:** Throws if the model isn't an object-with-sheets or a 2D array, if format is missing/unsupported, if a CSV/TSV write has more than one sheet, or on an encode/write failure.
+**Throws:** Throws if the model isn't an object-with-sheets or a 2D array, if format is missing/unsupported, if a CSV/TSV write has more than one sheet, if the format is read-only (xls/slk/dif throws "<fmt> is read-only (extract/convert only)"), or on an encode/write failure.
 
 ```ts
 const out = codec.sheet.write([["a", 1, true]], { format: "ods" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.2.22 codec.toml.parse
+#### 17.2.23 codec.toml.parse
 
 ```
 parse(text: string): Record<string, unknown>
@@ -5333,7 +5386,7 @@ Parse a TOML document string into a JS object. Tables become nested objects, arr
 const cfg = codec.toml.parse('port = 8080\n[db]\nhost = "localhost"');
 ```
 
-#### 17.2.23 codec.toml.stringify
+#### 17.2.24 codec.toml.stringify
 
 ```
 stringify(value: Record<string, unknown>): string
@@ -5353,7 +5406,7 @@ Serialize a JS value to a TOML document string. The top-level value must be an o
 const text = codec.toml.stringify({ port: 8080, db: { host: "localhost" } });
 ```
 
-#### 17.2.24 codec.xml.decode
+#### 17.2.25 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -5374,7 +5427,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### 17.2.25 codec.xml.encode
+#### 17.2.26 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string

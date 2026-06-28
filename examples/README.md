@@ -107,6 +107,7 @@ Or pick individual scripts:
 | `paymentproviders-swedbankpay.ts` | Bundled `paymentproviders` — `swedbankpayv3`/`swedbankpayv2` (Bearer + HAL operations): create a payment order, then `capturePayment` resolves the `capture` operation href and POSTs to it. Live check self-skips without `SWEDBANKPAY_*`. |
 | `web-html.ts` | `web.html` — lenient HTML parse with CSS (`find`/`findAll`) + XPath (`xpath`/`xpathAll`) and chainable nodes (`text`/`attr`/…). Offline always; live `web.html.load` self-skips without a network. |
 | `sheet.ts` | `codec.sheet.read` / `codec.sheet.write` — build a workbook, write XLSX + CSV, read both back, assert typed cells (XLSX numbers/bools typed; CSV strings). Fully offline and self-contained. |
+| `sheet-legacy.ts` | `codec.sheet` legacy read-only formats — read a SYLK (.slk) document, assert rows, convert up to XLSX, assert round-trip; uses `codec.sheet.formats()` to verify xls/slk/dif are read-only. Fully offline and self-contained. |
 | `web-feed.ts` | `web.feed` — RSS/Atom/JSON feeds normalized to one model with a `.raw` escape hatch. Offline always; live `web.feed.load` self-skips without a network. |
 | `web-sitemap.ts` | `web.sitemap` — urlset/sitemapindex parse, gzip, and `{expand:true}` recursion. Offline always; live `web.sitemap.load` self-skips without a network. |
 

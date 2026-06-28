@@ -33,11 +33,8 @@ slipped in).
 
 ## Spreadsheets / tabular
 
-`codec.sheet` shipped CSV / TSV / XLSX / ODS read+write (see CHANGELOG). Deferred formats:
+`codec.sheet` shipped CSV / TSV / XLSX / ODS read+write, and XLS / SYLK / DIF read-only shipped (see CHANGELOG). Deferred formats:
 
-- **Legacy XLS** (BIFF binary, Excel 97–2003) — `github.com/extrame/xls` is
-  pure-Go but read-only; no pure-Go writer exists. **Reason:** write path
-  requires cgo or is unavailable; read-only path promotable on demand.
 - **XLSB** (Excel binary workbook) — no maintained pure-Go reader (verified:
   `github.com/pbnjay/grate` reads XLS/XLSX/CSV/TSV but not XLSB); no writer.
   **Reason:** format is underdocumented and there is no viable pure-Go path today.

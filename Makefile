@@ -154,6 +154,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/web-sitemap.ts \
 	examples/scripts/web-html.ts \
 	examples/scripts/sheet.ts \
+	examples/scripts/sheet-legacy.ts \
 	examples/recipes/sales-report.ts \
 	examples/recipes/config-read.ts \
 	examples/recipes/image-pipeline.ts \
