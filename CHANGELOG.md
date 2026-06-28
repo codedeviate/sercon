@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.80.0] — 2026-06-28
+
 ### Added
 - `image.stego` and `audio.stego` gain a `bits` option (1..4, default 1) for
   multi-bit LSB embedding — up to 4× capacity. The depth is stored in the stego
@@ -15,7 +17,9 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 - `*.stego.capacity` accepts `{ bits }` and returns `{ bytes, bits }`.
 - `image.stego.detect`/`analyze` report the declared `bits`; `analyze` adds a
   generalized chi-square at depths 1..4 (`chiSquareByBits`), per-plane entropy
-  (`entropyByPlane`), and an `estimatedBits` estimate of the embedding depth.
+  (`entropyByPlane`), and a coarse `estimatedBits` hint (best-effort; needs
+  substantial coverage — the header's declared `bits` is authoritative for
+  sercon payloads).
 
 ## [0.79.0] — 2026-06-28
 
