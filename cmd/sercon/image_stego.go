@@ -319,6 +319,22 @@ func stegoNamespace(vm *goja.Runtime) map[string]any {
 			}
 			return vm.ToValue(map[string]any{"bytes": n})
 		},
+		"detect": func(call goja.FunctionCall) goja.Value {
+			carrier := imageSrcBytes(vm, call.Argument(0), "stego.detect")
+			m, err := stegoDetect(carrier)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return vm.ToValue(m)
+		},
+		"analyze": func(call goja.FunctionCall) goja.Value {
+			carrier := imageSrcBytes(vm, call.Argument(0), "stego.analyze")
+			m, err := stegoAnalyze(carrier)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return vm.ToValue(m)
+		},
 	}
 }
 

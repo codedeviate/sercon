@@ -100,3 +100,19 @@ func TestStegoGoja_Capacity(t *testing.T) {
 		t.Fatalf("capacity = %d, want > 0", v.ToInteger())
 	}
 }
+
+func TestStegoGoja_DetectAnalyze(t *testing.T) {
+	vm := stegoVM(t) // helper already in this file; provides image.stego.* + `carrier`
+	v, err := vm.RunString(`
+		const out = image.stego.embed(carrier, "hidden");
+		const d = image.stego.detect(out.bytes);
+		const a = image.stego.analyze(out.bytes);
+		d.sercon + "|" + d.suspicious + "|" + (a.channels.length) + "|" + a.verdict.suspicious;
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.String(); got != "true|true|3|true" {
+		t.Fatalf("got %q (want true|true|3|true)", got)
+	}
+}

@@ -2,10 +2,21 @@
 package main
 
 import (
+	"bytes"
 	"image"
+	"image/png"
 	"math"
 	"testing"
 )
+
+func encodePNGForTest(t *testing.T, img *image.RGBA) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
 
 // gradientRGBA builds a deterministic smooth-gradient image: low LSB randomness,
 // so all stego signals should read LOW.
@@ -90,5 +101,56 @@ func TestRSAnalysis_LowVsHigh(t *testing.T) {
 	}
 	if cr > 0.15 {
 		t.Errorf("clean RS estimate = %.3f, want near 0", cr)
+	}
+}
+
+func TestStegoInspect_SerconDetected(t *testing.T) {
+	// Build a real PNG carrier, embed a payload, inspect the bytes.
+	carrier := stegoCarrierPNG(t, 64, 64) // helper from image_stego_test.go
+	stego, err := stegoEmbed(carrier, []byte("secret message"), true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	insp, err := stegoInspect(stego)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !insp.serconPresent {
+		t.Fatal("should detect the sercon header")
+	}
+	if !insp.suspicious || insp.confidence < 0.99 {
+		t.Errorf("sercon payload must read suspicious with high confidence; got %v/%.2f", insp.suspicious, insp.confidence)
+	}
+	if insp.payloadBytes == 0 {
+		t.Errorf("payloadBytes should be set")
+	}
+}
+
+func TestStegoInspect_CleanNotSuspicious(t *testing.T) {
+	// Encode a clean gradient to PNG and inspect.
+	clean := encodePNGForTest(t, gradientRGBA(96, 96))
+	insp, err := stegoInspect(clean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if insp.serconPresent {
+		t.Fatal("clean image must not report a sercon header")
+	}
+	if insp.suspicious {
+		t.Errorf("clean gradient should not be flagged suspicious; reasons=%v", insp.reasons)
+	}
+}
+
+func TestStegoAnalyze_Shape(t *testing.T) {
+	clean := encodePNGForTest(t, gradientRGBA(64, 64))
+	m, err := stegoAnalyze(clean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["channels"].([]any); !ok {
+		t.Fatalf("analyze must return channels []any; got %T", m["channels"])
+	}
+	if _, ok := m["verdict"].(map[string]any); !ok {
+		t.Fatalf("analyze must return verdict map")
 	}
 }

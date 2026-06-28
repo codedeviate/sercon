@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	"math"
 )
@@ -233,3 +234,163 @@ func rsAnalysis(rgba *image.RGBA, c int) float64 {
 	}
 	return p
 }
+
+type stegoChan struct {
+	ch  string
+	chi float64
+	ent float64
+	rs  float64
+}
+
+type stegoInspection struct {
+	width, height, capacity int
+	serconPresent           bool
+	encrypted, text         bool
+	payloadBytes            int
+	channels                []stegoChan
+	suspicious              bool
+	confidence              float64
+	reasons                 []string
+}
+
+// Verdict thresholds (documented; tuned by tests).
+const (
+	stegoChiThreshold = 0.5
+	stegoEntThreshold = 0.999
+	stegoRSThreshold  = 0.10
+)
+
+// stegoInspect decodes carrier, runs the sercon magic check and the three
+// per-channel signals, and computes the verdict.
+func stegoInspect(carrier []byte) (stegoInspection, error) {
+	img, _, err := decodeImage(carrier)
+	if err != nil {
+		return stegoInspection{}, err
+	}
+	rgba := toRGBA(img)
+	b := rgba.Bounds()
+	insp := stegoInspection{width: b.Dx(), height: b.Dy(), capacity: stegoCapacity(img)}
+
+	// sercon magic check (mirrors stegoExtract's header read).
+	if header, herr := readLSBBytes(rgba, stegoHeaderLen); herr == nil {
+		if flags, length, perr := parseStegoHeader(header); perr == nil {
+			insp.serconPresent = true
+			insp.encrypted = flags&flagEncrypted != 0
+			insp.text = flags&flagText != 0
+			insp.payloadBytes = int(length)
+		}
+	}
+
+	names := []string{"r", "g", "b"}
+	var sumChi, sumEnt, sumRS float64
+	chiHits := 0
+	for c := 0; c < 3; c++ {
+		vals := channelValues(rgba, c)
+		chi := chiSquareLSB(vals)
+		ent := lsbEntropy(vals)
+		rs := rsAnalysis(rgba, c)
+		insp.channels = append(insp.channels, stegoChan{ch: names[c], chi: chi, ent: ent, rs: rs})
+		sumChi += chi
+		sumEnt += ent
+		sumRS += rs
+		if chi >= stegoChiThreshold {
+			chiHits++
+		}
+	}
+	meanChi, meanEnt, meanRS := sumChi/3, sumEnt/3, sumRS/3
+
+	var reasons []string
+	if insp.serconPresent {
+		reasons = append(reasons, "sercon stego header present")
+	}
+	if chiHits >= 2 {
+		reasons = append(reasons, "chi-square indicates LSB embedding on multiple channels")
+	}
+	if meanEnt >= stegoEntThreshold {
+		reasons = append(reasons, "LSB plane entropy near maximum")
+	}
+	if meanRS >= stegoRSThreshold {
+		reasons = append(reasons, fmt.Sprintf("RS analysis estimates ~%.0f%% embedding", meanRS*100))
+	}
+	insp.reasons = reasons
+	insp.suspicious = len(reasons) > 0
+
+	switch {
+	case insp.serconPresent:
+		insp.confidence = 1.0
+	case insp.suspicious:
+		conf := meanChi
+		if meanEnt >= stegoEntThreshold && meanEnt > conf {
+			conf = meanEnt
+		}
+		if meanRS > conf {
+			conf = meanRS
+		}
+		insp.confidence = conf
+	default:
+		insp.confidence = 0
+	}
+	return insp, nil
+}
+
+func (i stegoInspection) channelsJS() []any {
+	out := make([]any, len(i.channels))
+	for k, c := range i.channels {
+		out[k] = map[string]any{"channel": c.ch, "chiSquare": c.chi, "lsbEntropy": c.ent, "rsEstimate": c.rs}
+	}
+	return out
+}
+
+func reasonsJS(rs []string) []any {
+	out := make([]any, len(rs))
+	for k, r := range rs {
+		out[k] = r
+	}
+	return out
+}
+
+// stegoAnalyze returns the full report map.
+func stegoAnalyze(carrier []byte) (map[string]any, error) {
+	insp, err := stegoInspect(carrier)
+	if err != nil {
+		return nil, err
+	}
+	sercon := map[string]any{"present": insp.serconPresent}
+	if insp.serconPresent {
+		sercon["encrypted"] = insp.encrypted
+		sercon["text"] = insp.text
+		sercon["payloadBytes"] = insp.payloadBytes
+	}
+	return map[string]any{
+		"width":    insp.width,
+		"height":   insp.height,
+		"capacity": insp.capacity,
+		"sercon":   sercon,
+		"channels": insp.channelsJS(),
+		"verdict": map[string]any{
+			"suspicious": insp.suspicious,
+			"confidence": insp.confidence,
+			"reasons":    reasonsJS(insp.reasons),
+		},
+	}, nil
+}
+
+// stegoDetect returns the quick-answer summary map.
+func stegoDetect(carrier []byte) (map[string]any, error) {
+	insp, err := stegoInspect(carrier)
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]any{
+		"sercon":     insp.serconPresent,
+		"suspicious": insp.suspicious,
+		"confidence": insp.confidence,
+	}
+	if insp.serconPresent {
+		m["encrypted"] = insp.encrypted
+		m["text"] = insp.text
+		m["payloadBytes"] = insp.payloadBytes
+	}
+	return m, nil
+}
+
