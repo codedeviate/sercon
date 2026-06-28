@@ -412,6 +412,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"charset": charsetNamespace(vm, loop),
 			"jq":      jqNamespace(vm, loop),
 			"diff":    diffNamespace(vm, loop),
+			"stego":   textStegoNamespace(vm),
 		}
 	}); err != nil {
 		return err
@@ -524,6 +525,13 @@ func registerSurface(e *scriptengine.Engine) error {
 	}); err != nil {
 		return err
 	}
+	if err := e.RegisterNamespaceFactory("audio", func(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"stego": audioStegoNamespace(vm),
+		}
+	}); err != nil {
+		return err
+	}
 	if err := e.RegisterNamespaceFactory("server", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return serverNamespace(vm, loop, e)
 	}); err != nil {
@@ -554,6 +562,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("image", imageDocs())
 	e.SetDocs("web", "Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).")
 	e.SetMemberDocsStructured("web", webDocs())
+	e.SetDocs("audio", "Audio steganography: hide/extract payloads in WAV PCM samples (LSB).")
+	e.SetMemberDocsStructured("audio", audioDocs())
 	e.SetDocs("server", "Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.")
 	e.SetMemberDocsStructured("server", serverDocs())
 	e.SetDocs("console", "Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.")

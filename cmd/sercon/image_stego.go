@@ -191,26 +191,13 @@ func stegoEmbed(carrier, payload []byte, isText bool, password string) ([]byte, 
 		return nil, err
 	}
 	rgba := toRGBA(img)
-
-	flags := byte(0)
-	blob := payload
-	if isText {
-		flags |= flagText
+	stream, err := stegoEncodePayload(payload, isText, password)
+	if err != nil {
+		return nil, fmt.Errorf("image.stego.embed: %w", err)
 	}
-	if password != "" {
-		sealed, serr := stegoSeal(password, payload)
-		if serr != nil {
-			return nil, fmt.Errorf("image.stego.embed: %w", serr)
-		}
-		blob = sealed
-		flags |= flagEncrypted
+	if avail := stegoCapacity(rgba); len(stream)-stegoHeaderLen > avail {
+		return nil, fmt.Errorf("image.stego.embed: payload too large (need %d bytes, capacity %d)", len(stream)-stegoHeaderLen, avail)
 	}
-
-	if avail := stegoCapacity(rgba); len(blob) > avail {
-		return nil, fmt.Errorf("image.stego.embed: payload too large (need %d bytes, capacity %d)", len(blob), avail)
-	}
-
-	stream := append(marshalStegoHeader(flags, uint32(len(blob))), blob...)
 	if werr := writeLSBStream(rgba, stream); werr != nil {
 		return nil, fmt.Errorf("image.stego.embed: %w", werr)
 	}
@@ -228,32 +215,13 @@ func stegoExtract(carrier []byte, password string) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	rgba := toRGBA(img)
-
-	header, err := readLSBBytes(rgba, stegoHeaderLen)
+	data, isText, err := stegoDecodeStream(func(n int) ([]byte, error) {
+		return readLSBBytes(rgba, n)
+	}, password)
 	if err != nil {
 		return nil, false, fmt.Errorf("image.stego.extract: %w", err)
 	}
-	flags, length, err := parseStegoHeader(header)
-	if err != nil {
-		return nil, false, fmt.Errorf("image.stego.extract: %w", err)
-	}
-	all, err := readLSBBytes(rgba, stegoHeaderLen+int(length))
-	if err != nil {
-		return nil, false, fmt.Errorf("image.stego.extract: truncated payload: %w", err)
-	}
-	blob := all[stegoHeaderLen:]
-
-	if flags&flagEncrypted != 0 {
-		if password == "" {
-			return nil, false, fmt.Errorf("image.stego.extract: payload is encrypted — password required")
-		}
-		pt, oerr := stegoOpen(password, blob)
-		if oerr != nil {
-			return nil, false, fmt.Errorf("image.stego.extract: %w", oerr)
-		}
-		blob = pt
-	}
-	return blob, flags&flagText != 0, nil
+	return data, isText, nil
 }
 
 // stegoCapacityOf decodes carrier and returns its payload capacity in bytes.
@@ -270,7 +238,7 @@ func stegoNamespace(vm *goja.Runtime) map[string]any {
 	return map[string]any{
 		"embed": func(call goja.FunctionCall) goja.Value {
 			carrier := imageSrcBytes(vm, call.Argument(0), "stego.embed")
-			payload, isText := stegoPayloadArg(vm, call.Argument(1))
+			payload, isText := stegoPayloadArg(vm, call.Argument(1), "image.stego.embed")
 
 			password, dest := "", ""
 			if o := call.Argument(2); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
@@ -373,15 +341,3 @@ func stegoNamespace(vm *goja.Runtime) map[string]any {
 	}
 }
 
-// stegoPayloadArg coerces the payload argument: a JS string → UTF-8 bytes
-// (text), a Uint8Array → raw bytes (binary). Anything else is a TypeError.
-func stegoPayloadArg(vm *goja.Runtime, arg goja.Value) ([]byte, bool) {
-	switch v := arg.Export().(type) {
-	case string:
-		return []byte(v), true
-	case []byte:
-		return v, false
-	default:
-		panic(vm.NewTypeError("image.stego.embed: payload must be a string or Uint8Array"))
-	}
-}
