@@ -4825,7 +4825,7 @@ const meta = audio.info("song.flac"); // { format: "flac", sampleRate: 44100, ..
 capacity(cover: string | Uint8Array, opts?: { bits?: number }): { bytes: number; bits: number }
 ```
 
-Report the maximum payload size in bytes a WAV carrier can hold via LSB steganography — one bit per PCM sample, minus the fixed header. Encryption adds ~44 bytes of overhead.
+Report the maximum payload size in bytes a WAV carrier can hold via LSB steganography — at the requested bit depth (1..4, default 1; one bit per PCM sample at the default), minus the fixed header. Encryption adds ~44 bytes of overhead.
 
 **Parameters**
 
@@ -6652,7 +6652,7 @@ const lsb = image.stego.bitplane("photo.png", { plane: 0 });
 capacity(carrier: string | Uint8Array, opts?: { bits?: number }): { bytes: number; bits: number }
 ```
 
-Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — one bit per R/G/B channel. Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.
+Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — at the requested bit depth (1..4, default 1; one bit per R/G/B channel at the default). Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.
 
 **Parameters**
 

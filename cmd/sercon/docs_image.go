@@ -333,7 +333,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const msg = image.stego.extract("cover.png", { password: "s3cret" });`,
 		},
 		"stego.capacity": {
-			Summary:    "Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — one bit per R/G/B channel. Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.",
+			Summary:    "Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — at the requested bit depth (1..4, default 1; one bit per R/G/B channel at the default). Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.",
 			Params: []scriptengine.Param{
 				{Name: "carrier", Type: "string | Uint8Array", Desc: "The carrier image: a file path or raw image bytes."},
 				{Name: "opts", Type: "{ bits?: number }", Optional: true, Desc: "bits: report capacity at this depth (integer 1..4, default 1)."},

@@ -72,7 +72,7 @@ func audioDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const msg = audio.stego.extract("song.wav", { password: "p" });`,
 		},
 		"stego.capacity": {
-			Summary:    "Report the maximum payload size in bytes a WAV carrier can hold via LSB steganography — one bit per PCM sample, minus the fixed header. Encryption adds ~44 bytes of overhead.",
+			Summary:    "Report the maximum payload size in bytes a WAV carrier can hold via LSB steganography — at the requested bit depth (1..4, default 1; one bit per PCM sample at the default), minus the fixed header. Encryption adds ~44 bytes of overhead.",
 			Params: []scriptengine.Param{
 				{Name: "cover", Type: "string | Uint8Array", Desc: "The carrier WAV: a file path or raw bytes."},
 				{Name: "opts", Type: "{ bits?: number }", Optional: true, Desc: "bits: report capacity at this depth (integer 1..4, default 1)."},

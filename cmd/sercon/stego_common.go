@@ -115,6 +115,9 @@ func lsbReadStream(c lsbCarrier, byteCount int) ([]byte, error) {
 	}
 	n := int((hdr[5]&flagBitsMask)>>flagBitsShift) + 1
 	payBytes := byteCount - stegoHeaderLen
+	if payBytes < 0 || payBytes > c.count {
+		return nil, fmt.Errorf("stego: declared payload (%d bytes) exceeds carrier", payBytes)
+	}
 	total := payBytes * 8
 	payUnits := (total + n - 1) / n
 	if headerUnits+payUnits > c.count {

@@ -102,6 +102,31 @@ func TestStegoEncodePayload_PacksBits(t *testing.T) {
 	}
 }
 
+func TestLSBReadStream_OversizedPayloadErrors(t *testing.T) {
+	// Build a tiny carrier: just enough room for the header (headerUnits bytes)
+	// plus a handful of payload units.
+	const carrierSize = headerUnits + 16
+	pix := make([]byte, carrierSize)
+	c := lsbCarrier{pix: pix, count: carrierSize, at: func(k int) int { return k }}
+
+	// Write a valid header that claims a payload far larger than the carrier.
+	hugeLength := uint32(carrierSize * 10)
+	hdr := marshalStegoHeader(0, hugeLength)
+	// Manually plant the header bytes at 1 bit/unit into the carrier pix.
+	for i, b := range hdr {
+		for j := 0; j < 8; j++ {
+			bit := (b >> (7 - j)) & 1
+			c.pix[i*8+j] = (c.pix[i*8+j] &^ 1) | bit
+		}
+	}
+
+	// lsbReadStream asked for header + declared payload bytes must error, not panic.
+	_, err := lsbReadStream(c, stegoHeaderLen+int(hugeLength))
+	if err == nil {
+		t.Fatal("expected error for oversized declared payload, got nil")
+	}
+}
+
 func TestLSBCapacityBytes(t *testing.T) {
 	cases := []struct {
 		count, n, want int
