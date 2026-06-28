@@ -65,73 +65,56 @@ func parseWAV(data []byte) (wavInfo, error) {
 	return wavInfo{bitsPerSample: bits, dataStart: dataStart, dataLen: dataLen}, nil
 }
 
-func audioCapacity(cover []byte) (int, error) {
+// audioCarrier builds an lsbCarrier over the WAV's PCM sample LSB-carrier bytes,
+// writing into dst (a copy of the cover, or the cover itself for read-only).
+func audioCarrier(w wavInfo, dst []byte) lsbCarrier {
+	return lsbCarrier{pix: dst, count: w.numSamples(), at: w.sampleByteIndex}
+}
+
+func audioCapacity(cover []byte, bits int) (int, error) {
 	w, err := parseWAV(cover)
 	if err != nil {
 		return 0, err
 	}
-	n := w.numSamples()/8 - stegoHeaderLen
-	if n < 0 {
-		n = 0
-	}
-	return n, nil
+	return lsbCapacityBytes(w.numSamples(), bits), nil
 }
 
-// audioStegoEmbed writes the payload stream into the WAV's sample LSBs and
-// returns a new WAV (the input is not mutated).
-func audioStegoEmbed(cover, payload []byte, isText bool, password string) ([]byte, error) {
+// audioStegoEmbed writes the payload into the WAV's sample LSBs at the given bit
+// depth and returns a new WAV (the input is not mutated). The header is always
+// embedded at 1 bit/sample.
+func audioStegoEmbed(cover, payload []byte, isText bool, password string, bits int) ([]byte, error) {
 	w, err := parseWAV(cover)
 	if err != nil {
 		return nil, fmt.Errorf("audio.stego.embed: %w", err)
 	}
-	stream, err := stegoEncodePayload(payload, isText, password, 1)
+	stream, err := stegoEncodePayload(payload, isText, password, bits)
 	if err != nil {
 		return nil, fmt.Errorf("audio.stego.embed: %w", err)
 	}
-	avail := w.numSamples()/8 - stegoHeaderLen
-	if avail < 0 {
-		avail = 0
-	}
-	if len(stream)-stegoHeaderLen > avail {
-		return nil, fmt.Errorf("audio.stego.embed: payload too large (need %d bytes, capacity %d)", len(stream)-stegoHeaderLen, avail)
+	blob := stream[stegoHeaderLen:]
+	if avail := lsbCapacityBytes(w.numSamples(), bits); len(blob) > avail {
+		return nil, fmt.Errorf("audio.stego.embed: payload too large (need %d bytes, capacity %d)", len(blob), avail)
 	}
 	out := make([]byte, len(cover))
 	copy(out, cover)
-	bitIdx := 0
-	for _, by := range stream {
-		for j := 0; j < 8; j++ {
-			bit := (by >> (7 - j)) & 1
-			idx := w.sampleByteIndex(bitIdx)
-			out[idx] = (out[idx] &^ 1) | bit
-			bitIdx++
-		}
+	c := audioCarrier(w, out)
+	if werr := lsbWriteStream(c, stream[:stegoHeaderLen], blob, bits); werr != nil {
+		return nil, fmt.Errorf("audio.stego.embed: %w", werr)
 	}
 	return out, nil
 }
 
-// audioStegoExtract recovers a payload embedded by audioStegoEmbed.
+// audioStegoExtract recovers a payload embedded by audioStegoEmbed. The bit
+// depth is read from the header.
 func audioStegoExtract(cover []byte, password string) ([]byte, bool, error) {
 	w, err := parseWAV(cover)
 	if err != nil {
 		return nil, false, fmt.Errorf("audio.stego.extract: %w", err)
 	}
-	readN := func(n int) ([]byte, error) {
-		if n*8 > w.numSamples() {
-			return nil, fmt.Errorf("not enough samples")
-		}
-		b := make([]byte, n)
-		bitIdx := 0
-		for i := 0; i < n; i++ {
-			var by byte
-			for j := 0; j < 8; j++ {
-				by = (by << 1) | (cover[w.sampleByteIndex(bitIdx)] & 1)
-				bitIdx++
-			}
-			b[i] = by
-		}
-		return b, nil
-	}
-	data, isText, err := stegoDecodeStream(readN, password)
+	c := audioCarrier(w, cover)
+	data, isText, err := stegoDecodeStream(func(n int) ([]byte, error) {
+		return lsbReadStream(c, n)
+	}, password)
 	if err != nil {
 		return nil, false, fmt.Errorf("audio.stego.extract: %w", err)
 	}
@@ -144,7 +127,7 @@ func audioStegoNamespace(vm *goja.Runtime) map[string]any {
 		"embed": func(call goja.FunctionCall) goja.Value {
 			cover := stegoSrcBytes(vm, call.Argument(0), "audio.stego.embed")
 			payload, isText := stegoPayloadArg(vm, call.Argument(1), "audio.stego.embed")
-			password, dest := "", ""
+			password, dest, bits := "", "", 1
 			if o := call.Argument(2); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
 				obj := o.ToObject(vm)
 				if p := obj.Get("password"); p != nil && !goja.IsUndefined(p) {
@@ -153,8 +136,15 @@ func audioStegoNamespace(vm *goja.Runtime) map[string]any {
 				if d := obj.Get("dest"); d != nil && !goja.IsUndefined(d) {
 					dest = d.String()
 				}
+				if bv := obj.Get("bits"); bv != nil && !goja.IsUndefined(bv) {
+					n := bv.ToInteger()
+					if float64(n) != bv.ToFloat() || n < 1 || n > 4 {
+						panic(vm.NewTypeError("audio.stego.embed: bits must be an integer 1..4"))
+					}
+					bits = int(n)
+				}
 			}
-			out, err := audioStegoEmbed(cover, payload, isText, password)
+			out, err := audioStegoEmbed(cover, payload, isText, password, bits)
 			if err != nil {
 				panic(vm.NewGoError(err))
 			}
@@ -185,11 +175,21 @@ func audioStegoNamespace(vm *goja.Runtime) map[string]any {
 		},
 		"capacity": func(call goja.FunctionCall) goja.Value {
 			cover := stegoSrcBytes(vm, call.Argument(0), "audio.stego.capacity")
-			n, err := audioCapacity(cover)
+			bits := 1
+			if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
+				if bv := o.ToObject(vm).Get("bits"); bv != nil && !goja.IsUndefined(bv) {
+					n := bv.ToInteger()
+					if float64(n) != bv.ToFloat() || n < 1 || n > 4 {
+						panic(vm.NewTypeError("audio.stego.capacity: bits must be an integer 1..4"))
+					}
+					bits = int(n)
+				}
+			}
+			n, err := audioCapacity(cover, bits)
 			if err != nil {
 				panic(vm.NewGoError(err))
 			}
-			return vm.ToValue(map[string]any{"bytes": n})
+			return vm.ToValue(map[string]any{"bytes": n, "bits": bits})
 		},
 	}
 }

@@ -47,7 +47,7 @@ func makeWAVFmt(t *testing.T, audioFormat uint16, bits, samples int) []byte {
 
 func TestAudioStego_RoundTrip16(t *testing.T) {
 	wav := makeWAV(t, 16, 4096)
-	out, err := audioStegoEmbed(wav, []byte("hidden audio msg"), true, "")
+	out, err := audioStegoEmbed(wav, []byte("hidden audio msg"), true, "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestAudioStego_RoundTrip16(t *testing.T) {
 
 func TestAudioStego_HighBytesUntouched16(t *testing.T) {
 	wav := makeWAV(t, 16, 4096)
-	out, _ := audioStegoEmbed(wav, []byte("x"), false, "pw")
+	out, _ := audioStegoEmbed(wav, []byte("x"), false, "pw", 4)
 	info, _ := parseWAV(wav)
 	// 16-bit LE: high byte is at odd offsets within data — must be unchanged.
 	for i := info.dataStart + 1; i < info.dataStart+info.dataLen; i += 2 {
@@ -77,14 +77,14 @@ func TestAudioStego_HighBytesUntouched16(t *testing.T) {
 
 func TestAudioStego_8bitAndCapacity(t *testing.T) {
 	wav := makeWAV(t, 8, 2048)
-	cap, err := audioCapacity(wav)
+	cap, err := audioCapacity(wav, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cap != 2048/8-stegoHeaderLen {
+	if cap != (2048-80)/8 {
 		t.Fatalf("capacity = %d", cap)
 	}
-	out, err := audioStegoEmbed(wav, []byte("8bit"), true, "")
+	out, err := audioStegoEmbed(wav, []byte("8bit"), true, "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +99,43 @@ func TestAudioStego_Errors(t *testing.T) {
 		t.Fatal("non-RIFF should error")
 	}
 	wav := makeWAV(t, 16, 64)
-	if _, err := audioStegoEmbed(wav, bytes.Repeat([]byte{1}, 10000), false, ""); err == nil {
+	if _, err := audioStegoEmbed(wav, bytes.Repeat([]byte{1}, 10000), false, "", 1); err == nil {
 		t.Fatal("payload too large should error")
 	}
 	if _, _, err := audioStegoExtract(makeWAV(t, 16, 4096), ""); err == nil {
 		t.Fatal("clean WAV extract should error (no magic)")
+	}
+}
+
+func TestAudioStego_MultiBitRoundTrip(t *testing.T) {
+	for _, bits := range []int{1, 2, 3, 4} {
+		wav := makeWAV(t, 16, 4096)
+		out, err := audioStegoEmbed(wav, []byte("multi-bit audio payload"), true, "pw", bits)
+		if err != nil {
+			t.Fatalf("bits=%d embed: %v", bits, err)
+		}
+		if len(out) != len(wav) {
+			t.Fatalf("bits=%d output length changed", bits)
+		}
+		data, isText, err := audioStegoExtract(out, "pw")
+		if err != nil {
+			t.Fatalf("bits=%d extract: %v", bits, err)
+		}
+		if !isText || string(data) != "multi-bit audio payload" {
+			t.Fatalf("bits=%d got %q", bits, data)
+		}
+	}
+}
+
+func TestAudioCapacity_AtDepth(t *testing.T) {
+	wav := makeWAV(t, 16, 4096) // 4096 samples
+	c1, _ := audioCapacity(wav, 1)
+	c4, _ := audioCapacity(wav, 4)
+	if c1 != (4096-80)/8 {
+		t.Fatalf("c1 = %d, want %d", c1, (4096-80)/8)
+	}
+	if c4 != (4096-80)*4/8 {
+		t.Fatalf("c4 = %d, want %d", c4, (4096-80)*4/8)
 	}
 }
 
