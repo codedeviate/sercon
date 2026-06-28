@@ -269,10 +269,11 @@ func stegoInspect(carrier []byte) (stegoInspection, error) {
 	}
 	rgba := toRGBA(img)
 	b := rgba.Bounds()
-	insp := stegoInspection{width: b.Dx(), height: b.Dy(), capacity: stegoCapacity(img)}
+	insp := stegoInspection{width: b.Dx(), height: b.Dy(), capacity: stegoCapacity(img, 1)}
 
-	// sercon magic check (mirrors stegoExtract's header read).
-	if header, herr := readLSBBytes(rgba, stegoHeaderLen); herr == nil {
+	// sercon magic check (header is always embedded at 1 bit/channel).
+	c := imageCarrier(rgba)
+	if header, herr := lsbReadStream(c, stegoHeaderLen); herr == nil {
 		if flags, length, perr := parseStegoHeader(header); perr == nil {
 			insp.serconPresent = true
 			insp.encrypted = flags&flagEncrypted != 0

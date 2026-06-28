@@ -42,56 +42,20 @@ func toRGBA(img image.Image) *image.RGBA {
 	return r
 }
 
-// stegoCapacity is the maximum payload byte count for img after the header:
-// one bit per R,G,B channel (alpha excluded), minus the 10-byte header.
-func stegoCapacity(img image.Image) int {
+// stegoCapacity is the payload byte capacity of img at n bits per R,G,B channel
+// (alpha excluded), after the fixed header.
+func stegoCapacity(img image.Image, n int) int {
 	b := img.Bounds()
-	total := (b.Dx() * b.Dy() * 3) / 8
-	n := total - stegoHeaderLen
-	if n < 0 {
-		return 0
-	}
-	return n
+	return lsbCapacityBytes(b.Dx()*b.Dy()*3, n)
 }
 
 // pixChannelIndex maps the k-th usable channel (0-based over R,G,B, skipping
 // alpha) to its byte index in rgba.Pix (which is R,G,B,A per pixel).
 func pixChannelIndex(k int) int { return (k/3)*4 + (k % 3) }
 
-// writeLSBStream writes every bit of stream (MSB-first) into the LSBs of the
-// R,G,B channels of rgba in order. Errors if stream needs more channels than
-// the image has.
-func writeLSBStream(rgba *image.RGBA, stream []byte) error {
-	channels := len(rgba.Pix) / 4 * 3
-	if len(stream)*8 > channels {
-		return fmt.Errorf("stego: stream of %d bytes exceeds carrier capacity of %d bits", len(stream), channels)
-	}
-	for i, b := range stream {
-		for j := 0; j < 8; j++ {
-			bit := (b >> (7 - j)) & 1
-			idx := pixChannelIndex(i*8 + j)
-			rgba.Pix[idx] = (rgba.Pix[idx] &^ 1) | bit
-		}
-	}
-	return nil
-}
-
-// readLSBBytes reads n bytes (MSB-first) out of the R,G,B LSBs of rgba.
-func readLSBBytes(rgba *image.RGBA, n int) ([]byte, error) {
-	channels := len(rgba.Pix) / 4 * 3
-	if n*8 > channels {
-		return nil, fmt.Errorf("stego: need %d bits but carrier only holds %d", n*8, channels)
-	}
-	out := make([]byte, n)
-	for i := 0; i < n; i++ {
-		var b byte
-		for j := 0; j < 8; j++ {
-			idx := pixChannelIndex(i*8 + j)
-			b = (b << 1) | (rgba.Pix[idx] & 1)
-		}
-		out[i] = b
-	}
-	return out, nil
+// imageCarrier builds an lsbCarrier over rgba's R,G,B channels.
+func imageCarrier(rgba *image.RGBA) lsbCarrier {
+	return lsbCarrier{pix: rgba.Pix, count: len(rgba.Pix) / 4 * 3, at: pixChannelIndex}
 }
 
 // marshalStegoHeader builds the fixed 10-byte header.
@@ -188,22 +152,24 @@ func stegoOpen(password string, blob []byte) ([]byte, error) {
 }
 
 // stegoEmbed hides payload in carrier and returns PNG bytes. isText marks the
-// payload as UTF-8 text so extract can return a string. A non-empty password
-// triggers AES-256-GCM encryption.
-func stegoEmbed(carrier, payload []byte, isText bool, password string) ([]byte, error) {
+// payload as UTF-8 text. A non-empty password triggers AES-256-GCM. bits is the
+// payload depth (1..4); the header is always embedded at 1 bit/channel.
+func stegoEmbed(carrier, payload []byte, isText bool, password string, bits int) ([]byte, error) {
 	img, _, err := decodeImage(carrier)
 	if err != nil {
 		return nil, err
 	}
 	rgba := toRGBA(img)
-	stream, err := stegoEncodePayload(payload, isText, password, 1)
+	stream, err := stegoEncodePayload(payload, isText, password, bits)
 	if err != nil {
 		return nil, fmt.Errorf("image.stego.embed: %w", err)
 	}
-	if avail := stegoCapacity(rgba); len(stream)-stegoHeaderLen > avail {
-		return nil, fmt.Errorf("image.stego.embed: payload too large (need %d bytes, capacity %d)", len(stream)-stegoHeaderLen, avail)
+	blob := stream[stegoHeaderLen:]
+	c := imageCarrier(rgba)
+	if avail := lsbCapacityBytes(c.count, bits); len(blob) > avail {
+		return nil, fmt.Errorf("image.stego.embed: payload too large (need %d bytes, capacity %d)", len(blob), avail)
 	}
-	if werr := writeLSBStream(rgba, stream); werr != nil {
+	if werr := lsbWriteStream(c, stream[:stegoHeaderLen], blob, bits); werr != nil {
 		return nil, fmt.Errorf("image.stego.embed: %w", werr)
 	}
 	out, err := encodeImage(rgba, "png", encodeOpts{})
@@ -213,15 +179,16 @@ func stegoEmbed(carrier, payload []byte, isText bool, password string) ([]byte, 
 	return out, nil
 }
 
-// stegoExtract recovers a payload previously embedded by stegoEmbed.
+// stegoExtract recovers a payload previously embedded by stegoEmbed. The bit
+// depth is read from the header, so no depth argument is needed.
 func stegoExtract(carrier []byte, password string) ([]byte, bool, error) {
 	img, _, err := decodeImage(carrier)
 	if err != nil {
 		return nil, false, err
 	}
-	rgba := toRGBA(img)
+	c := imageCarrier(toRGBA(img))
 	data, isText, err := stegoDecodeStream(func(n int) ([]byte, error) {
-		return readLSBBytes(rgba, n)
+		return lsbReadStream(c, n)
 	}, password)
 	if err != nil {
 		return nil, false, fmt.Errorf("image.stego.extract: %w", err)
@@ -229,13 +196,14 @@ func stegoExtract(carrier []byte, password string) ([]byte, bool, error) {
 	return data, isText, nil
 }
 
-// stegoCapacityOf decodes carrier and returns its payload capacity in bytes.
-func stegoCapacityOf(carrier []byte) (int, error) {
+// stegoCapacityOf decodes carrier and returns its payload capacity in bytes at
+// the given bit depth.
+func stegoCapacityOf(carrier []byte, bits int) (int, error) {
 	img, _, err := decodeImage(carrier)
 	if err != nil {
 		return 0, err
 	}
-	return stegoCapacity(img), nil
+	return stegoCapacity(img, bits), nil
 }
 
 // stegoNamespace returns the image.stego sub-namespace.
@@ -245,7 +213,7 @@ func stegoNamespace(vm *goja.Runtime) map[string]any {
 			carrier := imageSrcBytes(vm, call.Argument(0), "stego.embed")
 			payload, isText := stegoPayloadArg(vm, call.Argument(1), "image.stego.embed")
 
-			password, dest := "", ""
+			password, dest, bits := "", "", 1
 			if o := call.Argument(2); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
 				obj := o.ToObject(vm)
 				if p := obj.Get("password"); p != nil && !goja.IsUndefined(p) {
@@ -254,8 +222,15 @@ func stegoNamespace(vm *goja.Runtime) map[string]any {
 				if d := obj.Get("dest"); d != nil && !goja.IsUndefined(d) {
 					dest = d.String()
 				}
+				if bv := obj.Get("bits"); bv != nil && !goja.IsUndefined(bv) {
+					n := bv.ToInteger()
+					if float64(n) != bv.ToFloat() || n < 1 || n > 4 {
+						panic(vm.NewTypeError("image.stego.embed: bits must be an integer 1..4"))
+					}
+					bits = int(n)
+				}
 			}
-			out, err := stegoEmbed(carrier, payload, isText, password)
+			out, err := stegoEmbed(carrier, payload, isText, password, bits)
 			if err != nil {
 				panic(vm.NewGoError(err))
 			}
@@ -286,11 +261,21 @@ func stegoNamespace(vm *goja.Runtime) map[string]any {
 		},
 		"capacity": func(call goja.FunctionCall) goja.Value {
 			carrier := imageSrcBytes(vm, call.Argument(0), "stego.capacity")
-			n, err := stegoCapacityOf(carrier)
+			bits := 1
+			if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
+				if bv := o.ToObject(vm).Get("bits"); bv != nil && !goja.IsUndefined(bv) {
+					n := bv.ToInteger()
+					if float64(n) != bv.ToFloat() || n < 1 || n > 4 {
+						panic(vm.NewTypeError("image.stego.capacity: bits must be an integer 1..4"))
+					}
+					bits = int(n)
+				}
+			}
+			n, err := stegoCapacityOf(carrier, bits)
 			if err != nil {
 				panic(vm.NewGoError(err))
 			}
-			return vm.ToValue(map[string]any{"bytes": n})
+			return vm.ToValue(map[string]any{"bytes": n, "bits": bits})
 		},
 		"detect": func(call goja.FunctionCall) goja.Value {
 			carrier := imageSrcBytes(vm, call.Argument(0), "stego.detect")

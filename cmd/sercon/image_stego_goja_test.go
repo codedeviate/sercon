@@ -136,3 +136,25 @@ func TestStegoGoja_Bitplane(t *testing.T) {
 		t.Fatal("bad channel must throw")
 	}
 }
+
+func TestStegoGoja_MultiBit(t *testing.T) {
+	vm := stegoVM(t)
+	v, err := vm.RunString(`
+		const cap1 = image.stego.capacity(carrier, { bits: 1 });
+		const cap4 = image.stego.capacity(carrier, { bits: 4 });
+		const out = image.stego.embed(carrier, "deep secret", { bits: 4 });
+		const back = image.stego.extract(out.bytes);
+		(cap4.bytes === cap1.bytes * 4) + "|" + cap4.bits + "|" + back;
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.String(); got != "true|4|deep secret" {
+		t.Fatalf("got %q (want true|4|deep secret)", got)
+	}
+	for _, bad := range []string{"0", "5", "2.5"} {
+		if _, err := vm.RunString(`image.stego.embed(carrier, "x", { bits: ` + bad + ` })`); err == nil {
+			t.Fatalf("bits:%s must throw", bad)
+		}
+	}
+}

@@ -107,7 +107,7 @@ func TestRSAnalysis_LowVsHigh(t *testing.T) {
 func TestStegoInspect_SerconDetected(t *testing.T) {
 	// Build a real PNG carrier, embed a payload, inspect the bytes.
 	carrier := stegoCarrierPNG(t, 64, 64) // helper from image_stego_test.go
-	stego, err := stegoEmbed(carrier, []byte("secret message"), true, "")
+	stego, err := stegoEmbed(carrier, []byte("secret message"), true, "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

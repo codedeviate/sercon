@@ -9,55 +9,100 @@ import (
 )
 
 func TestStegoCapacity(t *testing.T) {
-	// 10x10 → 100px × 3 channels = 300 bits = 37 bytes total; minus 10-byte header = 27.
+	// 10x10 → 300 channels. At 1 bit: (300-80)*1/8 = 27. At 4 bits: (300-80)*4/8 = 110.
 	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	if got := stegoCapacity(img); got != 27 {
-		t.Fatalf("capacity(10x10) = %d, want 27", got)
+	if got := stegoCapacity(img, 1); got != 27 {
+		t.Fatalf("capacity(10x10, 1) = %d, want 27", got)
 	}
-	// Tiny image → clamps to 0, never negative.
-	if got := stegoCapacity(image.NewRGBA(image.Rect(0, 0, 2, 2))); got != 0 {
-		t.Fatalf("capacity(2x2) = %d, want 0", got)
+	if got := stegoCapacity(img, 4); got != 110 {
+		t.Fatalf("capacity(10x10, 4) = %d, want 110", got)
+	}
+	// Tiny image (12 channels < 80-unit header) → clamps to 0.
+	if got := stegoCapacity(image.NewRGBA(image.Rect(0, 0, 2, 2)), 1); got != 0 {
+		t.Fatalf("capacity(2x2, 1) = %d, want 0", got)
 	}
 }
 
-func TestLSBStreamRoundTrip(t *testing.T) {
-	rgba := image.NewRGBA(image.Rect(0, 0, 16, 16))
-	// Fill with an opaque gradient so we're not writing into all-zero bytes.
-	for i := range rgba.Pix {
-		rgba.Pix[i] = byte(i)
-	}
-	stream := []byte("hello, stego world!")
-	if err := writeLSBStream(rgba, stream); err != nil {
-		t.Fatal(err)
-	}
-	got, err := readLSBBytes(rgba, len(stream))
+func TestStegoCapacityOf(t *testing.T) {
+	n, err := stegoCapacityOf(stegoCarrierPNG(t, 10, 10), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(got, stream) {
-		t.Fatalf("round-trip = %q, want %q", got, stream)
+	if n != 27 {
+		t.Fatalf("capacity = %d, want 27", n)
 	}
 }
 
-func TestLSBStreamAlphaUntouched(t *testing.T) {
-	rgba := image.NewRGBA(image.Rect(0, 0, 8, 8))
-	for i := range rgba.Pix {
-		rgba.Pix[i] = 200
-	}
-	if err := writeLSBStream(rgba, bytes.Repeat([]byte{0xFF}, 5)); err != nil {
-		t.Fatal(err)
-	}
-	for i := 3; i < len(rgba.Pix); i += 4 { // every alpha byte
-		if rgba.Pix[i] != 200 {
-			t.Fatalf("alpha byte at %d = %d, want 200 (untouched)", i, rgba.Pix[i])
+func TestStegoEmbedExtract_MultiBit(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 64, 64)
+	for n := 1; n <= 4; n++ {
+		out, err := stegoEmbed(carrier, []byte("multi-bit secret"), true, "pw", n)
+		if err != nil {
+			t.Fatalf("n=%d embed: %v", n, err)
+		}
+		data, isText, err := stegoExtract(out, "pw") // extract auto-detects N
+		if err != nil {
+			t.Fatalf("n=%d extract: %v", n, err)
+		}
+		if !isText || string(data) != "multi-bit secret" {
+			t.Fatalf("n=%d round-trip got %q isText=%v", n, data, isText)
 		}
 	}
 }
 
-func TestWriteLSBStreamTooLarge(t *testing.T) {
-	rgba := image.NewRGBA(image.Rect(0, 0, 2, 2)) // 4px×3 = 12 bits = 1 byte capacity
-	if err := writeLSBStream(rgba, []byte("way too long")); err == nil {
-		t.Fatal("expected error when stream exceeds channel capacity")
+func TestStegoEmbed_AlphaUntouched(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 32, 32)
+	out, err := stegoEmbed(carrier, bytes.Repeat([]byte{0xFF}, 20), false, "", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, _, err := decodeImage(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rgba := toRGBA(dec)
+	for i := 3; i < len(rgba.Pix); i += 4 {
+		if rgba.Pix[i] != 255 {
+			t.Fatalf("alpha byte at %d = %d, want 255 (untouched)", i, rgba.Pix[i])
+		}
+	}
+}
+
+func TestStegoExtract_LegacyOneBitLayout(t *testing.T) {
+	// Simulate the pre-multibit writer: the whole stream (header+blob) written
+	// at 1 bit/channel sequentially. New extract must read it (backward compat).
+	carrier := stegoCarrierPNG(t, 64, 64)
+	img, _, err := decodeImage(carrier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rgba := toRGBA(img)
+	stream, _ := stegoEncodePayload([]byte("legacy"), true, "", 1)
+	for i, b := range stream {
+		for j := 0; j < 8; j++ {
+			bit := (b >> (7 - j)) & 1
+			idx := pixChannelIndex(i*8 + j)
+			rgba.Pix[idx] = (rgba.Pix[idx] &^ 1) | bit
+		}
+	}
+	out, err := encodeImage(rgba, "png", encodeOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, isText, err := stegoExtract(out, "")
+	if err != nil || !isText || string(data) != "legacy" {
+		t.Fatalf("legacy layout extract failed: %q isText=%v err=%v", data, isText, err)
+	}
+}
+
+func TestStegoEmbed_TooLargeMultiBit(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 8, 8) // 192 channels; at 1 bit cap = (192-80)/8 = 14
+	if _, err := stegoEmbed(carrier, bytes.Repeat([]byte{1}, 15), false, "", 1); err == nil {
+		t.Fatal("expected payload-too-large at 1 bit")
+	}
+	// At 4 bits the same carrier holds (192-80)*4/8 = 56 bytes, so 15 fits.
+	if _, err := stegoEmbed(carrier, bytes.Repeat([]byte{1}, 15), false, "", 4); err != nil {
+		t.Fatalf("15 bytes should fit at 4 bits: %v", err)
 	}
 }
 
@@ -115,7 +160,7 @@ func stegoCarrierPNG(t *testing.T, w, h int) []byte {
 
 func TestStegoEmbedExtract_Plaintext(t *testing.T) {
 	carrier := stegoCarrierPNG(t, 64, 64)
-	out, err := stegoEmbed(carrier, []byte("attack at dawn"), true, "")
+	out, err := stegoEmbed(carrier, []byte("attack at dawn"), true, "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +176,7 @@ func TestStegoEmbedExtract_Plaintext(t *testing.T) {
 func TestStegoEmbedExtract_Binary(t *testing.T) {
 	carrier := stegoCarrierPNG(t, 64, 64)
 	payload := []byte{0, 1, 2, 250, 255, 0}
-	out, err := stegoEmbed(carrier, payload, false, "")
+	out, err := stegoEmbed(carrier, payload, false, "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +191,7 @@ func TestStegoEmbedExtract_Binary(t *testing.T) {
 
 func TestStegoEmbedExtract_Encrypted(t *testing.T) {
 	carrier := stegoCarrierPNG(t, 64, 64)
-	out, err := stegoEmbed(carrier, []byte("top secret"), true, "hunter2")
+	out, err := stegoEmbed(carrier, []byte("top secret"), true, "hunter2", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +206,7 @@ func TestStegoEmbedExtract_Encrypted(t *testing.T) {
 
 func TestStegoExtract_WrongPassword(t *testing.T) {
 	carrier := stegoCarrierPNG(t, 64, 64)
-	out, _ := stegoEmbed(carrier, []byte("top secret"), true, "hunter2")
+	out, _ := stegoEmbed(carrier, []byte("top secret"), true, "hunter2", 1)
 	if _, _, err := stegoExtract(out, "wrong"); err == nil {
 		t.Fatal("expected auth failure on wrong password")
 	}
@@ -169,7 +214,7 @@ func TestStegoExtract_WrongPassword(t *testing.T) {
 
 func TestStegoExtract_EncryptedNoPassword(t *testing.T) {
 	carrier := stegoCarrierPNG(t, 64, 64)
-	out, _ := stegoEmbed(carrier, []byte("x"), false, "pw")
+	out, _ := stegoEmbed(carrier, []byte("x"), false, "pw", 1)
 	if _, _, err := stegoExtract(out, ""); err == nil {
 		t.Fatal("expected error: encrypted payload needs a password")
 	}
@@ -177,7 +222,7 @@ func TestStegoExtract_EncryptedNoPassword(t *testing.T) {
 
 func TestStegoEmbed_TooLarge(t *testing.T) {
 	carrier := stegoCarrierPNG(t, 8, 8) // capacity = 8*8*3/8 - 10 = 14 bytes
-	if _, err := stegoEmbed(carrier, bytes.Repeat([]byte{1}, 100), false, ""); err == nil {
+	if _, err := stegoEmbed(carrier, bytes.Repeat([]byte{1}, 100), false, "", 1); err == nil {
 		t.Fatal("expected payload-too-large error")
 	}
 }
@@ -186,15 +231,5 @@ func TestStegoExtract_NoMagic(t *testing.T) {
 	// A plain PNG with no embedded payload.
 	if _, _, err := stegoExtract(stegoCarrierPNG(t, 32, 32), ""); err == nil {
 		t.Fatal("expected 'no sercon stego payload found'")
-	}
-}
-
-func TestStegoCapacityOf(t *testing.T) {
-	n, err := stegoCapacityOf(stegoCarrierPNG(t, 10, 10))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 27 {
-		t.Fatalf("capacity = %d, want 27", n)
 	}
 }
