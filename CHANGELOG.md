@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.81.1] — 2026-06-28
+
 ### Added
 - Example recipes for the new features: `stego-capacity.ts` (multi-bit LSB
   capacity), `stego-detect.ts` (steganalysis via `detect`/`analyze`), and
