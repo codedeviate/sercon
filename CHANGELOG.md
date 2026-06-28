@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.78.0] — 2026-06-28
+
 ### Added
 - `text.stego.embed` / `text.stego.extract` — hide payloads in cover text via zero-width characters (U+200B/U+200C), optional AES-256-GCM.
 - New `audio` global: `audio.stego.embed` / `extract` / `capacity` — WAV PCM (8/16-bit) LSB steganography, optional AES-256-GCM. Pure-Go, no new dependency.
