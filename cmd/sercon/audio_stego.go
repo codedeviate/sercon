@@ -84,7 +84,7 @@ func audioStegoEmbed(cover, payload []byte, isText bool, password string) ([]byt
 	if err != nil {
 		return nil, fmt.Errorf("audio.stego.embed: %w", err)
 	}
-	stream, err := stegoEncodePayload(payload, isText, password)
+	stream, err := stegoEncodePayload(payload, isText, password, 1)
 	if err != nil {
 		return nil, fmt.Errorf("audio.stego.embed: %w", err)
 	}

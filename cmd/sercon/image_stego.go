@@ -23,6 +23,11 @@ const (
 
 	flagEncrypted = byte(1 << 0)
 	flagText      = byte(1 << 1)
+
+	// flags bits 2–4 hold (N − 1), the payload bit-depth (1..4). Legacy
+	// headers have these bits zero, decoding as N=1.
+	flagBitsShift = 2
+	flagBitsMask  = byte(0x1C) // bits 2,3,4
 )
 
 // toRGBA returns img as an *image.RGBA. If img already is one it is returned
@@ -191,7 +196,7 @@ func stegoEmbed(carrier, payload []byte, isText bool, password string) ([]byte, 
 		return nil, err
 	}
 	rgba := toRGBA(img)
-	stream, err := stegoEncodePayload(payload, isText, password)
+	stream, err := stegoEncodePayload(payload, isText, password, 1)
 	if err != nil {
 		return nil, fmt.Errorf("image.stego.embed: %w", err)
 	}

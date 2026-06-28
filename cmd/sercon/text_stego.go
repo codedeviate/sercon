@@ -53,7 +53,7 @@ func stegoTextDecodeBytes(s string) []byte {
 
 // textStegoEmbed appends payload as an invisible zero-width run to cover.
 func textStegoEmbed(cover string, payload []byte, isText bool, password string) (string, error) {
-	stream, err := stegoEncodePayload(payload, isText, password)
+	stream, err := stegoEncodePayload(payload, isText, password, 1)
 	if err != nil {
 		return "", fmt.Errorf("text.stego.embed: %w", err)
 	}
