@@ -526,9 +526,9 @@ func registerSurface(e *scriptengine.Engine) error {
 		return err
 	}
 	if err := e.RegisterNamespaceFactory("audio", func(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
-		return map[string]any{
-			"stego": audioStegoNamespace(vm),
-		}
+		m := audioFormatMembers(vm)
+		m["stego"] = audioStegoNamespace(vm)
+		return m
 	}); err != nil {
 		return err
 	}
@@ -562,7 +562,7 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("image", imageDocs())
 	e.SetDocs("web", "Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).")
 	e.SetMemberDocsStructured("web", webDocs())
-	e.SetDocs("audio", "Audio steganography: hide/extract payloads in WAV PCM samples (LSB).")
+	e.SetDocs("audio", "Audio: read/write formats (WAV/FLAC/MP3/OGG/AIFF decode, WAV/FLAC/AIFF encode, convert, info) and WAV LSB steganography (stego).")
 	e.SetMemberDocsStructured("audio", audioDocs())
 	e.SetDocs("server", "Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.")
 	e.SetMemberDocsStructured("server", serverDocs())

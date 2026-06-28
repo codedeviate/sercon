@@ -6,7 +6,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"os"
 
+	"github.com/dop251/goja"
 	"github.com/go-audio/aiff"
 	goaudio "github.com/go-audio/audio"
 	"github.com/go-audio/wav"
@@ -369,5 +371,153 @@ func decodeAudio(data []byte) (pcmAudio, error) {
 		return decodeOGG(data)
 	default:
 		return pcmAudio{}, fmt.Errorf("audio: unsupported or unrecognized format")
+	}
+}
+
+// encodeAudio encodes canonical PCM to a lossless container (wav/flac/aiff).
+func encodeAudio(p pcmAudio, format string) ([]byte, error) {
+	switch format {
+	case "wav":
+		return encodeWAV(p)
+	case "flac":
+		return encodeFLAC(p)
+	case "aiff":
+		return encodeAIFF(p)
+	case "mp3", "ogg":
+		return nil, fmt.Errorf("no pure-Go encoder for %s; encode to wav, flac, or aiff", format)
+	default:
+		return nil, fmt.Errorf("unknown audio format %q", format)
+	}
+}
+
+// pcmToBytes / pcmFromBytes bridge canonical 16-bit samples and raw LE bytes.
+func pcmToBytes(s []int16) []byte {
+	b := make([]byte, len(s)*2)
+	for i, v := range s {
+		binary.LittleEndian.PutUint16(b[i*2:], uint16(v))
+	}
+	return b
+}
+
+func pcmFromBytes(b []byte) []int16 {
+	s := make([]int16, len(b)/2)
+	for i := range s {
+		s[i] = int16(binary.LittleEndian.Uint16(b[i*2:]))
+	}
+	return s
+}
+
+func audioFormatMembers(vm *goja.Runtime) map[string]any {
+	infoMap := func(p pcmAudio) map[string]any {
+		durationMs := 0
+		if p.sampleRate > 0 {
+			durationMs = int(int64(p.frames()) * 1000 / int64(p.sampleRate))
+		}
+		return map[string]any{
+			"sampleRate": p.sampleRate,
+			"channels":   p.channels,
+			"bitDepth":   p.bitDepth,
+			"frames":     p.frames(),
+			"durationMs": durationMs,
+		}
+	}
+	optsFmtDest := func(arg goja.Value) (string, string) {
+		format, dest := "", ""
+		if arg != nil && !goja.IsUndefined(arg) && !goja.IsNull(arg) {
+			o := arg.ToObject(vm)
+			if f := o.Get("format"); f != nil && !goja.IsUndefined(f) {
+				format = f.String()
+			}
+			if d := o.Get("dest"); d != nil && !goja.IsUndefined(d) {
+				dest = d.String()
+			}
+		}
+		return format, dest
+	}
+	emit := func(out []byte, dest string) goja.Value {
+		if dest != "" {
+			if werr := os.WriteFile(dest, out, 0o644); werr != nil { //nolint:gosec
+				panic(vm.NewGoError(fmt.Errorf("audio: %w", werr)))
+			}
+			return vm.ToValue(map[string]any{"path": dest})
+		}
+		return vm.ToValue(map[string]any{"bytes": out})
+	}
+	return map[string]any{
+		"info": func(call goja.FunctionCall) goja.Value {
+			src := stegoSrcBytes(vm, call.Argument(0), "audio.info")
+			p, err := audioInfo(src)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("audio.info: %w", err)))
+			}
+			m := infoMap(p)
+			m["format"] = sniffAudioFormat(src)
+			return vm.ToValue(m)
+		},
+		"decode": func(call goja.FunctionCall) goja.Value {
+			src := stegoSrcBytes(vm, call.Argument(0), "audio.decode")
+			p, err := decodeAudio(src)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("audio.decode: %w", err)))
+			}
+			m := infoMap(p)
+			m["format"] = sniffAudioFormat(src)
+			m["pcm"] = pcmToBytes(p.samples)
+			return vm.ToValue(m)
+		},
+		"encode": func(call goja.FunctionCall) goja.Value {
+			raw, ok := call.Argument(0).Export().([]byte)
+			if !ok {
+				panic(vm.NewTypeError("audio.encode: pcm must be a Uint8Array of 16-bit LE samples"))
+			}
+			arg1 := call.Argument(1)
+			if goja.IsUndefined(arg1) || goja.IsNull(arg1) {
+				panic(vm.NewTypeError("audio.encode: opts { format, sampleRate, channels } is required"))
+			}
+			o := arg1.ToObject(vm)
+			format, dest := "", ""
+			if f := o.Get("format"); f != nil && !goja.IsUndefined(f) {
+				format = f.String()
+			}
+			if d := o.Get("dest"); d != nil && !goja.IsUndefined(d) {
+				dest = d.String()
+			}
+			if format == "" {
+				panic(vm.NewTypeError("audio.encode: opts.format is required (wav, flac, aiff)"))
+			}
+			srVal, chVal := o.Get("sampleRate"), o.Get("channels")
+			if srVal == nil || goja.IsUndefined(srVal) || chVal == nil || goja.IsUndefined(chVal) {
+				panic(vm.NewTypeError("audio.encode: opts.sampleRate and opts.channels (>0) are required"))
+			}
+			sampleRate, channels := int(srVal.ToInteger()), int(chVal.ToInteger())
+			if sampleRate <= 0 || channels <= 0 {
+				panic(vm.NewTypeError("audio.encode: opts.sampleRate and opts.channels must be > 0"))
+			}
+			if len(raw)%(2*channels) != 0 {
+				panic(vm.NewGoError(fmt.Errorf("audio.encode: pcm length %d not a whole number of %d-channel frames", len(raw), channels)))
+			}
+			p := pcmAudio{sampleRate: sampleRate, channels: channels, bitDepth: 16, samples: pcmFromBytes(raw)}
+			out, err := encodeAudio(p, format)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("audio.encode: %w", err)))
+			}
+			return emit(out, dest)
+		},
+		"convert": func(call goja.FunctionCall) goja.Value {
+			src := stegoSrcBytes(vm, call.Argument(0), "audio.convert")
+			format, dest := optsFmtDest(call.Argument(1))
+			if format == "" {
+				panic(vm.NewTypeError("audio.convert: opts.format is required (wav, flac, aiff)"))
+			}
+			p, err := decodeAudio(src)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("audio.convert: %w", err)))
+			}
+			out, err := encodeAudio(p, format)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("audio.convert: %w", err)))
+			}
+			return emit(out, dest)
+		},
 	}
 }
