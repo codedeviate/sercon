@@ -144,3 +144,82 @@ func TestSheetGoja_ODSRoundTrip(t *testing.T) {
 		t.Fatalf("got %q (want ods|S|boolean|number)", got)
 	}
 }
+
+func TestSheetGoja_ReadSYLK(t *testing.T) {
+	vm := sheetVM(t) // existing helper in this file
+	if err := vm.Set("slk", []byte("ID;P\nC;Y1;X1;K\"hi\"\nC;Y1;X2;K7\nE\n")); err != nil {
+		t.Fatal(err)
+	}
+	v, err := vm.RunString(`
+		const wb = sheet.read(slk, { format: "slk" });
+		wb.format + "|" + wb.sheets[0].rows[0][0] + "|" + wb.sheets[0].rows[0][1];
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.String() != "slk|hi|7" {
+		t.Fatalf("got %q (want slk|hi|7)", v.String())
+	}
+}
+
+func TestSheetGoja_Formats(t *testing.T) {
+	vm := sheetVM(t)
+	v, err := vm.RunString(`
+		const f = sheet.formats();
+		[f.csv.read, f.csv.write, f.xls.read, f.xls.write, f.slk.write, f.dif.write].join(",");
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.String() != "true,true,true,false,false,false" {
+		t.Fatalf("got %q", v.String())
+	}
+}
+
+func TestSheetGoja_WriteReadOnlyThrows(t *testing.T) {
+	vm := sheetVM(t)
+	if _, err := vm.RunString(`sheet.write([["a",1]], { format: "xls" })`); err == nil {
+		t.Fatal("write to xls must throw (read-only)")
+	}
+	if _, err := vm.RunString(`sheet.write([["a",1]], { dest: "/tmp/x.slk" })`); err == nil {
+		t.Fatal("write to .slk dest must throw (read-only)")
+	}
+}
+
+func TestSheetGoja_ReadXLS(t *testing.T) {
+	vm := sheetVM(t)
+	data, err := os.ReadFile("testdata/tiny.xls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := vm.Set("xlsb", data); err != nil {
+		t.Fatal(err)
+	}
+	v, err := vm.RunString(`
+		const wb = sheet.read(xlsb, { format: "xls" });
+		wb.format + "|" + wb.sheets.length + "|" + wb.sheets[0].rows[1][0];
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.String(); got != "xls|2|apples" {
+		t.Fatalf("got %q (want xls|2|apples)", got)
+	}
+}
+
+func TestSheetGoja_ReadDIF(t *testing.T) {
+	vm := sheetVM(t)
+	if err := vm.Set("dif", []byte(sampleDIF)); err != nil {
+		t.Fatal(err)
+	}
+	v, err := vm.RunString(`
+		const wb = sheet.read(dif, { format: "dif" });
+		wb.format + "|" + wb.sheets[0].rows[1][0];
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.String(); got != "dif|apples" {
+		t.Fatalf("got %q (want dif|apples)", got)
+	}
+}

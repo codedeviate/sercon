@@ -26,6 +26,23 @@ type sheetBook struct {
 	tabs   []sheetTab
 }
 
+// sheetFormat describes a codec.sheet format's read/write capability. The
+// sheetFormats table is the single source of truth for read dispatch, write
+// rejection, and codec.sheet.formats().
+type sheetFormat struct {
+	read, write bool
+}
+
+var sheetFormats = map[string]sheetFormat{
+	"csv":  {read: true, write: true},
+	"tsv":  {read: true, write: true},
+	"xlsx": {read: true, write: true},
+	"ods":  {read: true, write: true},
+	"xls":  {read: true, write: false},
+	"slk":  {read: true, write: false},
+	"dif":  {read: true, write: false},
+}
+
 // cellToStr renders a cell value for delimited (CSV/TSV) output.
 func cellToStr(v any) string {
 	switch t := v.(type) {
@@ -215,6 +232,22 @@ const odsMimetype = "application/vnd.oasis.opendocument.spreadsheet"
 // are inspected for an ODS "mimetype" entry (→ ods) and otherwise treated as
 // xlsx. Non-zip data is csv (tsv only via explicit opts.format or .tsv ext).
 func sniffSheetFormat(data []byte) string {
+	// Legacy XLS: OLE2/CFB compound-file magic.
+	if bytes.HasPrefix(data, []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}) {
+		return "xls"
+	}
+	// Accepted trade-off: a CSV whose content literally begins with "ID;" or a
+	// "TABLE\n<digit>,…" chunk would be detected as slk/dif here. That's rare in
+	// practice, and a caller can always pass opts.format to override the sniff.
+	//
+	// SYLK: starts with an "ID;" record.
+	if bytes.HasPrefix(data, []byte("ID;")) {
+		return "slk"
+	}
+	// DIF: a TABLE header chunk ("TABLE" <newline> "<digit>,…").
+	if looksLikeDIF(data) {
+		return "dif"
+	}
 	if len(data) >= 4 && data[0] == 'P' && data[1] == 'K' && data[2] == 0x03 && data[3] == 0x04 {
 		// The ODS spec requires "mimetype" to be the FIRST zip entry, so we
 		// inspect only index 0 — a later stray "mimetype" must not match.
@@ -234,6 +267,28 @@ func sniffSheetFormat(data []byte) string {
 		return "xlsx"
 	}
 	return "csv"
+}
+
+// looksLikeDIF reports whether data begins with a DIF TABLE header chunk.
+func looksLikeDIF(data []byte) bool {
+	if !bytes.HasPrefix(data, []byte("TABLE")) {
+		return false
+	}
+	rest := bytes.TrimLeft(data[5:], "\r")
+	if len(rest) == 0 || rest[0] != '\n' {
+		return false
+	}
+	rest = rest[1:]
+	if len(rest) == 0 || rest[0] < '0' || rest[0] > '9' {
+		return false
+	}
+	// The comma must occur on this (second) line — before the next newline —
+	// so a stray comma later in the data can't satisfy the header check.
+	line := rest
+	if nl := bytes.IndexByte(rest, '\n'); nl >= 0 {
+		line = rest[:nl]
+	}
+	return bytes.IndexByte(line, ',') >= 0
 }
 
 // sheetSrcBytes reads a path string (returning its basename as the sheet name
@@ -357,6 +412,12 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 					format = "csv"
 				case ".tsv":
 					format = "tsv"
+				case ".xls":
+					format = "xls"
+				case ".slk":
+					format = "slk"
+				case ".dif":
+					format = "dif"
 				default:
 					format = sniffSheetFormat(data) // PK→ods/xlsx else csv
 				}
@@ -372,8 +433,14 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 				book, err = readDelimited(data, '\t', name)
 			case "csv":
 				book, err = readDelimited(data, ',', name)
+			case "xls":
+				book, err = readXLS(data)
+			case "slk":
+				book, err = readSYLK(data, name)
+			case "dif":
+				book, err = readDIF(data, name)
 			default:
-				return throwErr(fmt.Errorf("codec.sheet.read: unsupported format %q (csv, tsv, xlsx, ods)", format))
+				return throwErr(fmt.Errorf("codec.sheet.read: unsupported format %q (csv, tsv, xlsx, ods, xls, slk, dif)", format))
 			}
 			if err != nil {
 				return throwErr(err)
@@ -405,7 +472,16 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 					format = "tsv"
 				case ".csv":
 					format = "csv"
+				case ".xls":
+					format = "xls"
+				case ".slk":
+					format = "slk"
+				case ".dif":
+					format = "dif"
 				}
+			}
+			if f, ok := sheetFormats[format]; ok && !f.write {
+				return throwErr(fmt.Errorf("codec.sheet.write: %s is read-only (extract/convert only); write csv, tsv, xlsx, or ods", format))
 			}
 			var out []byte
 			var err error
@@ -431,6 +507,13 @@ func sheetNamespace(vm *goja.Runtime) map[string]any {
 				return vm.ToValue(map[string]any{"format": format, "path": dest})
 			}
 			return vm.ToValue(map[string]any{"format": format, "bytes": out})
+		},
+		"formats": func(call goja.FunctionCall) goja.Value {
+			out := map[string]any{}
+			for name, f := range sheetFormats {
+				out[name] = map[string]any{"read": f.read, "write": f.write}
+			}
+			return vm.ToValue(out)
 		},
 	}
 }
