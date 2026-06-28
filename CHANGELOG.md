@@ -8,6 +8,9 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `image.stego.detect` / `image.stego.analyze` / `image.stego.bitplane` — read-only LSB steganalysis: sercon-payload detection, per-channel chi-square + LSB entropy + RS embedding-rate, a suspicion verdict, and bit-plane PNG visualization. Pure-Go, no new dependency.
+
 ## [0.76.0] — 2026-06-27
 
 ### Changed

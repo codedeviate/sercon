@@ -247,10 +247,9 @@ reason parked — just author + verify when the need arises.
 
 ## Steganography
 
-`image.stego.embed` / `image.stego.extract` / `image.stego.capacity` shipped (LSB-in-PNG, AES-256-GCM, see CHANGELOG). Deferred follow-ons:
+`image.stego.embed` / `image.stego.extract` / `image.stego.capacity` shipped (LSB-in-PNG, AES-256-GCM, see CHANGELOG). `image.stego.detect` / `image.stego.analyze` / `image.stego.bitplane` shipped (read-only LSB detection/analysis — see CHANGELOG). Deferred follow-ons:
 
 - **Other carriers** (text via zero-width/whitespace encoding; WAV audio LSB). **Reason:** each is a separate encoder with its own detection trade-offs; promote per-carrier on demand.
-- **Detection / analysis** (scan suspicious images for hidden payloads, bit-plane visualization, entropy reporting). **Reason:** a distinct read-only toolset; the first slice is embed/extract of our own format.
 - **Multi-bit LSB** (store N bits per channel for higher capacity). **Reason:** increases visible artifacts; YAGNI until a capacity need appears.
 - **Password-seeded bit-scattering** (spread bits pseudo-randomly across the image for detection resistance). **Reason:** added complexity; sequential LSB + AES-GCM covers the confidentiality goal.
 

@@ -342,5 +342,36 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Throws if the carrier cannot be decoded.",
 			Example:    `const room = image.stego.capacity("cover.png").bytes;`,
 		},
+		"stego.detect": {
+			Summary: "Quickly check whether an image carries hidden data. Returns a definitive flag for a sercon-format LSB payload (the \"ScSt\" header) plus a heuristic suspicion verdict from statistical analysis. Read-only; never modifies the image.",
+			Params: []scriptengine.Param{
+				{Name: "carrier", Type: "string | Uint8Array", Desc: "The image to inspect: a file path or raw image bytes."},
+			},
+			ReturnType: "{ sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; suspicious: boolean; confidence: number }",
+			Returns:    "An object: sercon is true when a sercon stego header is present (with encrypted/text/payloadBytes); suspicious/confidence summarize the statistical analysis.",
+			Errors:     "Throws if the carrier cannot be decoded. Never throws for a clean image.",
+			Example:    `if (image.stego.detect("photo.png").sercon) console.log("hidden payload!");`,
+		},
+		"stego.analyze": {
+			Summary: "Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of-values) probability, LSB-plane Shannon entropy, and an RS embedding-rate estimate, plus a combined verdict with reasons. Read-only.",
+			Params: []scriptengine.Param{
+				{Name: "carrier", Type: "string | Uint8Array", Desc: "The image to analyze: a file path or raw image bytes."},
+			},
+			ReturnType: "{ width: number; height: number; capacity: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } }",
+			Returns:    "A report object: capacity in bytes, the sercon-header check, per-channel signals (chiSquare/lsbEntropy/rsEstimate, each 0..1), and the verdict.",
+			Errors:     "Throws if the carrier cannot be decoded.",
+			Example:    `const r = image.stego.analyze("suspect.png"); console.log(r.verdict.suspicious, r.verdict.reasons);`,
+		},
+		"stego.bitplane": {
+			Summary: "Render one bit-plane of an image as a PNG for visual inspection. Hidden LSB data often shows as structured noise in the low planes. For a single channel a set bit is white and an unset bit black; for \"rgb\" each channel's bit maps to its colour component.",
+			Params: []scriptengine.Param{
+				{Name: "carrier", Type: "string | Uint8Array", Desc: "The image: a file path or raw image bytes."},
+				{Name: "opts", Type: `{ channel?: "r" | "g" | "b" | "rgb"; plane?: number; dest?: string }`, Optional: true, Desc: "channel selects the colour channel (default \"rgb\" composite); plane is the bit index 0 (LSB) to 7 (MSB), default 0; dest writes the PNG to that path instead of returning bytes."},
+			},
+			ReturnType: "{ bytes: Uint8Array } | { path: string }",
+			Returns:    "An object with the PNG bytes ({ bytes }), or { path } when opts.dest was given.",
+			Errors:     "Throws a TypeError for an unknown channel or a plane outside 0..7, throws if the carrier cannot be decoded, or if writing opts.dest fails.",
+			Example:    `const lsb = image.stego.bitplane("photo.png", { plane: 0 });`,
+		},
 	}
 }

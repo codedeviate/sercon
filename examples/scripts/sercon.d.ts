@@ -1548,11 +1548,30 @@ declare const image: {
   rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void };
   stego: {
     /**
+     * Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of-values) probability, LSB-plane Shannon entropy, and an RS embedding-rate estimate, plus a combined verdict with reasons. Read-only.
+     * @param carrier The image to analyze: a file path or raw image bytes.
+     * @returns A report object: capacity in bytes, the sercon-header check, per-channel signals (chiSquare/lsbEntropy/rsEstimate, each 0..1), and the verdict.
+     */
+    analyze(carrier: string | Uint8Array): { width: number; height: number; capacity: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } };
+    /**
+     * Render one bit-plane of an image as a PNG for visual inspection. Hidden LSB data often shows as structured noise in the low planes. For a single channel a set bit is white and an unset bit black; for "rgb" each channel's bit maps to its colour component.
+     * @param carrier The image: a file path or raw image bytes.
+     * @param opts channel selects the colour channel (default "rgb" composite); plane is the bit index 0 (LSB) to 7 (MSB), default 0; dest writes the PNG to that path instead of returning bytes.
+     * @returns An object with the PNG bytes ({ bytes }), or { path } when opts.dest was given.
+     */
+    bitplane(carrier: string | Uint8Array, opts?: { channel?: "r" | "g" | "b" | "rgb"; plane?: number; dest?: string }): { bytes: Uint8Array } | { path: string };
+    /**
      * Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — one bit per R/G/B channel. Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.
      * @param carrier The carrier image: a file path or raw image bytes.
      * @returns An object whose bytes field is the maximum plaintext payload size in bytes.
      */
     capacity(carrier: string | Uint8Array): { bytes: number };
+    /**
+     * Quickly check whether an image carries hidden data. Returns a definitive flag for a sercon-format LSB payload (the "ScSt" header) plus a heuristic suspicion verdict from statistical analysis. Read-only; never modifies the image.
+     * @param carrier The image to inspect: a file path or raw image bytes.
+     * @returns An object: sercon is true when a sercon stego header is present (with encrypted/text/payloadBytes); suspicious/confidence summarize the statistical analysis.
+     */
+    detect(carrier: string | Uint8Array): { sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; suspicious: boolean; confidence: number };
     /**
      * Hide a payload inside a lossless image using least-significant-bit (LSB) steganography, returning PNG bytes. The carrier is decoded (PNG/JPEG/GIF/TIFF/BMP/WebP) and re-encoded as PNG (output is always PNG — re-encoding to a lossy format would destroy the hidden data). One bit is stored per R/G/B channel; the alpha channel is never modified (opaque carriers recommended). A non-empty password encrypts the payload with AES-256-GCM (PBKDF2-SHA256 key derivation).
      * @param carrier The carrier image: a file path (string) or raw image bytes (Uint8Array).

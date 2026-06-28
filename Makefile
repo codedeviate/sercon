@@ -104,6 +104,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/image-anim.ts \
 	examples/scripts/exif.ts \
 	examples/scripts/stego.ts \
+	examples/scripts/stego-analyze.ts \
 	examples/scripts/tui-keys.ts \
 	examples/scripts/agent-browser-core.ts \
 	examples/scripts/agent-browser-capture.ts \
