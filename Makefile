@@ -27,6 +27,11 @@
 #            Verify the version markers in pkg/scriptengine/version.go and
 #            MANUAL.md all agree. Run by release-prep; useful standalone
 #            after editing one of the two by hand.
+#   homebrew-bump VERSION=x.y.z
+#            Bump the Homebrew formula in the codedeviate/homebrew-cli tap
+#            (HOMEBREW_TAP) by running that tap's scripts/bump.sh, then commit
+#            + push the formula. Run AFTER `git push` of the vX.Y.Z tag — the
+#            bump fetches the release tarball to recompute its sha256.
 #   clean    Remove built artifacts
 #
 # release and manual are intentionally separate from `build` so an
@@ -34,13 +39,14 @@
 
 GO                ?= go
 RECON             ?= recon
+HOMEBREW_TAP      ?= /Users/thomas/Development/Thomas/Rust/homebrew-cli
 GOLANGCI_VERSION  ?= v2.12.2
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 MANUAL_VERSION    := $(shell sed -nE 's|^const Version = "([^"]+)".*|\1|p' pkg/scriptengine/version.go)
 MANUAL_DATE       := $(shell date +%F)
 
-.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check paymentproviders paymentproviders-check sample-data clean
+.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -265,6 +271,30 @@ release-prep:
 	@echo "  3) git commit -am 'chore: cut v$(VERSION)'"
 	@echo "  4) git tag -a v$(VERSION) -m 'release v$(VERSION)'"
 	@echo "  5) git push origin master v$(VERSION)  # CI publishes binaries via goreleaser"
+	@echo "  6) make homebrew-bump VERSION=$(VERSION)  # bump + push the Homebrew tap formula"
+
+# Bump the Homebrew formula in the codedeviate/homebrew-cli tap and push it.
+# Reuses the tap's own scripts/bump.sh (which fetches the release tarball to
+# recompute sha256), so the vX.Y.Z tag must already be pushed and the repo
+# public. The tap's origin uses an SSH host alias (github-codedv8) that carries
+# the codedeviate identity, so the push needs no gh-account switch. Idempotent:
+# re-running for an already-bumped version makes no commit.
+homebrew-bump:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "usage: make homebrew-bump VERSION=x.y.z"; exit 2; \
+	fi
+	@if [ ! -x "$(HOMEBREW_TAP)/scripts/bump.sh" ]; then \
+		echo "error: $(HOMEBREW_TAP)/scripts/bump.sh not found (set HOMEBREW_TAP=/path/to/homebrew-cli)"; exit 1; \
+	fi
+	bash "$(HOMEBREW_TAP)/scripts/bump.sh" sercon "$(VERSION)"
+	@if git -C "$(HOMEBREW_TAP)" diff --quiet -- Formula/sercon.rb; then \
+		echo "Formula already at $(VERSION); nothing to commit."; \
+	else \
+		git -C "$(HOMEBREW_TAP)" add Formula/sercon.rb; \
+		git -C "$(HOMEBREW_TAP)" commit -m "sercon $(VERSION)"; \
+		git -C "$(HOMEBREW_TAP)" push; \
+		echo "Pushed Homebrew formula bump: sercon $(VERSION)"; \
+	fi
 
 sample-data: build
 	./$(BIN) examples/data/generate.ts
