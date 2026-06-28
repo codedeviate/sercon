@@ -319,6 +319,29 @@ runtime.log(r.charset, r.confidence);`,
 			Errors:  "Rejects if data is undefined, the filter string is empty, the filter fails to parse, or evaluation produces an error.",
 			Example: `const ids = await text.jq.queryAll(obj, ".users[].id");`,
 		},
+		"stego.embed": {
+			Summary: "Hide a payload inside cover text using zero-width characters (U+200B / U+200C), appended as an invisible trailing run — the visible text is unchanged. A non-empty password encrypts the payload (AES-256-GCM). Returns the cover text with the hidden run.",
+			Params: []scriptengine.Param{
+				{Name: "cover", Type: "string", Desc: "The visible cover text."},
+				{Name: "payload", Type: "string | Uint8Array", Desc: "Data to hide. A string is stored as UTF-8 text (extract returns a string); a Uint8Array is stored as binary."},
+				{Name: "opts", Type: "{ password?: string }", Optional: true, Desc: "password encrypts the payload with AES-256-GCM."},
+			},
+			ReturnType: "string",
+			Returns:    "The cover text followed by the invisible zero-width payload run.",
+			Errors:     "Throws a TypeError if payload is neither a string nor Uint8Array.",
+			Example:    `const out = text.stego.embed("Hello there.", "meet at noon", { password: "s3cret" });`,
+		},
+		"stego.extract": {
+			Summary: "Recover a payload hidden by text.stego.embed. Scans the string for zero-width carrier characters, verifies the sercon header, and returns the payload as a string (if embedded as text) or a Uint8Array. There is no capacity() for text — the hidden run is appended, so capacity is effectively unbounded.",
+			Params: []scriptengine.Param{
+				{Name: "stegoText", Type: "string", Desc: "Text produced by text.stego.embed (or a copy that preserved the zero-width characters)."},
+				{Name: "opts", Type: "{ password?: string }", Optional: true, Desc: "The password used at embed time, required when the payload was encrypted."},
+			},
+			ReturnType: "string | Uint8Array",
+			Returns:    "The recovered payload — a string when embedded as text, otherwise a Uint8Array.",
+			Errors:     "Throws if no sercon stego payload is present, if the payload is encrypted but no password is given, or if decryption fails (wrong password / corrupt).",
+			Example:    `const msg = text.stego.extract(out, { password: "s3cret" });`,
+		},
 		"diff.compare": {
 			Summary: "Unified-diff two text inputs. opts: context (default 3), fromFile / toFile (default 'a' / 'b'). Binary inputs return { binary: true } with an empty diff.",
 			Params: []scriptengine.Param{

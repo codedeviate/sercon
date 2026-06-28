@@ -412,6 +412,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"charset": charsetNamespace(vm, loop),
 			"jq":      jqNamespace(vm, loop),
 			"diff":    diffNamespace(vm, loop),
+			"stego":   textStegoNamespace(vm),
 		}
 	}); err != nil {
 		return err
