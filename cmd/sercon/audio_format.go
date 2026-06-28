@@ -240,7 +240,7 @@ func decodeFLAC(data []byte) (pcmAudio, error) {
 	if err != nil {
 		return pcmAudio{}, err
 	}
-	defer stream.Close()
+	defer stream.Close() //nolint:errcheck
 	ch := int(stream.Info.NChannels)
 	bits := int(stream.Info.BitsPerSample)
 	var samples []int16

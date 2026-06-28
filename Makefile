@@ -113,6 +113,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/stego-analyze.ts \
 	examples/scripts/text-stego.ts \
 	examples/scripts/audio-stego.ts \
+	examples/scripts/audio-format.ts \
 	examples/scripts/tui-keys.ts \
 	examples/scripts/agent-browser-core.ts \
 	examples/scripts/agent-browser-capture.ts \

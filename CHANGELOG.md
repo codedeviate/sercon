@@ -8,6 +8,9 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `audio.info` / `audio.decode` / `audio.encode` / `audio.convert` — read WAV/FLAC/MP3/OGG/AIFF and write WAV/FLAC/AIFF via a canonical 16-bit PCM model. Pure-Go.
+
 ## [0.78.0] — 2026-06-28
 
 ### Added
