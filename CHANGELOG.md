@@ -8,6 +8,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- Example recipes for the new features: `stego-capacity.ts` (multi-bit LSB
+  capacity), `stego-detect.ts` (steganalysis via `detect`/`analyze`), and
+  `sheet-legacy-convert.ts` (read a legacy SYLK export and convert it to XLSX),
+  plus a `legacy.slk` sample-data file.
+
 ## [0.81.0] — 2026-06-28
 
 ### Added

@@ -18,6 +18,7 @@ Text/structured/tabular sources are authored by hand and committed directly.
 | `sales.csv` | CSV | 10 sales records: date, region, category, units, revenue |
 | `regions.tsv` | TSV | 4 region records: region, manager, currency (tab-separated) |
 | `products.xlsx` | XLSX | Two-sheet workbook: Products (4 rows, typed cells) + Categories |
+| `legacy.slk` | SYLK | Legacy read-only SYLK export: 3-row inventory (sku, name, qty) |
 | `small.png` | PNG | 64×64 pixel solid-colour image (~208 B) |
 | `medium.png` | PNG | 400×300 pixel image (~1.1 KB) |
 | `large.png` | PNG | 800×600 pixel image (~2.9 KB) |

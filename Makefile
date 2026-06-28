@@ -162,6 +162,9 @@ examples/scripts/server-sse.ts \
 	examples/recipes/inventory.ts \
 	examples/recipes/log-scan.ts \
 	examples/recipes/stego-hide.ts \
+	examples/recipes/stego-capacity.ts \
+	examples/recipes/stego-detect.ts \
+	examples/recipes/sheet-legacy-convert.ts \
 	examples/recipes/barcode-batch.ts
 
 build:
