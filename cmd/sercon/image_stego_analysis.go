@@ -18,15 +18,15 @@ func channelValues(rgba *image.RGBA, c int) []byte {
 	return out
 }
 
-// lsbEntropy is the Shannon entropy (bits) of the LSB bit-stream of vals:
-// 0 when all LSBs are identical, 1.0 when perfectly balanced.
-func lsbEntropy(vals []byte) float64 {
+// entropyPlane is the Shannon entropy (bits) of bit `plane` across vals:
+// 0 when all those bits are identical, 1.0 when perfectly balanced.
+func entropyPlane(vals []byte, plane int) float64 {
 	if len(vals) == 0 {
 		return 0
 	}
 	ones := 0
 	for _, v := range vals {
-		ones += int(v & 1)
+		ones += int((v >> plane) & 1)
 	}
 	p1 := float64(ones) / float64(len(vals))
 	p0 := 1 - p1
@@ -35,6 +35,9 @@ func lsbEntropy(vals []byte) float64 {
 	}
 	return -(p0*math.Log2(p0) + p1*math.Log2(p1))
 }
+
+// lsbEntropy is entropyPlane for the least-significant bit (plane 0).
+func lsbEntropy(vals []byte) float64 { return entropyPlane(vals, 0) }
 
 // gammp is the regularized lower incomplete gamma P(a,x) (Numerical Recipes):
 // series for x<a+1, continued fraction otherwise. Range [0,1].
@@ -122,6 +125,39 @@ func chiSquareLSB(vals []byte) float64 {
 		return 0
 	}
 	// chiSquareCDF = gammp(dof/2, chi2/2); embedding prob = 1 - CDF.
+	return 1 - gammp(float64(dof)/2, chi2/2)
+}
+
+// chiSquareGroups generalizes the Westfeld pairs test to aligned groups of
+// 2^n values: it returns the probability that values within each group have
+// been equalized — the fingerprint of n-bit LSB replacement. n=1 is the
+// classic pairs-of-values test. Range [0,1].
+func chiSquareGroups(vals []byte, n int) float64 {
+	size := 1 << n
+	var hist [256]int
+	for _, v := range vals {
+		hist[v]++
+	}
+	var chi2 float64
+	dof := 0
+	for base := 0; base < 256; base += size {
+		sum := 0
+		for k := 0; k < size; k++ {
+			sum += hist[base+k]
+		}
+		if sum == 0 {
+			continue
+		}
+		expected := float64(sum) / float64(size)
+		for k := 0; k < size; k++ {
+			diff := float64(hist[base+k]) - expected
+			chi2 += diff * diff / expected
+		}
+		dof += size - 1
+	}
+	if dof < 1 {
+		return 0
+	}
 	return 1 - gammp(float64(dof)/2, chi2/2)
 }
 
@@ -236,10 +272,12 @@ func rsAnalysis(rgba *image.RGBA, c int) float64 {
 }
 
 type stegoChan struct {
-	ch  string
-	chi float64
-	ent float64
-	rs  float64
+	ch       string
+	chi      float64
+	ent      float64
+	rs       float64
+	chiBits  [4]float64 // generalized chi-square at depths 1..4
+	entPlane [4]float64 // entropy of planes 0..3
 }
 
 type stegoInspection struct {
@@ -247,6 +285,8 @@ type stegoInspection struct {
 	serconPresent           bool
 	encrypted, text         bool
 	payloadBytes            int
+	headerBits              int // declared bit depth from the header (0 if none)
+	estimatedBits           int // statistically estimated depth (0 if none)
 	channels                []stegoChan
 	suspicious              bool
 	confidence              float64
@@ -255,9 +295,10 @@ type stegoInspection struct {
 
 // Verdict thresholds (documented; tuned by tests).
 const (
-	stegoChiThreshold = 0.5
-	stegoEntThreshold = 0.999
-	stegoRSThreshold  = 0.10
+	stegoChiThreshold  = 0.5
+	stegoEntThreshold  = 0.999
+	stegoRSThreshold   = 0.10
+	stegoBitsThreshold = 0.5 // mean generalized chi-square to credit a bit depth
 )
 
 // stegoInspect decodes carrier, runs the sercon magic check and the three
@@ -279,23 +320,37 @@ func stegoInspect(carrier []byte) (stegoInspection, error) {
 			insp.encrypted = flags&flagEncrypted != 0
 			insp.text = flags&flagText != 0
 			insp.payloadBytes = int(length)
+			insp.headerBits = int((flags&flagBitsMask)>>flagBitsShift) + 1
 		}
 	}
 
 	names := []string{"r", "g", "b"}
 	var sumChi, sumEnt, sumRS float64
+	var sumChiBits [4]float64
 	chiHits := 0
 	for c := 0; c < 3; c++ {
 		vals := channelValues(rgba, c)
 		chi := chiSquareLSB(vals)
 		ent := lsbEntropy(vals)
 		rs := rsAnalysis(rgba, c)
-		insp.channels = append(insp.channels, stegoChan{ch: names[c], chi: chi, ent: ent, rs: rs})
+		var chiBits, entPlane [4]float64
+		for d := 0; d < 4; d++ {
+			chiBits[d] = chiSquareGroups(vals, d+1)
+			entPlane[d] = entropyPlane(vals, d)
+			sumChiBits[d] += chiBits[d]
+		}
+		insp.channels = append(insp.channels, stegoChan{ch: names[c], chi: chi, ent: ent, rs: rs, chiBits: chiBits, entPlane: entPlane})
 		sumChi += chi
 		sumEnt += ent
 		sumRS += rs
 		if chi >= stegoChiThreshold {
 			chiHits++
+		}
+	}
+	// estimatedBits: the largest depth whose mean generalized chi-square fires.
+	for d := 0; d < 4; d++ {
+		if sumChiBits[d]/3 >= stegoBitsThreshold {
+			insp.estimatedBits = d + 1
 		}
 	}
 	meanChi, meanEnt, meanRS := sumChi/3, sumEnt/3, sumRS/3
@@ -312,6 +367,9 @@ func stegoInspect(carrier []byte) (stegoInspection, error) {
 	}
 	if meanRS >= stegoRSThreshold {
 		reasons = append(reasons, fmt.Sprintf("RS analysis estimates ~%.0f%% embedding", meanRS*100))
+	}
+	if insp.estimatedBits > 1 {
+		reasons = append(reasons, fmt.Sprintf("statistics suggest ~%d-bit LSB embedding", insp.estimatedBits))
 	}
 	insp.reasons = reasons
 	insp.suspicious = len(reasons) > 0
@@ -337,7 +395,14 @@ func stegoInspect(carrier []byte) (stegoInspection, error) {
 func (i stegoInspection) channelsJS() []any {
 	out := make([]any, len(i.channels))
 	for k, c := range i.channels {
-		out[k] = map[string]any{"channel": c.ch, "chiSquare": c.chi, "lsbEntropy": c.ent, "rsEstimate": c.rs}
+		out[k] = map[string]any{
+			"channel":         c.ch,
+			"chiSquare":       c.chi,
+			"lsbEntropy":      c.ent,
+			"rsEstimate":      c.rs,
+			"chiSquareByBits": []any{c.chiBits[0], c.chiBits[1], c.chiBits[2], c.chiBits[3]},
+			"entropyByPlane":  []any{c.entPlane[0], c.entPlane[1], c.entPlane[2], c.entPlane[3]},
+		}
 	}
 	return out
 }
@@ -361,13 +426,15 @@ func stegoAnalyze(carrier []byte) (map[string]any, error) {
 		sercon["encrypted"] = insp.encrypted
 		sercon["text"] = insp.text
 		sercon["payloadBytes"] = insp.payloadBytes
+		sercon["bits"] = insp.headerBits
 	}
 	return map[string]any{
-		"width":    insp.width,
-		"height":   insp.height,
-		"capacity": insp.capacity,
-		"sercon":   sercon,
-		"channels": insp.channelsJS(),
+		"width":         insp.width,
+		"height":        insp.height,
+		"capacity":      insp.capacity,
+		"estimatedBits": insp.estimatedBits,
+		"sercon":        sercon,
+		"channels":      insp.channelsJS(),
 		"verdict": map[string]any{
 			"suspicious": insp.suspicious,
 			"confidence": insp.confidence,
@@ -437,6 +504,7 @@ func stegoDetect(carrier []byte) (map[string]any, error) {
 		m["encrypted"] = insp.encrypted
 		m["text"] = insp.text
 		m["payloadBytes"] = insp.payloadBytes
+		m["bits"] = insp.headerBits
 	}
 	return m, nil
 }

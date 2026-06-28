@@ -137,6 +137,22 @@ func TestStegoGoja_Bitplane(t *testing.T) {
 	}
 }
 
+func TestStegoGoja_AnalyzeMultiBit(t *testing.T) {
+	vm := stegoVM(t)
+	v, err := vm.RunString(`
+		const out = image.stego.embed(carrier, "hidden", { bits: 2 });
+		const d = image.stego.detect(out.bytes);
+		const a = image.stego.analyze(out.bytes);
+		d.bits + "|" + (a.channels[0].chiSquareByBits.length) + "|" + (a.channels[0].entropyByPlane.length) + "|" + (typeof a.estimatedBits);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.String(); got != "2|4|4|number" {
+		t.Fatalf("got %q (want 2|4|4|number)", got)
+	}
+}
+
 func TestStegoGoja_MultiBit(t *testing.T) {
 	vm := stegoVM(t)
 	v, err := vm.RunString(`

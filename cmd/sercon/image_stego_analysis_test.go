@@ -210,3 +210,85 @@ func TestStegoBitplane_RGBIsolation(t *testing.T) {
 		t.Fatalf("rgb plane-0 pixel = %v, want {255,0,0,255} (R-bit -> red only)", got)
 	}
 }
+
+// embeddedNRGBA overwrites the low n bits of every R,G,B channel with
+// deterministic pseudo-random bits, simulating full n-bit LSB embedding.
+func embeddedNRGBA(w, h, n int) *image.RGBA {
+	img := gradientRGBA(w, h)
+	var st uint32 = 0x1234567
+	mask := byte((1 << n) - 1)
+	next := func() byte { st = st*1664525 + 1013904223; return byte(st>>24) & mask }
+	for p := 0; p < len(img.Pix)/4; p++ {
+		for c := 0; c < 3; c++ {
+			idx := p*4 + c
+			img.Pix[idx] = (img.Pix[idx] &^ mask) | next()
+		}
+	}
+	return img
+}
+
+func TestChiSquareGroups_TracksDepth(t *testing.T) {
+	// On a clean gradient every depth reads low.
+	clean := channelValues(gradientRGBA(128, 128), 0)
+	for n := 1; n <= 4; n++ {
+		if g := chiSquareGroups(clean, n); g > 0.5 {
+			t.Errorf("clean chiSquareGroups n=%d = %.3f, want low", n, g)
+		}
+	}
+	// On a 3-bit-embedded image, depths 1..3 read high.
+	// Note: n=4 is not asserted — equalization of 8-value subgroups also
+	// equalizes 16-value groups, so n=4 can remain high for 3-bit embeds;
+	// the estimatedBits logic relies on per-channel means over a PNG-decoded
+	// image where the effect dissipates, not on single-channel raw pixels.
+	emb := channelValues(embeddedNRGBA(128, 128, 3), 0)
+	for n := 1; n <= 3; n++ {
+		if g := chiSquareGroups(emb, n); g < 0.5 {
+			t.Errorf("3-bit emb chiSquareGroups n=%d = %.3f, want high", n, g)
+		}
+	}
+}
+
+func TestEntropyPlane_RisesOnEmbeddedPlanes(t *testing.T) {
+	clean := channelValues(gradientRGBA(128, 128), 0)
+	emb := channelValues(embeddedNRGBA(128, 128, 3), 0)
+	// Planes 0..2 are randomized in the 3-bit embed → entropy ~1; plane 3 is not.
+	for plane := 0; plane <= 2; plane++ {
+		if e := entropyPlane(emb, plane); e < 0.99 {
+			t.Errorf("emb entropyPlane(%d) = %.4f, want ~1", plane, e)
+		}
+	}
+	if entropyPlane(clean, 0) >= entropyPlane(emb, 0) {
+		t.Errorf("clean plane-0 entropy should be below embedded")
+	}
+}
+
+func TestStegoInspect_EstimatedBits(t *testing.T) {
+	clean := encodePNGForTest(t, gradientRGBA(96, 96))
+	insp, err := stegoInspect(clean)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if insp.estimatedBits != 0 {
+		t.Errorf("clean image estimatedBits = %d, want 0", insp.estimatedBits)
+	}
+	stego := encodePNGForTest(t, embeddedNRGBA(96, 96, 3))
+	insp3, err := stegoInspect(stego)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if insp3.estimatedBits != 3 {
+		t.Errorf("3-bit embed estimatedBits = %d, want 3", insp3.estimatedBits)
+	}
+}
+
+func TestStegoInspect_HeaderBits(t *testing.T) {
+	carrier := stegoCarrierPNG(t, 64, 64)
+	stego, _ := stegoEmbed(carrier, []byte("hi"), true, "", 4)
+	insp, err := stegoInspect(stego)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !insp.serconPresent || insp.headerBits != 4 {
+		t.Errorf("headerBits = %d (sercon=%v), want 4", insp.headerBits, insp.serconPresent)
+	}
+}
