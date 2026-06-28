@@ -1656,8 +1656,34 @@ declare const web: {
   };
 };
 
-/** Audio steganography: hide/extract payloads in WAV PCM samples (LSB). */
+/** Audio: read/write formats (WAV/FLAC/MP3/OGG/AIFF decode, WAV/FLAC/AIFF encode, convert, info) and WAV LSB steganography (stego). */
 declare const audio: {
+  /**
+   * Decode any supported audio source (WAV/FLAC/MP3/OGG/AIFF) and re-encode it as a lossless container (WAV, FLAC, or AIFF). Optionally write to a file via opts.dest.
+   * @param src Audio file path or raw bytes of any supported format.
+   * @param opts format is required. dest writes to a file path instead of returning bytes.
+   * @returns The re-encoded audio bytes ({ bytes }), or { path } when opts.dest was given.
+   */
+  convert(src: string | Uint8Array, opts: { format: "wav" | "flac" | "aiff"; dest?: string }): { bytes: Uint8Array } | { path: string };
+  /**
+   * Decode an audio file (WAV/FLAC/MP3/OGG/AIFF) to canonical 16-bit LE interleaved PCM bytes plus metadata. Samples are normalized to 16-bit regardless of source bit depth.
+   * @param src Audio file path or raw bytes.
+   * @returns Metadata plus a pcm field containing raw 16-bit LE interleaved samples as a Uint8Array.
+   */
+  decode(src: string | Uint8Array): { format: string; sampleRate: number; channels: number; bitDepth: number; frames: number; durationMs: number; pcm: Uint8Array };
+  /**
+   * Encode raw 16-bit LE interleaved PCM bytes into a lossless container (WAV, FLAC, or AIFF). Optionally write to a file via opts.dest.
+   * @param pcm Raw 16-bit LE interleaved samples (as returned by audio.decode).
+   * @param opts format, sampleRate, and channels are required. dest writes to a file path instead of returning bytes.
+   * @returns The encoded audio bytes ({ bytes }), or { path } when opts.dest was given.
+   */
+  encode(pcm: Uint8Array, opts: { format: "wav" | "flac" | "aiff"; sampleRate: number; channels: number; dest?: string }): { bytes: Uint8Array } | { path: string };
+  /**
+   * Probe an audio file's metadata without returning samples. Detects the container by magic bytes (WAV/FLAC/MP3/OGG/AIFF) and reports sample rate, channels, source bit depth, frame count, and duration.
+   * @param src Audio file path or raw bytes.
+   * @returns Metadata describing the source audio.
+   */
+  info(src: string | Uint8Array): { format: string; sampleRate: number; channels: number; bitDepth: number; frames: number; durationMs: number };
   stego: {
     /**
      * Report the maximum payload size in bytes a WAV carrier can hold via LSB steganography — one bit per PCM sample, minus the fixed header. Encryption adds ~44 bytes of overhead.

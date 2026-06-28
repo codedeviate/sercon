@@ -252,6 +252,14 @@ reason parked — just author + verify when the need arises.
 - **Multi-bit LSB** (store N bits per channel for higher capacity). **Reason:** increases visible artifacts; YAGNI until a capacity need appears.
 - **Password-seeded bit-scattering** (spread bits pseudo-randomly across the image for detection resistance). **Reason:** added complexity; sequential LSB + AES-GCM covers the confidentiality goal.
 
+## Audio
+
+`audio.info` / `audio.decode` / `audio.encode` / `audio.convert` shipped (WAV/FLAC/MP3/OGG/AIFF decode; WAV/FLAC/AIFF encode; 16-bit PCM canonical model — see CHANGELOG). Deferred:
+
+- **MP3/OGG encode.** Pure-Go MP3 and OGG/Vorbis encoders do not exist in the ecosystem. **Reason:** no pure-Go path; encoding to wav/flac/aiff covers the lossless use-case. Re-promote if a maintained pure-Go encoder appears.
+- **>16-bit PCM preservation.** `audio.decode` normalises all sources to 16-bit signed PCM; 24/32-bit source precision is lost on the round-trip. **Reason:** keeps the model simple and covers the typical script use-case; re-promote if high-bit-depth lossless archival becomes a need.
+- **Resampling / channel remixing.** `audio.convert` preserves the source sample rate and channel count unchanged. **Reason:** no pure-Go sample-rate conversion library with sufficient quality; YAGNI for current script use-cases.
+
 ## Tracked code follow-ups
 
 Not features — small known debts noted during implementation, kept here until

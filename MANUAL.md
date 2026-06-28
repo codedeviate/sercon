@@ -3263,10 +3263,69 @@ Pure-Go stack: `mmcdole/gofeed` (feeds) + `andybalholm/cascadia`
 
 ### 5.13 `audio`
 
-WAV audio steganography. The `audio` global exposes one sub-namespace:
-`audio.stego`.
+The `audio` global reads and writes audio files and hides payloads inside
+them. It exposes four format members (`info`, `decode`, `encode`,
+`convert`) and one sub-namespace (`audio.stego`).
 
-#### 5.13.1 `audio.stego`
+#### 5.13.1 Format read/write
+
+`audio` can probe and transcode audio files across WAV, FLAC, MP3, OGG
+(Vorbis), and AIFF. Internally all formats share a **canonical 16-bit
+signed PCM model** — every decoder normalises its output to 16-bit
+samples regardless of source bit depth, and encoders consume 16-bit PCM.
+
+**Format matrix:**
+
+| Format | Decode | Encode |
+|--------|--------|--------|
+| WAV    | yes    | yes    |
+| FLAC   | yes    | yes    |
+| AIFF   | yes    | yes    |
+| MP3    | yes    | no (no pure-Go encoder) |
+| OGG    | yes    | no (no pure-Go encoder) |
+
+All operations are pure-Go (no cgo, no external process).
+
+| Function | Returns | Notes |
+|---|---|---|
+| `audio.info(src)` | `{ format, sampleRate, channels, bitDepth, frames, durationMs }` | Probe metadata without returning samples. |
+| `audio.decode(src)` | `{ format, sampleRate, channels, bitDepth, frames, durationMs, pcm: Uint8Array }` | Decode to 16-bit LE interleaved PCM bytes. |
+| `audio.encode(pcm, opts)` | `{ bytes: Uint8Array } \| { path: string }` | Encode raw 16-bit LE PCM to a lossless container. |
+| `audio.convert(src, opts)` | `{ bytes: Uint8Array } \| { path: string }` | Decode any supported source and re-encode as a lossless container. |
+
+`src` may be a file path (string) or `Uint8Array`. `audio.encode` requires
+`opts.format` (`"wav"`, `"flac"`, or `"aiff"`), `opts.sampleRate`, and
+`opts.channels`. `audio.convert` requires `opts.format`. Both accept an
+optional `opts.dest` to write output to a file path instead of returning
+bytes.
+
+```ts
+// Probe an existing file.
+const meta = audio.info("song.flac");
+// → { format: "flac", sampleRate: 44100, channels: 2, bitDepth: 24, frames: ..., durationMs: ... }
+
+// Decode to raw PCM, modify samples, re-encode as WAV.
+const d = audio.decode("song.wav");
+const out = audio.encode(d.pcm, { format: "flac", sampleRate: d.sampleRate, channels: d.channels });
+// out.bytes is the FLAC as a Uint8Array
+
+// One-step convert without touching PCM.
+const flac = audio.convert("input.wav", { format: "flac" });
+await fs.writeBytes("/tmp/out.flac", flac.bytes);
+```
+
+Errors: `audio.encode` / `audio.convert` throw for MP3 or OGG target
+formats (no pure-Go encoder). `audio.decode` / `audio.info` throw if
+the source is not a recognized or decodable format. `audio.encode`
+throws if `sampleRate` / `channels` are missing or ≤ 0, or if the PCM
+byte length is not a whole number of frames.
+
+**16-bit normalization:** source bit depths above 16 are shifted down
+(`>> (srcBits - 16)`); 8-bit sources are shifted up (`<< 8`). The
+reported `bitDepth` reflects the source; samples are always 16-bit on
+the wire.
+
+#### 5.13.2 `audio.stego`
 
 `audio.stego` hides and recovers payloads inside WAV PCM files using
 least-significant-bit (LSB) embedding — the LSB of each PCM sample byte
@@ -4650,9 +4709,91 @@ migrated show their one-line summary and a collapsed signature.
 
 ### 17.1 audio
 
-Audio steganography: hide/extract payloads in WAV PCM samples (LSB).
+Audio: read/write formats (WAV/FLAC/MP3/OGG/AIFF decode, WAV/FLAC/AIFF encode, convert, info) and WAV LSB steganography (stego).
 
-#### 17.1.1 audio.stego.capacity
+#### 17.1.1 audio.convert
+
+```
+convert(src: string | Uint8Array, opts: { format: "wav" | "flac" | "aiff"; dest?: string }): { bytes: Uint8Array } | { path: string }
+```
+
+Decode any supported audio source (WAV/FLAC/MP3/OGG/AIFF) and re-encode it as a lossless container (WAV, FLAC, or AIFF). Optionally write to a file via opts.dest.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — Audio file path or raw bytes of any supported format.
+- `opts` *({ format: "wav" | "flac" | "aiff"; dest?: string })* — format is required. dest writes to a file path instead of returning bytes.
+
+**Returns:** The re-encoded audio bytes ({ bytes }), or { path } when opts.dest was given.
+
+**Throws:** Throws if opts.format is missing, if the source is unrecognized, or if the target format is MP3/OGG (no pure-Go encoder).
+
+```ts
+const flac = audio.convert("song.wav", { format: "flac" });
+```
+
+#### 17.1.2 audio.decode
+
+```
+decode(src: string | Uint8Array): { format: string; sampleRate: number; channels: number; bitDepth: number; frames: number; durationMs: number; pcm: Uint8Array }
+```
+
+Decode an audio file (WAV/FLAC/MP3/OGG/AIFF) to canonical 16-bit LE interleaved PCM bytes plus metadata. Samples are normalized to 16-bit regardless of source bit depth.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — Audio file path or raw bytes.
+
+**Returns:** Metadata plus a pcm field containing raw 16-bit LE interleaved samples as a Uint8Array.
+
+**Throws:** Throws if the source is not a recognized/decodable audio format.
+
+```ts
+const d = audio.decode("song.wav"); // d.pcm is a Uint8Array of 16-bit LE samples
+```
+
+#### 17.1.3 audio.encode
+
+```
+encode(pcm: Uint8Array, opts: { format: "wav" | "flac" | "aiff"; sampleRate: number; channels: number; dest?: string }): { bytes: Uint8Array } | { path: string }
+```
+
+Encode raw 16-bit LE interleaved PCM bytes into a lossless container (WAV, FLAC, or AIFF). Optionally write to a file via opts.dest.
+
+**Parameters**
+
+- `pcm` *(Uint8Array)* — Raw 16-bit LE interleaved samples (as returned by audio.decode).
+- `opts` *({ format: "wav" | "flac" | "aiff"; sampleRate: number; channels: number; dest?: string })* — format, sampleRate, and channels are required. dest writes to a file path instead of returning bytes.
+
+**Returns:** The encoded audio bytes ({ bytes }), or { path } when opts.dest was given.
+
+**Throws:** Throws for MP3/OGG (no pure-Go encoder), if sampleRate/channels are missing or <=0, or if the PCM length is not a whole number of frames.
+
+```ts
+const out = audio.encode(d.pcm, { format: "flac", sampleRate: d.sampleRate, channels: d.channels });
+```
+
+#### 17.1.4 audio.info
+
+```
+info(src: string | Uint8Array): { format: string; sampleRate: number; channels: number; bitDepth: number; frames: number; durationMs: number }
+```
+
+Probe an audio file's metadata without returning samples. Detects the container by magic bytes (WAV/FLAC/MP3/OGG/AIFF) and reports sample rate, channels, source bit depth, frame count, and duration.
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — Audio file path or raw bytes.
+
+**Returns:** Metadata describing the source audio.
+
+**Throws:** Throws if the source is not a recognized/decodable audio format.
+
+```ts
+const meta = audio.info("song.flac"); // { format: "flac", sampleRate: 44100, ... }
+```
+
+#### 17.1.5 audio.stego.capacity
 
 ```
 capacity(cover: string | Uint8Array): { bytes: number }
@@ -4672,7 +4813,7 @@ Report the maximum payload size in bytes a WAV carrier can hold via LSB steganog
 const room = audio.stego.capacity("song.wav").bytes;
 ```
 
-#### 17.1.2 audio.stego.embed
+#### 17.1.6 audio.stego.embed
 
 ```
 embed(cover: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string }): { bytes: Uint8Array } | { path: string }
@@ -4694,7 +4835,7 @@ Hide a payload in a WAV audio file using least-significant-bit steganography on 
 const out = audio.stego.embed("song.wav", "secret", { password: "p" });
 ```
 
-#### 17.1.3 audio.stego.extract
+#### 17.1.7 audio.stego.extract
 
 ```
 extract(cover: string | Uint8Array, opts?: { password?: string }): string | Uint8Array
