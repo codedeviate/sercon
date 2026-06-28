@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.81.0] — 2026-06-28
+
 ### Added
 - `codec.sheet` reads three legacy formats **read-only** — XLS (Excel
   97–2003, via pure-Go extrame/xls), SYLK (`.slk`), and DIF (`.dif`) — for
