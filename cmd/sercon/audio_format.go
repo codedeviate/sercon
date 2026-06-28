@@ -3,12 +3,18 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 
 	"github.com/go-audio/aiff"
 	goaudio "github.com/go-audio/audio"
 	"github.com/go-audio/wav"
+	mp3 "github.com/hajimehoshi/go-mp3"
+	"github.com/jfreymuth/oggvorbis"
+	"github.com/mewkiz/flac"
+	"github.com/mewkiz/flac/frame"
+	"github.com/mewkiz/flac/meta"
 )
 
 // pcmAudio is the canonical decoded representation: 16-bit signed, interleaved,
@@ -186,15 +192,182 @@ func encodeAIFF(p pcmAudio) ([]byte, error) {
 }
 
 // audioInfo returns metadata for any supported source (decodes as needed).
-// NOTE: Task 2 will replace this body with a call to decodeAudio (full dispatch).
-// For Task 1, only WAV/AIFF are supported.
 func audioInfo(data []byte) (pcmAudio, error) {
+	return decodeAudio(data)
+}
+
+// decodeMP3 decodes MP3 to canonical PCM (go-mp3 always yields 16-bit LE stereo).
+func decodeMP3(data []byte) (pcmAudio, error) {
+	d, err := mp3.NewDecoder(bytes.NewReader(data))
+	if err != nil {
+		return pcmAudio{}, err
+	}
+	raw, err := io.ReadAll(d)
+	if err != nil {
+		return pcmAudio{}, err
+	}
+	samples := make([]int16, len(raw)/2)
+	for i := range samples {
+		samples[i] = int16(binary.LittleEndian.Uint16(raw[i*2 : i*2+2]))
+	}
+	return pcmAudio{sampleRate: d.SampleRate(), channels: 2, bitDepth: 16, samples: samples}, nil
+}
+
+// decodeOGG decodes OGG/Vorbis (float32 [-1,1]) to canonical 16-bit PCM.
+func decodeOGG(data []byte) (pcmAudio, error) {
+	fl, format, err := oggvorbis.ReadAll(bytes.NewReader(data))
+	if err != nil {
+		return pcmAudio{}, err
+	}
+	samples := make([]int16, len(fl))
+	for i, f := range fl {
+		v := f * 32767
+		if v > 32767 {
+			v = 32767
+		} else if v < -32768 {
+			v = -32768
+		}
+		samples[i] = int16(v)
+	}
+	return pcmAudio{sampleRate: format.SampleRate, channels: format.Channels, bitDepth: 16, samples: samples}, nil
+}
+
+// decodeFLAC decodes FLAC to canonical 16-bit PCM.
+func decodeFLAC(data []byte) (pcmAudio, error) {
+	stream, err := flac.New(bytes.NewReader(data))
+	if err != nil {
+		return pcmAudio{}, err
+	}
+	defer stream.Close()
+	ch := int(stream.Info.NChannels)
+	bits := int(stream.Info.BitsPerSample)
+	var samples []int16
+	for {
+		fr, ferr := stream.ParseNext()
+		if ferr == io.EOF {
+			break
+		}
+		if ferr != nil {
+			return pcmAudio{}, ferr
+		}
+		if len(fr.Subframes) < ch {
+			return pcmAudio{}, fmt.Errorf("flac: frame has %d subframes, expected %d", len(fr.Subframes), ch)
+		}
+		n := fr.Subframes[0].NSamples
+		for i := 0; i < n; i++ {
+			for c := 0; c < ch; c++ {
+				samples = append(samples, down16(int(fr.Subframes[c].Samples[i]), bits))
+			}
+		}
+	}
+	return pcmAudio{sampleRate: int(stream.Info.SampleRate), channels: ch, bitDepth: bits, samples: samples}, nil
+}
+
+// encodeFLAC encodes canonical 16-bit PCM to FLAC.
+//
+// FLAC frame construction with mewkiz is intricate: a stream needs a
+// meta.StreamInfo and one or more frame.Frame blocks, each with a frame.Header
+// (BlockSize, SampleRate, Channels enum, BitsPerSample, Num) and per-channel
+// Subframes (SubHeader{Pred: frame.PredVerbatim} + Samples []int32 + NSamples).
+// This follows mewkiz/flac's encode example — if WriteFrame errors or the
+// round-trip test fails, align the frame.Header/Subframe/SubHeader fields with
+// the current github.com/mewkiz/flac encode example; TestFLAC_RoundTrip is the
+// oracle.
+func encodeFLAC(p pcmAudio) ([]byte, error) {
+	if p.channels < 1 || p.channels > 8 {
+		return nil, fmt.Errorf("flac: unsupported channel count %d", p.channels)
+	}
+	info := &meta.StreamInfo{
+		BlockSizeMin:  16,
+		BlockSizeMax:  65535,
+		SampleRate:    uint32(p.sampleRate),
+		NChannels:     uint8(p.channels),
+		BitsPerSample: 16,
+		NSamples:      uint64(p.frames()),
+	}
+	ws := &memWriteSeeker{}
+	enc, err := flac.NewEncoder(ws, info)
+	if err != nil {
+		return nil, err
+	}
+	const block = 4096
+	ch := p.channels
+	chans := frameChannelsFor(ch) // frame.Channels enum for 1..8 channels
+	for start := 0; start < p.frames(); start += block {
+		n := block
+		if start+n > p.frames() {
+			n = p.frames() - start
+		}
+		subs := make([]*frame.Subframe, ch)
+		for c := 0; c < ch; c++ {
+			s := make([]int32, n)
+			for i := 0; i < n; i++ {
+				s[i] = int32(p.samples[(start+i)*ch+c])
+			}
+			subs[c] = &frame.Subframe{
+				SubHeader: frame.SubHeader{Pred: frame.PredVerbatim},
+				Samples:   s,
+				NSamples:  n,
+			}
+		}
+		fr := &frame.Frame{
+			Header: frame.Header{
+				HasFixedBlockSize: true,
+				BlockSize:         uint16(n),
+				SampleRate:        uint32(p.sampleRate),
+				Channels:          chans,
+				BitsPerSample:     16,
+			},
+			Subframes: subs,
+		}
+		if werr := enc.WriteFrame(fr); werr != nil {
+			return nil, werr
+		}
+	}
+	if cerr := enc.Close(); cerr != nil {
+		return nil, cerr
+	}
+	return ws.buf, nil
+}
+
+// frameChannelsFor maps a channel count to the mewkiz frame.Channels enum.
+func frameChannelsFor(ch int) frame.Channels {
+	switch ch {
+	case 1:
+		return frame.ChannelsMono
+	case 2:
+		return frame.ChannelsLR
+	case 3:
+		return frame.ChannelsLRC
+	case 4:
+		return frame.ChannelsLRLsRs
+	case 5:
+		return frame.ChannelsLRCLsRs
+	case 6:
+		return frame.ChannelsLRCLfeLsRs
+	case 7:
+		return frame.ChannelsLRCLfeCsSlSr
+	case 8:
+		return frame.ChannelsLRCLfeLsRsSlSr
+	default:
+		return frame.ChannelsLRCLfeLsRsSlSr
+	}
+}
+
+// decodeAudio sniffs the container and decodes to canonical PCM.
+func decodeAudio(data []byte) (pcmAudio, error) {
 	switch sniffAudioFormat(data) {
 	case "wav":
 		return decodeWAV(data)
 	case "aiff":
 		return decodeAIFF(data)
+	case "flac":
+		return decodeFLAC(data)
+	case "mp3":
+		return decodeMP3(data)
+	case "ogg":
+		return decodeOGG(data)
 	default:
-		return pcmAudio{}, fmt.Errorf("audio: unsupported format")
+		return pcmAudio{}, fmt.Errorf("audio: unsupported or unrecognized format")
 	}
 }
