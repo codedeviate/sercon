@@ -3147,6 +3147,19 @@ const msg = image.stego.extract(out.bytes, { password: "s3cret" });
 - For write-to-disk, pass `opts.dest`:
   `image.stego.embed("cover.png", data, { dest: "stego.png" })` → `{ path: "stego.png" }`.
 
+**Detection and analysis (read-only).** Three companion functions let you
+inspect any image without modifying it. `image.stego.detect(carrier)`
+returns a quick verdict: a definitive `sercon` flag (true when the
+`"ScSt"` header is found) plus a `suspicious`/`confidence` pair from
+statistical analysis. `image.stego.analyze(carrier)` runs a full
+per-channel report — chi-square (pairs-of-values probability), LSB-plane
+Shannon entropy, and an RS embedding-rate estimate — and returns a
+`verdict` with a `reasons` array explaining the conclusion.
+`image.stego.bitplane(carrier, opts?)` renders a chosen bit-plane of the
+image as a PNG: hidden LSB data typically shows as structured noise in the
+low planes (plane 0 is the LSB). All three are purely read-only and never
+alter the carrier.
+
 ### 5.12 `web`
 
 Fetch & parse web documents. Three families — `web.feed` (RSS/Atom/JSON
@@ -6301,7 +6314,48 @@ Rasterize an SVG (a supported subset) to a raster Image at the requested pixel s
 const im = image.rasterizeSVG("logo.svg", { width: 256, height: 256 });
 ```
 
-#### 17.6.10 image.stego.capacity
+#### 17.6.10 image.stego.analyze
+
+```
+analyze(carrier: string | Uint8Array): { width: number; height: number; capacity: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } }
+```
+
+Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of-values) probability, LSB-plane Shannon entropy, and an RS embedding-rate estimate, plus a combined verdict with reasons. Read-only.
+
+**Parameters**
+
+- `carrier` *(string | Uint8Array)* — The image to analyze: a file path or raw image bytes.
+
+**Returns:** A report object: capacity in bytes, the sercon-header check, per-channel signals (chiSquare/lsbEntropy/rsEstimate, each 0..1), and the verdict.
+
+**Throws:** Throws if the carrier cannot be decoded.
+
+```ts
+const r = image.stego.analyze("suspect.png"); console.log(r.verdict.suspicious, r.verdict.reasons);
+```
+
+#### 17.6.11 image.stego.bitplane
+
+```
+bitplane(carrier: string | Uint8Array, opts?: { channel?: "r" | "g" | "b" | "rgb"; plane?: number; dest?: string }): { bytes: Uint8Array } | { path: string }
+```
+
+Render one bit-plane of an image as a PNG for visual inspection. Hidden LSB data often shows as structured noise in the low planes. For a single channel a set bit is white and an unset bit black; for "rgb" each channel's bit maps to its colour component.
+
+**Parameters**
+
+- `carrier` *(string | Uint8Array)* — The image: a file path or raw image bytes.
+- `opts` *({ channel?: "r" | "g" | "b" | "rgb"; plane?: number; dest?: string }, optional)* — channel selects the colour channel (default "rgb" composite); plane is the bit index 0 (LSB) to 7 (MSB), default 0; dest writes the PNG to that path instead of returning bytes.
+
+**Returns:** An object with the PNG bytes ({ bytes }), or { path } when opts.dest was given.
+
+**Throws:** Throws a TypeError for an unknown channel or a plane outside 0..7, throws if the carrier cannot be decoded, or if writing opts.dest fails.
+
+```ts
+const lsb = image.stego.bitplane("photo.png", { plane: 0 });
+```
+
+#### 17.6.12 image.stego.capacity
 
 ```
 capacity(carrier: string | Uint8Array): { bytes: number }
@@ -6321,7 +6375,27 @@ Report the maximum payload size (in bytes) a carrier can hold, after the fixed 1
 const room = image.stego.capacity("cover.png").bytes;
 ```
 
-#### 17.6.11 image.stego.embed
+#### 17.6.13 image.stego.detect
+
+```
+detect(carrier: string | Uint8Array): { sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; suspicious: boolean; confidence: number }
+```
+
+Quickly check whether an image carries hidden data. Returns a definitive flag for a sercon-format LSB payload (the "ScSt" header) plus a heuristic suspicion verdict from statistical analysis. Read-only; never modifies the image.
+
+**Parameters**
+
+- `carrier` *(string | Uint8Array)* — The image to inspect: a file path or raw image bytes.
+
+**Returns:** An object: sercon is true when a sercon stego header is present (with encrypted/text/payloadBytes); suspicious/confidence summarize the statistical analysis.
+
+**Throws:** Throws if the carrier cannot be decoded. Never throws for a clean image.
+
+```ts
+if (image.stego.detect("photo.png").sercon) console.log("hidden payload!");
+```
+
+#### 17.6.14 image.stego.embed
 
 ```
 embed(carrier: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string }): { bytes: Uint8Array } | { path: string }
@@ -6343,7 +6417,7 @@ Hide a payload inside a lossless image using least-significant-bit (LSB) stegano
 const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });
 ```
 
-#### 17.6.12 image.stego.extract
+#### 17.6.15 image.stego.extract
 
 ```
 extract(carrier: string | Uint8Array, opts?: { password?: string }): string | Uint8Array
