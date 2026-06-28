@@ -3129,22 +3129,33 @@ clean error.
 
 | Function | Returns | Notes |
 |---|---|---|
-| `image.stego.embed(carrier, payload, opts?)` | `{ bytes: Uint8Array } \| { path: string }` | Hide `payload` in `carrier`. `opts.password` encrypts; `opts.dest` writes the PNG to disk. |
-| `image.stego.extract(carrier, opts?)` | `string \| Uint8Array` | Recover the payload. Returns a `string` for text payloads, `Uint8Array` for binary. `opts.password` required when encrypted. |
-| `image.stego.capacity(carrier)` | `{ bytes: number }` | Maximum plaintext payload size in bytes (after the 10-byte header). Encryption adds ~44 bytes of overhead. |
+| `image.stego.embed(carrier, payload, opts?)` | `{ bytes: Uint8Array } \| { path: string }` | Hide `payload` in `carrier`. `opts.password` encrypts; `opts.dest` writes the PNG to disk; `opts.bits` sets the depth (1..4, default 1). |
+| `image.stego.extract(carrier, opts?)` | `string \| Uint8Array` | Recover the payload. Returns a `string` for text payloads, `Uint8Array` for binary. `opts.password` required when encrypted. Depth is auto-detected from the header. |
+| `image.stego.capacity(carrier, opts?)` | `{ bytes: number; bits: number }` | Maximum plaintext payload size in bytes at the requested depth (`opts.bits`, default 1). Returns `{ bytes, bits }`. |
 
 ```ts
-// Check how many bytes a carrier can hold
-const room = image.stego.capacity("cover.png").bytes;
+// Check how many bytes a carrier can hold at 1-bit and 4-bit depth
+const room1 = image.stego.capacity("cover.png", { bits: 1 }).bytes;
+const room4 = image.stego.capacity("cover.png", { bits: 4 }).bytes; // room4 === room1 * 4
 
-// Embed a password-protected secret
-const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });
+// Embed with 4-bit depth for higher capacity
+const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret", bits: 4 });
 // out.bytes is the stego PNG as a Uint8Array
 
-// Recover it
+// Recover — depth is auto-detected from the header, no bits arg needed
 const msg = image.stego.extract(out.bytes, { password: "s3cret" });
 // msg === "meet at noon"
 ```
+
+**Multi-bit depth (`bits` option).** `embed` accepts `opts.bits` (integer
+1..4, default 1) to store more payload bits per channel at the cost of
+greater perceptual change. The capacity formula is
+`(pixels × channels − 80) × N / 8` bytes, where N is the chosen depth —
+so `bits: 4` gives 4× the capacity of `bits: 1`. The chosen depth is
+recorded in the stego header, so `extract` auto-detects it without any
+`bits` argument; existing 1-bit payloads are fully backward-compatible.
+`capacity` accepts the same `{ bits }` option and echoes the depth in the
+return value.
 
 **Worth knowing:**
 
@@ -3161,11 +3172,20 @@ const msg = image.stego.extract(out.bytes, { password: "s3cret" });
 **Detection and analysis (read-only).** Three companion functions let you
 inspect any image without modifying it. `image.stego.detect(carrier)`
 returns a quick verdict: a definitive `sercon` flag (true when the
-`"ScSt"` header is found) plus a `suspicious`/`confidence` pair from
-statistical analysis. `image.stego.analyze(carrier)` runs a full
-per-channel report — chi-square (pairs-of-values probability), LSB-plane
-Shannon entropy, and an RS embedding-rate estimate — and returns a
-`verdict` with a `reasons` array explaining the conclusion.
+`"ScSt"` header is found, with an accompanying `bits` field for the
+declared depth) plus a `suspicious`/`confidence` pair from statistical
+analysis. `image.stego.analyze(carrier)` runs a full per-channel report —
+chi-square (pairs-of-values probability), LSB-plane Shannon entropy, and
+an RS embedding-rate estimate — and returns a `verdict` with a `reasons`
+array explaining the conclusion. The report now also includes
+`chiSquareByBits` (4-element array, chi-square signal at depths 1..4) and
+`entropyByPlane` (4-element array, Shannon entropy per bit-plane) on each
+channel entry, plus a top-level `estimatedBits` field and `sercon.bits`.
+`estimatedBits` is a coarse, best-effort hint — it needs substantial
+embedding coverage to register and returns 0 for small or partial payloads.
+For sercon-format carriers the authoritative depth is `sercon.bits` (from
+the header); `chiSquareByBits` and `entropyByPlane` are the real per-depth
+diagnostics.
 `image.stego.bitplane(carrier, opts?)` renders a chosen bit-plane of the
 image as a PNG: hidden LSB data typically shows as structured noise in the
 low planes (plane 0 is the LSB). All three are purely read-only and never
@@ -3336,9 +3356,9 @@ flags and length, and optionally sealed with AES-256-GCM.
 
 | Function | Returns | Notes |
 |---|---|---|
-| `audio.stego.embed(carrier, payload, opts?)` | `{ bytes: Uint8Array } \| { path: string }` | Hide `payload` in the WAV carrier. |
-| `audio.stego.extract(carrier, opts?)` | `string \| Uint8Array` | Recover the hidden payload. |
-| `audio.stego.capacity(carrier)` | `{ bytes: number }` | Maximum plaintext payload in bytes. |
+| `audio.stego.embed(carrier, payload, opts?)` | `{ bytes: Uint8Array } \| { path: string }` | Hide `payload` in the WAV carrier. `opts.bits` sets depth (1..4, default 1). |
+| `audio.stego.extract(carrier, opts?)` | `string \| Uint8Array` | Recover the hidden payload. Depth is auto-detected from the header. |
+| `audio.stego.capacity(carrier, opts?)` | `{ bytes: number; bits: number }` | Maximum plaintext payload in bytes at the requested depth (`opts.bits`, default 1). |
 
 `carrier` may be a file path (string) or `Uint8Array`.
 `payload` may be a `string` (text flag set; `extract` returns a string)
@@ -3346,16 +3366,22 @@ or `Uint8Array`. `opts.password` enables AES-256-GCM
 encryption. `embed` returns `{ bytes: Uint8Array }` by default, or
 `{ path }` when `opts.dest` is provided. `capacity` accounts for the
 stego header overhead; a WAV shorter than 128 samples returns `0`.
+The `bits` option (1..4, default 1) controls how many bits are stored per
+PCM sample — higher values give up to 4× capacity at the cost of greater
+audible change. The chosen depth is stored in the stego header, so
+`extract` auto-detects it; existing 1-bit payloads are unaffected.
+The capacity formula is `(samples − 80) × N / 8` bytes where N is the
+depth.
 
 ```ts
 const wav = fs.readBytes("input.wav");
-const room = audio.stego.capacity(wav).bytes;
+const room = audio.stego.capacity(wav, { bits: 4 }).bytes; // 4× the 1-bit capacity
 
-const out = audio.stego.embed(wav, "meet at noon", { password: "s3cret" });
+const out = audio.stego.embed(wav, "meet at noon", { password: "s3cret", bits: 4 });
 // out.bytes is the stego WAV as a Uint8Array
 
 const msg = audio.stego.extract(out.bytes, { password: "s3cret" });
-// msg === "meet at noon"
+// msg === "meet at noon" — depth auto-detected from header
 ```
 
 Errors: `extract` throws `"no sercon stego payload found"` when the
@@ -4796,7 +4822,7 @@ const meta = audio.info("song.flac"); // { format: "flac", sampleRate: 44100, ..
 #### 17.1.5 audio.stego.capacity
 
 ```
-capacity(cover: string | Uint8Array): { bytes: number }
+capacity(cover: string | Uint8Array, opts?: { bits?: number }): { bytes: number; bits: number }
 ```
 
 Report the maximum payload size in bytes a WAV carrier can hold via LSB steganography — one bit per PCM sample, minus the fixed header. Encryption adds ~44 bytes of overhead.
@@ -4804,28 +4830,29 @@ Report the maximum payload size in bytes a WAV carrier can hold via LSB steganog
 **Parameters**
 
 - `cover` *(string | Uint8Array)* — The carrier WAV: a file path or raw bytes.
+- `opts` *({ bits?: number }, optional)* — bits: report capacity at this depth (integer 1..4, default 1).
 
-**Returns:** An object whose bytes field is the maximum plaintext payload size.
+**Returns:** An object: bytes is the maximum plaintext payload size at the requested depth; bits echoes that depth.
 
-**Throws:** Throws if the cover is not a supported PCM WAV.
+**Throws:** Throws if the cover is not a supported PCM WAV, or a TypeError if bits is not an integer 1..4.
 
 ```ts
-const room = audio.stego.capacity("song.wav").bytes;
+const room = audio.stego.capacity("song.wav", { bits: 4 }).bytes;
 ```
 
 #### 17.1.6 audio.stego.embed
 
 ```
-embed(cover: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string }): { bytes: Uint8Array } | { path: string }
+embed(cover: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string; bits?: number }): { bytes: Uint8Array } | { path: string }
 ```
 
-Hide a payload in a WAV audio file using least-significant-bit steganography on the PCM samples (8- or 16-bit; one bit per sample's low byte — the audio is essentially unchanged). A non-empty password encrypts the payload (AES-256-GCM). Returns the modified WAV bytes.
+Hide a payload in a WAV audio file using least-significant-bit steganography on the PCM samples (8- or 16-bit; one bit per sample's low byte — the audio is essentially unchanged). A non-empty password encrypts the payload (AES-256-GCM). Returns the modified WAV bytes. One to four bits are stored per PCM sample (the `bits` option, default 1); higher values raise capacity but make the change more audible and easier to detect.
 
 **Parameters**
 
 - `cover` *(string | Uint8Array)* — The carrier WAV: a file path or raw WAV bytes (PCM, 8- or 16-bit).
 - `payload` *(string | Uint8Array)* — Data to hide. A string is stored as UTF-8 text; a Uint8Array as binary.
-- `opts` *({ password?: string; dest?: string }, optional)* — password encrypts the payload; dest writes the resulting WAV to that path instead of returning bytes.
+- `opts` *({ password?: string; dest?: string; bits?: number }, optional)* — password encrypts the payload; dest writes the resulting WAV to that path instead of returning bytes. bits: payload bits per sample, an integer 1..4 (default 1).
 
 **Returns:** The modified WAV bytes ({ bytes }), or { path } when opts.dest was given.
 
@@ -4841,7 +4868,7 @@ const out = audio.stego.embed("song.wav", "secret", { password: "p" });
 extract(cover: string | Uint8Array, opts?: { password?: string }): string | Uint8Array
 ```
 
-Recover a payload hidden by audio.stego.embed. Reads the PCM sample LSBs, verifies the sercon header, and returns the payload as a string (if embedded as text) or a Uint8Array.
+Recover a payload hidden by audio.stego.embed. Reads the PCM sample LSBs, verifies the sercon header, and returns the payload as a string (if embedded as text) or a Uint8Array. The bit depth is read from the header, so no `bits` argument is needed.
 
 **Parameters**
 
@@ -6581,16 +6608,16 @@ const im = image.rasterizeSVG("logo.svg", { width: 256, height: 256 });
 #### 17.7.10 image.stego.analyze
 
 ```
-analyze(carrier: string | Uint8Array): { width: number; height: number; capacity: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } }
+analyze(carrier: string | Uint8Array): { width: number; height: number; capacity: number; estimatedBits: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; bits?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number; chiSquareByBits: number[]; entropyByPlane: number[] }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } }
 ```
 
-Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of-values) probability, LSB-plane Shannon entropy, and an RS embedding-rate estimate, plus a combined verdict with reasons. Read-only.
+Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of-values) probability, LSB-plane Shannon entropy, and an RS embedding-rate estimate, plus a combined verdict with reasons. Read-only. The report includes a generalized chi-square at depths 1..4 (chiSquareByBits), per-plane entropy (entropyByPlane, planes 0..3), and an estimatedBits figure for the likely embedding depth.
 
 **Parameters**
 
 - `carrier` *(string | Uint8Array)* — The image to analyze: a file path or raw image bytes.
 
-**Returns:** A report object: capacity in bytes, the sercon-header check, per-channel signals (chiSquare/lsbEntropy/rsEstimate, each 0..1), and the verdict.
+**Returns:** A report object: capacity in bytes, the sercon-header check, per-channel signals (chiSquare/lsbEntropy/rsEstimate, each 0..1), and the verdict. estimatedBits is a coarse, best-effort hint at the embedding depth — it needs substantial coverage to register and returns 0 for small or partial payloads. For sercon-format payloads the authoritative depth is sercon.bits (set by the header); chiSquareByBits and entropyByPlane are the raw per-depth diagnostics.
 
 **Throws:** Throws if the carrier cannot be decoded.
 
@@ -6622,7 +6649,7 @@ const lsb = image.stego.bitplane("photo.png", { plane: 0 });
 #### 17.7.12 image.stego.capacity
 
 ```
-capacity(carrier: string | Uint8Array): { bytes: number }
+capacity(carrier: string | Uint8Array, opts?: { bits?: number }): { bytes: number; bits: number }
 ```
 
 Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — one bit per R/G/B channel. Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.
@@ -6630,19 +6657,20 @@ Report the maximum payload size (in bytes) a carrier can hold, after the fixed 1
 **Parameters**
 
 - `carrier` *(string | Uint8Array)* — The carrier image: a file path or raw image bytes.
+- `opts` *({ bits?: number }, optional)* — bits: report capacity at this depth (integer 1..4, default 1).
 
-**Returns:** An object whose bytes field is the maximum plaintext payload size in bytes.
+**Returns:** An object: bytes is the maximum plaintext payload size at the requested depth; bits echoes that depth.
 
-**Throws:** Throws if the carrier cannot be decoded.
+**Throws:** Throws if the carrier cannot be decoded, or a TypeError if bits is not an integer 1..4.
 
 ```ts
-const room = image.stego.capacity("cover.png").bytes;
+const room = image.stego.capacity("cover.png", { bits: 4 }).bytes;
 ```
 
 #### 17.7.13 image.stego.detect
 
 ```
-detect(carrier: string | Uint8Array): { sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; suspicious: boolean; confidence: number }
+detect(carrier: string | Uint8Array): { sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; bits?: number; suspicious: boolean; confidence: number }
 ```
 
 Quickly check whether an image carries hidden data. Returns a definitive flag for a sercon-format LSB payload (the "ScSt" header) plus a heuristic suspicion verdict from statistical analysis. Read-only; never modifies the image.
@@ -6651,7 +6679,7 @@ Quickly check whether an image carries hidden data. Returns a definitive flag fo
 
 - `carrier` *(string | Uint8Array)* — The image to inspect: a file path or raw image bytes.
 
-**Returns:** An object: sercon is true when a sercon stego header is present (with encrypted/text/payloadBytes); suspicious/confidence summarize the statistical analysis.
+**Returns:** An object: sercon is true when a sercon stego header is present (with encrypted/text/payloadBytes); suspicious/confidence summarize the statistical analysis. bits is the declared payload depth when a sercon header is present.
 
 **Throws:** Throws if the carrier cannot be decoded. Never throws for a clean image.
 
@@ -6662,16 +6690,16 @@ if (image.stego.detect("photo.png").sercon) console.log("hidden payload!");
 #### 17.7.14 image.stego.embed
 
 ```
-embed(carrier: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string }): { bytes: Uint8Array } | { path: string }
+embed(carrier: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string; bits?: number }): { bytes: Uint8Array } | { path: string }
 ```
 
-Hide a payload inside a lossless image using least-significant-bit (LSB) steganography, returning PNG bytes. The carrier is decoded (PNG/JPEG/GIF/TIFF/BMP/WebP) and re-encoded as PNG (output is always PNG — re-encoding to a lossy format would destroy the hidden data). One bit is stored per R/G/B channel; the alpha channel is never modified (opaque carriers recommended). A non-empty password encrypts the payload with AES-256-GCM (PBKDF2-SHA256 key derivation).
+Hide a payload inside a lossless image using least-significant-bit (LSB) steganography, returning PNG bytes. The carrier is decoded (PNG/JPEG/GIF/TIFF/BMP/WebP) and re-encoded as PNG (output is always PNG — re-encoding to a lossy format would destroy the hidden data). One bit is stored per R/G/B channel; the alpha channel is never modified (opaque carriers recommended). A non-empty password encrypts the payload with AES-256-GCM (PBKDF2-SHA256 key derivation). One to four bits are stored per R/G/B channel (the `bits` option, default 1); higher values raise capacity but make the change more visible and easier to detect.
 
 **Parameters**
 
 - `carrier` *(string | Uint8Array)* — The carrier image: a file path (string) or raw image bytes (Uint8Array).
 - `payload` *(string | Uint8Array)* — The data to hide. A string is stored as UTF-8 and marked as text (extract returns a string); a Uint8Array is stored as binary (extract returns a Uint8Array).
-- `opts` *({ password?: string; dest?: string }, optional)* — password: encrypt the payload with AES-256-GCM. dest: write the resulting PNG to this path instead of returning its bytes.
+- `opts` *({ password?: string; dest?: string; bits?: number }, optional)* — password: encrypt the payload with AES-256-GCM. dest: write the resulting PNG to this path instead of returning its bytes. bits: payload bits per channel, an integer 1..4 (default 1).
 
 **Returns:** An object with the PNG bytes ({ bytes }), or { path } when opts.dest was given.
 
@@ -6687,7 +6715,7 @@ const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" 
 extract(carrier: string | Uint8Array, opts?: { password?: string }): string | Uint8Array
 ```
 
-Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check.
+Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check. The bit depth is read from the header, so no `bits` argument is needed.
 
 **Parameters**
 

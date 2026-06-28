@@ -49,11 +49,11 @@ func audioDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const flac = audio.convert("song.wav", { format: "flac" });`,
 		},
 		"stego.embed": {
-			Summary:    "Hide a payload in a WAV audio file using least-significant-bit steganography on the PCM samples (8- or 16-bit; one bit per sample's low byte — the audio is essentially unchanged). A non-empty password encrypts the payload (AES-256-GCM). Returns the modified WAV bytes.",
+			Summary:    "Hide a payload in a WAV audio file using least-significant-bit steganography on the PCM samples (8- or 16-bit; one bit per sample's low byte — the audio is essentially unchanged). A non-empty password encrypts the payload (AES-256-GCM). Returns the modified WAV bytes. One to four bits are stored per PCM sample (the `bits` option, default 1); higher values raise capacity but make the change more audible and easier to detect.",
 			Params: []scriptengine.Param{
 				{Name: "cover", Type: "string | Uint8Array", Desc: "The carrier WAV: a file path or raw WAV bytes (PCM, 8- or 16-bit)."},
 				{Name: "payload", Type: "string | Uint8Array", Desc: "Data to hide. A string is stored as UTF-8 text; a Uint8Array as binary."},
-				{Name: "opts", Type: "{ password?: string; dest?: string }", Optional: true, Desc: "password encrypts the payload; dest writes the resulting WAV to that path instead of returning bytes."},
+				{Name: "opts", Type: "{ password?: string; dest?: string; bits?: number }", Optional: true, Desc: "password encrypts the payload; dest writes the resulting WAV to that path instead of returning bytes. bits: payload bits per sample, an integer 1..4 (default 1)."},
 			},
 			ReturnType: "{ bytes: Uint8Array } | { path: string }",
 			Returns:    "The modified WAV bytes ({ bytes }), or { path } when opts.dest was given.",
@@ -61,7 +61,7 @@ func audioDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const out = audio.stego.embed("song.wav", "secret", { password: "p" });`,
 		},
 		"stego.extract": {
-			Summary:    "Recover a payload hidden by audio.stego.embed. Reads the PCM sample LSBs, verifies the sercon header, and returns the payload as a string (if embedded as text) or a Uint8Array.",
+			Summary:    "Recover a payload hidden by audio.stego.embed. Reads the PCM sample LSBs, verifies the sercon header, and returns the payload as a string (if embedded as text) or a Uint8Array. The bit depth is read from the header, so no `bits` argument is needed.",
 			Params: []scriptengine.Param{
 				{Name: "cover", Type: "string | Uint8Array", Desc: "The stego WAV: a file path or raw bytes."},
 				{Name: "opts", Type: "{ password?: string }", Optional: true, Desc: "The password used at embed time, required when the payload was encrypted."},
@@ -75,11 +75,12 @@ func audioDocs() map[string]scriptengine.MemberDoc {
 			Summary:    "Report the maximum payload size in bytes a WAV carrier can hold via LSB steganography — one bit per PCM sample, minus the fixed header. Encryption adds ~44 bytes of overhead.",
 			Params: []scriptengine.Param{
 				{Name: "cover", Type: "string | Uint8Array", Desc: "The carrier WAV: a file path or raw bytes."},
+				{Name: "opts", Type: "{ bits?: number }", Optional: true, Desc: "bits: report capacity at this depth (integer 1..4, default 1)."},
 			},
-			ReturnType: "{ bytes: number }",
-			Returns:    "An object whose bytes field is the maximum plaintext payload size.",
-			Errors:     "Throws if the cover is not a supported PCM WAV.",
-			Example:    `const room = audio.stego.capacity("song.wav").bytes;`,
+			ReturnType: "{ bytes: number; bits: number }",
+			Returns:    "An object: bytes is the maximum plaintext payload size at the requested depth; bits echoes that depth.",
+			Errors:     "Throws if the cover is not a supported PCM WAV, or a TypeError if bits is not an integer 1..4.",
+			Example:    `const room = audio.stego.capacity("song.wav", { bits: 4 }).bytes;`,
 		},
 	}
 }

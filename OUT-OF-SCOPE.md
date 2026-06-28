@@ -247,9 +247,8 @@ reason parked — just author + verify when the need arises.
 
 ## Steganography
 
-`image.stego.embed` / `image.stego.extract` / `image.stego.capacity` shipped (LSB-in-PNG, AES-256-GCM, see CHANGELOG). `image.stego.detect` / `image.stego.analyze` / `image.stego.bitplane` shipped (read-only LSB detection/analysis — see CHANGELOG). `text.stego.embed` / `text.stego.extract` shipped (zero-width character encoding, AES-256-GCM). `audio.stego.embed` / `audio.stego.extract` / `audio.stego.capacity` shipped (WAV PCM 8/16-bit LSB, AES-256-GCM). Deferred follow-ons:
+`image.stego.embed` / `image.stego.extract` / `image.stego.capacity` shipped (LSB-in-PNG, AES-256-GCM, see CHANGELOG). `image.stego.detect` / `image.stego.analyze` / `image.stego.bitplane` shipped (read-only LSB detection/analysis — see CHANGELOG). `text.stego.embed` / `text.stego.extract` shipped (zero-width character encoding, AES-256-GCM). `audio.stego.embed` / `audio.stego.extract` / `audio.stego.capacity` shipped (WAV PCM 8/16-bit LSB, AES-256-GCM). Multi-bit LSB (1..4 bits/unit, header-signalled) shipped for image + audio (see CHANGELOG). Deferred follow-ons:
 
-- **Multi-bit LSB** (store N bits per channel for higher capacity). **Reason:** increases visible artifacts; YAGNI until a capacity need appears.
 - **Password-seeded bit-scattering** (spread bits pseudo-randomly across the image for detection resistance). **Reason:** added complexity; sequential LSB + AES-GCM covers the confidentiality goal.
 
 ## Audio

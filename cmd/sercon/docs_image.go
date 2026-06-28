@@ -310,11 +310,11 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 
 		// --- Steganography sub-namespace ---
 		"stego.embed": {
-			Summary: "Hide a payload inside a lossless image using least-significant-bit (LSB) steganography, returning PNG bytes. The carrier is decoded (PNG/JPEG/GIF/TIFF/BMP/WebP) and re-encoded as PNG (output is always PNG — re-encoding to a lossy format would destroy the hidden data). One bit is stored per R/G/B channel; the alpha channel is never modified (opaque carriers recommended). A non-empty password encrypts the payload with AES-256-GCM (PBKDF2-SHA256 key derivation).",
+			Summary: "Hide a payload inside a lossless image using least-significant-bit (LSB) steganography, returning PNG bytes. The carrier is decoded (PNG/JPEG/GIF/TIFF/BMP/WebP) and re-encoded as PNG (output is always PNG — re-encoding to a lossy format would destroy the hidden data). One bit is stored per R/G/B channel; the alpha channel is never modified (opaque carriers recommended). A non-empty password encrypts the payload with AES-256-GCM (PBKDF2-SHA256 key derivation). One to four bits are stored per R/G/B channel (the `bits` option, default 1); higher values raise capacity but make the change more visible and easier to detect.",
 			Params: []scriptengine.Param{
 				{Name: "carrier", Type: "string | Uint8Array", Desc: "The carrier image: a file path (string) or raw image bytes (Uint8Array)."},
 				{Name: "payload", Type: "string | Uint8Array", Desc: "The data to hide. A string is stored as UTF-8 and marked as text (extract returns a string); a Uint8Array is stored as binary (extract returns a Uint8Array)."},
-				{Name: "opts", Type: "{ password?: string; dest?: string }", Optional: true, Desc: "password: encrypt the payload with AES-256-GCM. dest: write the resulting PNG to this path instead of returning its bytes."},
+				{Name: "opts", Type: "{ password?: string; dest?: string; bits?: number }", Optional: true, Desc: "password: encrypt the payload with AES-256-GCM. dest: write the resulting PNG to this path instead of returning its bytes. bits: payload bits per channel, an integer 1..4 (default 1)."},
 			},
 			ReturnType: "{ bytes: Uint8Array } | { path: string }",
 			Returns:    "An object with the PNG bytes ({ bytes }), or { path } when opts.dest was given.",
@@ -322,7 +322,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });`,
 		},
 		"stego.extract": {
-			Summary:    "Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check.",
+			Summary:    "Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check. The bit depth is read from the header, so no `bits` argument is needed.",
 			Params: []scriptengine.Param{
 				{Name: "carrier", Type: "string | Uint8Array", Desc: "The stego image (must be the lossless PNG produced by embed, or an identical copy): a file path or raw bytes."},
 				{Name: "opts", Type: "{ password?: string }", Optional: true, Desc: "The password used at embed time, required when the payload was encrypted."},
@@ -336,29 +336,30 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Summary:    "Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — one bit per R/G/B channel. Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.",
 			Params: []scriptengine.Param{
 				{Name: "carrier", Type: "string | Uint8Array", Desc: "The carrier image: a file path or raw image bytes."},
+				{Name: "opts", Type: "{ bits?: number }", Optional: true, Desc: "bits: report capacity at this depth (integer 1..4, default 1)."},
 			},
-			ReturnType: "{ bytes: number }",
-			Returns:    "An object whose bytes field is the maximum plaintext payload size in bytes.",
-			Errors:     "Throws if the carrier cannot be decoded.",
-			Example:    `const room = image.stego.capacity("cover.png").bytes;`,
+			ReturnType: "{ bytes: number; bits: number }",
+			Returns:    "An object: bytes is the maximum plaintext payload size at the requested depth; bits echoes that depth.",
+			Errors:     "Throws if the carrier cannot be decoded, or a TypeError if bits is not an integer 1..4.",
+			Example:    `const room = image.stego.capacity("cover.png", { bits: 4 }).bytes;`,
 		},
 		"stego.detect": {
 			Summary: "Quickly check whether an image carries hidden data. Returns a definitive flag for a sercon-format LSB payload (the \"ScSt\" header) plus a heuristic suspicion verdict from statistical analysis. Read-only; never modifies the image.",
 			Params: []scriptengine.Param{
 				{Name: "carrier", Type: "string | Uint8Array", Desc: "The image to inspect: a file path or raw image bytes."},
 			},
-			ReturnType: "{ sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; suspicious: boolean; confidence: number }",
-			Returns:    "An object: sercon is true when a sercon stego header is present (with encrypted/text/payloadBytes); suspicious/confidence summarize the statistical analysis.",
+			ReturnType: "{ sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; bits?: number; suspicious: boolean; confidence: number }",
+			Returns:    "An object: sercon is true when a sercon stego header is present (with encrypted/text/payloadBytes); suspicious/confidence summarize the statistical analysis. bits is the declared payload depth when a sercon header is present.",
 			Errors:     "Throws if the carrier cannot be decoded. Never throws for a clean image.",
 			Example:    `if (image.stego.detect("photo.png").sercon) console.log("hidden payload!");`,
 		},
 		"stego.analyze": {
-			Summary: "Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of-values) probability, LSB-plane Shannon entropy, and an RS embedding-rate estimate, plus a combined verdict with reasons. Read-only.",
+			Summary: "Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of-values) probability, LSB-plane Shannon entropy, and an RS embedding-rate estimate, plus a combined verdict with reasons. Read-only. The report includes a generalized chi-square at depths 1..4 (chiSquareByBits), per-plane entropy (entropyByPlane, planes 0..3), and an estimatedBits figure for the likely embedding depth.",
 			Params: []scriptengine.Param{
 				{Name: "carrier", Type: "string | Uint8Array", Desc: "The image to analyze: a file path or raw image bytes."},
 			},
-			ReturnType: "{ width: number; height: number; capacity: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } }",
-			Returns:    "A report object: capacity in bytes, the sercon-header check, per-channel signals (chiSquare/lsbEntropy/rsEstimate, each 0..1), and the verdict.",
+			ReturnType: "{ width: number; height: number; capacity: number; estimatedBits: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; bits?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number; chiSquareByBits: number[]; entropyByPlane: number[] }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } }",
+			Returns:    "A report object: capacity in bytes, the sercon-header check, per-channel signals (chiSquare/lsbEntropy/rsEstimate, each 0..1), and the verdict. estimatedBits is a coarse, best-effort hint at the embedding depth — it needs substantial coverage to register and returns 0 for small or partial payloads. For sercon-format payloads the authoritative depth is sercon.bits (set by the header); chiSquareByBits and entropyByPlane are the raw per-depth diagnostics.",
 			Errors:     "Throws if the carrier cannot be decoded.",
 			Example:    `const r = image.stego.analyze("suspect.png"); console.log(r.verdict.suspicious, r.verdict.reasons);`,
 		},
