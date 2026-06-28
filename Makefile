@@ -165,6 +165,7 @@ examples/scripts/server-sse.ts \
 	examples/recipes/stego-capacity.ts \
 	examples/recipes/stego-detect.ts \
 	examples/recipes/sheet-legacy-convert.ts \
+	examples/recipes/xlsx-workbook.ts \
 	examples/recipes/barcode-batch.ts
 
 build:

@@ -8,6 +8,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.81.2] — 2026-06-28
+
+### Added
+- `xlsx-workbook.ts` example recipe: combine `sales.csv` + `regions.tsv` into a
+  multi-sheet XLSX with typed cells, then read it back to confirm the sheets and
+  numeric types survive (which CSV/TSV can't represent).
+
 ## [0.81.1] — 2026-06-28
 
 ### Added

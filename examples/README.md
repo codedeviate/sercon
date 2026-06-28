@@ -157,6 +157,7 @@ Each script writes any output under `$TMPDIR` and announces the paths via
 | `recipes/stego-capacity.ts` | Multi-bit LSB: hide a payload too large for 1-bit at 4 bits/channel in `small.png`, extract (depth auto-detected), write to `$TMPDIR`. |
 | `recipes/stego-detect.ts` | Steganalysis: distinguish a clean `medium.png` from one with a hidden payload; read back the embedding's declared depth + encryption flag via `detect`/`analyze`. |
 | `recipes/sheet-legacy-convert.ts` | Read a legacy read-only SYLK export (`legacy.slk`) and convert it up to XLSX in `$TMPDIR`; show the `codec.sheet.formats()` matrix. |
+| `recipes/xlsx-workbook.ts` | Combine `sales.csv` + `regions.tsv` into a multi-sheet XLSX with typed cells, write to `$TMPDIR`, read back and assert sheets + numeric types survive (CSV can't). |
 | `recipes/barcode-batch.ts` | Generate a Code128 barcode per region from `regions.tsv`, write PNGs to `$TMPDIR`, decode one back. |
 
 ## DevShop flows (`sws6/`)
