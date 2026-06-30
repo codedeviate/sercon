@@ -428,6 +428,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"sheet":       sheetNamespace(vm),
 			"doc":         docNamespace(vm),
 			"toml":        tomlNamespace(vm),
+			"dotenv":      dotenvNamespace(vm),
 		}
 	}); err != nil {
 		return err
