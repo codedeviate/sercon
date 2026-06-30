@@ -633,6 +633,27 @@ declare const codec: {
      */
     decompress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>;
   };
+  doc: {
+    /**
+     * Report the read/write capability of every document format codec.doc supports. Read-only formats (pdf/doc) have write:false.
+     * @returns An object keyed by format name (pdf/docx/doc/rtf/odt), each with read and write booleans.
+     */
+    formats(): { [format: string]: { read: boolean; write: boolean } };
+    /**
+     * Extract text from a document: PDF, DOCX, DOC (Word 97–2003), RTF, or ODT. Returns { format, text, paragraphs }. Format is auto-detected by content (%PDF, {\rtf, OLE2 magic, or the zip's word/document.xml / opendocument.text mimetype) and extension, unless opts.format is given. Extraction is best-effort (extraction-grade): text is the full plain text; paragraphs is the block breakdown (native for docx/odt/rtf, best-effort for pdf/doc).
+     * @param src The document: a file path or raw bytes.
+     * @param opts Force the format instead of auto-detecting.
+     * @returns A document model: format is the detected/forced format; text is the full extracted text; paragraphs is the block breakdown.
+     */
+    read(src: string | Uint8Array, opts?: { format?: "pdf" | "docx" | "doc" | "rtf" | "odt" }): { format: string; text: string; paragraphs: string[] };
+    /**
+     * Write a document to DOCX, RTF, or ODT from { paragraphs } / { text } / a bare string (one paragraph per line). PDF and DOC are read-only and throw. Without opts.dest the encoded bytes are returned; with dest they are written there.
+     * @param model The content: a paragraph array, a text blob, or a bare string.
+     * @param opts format: target format; dest: write to this path instead of returning bytes.
+     * @returns An object with the encoded bytes ({ bytes }), or { path } when opts.dest was given.
+     */
+    write(model: { paragraphs?: string[]; text?: string } | string, opts?: { format?: "docx" | "rtf" | "odt"; dest?: string }): { bytes: Uint8Array } | { path: string };
+  };
   perl: {
     /**
      * Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS booleans emit the JSON::XS::Boolean blessed-ref form (opts.perlBoolClass).

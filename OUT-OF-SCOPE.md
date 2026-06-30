@@ -46,9 +46,19 @@ slipped in).
   today (Numbers is a proprietary zip+protobuf format; .gsheet is a cloud
   pointer, not a local format).
 
-Deferred document formats (`.docx`, `.odt`, `.rtf`, `.pages`, `.gdoc`): same
-section applies — no pure-Go round-trip writer exists for any of them; promote
-each individually when demand + a viable pure-Go path align.
+**`codec.doc` — document text extraction.** `codec.doc.read` (PDF, DOCX, DOC,
+RTF, ODT → `{ format, text, paragraphs }`) and `codec.doc.write` (DOCX/RTF/ODT)
+shipped in v0.82.0. PDF and DOC are read-only (writing throws); DOCX/RTF/ODT are
+read+write. Deferred:
+
+- **DOCX table-cell text extraction** — the v1 reader extracts paragraph text only;
+  table cells are silently omitted. **Reason:** extracting table cells requires
+  walking `w:tbl`/`w:tr`/`w:tc` nodes separately; deferred until there is a
+  concrete use-case.
+- **`.pages` (Apple Pages) / `.gdoc` (Google Docs pointer)** — no pure-Go
+  read/write path. `.pages` is a proprietary zip+protobuf format; `.gdoc` is a
+  cloud pointer, not a local document. **Reason:** no viable pure-Go or
+  external-CLI path today; promote individually when demand + a pure-Go path align.
 
 ## Databases
 

@@ -273,5 +273,35 @@ const text = new TextDecoder().decode(raw);`,
 			Errors:     "Throws (\"codec.toml.stringify: …\") if the value can't be represented as TOML (e.g. a non-object top level).",
 			Example:    "const text = codec.toml.stringify({ port: 8080, db: { host: \"localhost\" } });",
 		},
+		"doc.read": {
+			Summary: "Extract text from a document: PDF, DOCX, DOC (Word 97–2003), RTF, or ODT. Returns { format, text, paragraphs }. Format is auto-detected by content (%PDF, {\\rtf, OLE2 magic, or the zip's word/document.xml / opendocument.text mimetype) and extension, unless opts.format is given. Extraction is best-effort (extraction-grade): text is the full plain text; paragraphs is the block breakdown (native for docx/odt/rtf, best-effort for pdf/doc).",
+			Params: []scriptengine.Param{
+				{Name: "src", Type: "string | Uint8Array", Desc: "The document: a file path or raw bytes."},
+				{Name: "opts", Type: "{ format?: \"pdf\" | \"docx\" | \"doc\" | \"rtf\" | \"odt\" }", Optional: true, Desc: "Force the format instead of auto-detecting."},
+			},
+			ReturnType: "{ format: string; text: string; paragraphs: string[] }",
+			Returns:    "A document model: format is the detected/forced format; text is the full extracted text; paragraphs is the block breakdown.",
+			Errors:     "Throws if the document cannot be parsed, if the format is unrecognized, or if the source is neither a path string nor a Uint8Array.",
+			Example:    `const d = codec.doc.read("report.pdf"); runtime.log(d.paragraphs.length, "paragraphs");`,
+		},
+		"doc.write": {
+			Summary: "Write a document to DOCX, RTF, or ODT from { paragraphs } / { text } / a bare string (one paragraph per line). PDF and DOC are read-only and throw. Without opts.dest the encoded bytes are returned; with dest they are written there.",
+			Params: []scriptengine.Param{
+				{Name: "model", Type: "{ paragraphs?: string[]; text?: string } | string", Desc: "The content: a paragraph array, a text blob, or a bare string."},
+				{Name: "opts", Type: "{ format?: \"docx\" | \"rtf\" | \"odt\"; dest?: string }", Optional: true, Desc: "format: target format; dest: write to this path instead of returning bytes."},
+			},
+			ReturnType: "{ bytes: Uint8Array } | { path: string }",
+			Returns:    "An object with the encoded bytes ({ bytes }), or { path } when opts.dest was given.",
+			Errors:     "Throws if the format is missing/unsupported, if writing a read-only format (pdf/doc), if the model is malformed, or on a write failure.",
+			Example:    `const out = codec.doc.write({ paragraphs: ["Hello", "World"] }, { format: "docx" });`,
+		},
+		"doc.formats": {
+			Summary:    "Report the read/write capability of every document format codec.doc supports. Read-only formats (pdf/doc) have write:false.",
+			Params:     []scriptengine.Param{},
+			ReturnType: "{ [format: string]: { read: boolean; write: boolean } }",
+			Returns:    "An object keyed by format name (pdf/docx/doc/rtf/odt), each with read and write booleans.",
+			Errors:     "Does not throw.",
+			Example:    `if (!codec.doc.formats().pdf.write) console.log("pdf is read-only");`,
+		},
 	}
 }

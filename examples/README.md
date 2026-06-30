@@ -108,6 +108,7 @@ Or pick individual scripts:
 | `web-html.ts` | `web.html` — lenient HTML parse with CSS (`find`/`findAll`) + XPath (`xpath`/`xpathAll`) and chainable nodes (`text`/`attr`/…). Offline always; live `web.html.load` self-skips without a network. |
 | `sheet.ts` | `codec.sheet.read` / `codec.sheet.write` — build a workbook, write XLSX + CSV, read both back, assert typed cells (XLSX numbers/bools typed; CSV strings). Fully offline and self-contained. |
 | `sheet-legacy.ts` | `codec.sheet` legacy read-only formats — read a SYLK (.slk) document, assert rows, convert up to XLSX, assert round-trip; uses `codec.sheet.formats()` to verify xls/slk/dif are read-only. Fully offline and self-contained. |
+| `doc.ts` | `codec.doc.write` / `codec.doc.read` / `codec.doc.formats` — author a DOCX in-memory, read it back and assert paragraphs survive, verify the read/write capability matrix (pdf is read-only, docx is read+write). Fully offline and self-contained. |
 | `web-feed.ts` | `web.feed` — RSS/Atom/JSON feeds normalized to one model with a `.raw` escape hatch. Offline always; live `web.feed.load` self-skips without a network. |
 | `web-sitemap.ts` | `web.sitemap` — urlset/sitemapindex parse, gzip, and `{expand:true}` recursion. Offline always; live `web.sitemap.load` self-skips without a network. |
 
@@ -159,6 +160,7 @@ Each script writes any output under `$TMPDIR` and announces the paths via
 | `recipes/sheet-legacy-convert.ts` | Read a legacy read-only SYLK export (`legacy.slk`) and convert it up to XLSX in `$TMPDIR`; show the `codec.sheet.formats()` matrix. |
 | `recipes/xlsx-workbook.ts` | Combine `sales.csv` + `regions.tsv` into a multi-sheet XLSX with typed cells, write to `$TMPDIR`, read back and assert sheets + numeric types survive (CSV can't). |
 | `recipes/barcode-batch.ts` | Generate a Code128 barcode per region from `regions.tsv`, write PNGs to `$TMPDIR`, decode one back. |
+| `recipes/doc-extract.ts` | Author an RTF in-memory, extract its text via `codec.doc.read`, convert up to DOCX at `$TMPDIR`, assert the round-trip preserves paragraph count. |
 
 ## DevShop flows (`sws6/`)
 

@@ -8,6 +8,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- New `codec.doc` namespace: extract text from PDF, DOCX, DOC (Word 97–2003),
+  RTF, and ODT (`codec.doc.read` → `{ format, text, paragraphs }`), and write
+  DOCX/RTF/ODT (`codec.doc.write`). PDF and DOC are read-only (writing throws).
+  `codec.doc.formats()` reports the read/write matrix. Pure-Go.
+
 ## [0.81.2] — 2026-06-28
 
 ### Added

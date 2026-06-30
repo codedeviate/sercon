@@ -893,6 +893,23 @@ Binary-format codecs (was `format` in v0.8.0). Members:
   `boolean`, empty → `null`); ODS dates come back as ISO-8601 strings; CSV/TSV
   cells are always `string`. XLS cells come back as formatted strings
   (extraction-grade). See §5.5.7 below.
+- `codec.doc.read(src, opts?)` / `codec.doc.write(model, opts?)` /
+  `codec.doc.formats()` —
+  document text extraction and authoring. Five formats are supported: PDF and
+  DOC (Word 97–2003) are **read-only** (writing throws); DOCX, RTF, and ODT are
+  **read+write**. `read` returns `{ format, text, paragraphs }`: `format` is the
+  detected or forced format, `text` is the full plain text, and `paragraphs` is
+  the block breakdown (native for DOCX/ODT/RTF; best-effort for PDF/DOC).
+  Format is auto-detected from file magic bytes (`%PDF`, `{\rtf`, OLE2 `\xD0\xCF`,
+  or ZIP content inspection for DOCX/ODT) and falls back to extension; pass
+  `opts.format` to force it. `write` accepts a `{ paragraphs }` array, a
+  `{ text }` blob, or a bare string (split on newlines); without `opts.dest` the
+  encoded bytes are returned, with `dest` they are written there. Extraction is
+  **extraction-grade** (best-effort plain text — not a full-fidelity round-trip):
+  styles, tables, images, and embedded objects are not preserved. Use the
+  "convert-up" pattern — read from any source format, write to DOCX — for
+  format migration. `codec.doc.formats()` returns the read/write capability
+  matrix at runtime. Pure-Go (no cgo, no external tools).
 
 #### 5.5.1 `codec.compression` — compress / decompress
 
@@ -5138,7 +5155,65 @@ const raw = await codec.compression.decompress("gzip", packed);
 const text = new TextDecoder().decode(raw);
 ```
 
-#### 17.2.12 codec.perl.dumper
+#### 17.2.12 codec.doc.formats
+
+```
+formats(): { [format: string]: { read: boolean; write: boolean } }
+```
+
+Report the read/write capability of every document format codec.doc supports. Read-only formats (pdf/doc) have write:false.
+
+**Returns:** An object keyed by format name (pdf/docx/doc/rtf/odt), each with read and write booleans.
+
+**Throws:** Does not throw.
+
+```ts
+if (!codec.doc.formats().pdf.write) console.log("pdf is read-only");
+```
+
+#### 17.2.13 codec.doc.read
+
+```
+read(src: string | Uint8Array, opts?: { format?: "pdf" | "docx" | "doc" | "rtf" | "odt" }): { format: string; text: string; paragraphs: string[] }
+```
+
+Extract text from a document: PDF, DOCX, DOC (Word 97–2003), RTF, or ODT. Returns { format, text, paragraphs }. Format is auto-detected by content (%PDF, {\rtf, OLE2 magic, or the zip's word/document.xml / opendocument.text mimetype) and extension, unless opts.format is given. Extraction is best-effort (extraction-grade): text is the full plain text; paragraphs is the block breakdown (native for docx/odt/rtf, best-effort for pdf/doc).
+
+**Parameters**
+
+- `src` *(string | Uint8Array)* — The document: a file path or raw bytes.
+- `opts` *({ format?: "pdf" | "docx" | "doc" | "rtf" | "odt" }, optional)* — Force the format instead of auto-detecting.
+
+**Returns:** A document model: format is the detected/forced format; text is the full extracted text; paragraphs is the block breakdown.
+
+**Throws:** Throws if the document cannot be parsed, if the format is unrecognized, or if the source is neither a path string nor a Uint8Array.
+
+```ts
+const d = codec.doc.read("report.pdf"); runtime.log(d.paragraphs.length, "paragraphs");
+```
+
+#### 17.2.14 codec.doc.write
+
+```
+write(model: { paragraphs?: string[]; text?: string } | string, opts?: { format?: "docx" | "rtf" | "odt"; dest?: string }): { bytes: Uint8Array } | { path: string }
+```
+
+Write a document to DOCX, RTF, or ODT from { paragraphs } / { text } / a bare string (one paragraph per line). PDF and DOC are read-only and throw. Without opts.dest the encoded bytes are returned; with dest they are written there.
+
+**Parameters**
+
+- `model` *({ paragraphs?: string[]; text?: string } | string)* — The content: a paragraph array, a text blob, or a bare string.
+- `opts` *({ format?: "docx" | "rtf" | "odt"; dest?: string }, optional)* — format: target format; dest: write to this path instead of returning bytes.
+
+**Returns:** An object with the encoded bytes ({ bytes }), or { path } when opts.dest was given.
+
+**Throws:** Throws if the format is missing/unsupported, if writing a read-only format (pdf/doc), if the model is malformed, or on a write failure.
+
+```ts
+const out = codec.doc.write({ paragraphs: ["Hello", "World"] }, { format: "docx" });
+```
+
+#### 17.2.15 codec.perl.dumper
 
 ```
 dumper(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -5159,7 +5234,7 @@ Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS boolean
 const d = codec.perl.dumper({ ok: true });
 ```
 
-#### 17.2.13 codec.perl.parseDumper
+#### 17.2.16 codec.perl.parseDumper
 
 ```
 parseDumper(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -5180,7 +5255,7 @@ Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decod
 const v = codec.perl.parseDumper("$VAR1 = [1, 2];"); // [1, 2]
 ```
 
-#### 17.2.14 codec.php.parseVarDump
+#### 17.2.17 codec.php.parseVarDump
 
 ```
 parseVarDump(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -5201,7 +5276,7 @@ Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, tru
 const v = codec.php.parseVarDump('int(42)'); // 42
 ```
 
-#### 17.2.15 codec.php.parseVarExport
+#### 17.2.18 codec.php.parseVarExport
 
 ```
 parseVarExport(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -5222,7 +5297,7 @@ Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a
 const v = codec.php.parseVarExport("array (\n  0 => 1,\n)");
 ```
 
-#### 17.2.16 codec.php.serialize
+#### 17.2.19 codec.php.serialize
 
 ```
 serialize(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -5243,7 +5318,7 @@ PHP serialize(): encode a value to PHP's canonical serialization string. Objects
 const s = codec.php.serialize({ a: 1, b: [2, 3] });
 ```
 
-#### 17.2.17 codec.php.unserialize
+#### 17.2.20 codec.php.unserialize
 
 ```
 unserialize(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -5264,7 +5339,7 @@ PHP unserialize(): decode a serialize() string back to a value. r:/R: references
 const v = codec.php.unserialize('a:2:{i:0;i:1;i:1;i:2;}'); // [1, 2]
 ```
 
-#### 17.2.18 codec.php.varDump
+#### 17.2.21 codec.php.varDump
 
 ```
 varDump(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -5285,7 +5360,7 @@ PHP var_dump(): human-readable debug output. String lengths are byte counts.
 const dump = codec.php.varDump({ name: "ok" });
 ```
 
-#### 17.2.19 codec.php.varExport
+#### 17.2.22 codec.php.varExport
 
 ```
 varExport(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -5306,7 +5381,7 @@ PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-s
 const code = codec.php.varExport({ x: 1 }, { indent: "    " });
 ```
 
-#### 17.2.20 codec.sheet.formats
+#### 17.2.23 codec.sheet.formats
 
 ```
 formats(): { [format: string]: { read: boolean; write: boolean } }
@@ -5322,7 +5397,7 @@ Report the read/write capability of every spreadsheet format codec.sheet support
 const f = codec.sheet.formats(); if (!f.xls.write) console.log("xls is read-only");
 ```
 
-#### 17.2.21 codec.sheet.read
+#### 17.2.24 codec.sheet.read
 
 ```
 read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" | "ods" | "xls" | "slk" | "dif" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }
@@ -5344,7 +5419,7 @@ const wb = codec.sheet.read("data.ods");
 runtime.log(wb.sheets[0].name, wb.sheets[0].rows.length);
 ```
 
-#### 17.2.22 codec.sheet.write
+#### 17.2.25 codec.sheet.write
 
 ```
 write(model: { sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][], opts: { format: "csv" | "tsv" | "xlsx" | "ods"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
@@ -5366,7 +5441,7 @@ const out = codec.sheet.write([["a", 1, true]], { format: "ods" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.2.23 codec.toml.parse
+#### 17.2.26 codec.toml.parse
 
 ```
 parse(text: string): Record<string, unknown>
@@ -5386,7 +5461,7 @@ Parse a TOML document string into a JS object. Tables become nested objects, arr
 const cfg = codec.toml.parse('port = 8080\n[db]\nhost = "localhost"');
 ```
 
-#### 17.2.24 codec.toml.stringify
+#### 17.2.27 codec.toml.stringify
 
 ```
 stringify(value: Record<string, unknown>): string
@@ -5406,7 +5481,7 @@ Serialize a JS value to a TOML document string. The top-level value must be an o
 const text = codec.toml.stringify({ port: 8080, db: { host: "localhost" } });
 ```
 
-#### 17.2.25 codec.xml.decode
+#### 17.2.28 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -5427,7 +5502,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### 17.2.26 codec.xml.encode
+#### 17.2.29 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string

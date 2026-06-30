@@ -155,6 +155,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/web-html.ts \
 	examples/scripts/sheet.ts \
 	examples/scripts/sheet-legacy.ts \
+	examples/scripts/doc.ts \
 	examples/recipes/sales-report.ts \
 	examples/recipes/config-read.ts \
 	examples/recipes/image-pipeline.ts \
@@ -166,7 +167,8 @@ examples/scripts/server-sse.ts \
 	examples/recipes/stego-detect.ts \
 	examples/recipes/sheet-legacy-convert.ts \
 	examples/recipes/xlsx-workbook.ts \
-	examples/recipes/barcode-batch.ts
+	examples/recipes/barcode-batch.ts \
+	examples/recipes/doc-extract.ts
 
 build:
 	CGO_ENABLED=0 $(GO) build -o $(BIN) ./cmd/sercon
