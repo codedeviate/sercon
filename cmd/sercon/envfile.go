@@ -3,9 +3,12 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/dop251/goja"
 )
 
 // envfile.go implements optional, explicit `.env` loading for the
@@ -66,6 +69,62 @@ func parseEnvFile(data []byte) ([]envKV, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+// envLoad reads path, parses it with parseEnvFile, and applies each pair to the
+// process environment. When override is false an already-set variable is left
+// untouched (the --env-file rule). Returns the parsed pairs (all of them,
+// regardless of whether each was applied).
+func envLoad(path string, override bool) (map[string]string, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // script-chosen path is intentional
+	if err != nil {
+		return nil, err
+	}
+	kvs, err := parseEnvFile(data)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(kvs))
+	for _, kv := range kvs {
+		out[kv.key] = kv.val
+		if !override {
+			if _, set := os.LookupEnv(kv.key); set {
+				continue
+			}
+		}
+		if err := os.Setenv(kv.key, kv.val); err != nil {
+			return nil, fmt.Errorf("set %s: %w", kv.key, err)
+		}
+	}
+	return out, nil
+}
+
+// envLoadBinding builds the runtime.env.load async handler. It reads arg 0
+// (path) and arg 1 ({ override? }), then calls envLoad. Args are read via
+// Export() only (no vm method calls) so it is safe in the PromisifyAsync
+// goroutine.
+func envLoadBinding(_ *goja.Runtime) func(context.Context, goja.FunctionCall) (map[string]any, error) {
+	return func(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+		path, ok := call.Argument(0).Export().(string)
+		if !ok || path == "" {
+			return nil, fmt.Errorf("runtime.env.load: path is required")
+		}
+		override := false
+		if o, ok := call.Argument(1).Export().(map[string]any); ok {
+			if b, ok := o["override"].(bool); ok {
+				override = b
+			}
+		}
+		m, err := envLoad(path, override)
+		if err != nil {
+			return nil, fmt.Errorf("runtime.env.load: %w", err)
+		}
+		out := make(map[string]any, len(m))
+		for k, v := range m {
+			out[k] = v
+		}
+		return out, nil
+	}
 }
 
 // applyEnvFiles loads each path in order and sets its variables on the process

@@ -60,3 +60,46 @@ func TestApplyEnvFiles_MissingFile(t *testing.T) {
 		t.Fatal("expected error for a missing env file")
 	}
 }
+
+func TestEnvLoad_AppliesAndOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/.env"
+	if err := os.WriteFile(path, []byte("LOAD_NEW=fromfile\nLOAD_PRESET=fromfile\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOAD_PRESET", "preset") // already set → wins unless override
+
+	m, err := envLoad(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m["LOAD_NEW"] != "fromfile" || m["LOAD_PRESET"] != "fromfile" {
+		t.Fatalf("returned map should hold all file pairs: %v", m)
+	}
+	if got := os.Getenv("LOAD_NEW"); got != "fromfile" {
+		t.Fatalf("LOAD_NEW env = %q, want fromfile", got)
+	}
+	if got := os.Getenv("LOAD_PRESET"); got != "preset" {
+		t.Fatalf("LOAD_PRESET env = %q, want preset (already-set wins)", got)
+	}
+
+	if _, err := envLoad(path, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("LOAD_PRESET"); got != "fromfile" {
+		t.Fatalf("LOAD_PRESET after override = %q, want fromfile", got)
+	}
+}
+
+func TestEnvLoad_Errors(t *testing.T) {
+	if _, err := envLoad(t.TempDir()+"/missing.env", false); err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	bad := t.TempDir() + "/bad.env"
+	if err := os.WriteFile(bad, []byte("nokey\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := envLoad(bad, false); err == nil {
+		t.Fatal("expected error for malformed file")
+	}
+}

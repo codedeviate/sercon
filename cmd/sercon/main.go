@@ -383,6 +383,7 @@ func registerSurface(e *scriptengine.Engine) error {
 					}
 					return goja.Undefined()
 				},
+				"load": scriptengine.PromisifyAsync(vm, loop, envLoadBinding(vm)),
 			},
 			// argv is a placeholder: the engine patches the real per-Run argv
 			// onto this object after registrations are applied. Registering
