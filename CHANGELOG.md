@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.82.0] — 2026-06-30
+
 ### Added
 - New `codec.doc` namespace: extract text from PDF, DOCX, DOC (Word 97–2003),
   RTF, and ODT (`codec.doc.read` → `{ format, text, paragraphs }`), and write
