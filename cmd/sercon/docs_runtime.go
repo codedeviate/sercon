@@ -100,6 +100,17 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Never throws.",
 			Example:    `const home = runtime.env.get("HOME") ?? "/tmp";`,
 		},
+		"env.load": {
+			Summary: "Load a .env file and apply it to the process environment, so subsequent runtime.env.get (and any spawned subprocess) see the values. Parses KEY=VALUE lines (# comments, blank lines, optional `export `, surrounding quotes stripped; no shell expansion). An already-set variable is left untouched unless opts.override is true. Async; resolves to the parsed pairs.",
+			Params: []scriptengine.Param{
+				{Name: "path", Type: "string", Desc: "Path to the .env file."},
+				{Name: "opts", Type: "{ override?: boolean }", Optional: true, Desc: "override: overwrite variables already present in the environment (default false — existing values win)."},
+			},
+			ReturnType: "Promise<{ [key: string]: string }>",
+			Returns:    "A promise resolving to the parsed key/value pairs from the file (all of them, regardless of whether each was applied).",
+			Errors:     "Rejects if the file is missing or unreadable, or if a line is malformed (\"line N: …\"). Throws a TypeError if path is not a string.",
+			Example:    "await runtime.env.load(\".env\");\nconst url = runtime.env.get(\"DATABASE_URL\");",
+		},
 		"secrets.available": {
 			Summary:    "True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows Credential Manager) is plausibly reachable this run. Cheap advisory hint — does not touch the keystore; gate calls on it to self-skip on headless boxes.",
 			ReturnType: "boolean",

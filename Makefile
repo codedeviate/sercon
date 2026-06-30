@@ -72,6 +72,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/barcode.ts \
 	examples/scripts/charset.ts \
 	examples/scripts/checkdigit.ts \
+	examples/scripts/env.ts \
 	examples/scripts/dump-codec.ts \
 	examples/scripts/codec-xml.ts \
 	examples/scripts/codec-toml.ts \

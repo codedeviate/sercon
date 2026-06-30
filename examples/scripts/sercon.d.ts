@@ -105,6 +105,13 @@ declare const runtime: {
      * @returns string — the variable's value, or undefined when the variable is not set. A variable set to the empty string returns "", which is distinct from undefined.
      */
     get(name: string): string | undefined;
+    /**
+     * Load a .env file and apply it to the process environment, so subsequent runtime.env.get (and any spawned subprocess) see the values. Parses KEY=VALUE lines (# comments, blank lines, optional `export `, surrounding quotes stripped; no shell expansion). An already-set variable is left untouched unless opts.override is true. Async; resolves to the parsed pairs.
+     * @param path Path to the .env file.
+     * @param opts override: overwrite variables already present in the environment (default false — existing values win).
+     * @returns A promise resolving to the parsed key/value pairs from the file (all of them, regardless of whether each was applied).
+     */
+    load(path: string, opts?: { override?: boolean }): Promise<{ [key: string]: string }>;
   };
   /**
    * Return the milliseconds remaining until the running script's kill deadline, or null when no deadline is active (disabled or started with -timeout 0).
@@ -653,6 +660,20 @@ declare const codec: {
      * @returns An object with the encoded bytes ({ bytes }), or { path } when opts.dest was given.
      */
     write(model: { paragraphs?: string[]; text?: string } | string, opts?: { format?: "docx" | "rtf" | "odt"; dest?: string }): { bytes: Uint8Array } | { path: string };
+  };
+  dotenv: {
+    /**
+     * Parse dotenv-format text into an object. Handles KEY=VALUE lines, # comments, blank lines, an optional leading `export `, and surrounding single/double quotes; no shell expansion. A later duplicate key overrides an earlier one. Pure — does not touch the environment.
+     * @param text The .env-format text to parse.
+     * @returns An object of the parsed key/value pairs.
+     */
+    parse(text: string): { [key: string]: string };
+    /**
+     * Serialize an object of string/number/boolean values to dotenv-format text (one KEY=VALUE line per entry, keys sorted). Values are double-quoted when needed so the result round-trips through codec.dotenv.parse: parse(stringify(obj)) deep-equals obj (numbers/booleans become their string forms).
+     * @param obj The values to serialize.
+     * @returns The .env-format text.
+     */
+    stringify(obj: { [key: string]: string | number | boolean }): string;
   };
   perl: {
     /**

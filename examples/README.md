@@ -40,6 +40,7 @@ Or pick individual scripts:
 | `barcode.ts` | `barcode.encode` over all 10 supported symbologies. |
 | `charset.ts` | `text.detect/encode/decode` — 5-charset round-trip + Latin-1 detection. |
 | `checkdigit.ts` | `checkdigit.validate/compute/inspect` over Luhn, ISBN-10/13, EAN-13/8, UPC-A. |
+| `env.ts` | `codec.dotenv.parse` / `stringify` + `runtime.env.load` — pure dotenv parse/stringify round-trip and load a `.env` file into the process environment. Offline + self-contained. |
 | `dump-codec.ts` | `codec.php.*` / `codec.perl.*` — round-trip a value through PHP serialize / var_export / var_dump and Perl Data::Dumper. |
 | `codec-xml.ts` | `codec.xml.encode` / `decode` — value ↔ XML (@-attributes, #text, arrays as repeated siblings). Round-trips an object and self-checks. |
 | `codec-toml.ts` | `codec.toml.parse` / `stringify` — value ↔ TOML (pure-Go, `pelletier/go-toml/v2`). Parses a document, asserts typed fields, and round-trips through stringify. |

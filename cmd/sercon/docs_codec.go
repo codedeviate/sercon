@@ -303,5 +303,25 @@ const text = new TextDecoder().decode(raw);`,
 			Errors:     "Does not throw.",
 			Example:    `if (!codec.doc.formats().pdf.write) console.log("pdf is read-only");`,
 		},
+		"dotenv.parse": {
+			Summary: "Parse dotenv-format text into an object. Handles KEY=VALUE lines, # comments, blank lines, an optional leading `export `, and surrounding single/double quotes; no shell expansion. A later duplicate key overrides an earlier one. Pure — does not touch the environment.",
+			Params: []scriptengine.Param{
+				{Name: "text", Type: "string", Desc: "The .env-format text to parse."},
+			},
+			ReturnType: "{ [key: string]: string }",
+			Returns:    "An object of the parsed key/value pairs.",
+			Errors:     "Throws on a line without `=` or with an empty key (\"line N: …\"); TypeError if text is not a string.",
+			Example:    `const cfg = codec.dotenv.parse('PORT=8080\n# note\nHOST="0.0.0.0"');`,
+		},
+		"dotenv.stringify": {
+			Summary: "Serialize an object of string/number/boolean values to dotenv-format text (one KEY=VALUE line per entry, keys sorted). Values are double-quoted when needed so the result round-trips through codec.dotenv.parse: parse(stringify(obj)) deep-equals obj (numbers/booleans become their string forms).",
+			Params: []scriptengine.Param{
+				{Name: "obj", Type: "{ [key: string]: string | number | boolean }", Desc: "The values to serialize."},
+			},
+			ReturnType: "string",
+			Returns:    "The .env-format text.",
+			Errors:     "Throws if a value contains a newline (not representable), if a key is empty or contains `=`/whitespace/newline, or if a value is not a string/number/boolean; TypeError if obj is not an object.",
+			Example:    `const text = codec.dotenv.stringify({ PORT: 8080, HOST: "0.0.0.0", DEBUG: true });`,
+		},
 	}
 }

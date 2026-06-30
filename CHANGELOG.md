@@ -8,6 +8,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `codec.dotenv.parse` / `codec.dotenv.stringify` — pure dotenv
+  parser/serializer (round-trip-safe), and `runtime.env.load(path, { override? })`
+  — read a .env file and apply it to the process environment (async; already-set
+  vars win unless override). All reuse the `--env-file` parser. Pure-Go.
+
 ## [0.82.0] — 2026-06-30
 
 ### Added

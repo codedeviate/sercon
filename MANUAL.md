@@ -640,6 +640,12 @@ Script-host scaffolding. Members:
   yields `"2026-06-24 13:45:09"`.
 - `runtime.env.get(name)` — process environment variable; returns
   `undefined` when unset (never throws).
+- `runtime.env.load(path, opts?)` — async; reads a `.env` file, applies
+  its `KEY=VALUE` pairs to the process environment (same parser as the
+  `--env-file` CLI flag: `#` comments, blank lines, optional `export `,
+  surrounding quotes stripped, no shell expansion), and resolves to the
+  parsed pairs. Already-set variables win unless `opts.override` is true.
+  Rejects if the file is missing/unreadable or a line is malformed.
 - **`runtime.setDeadline(ms)` / `runtime.clearDeadline()` /
   `runtime.getDeadline()`** — control the running script's own wall-clock
   kill deadline at runtime. This is the **same** deadline the `-timeout`
@@ -910,6 +916,13 @@ Binary-format codecs (was `format` in v0.8.0). Members:
   "convert-up" pattern — read from any source format, write to DOCX — for
   format migration. `codec.doc.formats()` returns the read/write capability
   matrix at runtime. Pure-Go (no cgo, no external tools).
+- `codec.dotenv.parse(text)` / `codec.dotenv.stringify(obj)` — pure dotenv
+  codec (same `--env-file` semantics: `#` comments, blank lines, optional
+  `export `, surrounding quotes stripped, no shell expansion). `stringify`
+  sorts keys and double-quotes values when needed so
+  `parse(stringify(obj))` deep-equals `obj` — the round-trip guarantee.
+  Neither function touches the process environment; use `runtime.env.load`
+  to apply a file. Pure-Go.
 
 #### 5.5.1 `codec.compression` — compress / decompress
 
@@ -5213,7 +5226,47 @@ Write a document to DOCX, RTF, or ODT from { paragraphs } / { text } / a bare st
 const out = codec.doc.write({ paragraphs: ["Hello", "World"] }, { format: "docx" });
 ```
 
-#### 17.2.15 codec.perl.dumper
+#### 17.2.15 codec.dotenv.parse
+
+```
+parse(text: string): { [key: string]: string }
+```
+
+Parse dotenv-format text into an object. Handles KEY=VALUE lines, # comments, blank lines, an optional leading `export `, and surrounding single/double quotes; no shell expansion. A later duplicate key overrides an earlier one. Pure — does not touch the environment.
+
+**Parameters**
+
+- `text` *(string)* — The .env-format text to parse.
+
+**Returns:** An object of the parsed key/value pairs.
+
+**Throws:** Throws on a line without `=` or with an empty key ("line N: …"); TypeError if text is not a string.
+
+```ts
+const cfg = codec.dotenv.parse('PORT=8080\n# note\nHOST="0.0.0.0"');
+```
+
+#### 17.2.16 codec.dotenv.stringify
+
+```
+stringify(obj: { [key: string]: string | number | boolean }): string
+```
+
+Serialize an object of string/number/boolean values to dotenv-format text (one KEY=VALUE line per entry, keys sorted). Values are double-quoted when needed so the result round-trips through codec.dotenv.parse: parse(stringify(obj)) deep-equals obj (numbers/booleans become their string forms).
+
+**Parameters**
+
+- `obj` *({ [key: string]: string | number | boolean })* — The values to serialize.
+
+**Returns:** The .env-format text.
+
+**Throws:** Throws if a value contains a newline (not representable), if a key is empty or contains `=`/whitespace/newline, or if a value is not a string/number/boolean; TypeError if obj is not an object.
+
+```ts
+const text = codec.dotenv.stringify({ PORT: 8080, HOST: "0.0.0.0", DEBUG: true });
+```
+
+#### 17.2.17 codec.perl.dumper
 
 ```
 dumper(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -5234,7 +5287,7 @@ Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS boolean
 const d = codec.perl.dumper({ ok: true });
 ```
 
-#### 17.2.16 codec.perl.parseDumper
+#### 17.2.18 codec.perl.parseDumper
 
 ```
 parseDumper(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -5255,7 +5308,7 @@ Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decod
 const v = codec.perl.parseDumper("$VAR1 = [1, 2];"); // [1, 2]
 ```
 
-#### 17.2.17 codec.php.parseVarDump
+#### 17.2.19 codec.php.parseVarDump
 
 ```
 parseVarDump(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -5276,7 +5329,7 @@ Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, tru
 const v = codec.php.parseVarDump('int(42)'); // 42
 ```
 
-#### 17.2.18 codec.php.parseVarExport
+#### 17.2.20 codec.php.parseVarExport
 
 ```
 parseVarExport(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -5297,7 +5350,7 @@ Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a
 const v = codec.php.parseVarExport("array (\n  0 => 1,\n)");
 ```
 
-#### 17.2.19 codec.php.serialize
+#### 17.2.21 codec.php.serialize
 
 ```
 serialize(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -5318,7 +5371,7 @@ PHP serialize(): encode a value to PHP's canonical serialization string. Objects
 const s = codec.php.serialize({ a: 1, b: [2, 3] });
 ```
 
-#### 17.2.20 codec.php.unserialize
+#### 17.2.22 codec.php.unserialize
 
 ```
 unserialize(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -5339,7 +5392,7 @@ PHP unserialize(): decode a serialize() string back to a value. r:/R: references
 const v = codec.php.unserialize('a:2:{i:0;i:1;i:1;i:2;}'); // [1, 2]
 ```
 
-#### 17.2.21 codec.php.varDump
+#### 17.2.23 codec.php.varDump
 
 ```
 varDump(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -5360,7 +5413,7 @@ PHP var_dump(): human-readable debug output. String lengths are byte counts.
 const dump = codec.php.varDump({ name: "ok" });
 ```
 
-#### 17.2.22 codec.php.varExport
+#### 17.2.24 codec.php.varExport
 
 ```
 varExport(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -5381,7 +5434,7 @@ PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-s
 const code = codec.php.varExport({ x: 1 }, { indent: "    " });
 ```
 
-#### 17.2.23 codec.sheet.formats
+#### 17.2.25 codec.sheet.formats
 
 ```
 formats(): { [format: string]: { read: boolean; write: boolean } }
@@ -5397,7 +5450,7 @@ Report the read/write capability of every spreadsheet format codec.sheet support
 const f = codec.sheet.formats(); if (!f.xls.write) console.log("xls is read-only");
 ```
 
-#### 17.2.24 codec.sheet.read
+#### 17.2.26 codec.sheet.read
 
 ```
 read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" | "ods" | "xls" | "slk" | "dif" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }
@@ -5419,7 +5472,7 @@ const wb = codec.sheet.read("data.ods");
 runtime.log(wb.sheets[0].name, wb.sheets[0].rows.length);
 ```
 
-#### 17.2.25 codec.sheet.write
+#### 17.2.27 codec.sheet.write
 
 ```
 write(model: { sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][], opts: { format: "csv" | "tsv" | "xlsx" | "ods"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
@@ -5441,7 +5494,7 @@ const out = codec.sheet.write([["a", 1, true]], { format: "ods" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.2.26 codec.toml.parse
+#### 17.2.28 codec.toml.parse
 
 ```
 parse(text: string): Record<string, unknown>
@@ -5461,7 +5514,7 @@ Parse a TOML document string into a JS object. Tables become nested objects, arr
 const cfg = codec.toml.parse('port = 8080\n[db]\nhost = "localhost"');
 ```
 
-#### 17.2.27 codec.toml.stringify
+#### 17.2.29 codec.toml.stringify
 
 ```
 stringify(value: Record<string, unknown>): string
@@ -5481,7 +5534,7 @@ Serialize a JS value to a TOML document string. The top-level value must be an o
 const text = codec.toml.stringify({ port: 8080, db: { host: "localhost" } });
 ```
 
-#### 17.2.28 codec.xml.decode
+#### 17.2.30 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -5502,7 +5555,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### 17.2.29 codec.xml.encode
+#### 17.2.31 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string
@@ -7747,7 +7800,29 @@ Read an environment variable. Returns undefined when unset (not empty string).
 const home = runtime.env.get("HOME") ?? "/tmp";
 ```
 
-#### 17.9.12 runtime.getDeadline
+#### 17.9.12 runtime.env.load
+
+```
+load(path: string, opts?: { override?: boolean }): Promise<{ [key: string]: string }>
+```
+
+Load a .env file and apply it to the process environment, so subsequent runtime.env.get (and any spawned subprocess) see the values. Parses KEY=VALUE lines (# comments, blank lines, optional `export `, surrounding quotes stripped; no shell expansion). An already-set variable is left untouched unless opts.override is true. Async; resolves to the parsed pairs.
+
+**Parameters**
+
+- `path` *(string)* — Path to the .env file.
+- `opts` *({ override?: boolean }, optional)* — override: overwrite variables already present in the environment (default false — existing values win).
+
+**Returns:** A promise resolving to the parsed key/value pairs from the file (all of them, regardless of whether each was applied).
+
+**Throws:** Rejects if the file is missing or unreadable, or if a line is malformed ("line N: …"). Throws a TypeError if path is not a string.
+
+```ts
+await runtime.env.load(".env");
+const url = runtime.env.get("DATABASE_URL");
+```
+
+#### 17.9.13 runtime.getDeadline
 
 ```
 getDeadline(): number | null
@@ -7763,7 +7838,7 @@ Return the milliseconds remaining until the running script's kill deadline, or n
 const left = runtime.getDeadline(); // e.g. 9871, or null
 ```
 
-#### 17.9.13 runtime.log
+#### 17.9.14 runtime.log
 
 ```
 log(args: unknown[]): void
@@ -7783,7 +7858,7 @@ Print one space-separated line of the arguments to stdout. Primitives print raw;
 runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}
 ```
 
-#### 17.9.14 runtime.secrets.available
+#### 17.9.15 runtime.secrets.available
 
 ```
 available: boolean
@@ -7799,7 +7874,7 @@ True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows 
 if (!runtime.secrets.available) runtime.log("no keystore — skipping");
 ```
 
-#### 17.9.15 runtime.secrets.delete
+#### 17.9.16 runtime.secrets.delete
 
 ```
 delete(name: string, account: string): Promise<boolean>
@@ -7820,7 +7895,7 @@ Remove a secret from the OS keystore under prefix + name / account. Async (keyst
 const removed = await runtime.secrets.delete("devshop", "tess@example.com");
 ```
 
-#### 17.9.16 runtime.secrets.get
+#### 17.9.17 runtime.secrets.get
 
 ```
 get(name: string, account: string): Promise<string | null>
@@ -7841,7 +7916,7 @@ Read a string secret from the OS keystore. The keystore service is the configure
 const pw = await runtime.secrets.get("devshop", "tess@example.com");
 ```
 
-#### 17.9.17 runtime.secrets.set
+#### 17.9.18 runtime.secrets.set
 
 ```
 set(name: string, account: string, secret: string): Promise<void>
@@ -7863,7 +7938,7 @@ Store or overwrite a string secret in the OS keystore under prefix + name / acco
 await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
 ```
 
-#### 17.9.18 runtime.setDeadline
+#### 17.9.19 runtime.setDeadline
 
 ```
 setDeadline(ms: number): void
@@ -7883,7 +7958,7 @@ Set the running script's wall-clock kill deadline to now + ms (replacing any pri
 runtime.setDeadline(30000); // give this run 30s from now
 ```
 
-#### 17.9.19 runtime.time.format
+#### 17.9.20 runtime.time.format
 
 ```
 format(ms: number, layout: string, tz?: string): string
@@ -7905,7 +7980,7 @@ Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Euro
 const s = runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC");
 ```
 
-#### 17.9.20 runtime.time.nowMs
+#### 17.9.21 runtime.time.nowMs
 
 ```
 nowMs(): number
@@ -7921,7 +7996,7 @@ Wall-clock milliseconds since the Unix epoch.
 const t0 = runtime.time.nowMs();
 ```
 
-#### 17.9.21 runtime.time.sleep
+#### 17.9.22 runtime.time.sleep
 
 ```
 sleep(ms: number): Promise<void>
