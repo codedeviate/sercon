@@ -426,6 +426,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"perl":        perlNamespace(vm),
 			"xml":         xmlNamespace(vm),
 			"sheet":       sheetNamespace(vm),
+			"doc":         docNamespace(vm),
 			"toml":        tomlNamespace(vm),
 		}
 	}); err != nil {
