@@ -5,6 +5,7 @@ go 1.25.7
 require (
 	filippo.io/age v1.3.1
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
+	github.com/EndFirstCorp/doc2txt v0.0.0-20210522214125-5d2d4043bb03
 	github.com/HugoSmits86/nativewebp v1.3.0
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/alicebob/miniredis/v2 v2.38.0
@@ -134,6 +135,7 @@ require (
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/likexian/gokit v0.25.16 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
+	github.com/mattetti/filebuffer v1.0.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d // indirect
