@@ -46,6 +46,7 @@ require (
 	github.com/jhillyerd/enmime v1.3.0
 	github.com/kettek/apng v0.0.0-20250827064933-2bb5f5fcf253
 	github.com/klauspost/compress v1.18.6
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/lestrrat-go/jwx/v2 v2.1.6
 	github.com/likexian/whois v1.15.7
 	github.com/likexian/whois-parser v1.24.21
