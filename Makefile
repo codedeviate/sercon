@@ -40,13 +40,14 @@
 GO                ?= go
 RECON             ?= recon
 HOMEBREW_TAP      ?= /Users/thomas/Development/Thomas/Rust/homebrew-cli
+RELEASE_REPO      ?= codedeviate/sercon
 GOLANGCI_VERSION  ?= v2.12.2
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 MANUAL_VERSION    := $(shell sed -nE 's|^const Version = "([^"]+)".*|\1|p' pkg/scriptengine/version.go)
 MANUAL_DATE       := $(shell date +%F)
 
-.PHONY: build release manual reference test test-integration vet lint demo types release-prep version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean
+.PHONY: build release manual reference test test-integration vet lint demo types release-prep release-verify version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -282,7 +283,32 @@ release-prep:
 	@echo "  3) git commit -am 'chore: cut v$(VERSION)'"
 	@echo "  4) git tag -a v$(VERSION) -m 'release v$(VERSION)'"
 	@echo "  5) git push origin master v$(VERSION)  # CI publishes binaries via goreleaser"
-	@echo "  6) make homebrew-bump VERSION=$(VERSION)  # bump + push the Homebrew tap formula"
+	@echo "  6) make release-verify VERSION=$(VERSION)  # wait for the goreleaser GitHub release to publish"
+	@echo "  7) make homebrew-bump VERSION=$(VERSION)  # bump + push the Homebrew tap formula"
+
+# release-verify VERSION=x.y.z
+#   Poll the GitHub release for vX.Y.Z until goreleaser has published it (not a
+#   draft, with its checksums.txt asset uploaded). Run AFTER pushing the tag and
+#   BEFORE homebrew-bump, so the binary release is confirmed live (and the
+#   goreleaser job didn't fail) before the tap is bumped. Requires gh
+#   authenticated for RELEASE_REPO. ~10 min cap (60 x 10s).
+release-verify:
+	@if [ -z "$(VERSION)" ]; then echo "usage: make release-verify VERSION=x.y.z"; exit 2; fi
+	@echo "Waiting for the goreleaser release v$(VERSION) on $(RELEASE_REPO)..."
+	@for i in $$(seq 1 60); do \
+		ready=$$(gh release view "v$(VERSION)" --repo "$(RELEASE_REPO)" --json assets,isDraft \
+			--jq '((.isDraft | not) and ([.assets[].name] | index("checksums.txt") | type == "number"))' 2>/dev/null); \
+		if [ "$$ready" = "true" ]; then \
+			n=$$(gh release view "v$(VERSION)" --repo "$(RELEASE_REPO)" --json assets --jq '.assets | length' 2>/dev/null); \
+			echo "  release v$(VERSION) is live ($$n assets, checksums.txt present)."; \
+			exit 0; \
+		fi; \
+		echo "  not ready yet; retrying in 10s ($$i/60)..."; \
+		sleep 10; \
+	done; \
+	echo "ERROR: release v$(VERSION) not published with assets after ~10 min."; \
+	echo "  The goreleaser job may have failed — check: gh run list --workflow=release.yml"; \
+	exit 1
 
 # Bump the Homebrew formula in the codedeviate/homebrew-cli tap and push it.
 # Reuses the tap's own scripts/bump.sh (which fetches the release tarball to
