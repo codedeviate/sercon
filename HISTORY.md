@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.82.0 (2026-06-30).
+covered is v0.1.0 (2026-05-25) through v0.83.0 (2026-06-30).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 

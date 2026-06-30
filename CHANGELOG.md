@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.83.0] — 2026-06-30
+
 ### Added
 - `codec.dotenv.parse` / `codec.dotenv.stringify` — pure dotenv
   parser/serializer (round-trip-safe), and `runtime.env.load(path, { override? })`
