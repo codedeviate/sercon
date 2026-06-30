@@ -122,6 +122,9 @@ func docModelArg(vm *goja.Runtime, arg goja.Value) []string {
 			if arr, ok := pr.([]any); ok {
 				out := make([]string, len(arr))
 				for i, e := range arr {
+					if e == nil { // JS null/undefined → empty paragraph, not "<nil>"
+						continue
+					}
 					out[i] = fmt.Sprintf("%v", e)
 				}
 				return out

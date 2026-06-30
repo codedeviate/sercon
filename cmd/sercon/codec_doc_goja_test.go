@@ -75,3 +75,19 @@ func TestDocGoja_WriteReadOnlyThrows(t *testing.T) {
 		t.Fatal("write to .doc dest must throw (read-only)")
 	}
 }
+
+func TestDocGoja_NullParagraphNoNilLeak(t *testing.T) {
+	vm := docVM(t)
+	// A JS null paragraph element must not leak Go's "<nil>" into the output.
+	v, err := vm.RunString(`
+		const out = doc.write({ paragraphs: ["a", null, "b"] }, { format: "rtf" });
+		const back = doc.read(out.bytes, { format: "rtf" });
+		back.paragraphs.join("|");
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.String(); got == "a|<nil>|b" || got != "a|b" {
+		t.Fatalf("got %q (want \"a|b\" — null paragraph dropped, no <nil> leak)", got)
+	}
+}
