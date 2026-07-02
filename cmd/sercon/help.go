@@ -620,7 +620,8 @@ const r = await net.http.request("POST", "https://example/v1", {
   username: "user", password: "pass",   // basic auth
 });
 if (r.ok) runtime.log(r.body); else runtime.log("HTTP", r.status);`)
-	note("4xx/5xx are normal responses (r.ok = status in [200,400)); transport errors and timeouts throw. retry never re-attempts 4xx. follow:false surfaces 3xx directly.")
+	fmt.Println("    // multipart upload: net.http.request(\"POST\", url, { multipart: [{ name, value }, { name, filename, content, type }] })")
+	note("4xx/5xx are normal responses (r.ok = status in [200,400)); transport errors and timeouts throw. retry never re-attempts 4xx. follow:false surfaces 3xx directly. body also accepts Uint8Array/ArrayBuffer; body and multipart are mutually exclusive.")
 
 	header(30, "JWT — sign / view / validate (crypto.jwt.*)")
 	code(`// HMAC — opts.algorithm defaults to HS256.

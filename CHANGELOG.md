@@ -8,6 +8,9 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- `net.http.request` now accepts a binary `body` (`Uint8Array` / `ArrayBuffer`, sent byte-for-byte) and a `multipart` option for `multipart/form-data` uploads (text fields and file parts, assembled in-process; sets the `Content-Type` header). `body` and `multipart` are mutually exclusive.
+
 ## [0.83.0] — 2026-06-30
 
 ### Added

@@ -1268,14 +1268,19 @@ rejects** — it resolves with the status set; only transport-level failures
   non-UTF-8 payloads). `post` sends `body` verbatim and sets **no**
   `Content-Type` — add one via `request` if the server needs it.
 - `net.http.request(method, url, opts?)` — the full client. `opts` is
-  `{ headers?, body?, timeout? (ms, default 30000), retry? (extra attempts,
-  default 0), follow? (default true), username?, password? }`. `retry`
-  applies **only** to transport errors and 5xx, with linear backoff capped at
-  1 s; a malformed method/URL rejects immediately and is not retried.
-  `follow: false` stops at the first 3xx. Resolves to `{ status, ok, headers,
-  body, bodyBytes, url }` — `ok` is `status` in `[200, 400)`; `headers` is a
-  lower-cased name→value map (last value wins); `url` is the final URL after
-  redirects.
+  `{ headers?, body?, multipart?, timeout? (ms, default 30000), retry?
+  (extra attempts, default 0), follow? (default true), username?,
+  password? }`. `retry` applies **only** to transport errors and 5xx, with
+  linear backoff capped at 1 s; a malformed method/URL rejects immediately
+  and is not retried. `follow: false` stops at the first 3xx. Resolves to
+  `{ status, ok, headers, body, bodyBytes, url }` — `ok` is `status` in
+  `[200, 400)`; `headers` is a lower-cased name→value map (last value
+  wins); `url` is the final URL after redirects. `net.http.request` also
+  accepts a binary `body` (`Uint8Array`/`ArrayBuffer`, sent byte-for-byte)
+  and a `multipart` array for `multipart/form-data` uploads — each part is
+  either a text field (`{ name, value }`) or a file (`{ name, filename,
+  content, type? }`); `body` and `multipart` are mutually exclusive, and
+  `multipart` sets the `Content-Type` header automatically.
 
 #### 5.7.2 One-shot probes (`net.probe`)
 
@@ -7225,23 +7230,27 @@ const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1
 #### 17.8.16 net.http.request
 
 ```
-request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
+request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
 ```
 
-Full HTTP client: method, url, opts {headers, body, timeout, retry, follow, username, password}. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
+Full HTTP client: method, url, opts {headers, body|multipart, timeout, retry, follow, username, password}. body is string|Uint8Array|ArrayBuffer; multipart builds a multipart/form-data upload. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
 
 **Parameters**
 
 - `method` *(string)* — HTTP method (GET, POST, PUT, …); upper-cased internally. Required.
 - `url` *(string)* — Absolute request URL. Required.
-- `opts` *({ headers?: Record<string, string>, body?: string, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }, optional)* — headers sets request headers; body is the raw request body; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth.
+- `opts` *({ headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }, optional)* — headers sets request headers; body is the request body (a string is sent as UTF-8, a Uint8Array/ArrayBuffer byte-for-byte); multipart builds a multipart/form-data body from an array of parts (a part with a filename is a file part whose content is string|Uint8Array|ArrayBuffer and type sets its Content-Type, default application/octet-stream; any other part is a text field carrying value) — body and multipart are mutually exclusive, and multipart sets the Content-Type header with its boundary, overriding any caller-set content-type; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth.
 
 **Returns:** Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text (UTF-8); bodyBytes is the raw, undecoded response bytes (pair with text.charset.decode for non-UTF-8 content like ISO-8859-1); url is the final URL after redirects.
 
 **Throws:** Rejects on transport errors (DNS, connection refused, TLS) or context deadline, and after exhausting retries on a persistent transport error / 5xx. A malformed method or URL rejects immediately (not retried). 4xx/5xx that succeed at the transport level resolve normally.
 
 ```ts
-const r = await net.http.request("POST", "https://api.example.com", { headers: { "content-type": "application/json" }, body: "{}", retry: 2 });
+const bytes = await fs.readBytes("logo.png");
+const r = await net.http.request("POST", "https://api.example.com/upload", { multipart: [
+  { name: "title", value: "hi" },
+  { name: "file", filename: "logo.png", content: bytes, type: "image/png" },
+] });
 ```
 
 #### 17.8.17 net.icmp.open
