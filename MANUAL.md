@@ -4945,6 +4945,213 @@ by `widgetCommonId` and `columnId`, but there is **no lane or custom-field
 filter**. So the pattern is always: *narrow by column on the server, then
 filter by `laneId` or a custom-field value in memory.*
 
+#### 16.2.6 Recipes
+
+Task-oriented snippets. Each assumes `const favro = client();` (see §16.2 for
+config). Signatures are in the §17 reference; the shapes below are the Favro
+API's own.
+
+##### 16.2.6.1 Filter a column by lane
+
+The one everyone hits: you want the cards in one status column *for a single
+product*, where products are lanes. There is no server-side lane filter, so
+narrow by column, then filter by `laneId` in memory.
+
+```ts
+const widgetCommonId = "your-board-common-id";
+
+// name → columnId
+const cols = await favro.columns.listAll({ widgetCommonId });
+const columnId = cols.find((c) => c.name === "Ready for release")?.columnId;
+if (!columnId) throw new Error("no such column");
+
+// name → laneId (lanes live on the widget, not the card)
+const widget = await favro.widgets.get(widgetCommonId);
+const laneId = widget.lanes?.find((l) => l.name === "Product X")?.laneId;
+if (!laneId) throw new Error("no such lane — is 'lanes' enabled on this board?");
+
+// narrow by column server-side, filter by lane in memory
+const inColumn = await favro.cards.listAll({ widgetCommonId, columnId });
+const productX = inColumn.filter((c) => c.laneId === laneId);
+```
+
+**Notes**
+- `laneId` is only on the card when the widget has lanes enabled; if it's
+  `undefined`, your "lanes" may actually be a custom-field grouping — see
+  16.2.6.3.
+- `columnId`/`laneId` are per-widget, so they're meaningful because you listed
+  by `widgetCommonId`.
+
+##### 16.2.6.2 Resolve a name to an id
+
+Columns, lanes, and custom fields are addressed by id but shown by name. A tiny
+resolver keeps recipes readable.
+
+```ts
+async function columnIdByName(widgetCommonId: string, name: string): Promise<string> {
+  const cols = await favro.columns.listAll({ widgetCommonId });
+  const col = cols.find((c) => c.name === name);
+  if (!col) throw new Error(`no column named "${name}" on ${widgetCommonId}`);
+  return col.columnId;
+}
+```
+
+**Notes**
+- Same shape works for lanes (`widget.lanes`) and custom fields
+  (`favro.customFields.listAll()` → match `.name`).
+
+##### 16.2.6.3 Filter by a custom-field value
+
+When "product" is a single-select custom field rather than a lane, filter on
+the card's `customFields` entry. Select values are *item ids*, not names.
+
+```ts
+const fields = await favro.customFields.listAll();
+const field = fields.find((f) => f.name === "Product");
+if (!field) throw new Error("no 'Product' custom field");
+
+// Resolve the option's item id from the field definition, then match cards.
+// (The item id is what a select card value contains.)
+const optionItemId = "the-option-item-id-for-Product-X";
+
+const productX = inColumn.filter((c) =>
+  (c.customFields ?? []).some(
+    (v) => v.customFieldId === field.customFieldId && (v.value ?? []).includes(optionItemId),
+  ),
+);
+```
+
+**Notes**
+- A select field's `value` is an array of selected item ids. To turn the
+  option *name* ("Product X") into its item id, read the field definition via
+  `favro.customFields.get(field.customFieldId)` and match its items array — the
+  exact item-array field name follows Favro's custom-field schema, so confirm
+  it against a live field before relying on it.
+
+##### 16.2.6.4 Find a card by its human number
+
+Use the `cardSequentialId` query param (note: the field on the card is
+`sequentialId`, but the filter is `cardSequentialId`).
+
+```ts
+const page = await favro.cards.list({ cardSequentialId: 1234 });
+const card = page.entities[0];
+```
+
+##### 16.2.6.5 List a whole collection vs one board
+
+`cards.list` accepts any one scope. Use `collectionId` to sweep every board in
+a collection, or `widgetCommonId` for a single board.
+
+```ts
+const wholeCollection = await favro.cards.listAll({ collectionId: "col-common-id" });
+const oneBoard        = await favro.cards.listAll({ widgetCommonId: "w-common-id" });
+```
+
+##### 16.2.6.6 Create a card
+
+```ts
+const created = await favro.cards.create({
+  name: "Ship the release notes",
+  widgetCommonId: "w-common-id",
+  columnId: "col-id",           // optional: drop it to land in the default column
+});
+```
+
+##### 16.2.6.7 Move a card between columns
+
+Update the placement's `columnId` (and `laneId` if the board has lanes). Use the
+per-widget `cardId`, not `cardCommonId`.
+
+```ts
+await favro.cards.update("card-id-on-this-widget", {
+  widgetCommonId: "w-common-id",
+  columnId: "ready-for-release-col-id",
+});
+```
+
+##### 16.2.6.8 Comment on a card and attach a file
+
+Comments and attachments hang off the card; comments filter by `cardCommonId`.
+
+```ts
+await favro.comments.create({ cardCommonId: "card-common-id", comment: "Reviewed ✔" });
+
+await favro.cards.uploadAttachment("card-id", {
+  filename: "notes.txt",
+  content: "release checklist…",   // string | Uint8Array | ArrayBuffer
+  type: "text/plain",
+});
+```
+
+##### 16.2.6.9 Add a dependency between cards
+
+```ts
+await favro.cards.dependencies.add("card-id", {
+  cardCommonId: "the-other-card-common-id",
+  type: "blockedBy",
+});
+```
+
+##### 16.2.6.10 Set up auth and verify it
+
+Put credentials in a `.env` and run with `--env-file`; a cheap probe confirms
+the pairing without needing a known object.
+
+```ts
+// sercon --env-file .env script.ts
+// .env: FAVRO_EMAIL=..., FAVRO_API_TOKEN=..., FAVRO_ORGANIZATION_ID=...
+const favro = client();               // reads FAVRO_* from the environment
+try {
+  const orgs = await favro.organizations.listAll();   // user-level; no org id needed
+  runtime.log("auth OK —", orgs.length, "organizations");
+} catch (e: any) {
+  runtime.assert.ok(e.status !== 401, "credentials rejected (401)");
+  throw e;
+}
+```
+
+##### 16.2.6.11 Receive a webhook
+
+Register an outgoing webhook, then handle its POST with `server.http`.
+
+```ts
+await favro.webhooks.create({
+  name: "card-moves",
+  url: "https://your-host.example/favro",
+  options: { /* Favro webhook options */ },
+});
+
+const srv = await server.http.listen({ port: 8080, routes: {
+  "POST /favro": (q: any, r: any) => {
+    const event = JSON.parse(q.body);
+    runtime.log("favro event:", event.action ?? event.type);
+    return r.status(200).text("ok");
+  },
+}});
+```
+
+**Notes**
+- Favro sends webhook payloads as JSON POST bodies; `q.body` is the raw string
+  (parse it). Header values on `q.headers` are arrays.
+
+##### 16.2.6.12 Read a lot of cards without tripping the rate limit
+
+For large sweeps prefer `iterate` (lazy, page-by-page) over `listAll` (buffers
+everything), and tune `retry` on the client. Favro's limits are per-hour and
+plan-dependent; a wide `listAll` fans out many page requests and can hit `429`.
+
+```ts
+const favro = client({ retry: { max: 4, maxWaitMs: 60000 } });
+for await (const card of favro.cards.iterate({ widgetCommonId: "w-common-id" })) {
+  // process one card at a time; pages are fetched as you go
+}
+```
+
+**Notes**
+- A `429` is retried automatically within the `retry` bounds (§16.2.3); set
+  `retry: false` to handle it yourself.
+
 ## 17. Binding reference (generated)
 
 The per-function reference below is generated from the structured binding
