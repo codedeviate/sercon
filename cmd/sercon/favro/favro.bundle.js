@@ -107,13 +107,6 @@ async function request(ctx, method, path, opts = {}) {
   }
 }
 
-// cmd/sercon/favro/resources/organizations.ts
-function organizations(ctx) {
-  return {
-    get: async (id) => (await request(ctx, "GET", `/organizations/${encodeURIComponent(id)}`, { orgScoped: false })).body
-  };
-}
-
 // cmd/sercon/favro/core/pagination.ts
 var BACKEND_HEADER = "x-favro-backend-identifier";
 async function fetchPage(ctx, path, query, page, requestId, backendId, orgScoped = true) {
@@ -192,6 +185,12 @@ function collection(ctx, d) {
   };
 }
 
+// cmd/sercon/favro/resources/organizations.ts
+function organizations(ctx) {
+  const c = collection(ctx, { path: "/organizations", orgScoped: false });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update };
+}
+
 // cmd/sercon/favro/resources/cards.ts
 var CARD_SCOPES = ["widgetCommonId", "collectionId", "cardCommonId", "cardSequentialId", "todoList"];
 function validateCardList(params) {
@@ -218,6 +217,63 @@ function collections(ctx) {
   return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
 }
 
+// cmd/sercon/favro/resources/widgets.ts
+function widgets(ctx) {
+  const c = collection(ctx, { path: "/widgets" });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
+}
+
+// cmd/sercon/favro/resources/columns.ts
+function requireParam(name) {
+  return (params) => {
+    if (params[name] === void 0) throw new Error(`favro columns.list: ${name} is required`);
+  };
+}
+function columns(ctx) {
+  const c = collection(ctx, { path: "/columns", validateList: requireParam("widgetCommonId") });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
+}
+
+// cmd/sercon/favro/resources/tasks.ts
+function tasks(ctx) {
+  const c = collection(ctx, {
+    path: "/tasks",
+    validateList: (p) => {
+      if (p.cardCommonId === void 0) throw new Error("favro tasks.list: cardCommonId is required");
+    }
+  });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
+}
+
+// cmd/sercon/favro/resources/tasklists.ts
+function tasklists(ctx) {
+  const c = collection(ctx, {
+    path: "/tasklists",
+    validateList: (p) => {
+      if (p.cardCommonId === void 0) throw new Error("favro tasklists.list: cardCommonId is required");
+    }
+  });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
+}
+
+// cmd/sercon/favro/resources/tags.ts
+function tags(ctx) {
+  const c = collection(ctx, { path: "/tags" });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
+}
+
+// cmd/sercon/favro/resources/groups.ts
+function groups(ctx) {
+  const c = collection(ctx, { path: "/groups" });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
+}
+
+// cmd/sercon/favro/resources/users.ts
+function users(ctx) {
+  const c = collection(ctx, { path: "/users" });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get };
+}
+
 // cmd/sercon/favro/index.ts
 function resolveRetry(r) {
   if (r === false) return false;
@@ -237,7 +293,14 @@ function client(overrides = {}) {
   return {
     organizations: organizations(ctx),
     cards: cards(ctx),
-    collections: collections(ctx)
+    collections: collections(ctx),
+    widgets: widgets(ctx),
+    columns: columns(ctx),
+    tasks: tasks(ctx),
+    tasklists: tasklists(ctx),
+    tags: tags(ctx),
+    groups: groups(ctx),
+    users: users(ctx)
   };
 }
 export {

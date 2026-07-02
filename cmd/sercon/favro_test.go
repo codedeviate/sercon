@@ -215,6 +215,72 @@ func TestFavro_Pagination(t *testing.T) {
 	}
 }
 
+func TestFavro_ScopedListValidation(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o" });
+		async function throws(fn: () => Promise<any>, needle: string) {
+			try { await fn(); return false; } catch (e) { return String(e).includes(needle); }
+		}
+		runtime.assert.ok(await throws(() => c.columns.list({}), "widgetCommonId"), "columns needs widgetCommonId");
+		runtime.assert.ok(await throws(() => c.tasks.list({}), "cardCommonId"), "tasks needs cardCommonId");
+		runtime.assert.ok(await throws(() => c.tasklists.list({}), "cardCommonId"), "tasklists needs cardCommonId");
+	`)
+	if err != nil {
+		t.Fatalf("scoped list validation: %v", err)
+	}
+}
+
+func TestFavro_TagsCrudRoundtrip(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		const seen: any[] = [];
+		const srv = await server.http.listen({ port: 38314, routes: {
+			"POST /tags": (q: any, r: any) => { seen.push({ m: "POST", body: q.body }); return r.status(201).json({ tagId: "t1", name: "urgent" }); },
+			"PUT /tags/t1": (q: any, r: any) => { seen.push({ m: "PUT", body: q.body }); return r.json({ tagId: "t1", name: "URGENT" }); },
+			"DELETE /tags/t1": (q: any, r: any) => { seen.push({ m: "DELETE" }); return r.status(204).text(""); },
+		}});
+		try {
+			const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o", baseUrl: "http://127.0.0.1:38314" });
+			const created = await c.tags.create({ name: "urgent" });
+			runtime.assert.equal(created.tagId, "t1", "create parsed");
+			runtime.assert.equal(JSON.parse(seen[0].body).name, "urgent", "create body sent");
+			const updated = await c.tags.update("t1", { name: "URGENT" });
+			runtime.assert.equal(updated.name, "URGENT", "update parsed");
+			await c.tags.remove("t1");
+			runtime.assert.equal(seen[2].m, "DELETE", "remove issued DELETE");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("tags crud: %v", err)
+	}
+}
+
+func TestFavro_OrganizationsListOmitsOrgHeader(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		let sawOrgHeader = true;
+		const srv = await server.http.listen({ port: 38319, routes: {
+			"GET /organizations": (q: any, r: any) => {
+				sawOrgHeader = !!(q.headers["organizationid"] && q.headers["organizationid"].length);
+				return r.json({ limit: 100, page: 0, pages: 1, requestId: "r", entities: [{ organizationId: "o1" }] });
+			},
+		}});
+		try {
+			const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o1", baseUrl: "http://127.0.0.1:38319" });
+			const orgs = await c.organizations.listAll();
+			runtime.assert.equal(orgs.length, 1, "organizations listed");
+			runtime.assert.ok(!sawOrgHeader, "organizations.listAll must NOT send the organizationId header (user-level)");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("organizations list org-header: %v", err)
+	}
+}
+
 func TestFavro_CardsListRequiresScope(t *testing.T) {
 	eng := newFavroEngine(t)
 	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `

@@ -1,8 +1,9 @@
-import { ClientCtx, request } from "../core/http";
+import { ClientCtx } from "../core/http";
+import { collection } from "../core/resource";
 
-// organizations is user-level: the organizationId header is NOT sent.
+// organizations is user-level: orgScoped:false means the organizationId
+// header is never sent for this group.
 export function organizations(ctx: ClientCtx) {
-  return {
-    get: async (id: string) => (await request(ctx, "GET", `/organizations/${encodeURIComponent(id)}`, { orgScoped: false })).body,
-  };
+  const c = collection(ctx, { path: "/organizations", orgScoped: false });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update };
 }

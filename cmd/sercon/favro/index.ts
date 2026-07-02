@@ -4,6 +4,13 @@ import { ClientCtx, RetryConfig } from "./core/http";
 import { organizations } from "./resources/organizations";
 import { cards } from "./resources/cards";
 import { collections } from "./resources/collections";
+import { widgets } from "./resources/widgets";
+import { columns } from "./resources/columns";
+import { tasks } from "./resources/tasks";
+import { tasklists } from "./resources/tasklists";
+import { tags } from "./resources/tags";
+import { groups } from "./resources/groups";
+import { users } from "./resources/users";
 
 export interface FavroConfig {
   email?: string;
@@ -34,5 +41,12 @@ export function client(overrides: FavroConfig = {}) {
     organizations: organizations(ctx),
     cards: cards(ctx),
     collections: collections(ctx),
+    widgets: widgets(ctx),
+    columns: columns(ctx),
+    tasks: tasks(ctx),
+    tasklists: tasklists(ctx),
+    tags: tags(ctx),
+    groups: groups(ctx),
+    users: users(ctx),
   };
 }
