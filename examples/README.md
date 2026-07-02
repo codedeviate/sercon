@@ -106,6 +106,7 @@ Or pick individual scripts:
 | `paymentproviders-svea.ts` | Bundled `paymentproviders` — `sveacheckout2` (Svea Checkout) create over a mock that verifies the SHA512 signature; live check self-skips without `SCO_*`. |
 | `paymentproviders-qliro.ts` | Bundled `paymentproviders` — `qlirov2` (Qliro One) create over a mock checking the `Qliro` auth header; live check self-skips without `QLIRO_*`. |
 | `paymentproviders-swedbankpay.ts` | Bundled `paymentproviders` — `swedbankpayv3`/`swedbankpayv2` (Bearer + HAL operations): create a payment order, then `capturePayment` resolves the `capture` operation href and POSTs to it. Live check self-skips without `SWEDBANKPAY_*`. |
+| `favro.ts` | Favro API client (`favro` library): pagination, card CRUD, attachment upload — self-tested against a local mock |
 | `web-html.ts` | `web.html` — lenient HTML parse with CSS (`find`/`findAll`) + XPath (`xpath`/`xpathAll`) and chainable nodes (`text`/`attr`/…). Offline always; live `web.html.load` self-skips without a network. |
 | `sheet.ts` | `codec.sheet.read` / `codec.sheet.write` — build a workbook, write XLSX + CSV, read both back, assert typed cells (XLSX numbers/bools typed; CSV strings). Fully offline and self-contained. |
 | `sheet-legacy.ts` | `codec.sheet` legacy read-only formats — read a SYLK (.slk) document, assert rows, convert up to XLSX, assert round-trip; uses `codec.sheet.formats()` to verify xls/slk/dif are read-only. Fully offline and self-contained. |

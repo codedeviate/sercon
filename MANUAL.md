@@ -4793,6 +4793,118 @@ await api.capturePayment(po, {
 });
 ```
 
+### 16.2 `favro`
+
+A TypeScript client for the [Favro](https://favro.com) API, compiled into the
+sercon binary and importable by scripts — no install needed. Like
+`paymentproviders`, it is **not** a reserved global; you `import` it:
+
+```ts
+import { client } from "favro";
+const favro = client();                    // reads FAVRO_* from the environment
+const cards = await favro.cards.listAll({ widgetCommonId: "w1" });
+```
+
+`client(overrides?)` is **synchronous** and throws a plain `Error` (not
+`FavroError`) if `email` or `apiToken` is missing. Config precedence is
+`overrides.X ?? env(FAVRO_X)`:
+
+| Field | Env var | Notes |
+| --- | --- | --- |
+| `email` | `FAVRO_EMAIL` | required |
+| `apiToken` (or `password`) | `FAVRO_API_TOKEN` | required; sent as `Authorization: Basic base64(email:apiToken)` |
+| `organizationId` | `FAVRO_ORGANIZATION_ID` | fixed on the client; auto-sent as the `organizationId` header on every org-scoped route |
+| `baseUrl` | `FAVRO_BASE_URL` | default `https://favro.com/api/v1` (Favro has one base URL, no test/prod split) |
+| `retry` | — | `{ max?, maxWaitMs? }` (defaults `max: 2`, `maxWaitMs: 30000`) or `false` to disable 429 retry |
+
+#### 16.2.1 Resource groups
+
+The returned client exposes thirteen resource groups. Most expose the full
+CRUD + pagination surface (`list`/`listAll`/`iterate`/`get`/`create`/`update`/
+`remove`); a few expose a narrower subset because the underlying Favro API
+doesn't support the rest:
+
+| Group | Verbs | Notes |
+| --- | --- | --- |
+| `organizations` | list, listAll, iterate, get, create, update | user-level — `organizationId` is never sent for this group |
+| `users` | list, listAll, iterate, get | read-only |
+| `collections` | full | |
+| `widgets` | full | |
+| `columns` | full | `list`/`listAll`/`iterate` require `widgetCommonId` |
+| `cards` | full + `dependencies` + `activities` + `uploadAttachment` | `list` requires one of `widgetCommonId`/`collectionId`/`cardCommonId`/`cardSequentialId`/`todoList` |
+| `comments` | full + `uploadAttachment` | `list` requires `cardCommonId` |
+| `tasks` | full | `list` requires `cardCommonId` |
+| `tasklists` | full | `list` requires `cardCommonId` |
+| `tags` | full | |
+| `customFields` | list, listAll, iterate, get | read-only |
+| `groups` | full | |
+| `webhooks` | list, listAll, iterate, create, remove | no `get`/`update` |
+
+`cards.dependencies` adds `list(cardId)` / `add(cardId, body)` /
+`set(cardId, body)` / `update(cardId, depId, body)` / `remove(cardId, depId)` /
+`removeAll(cardId)`; `cards.activities` adds `list(cardId, params?)` returning
+one page of activity entries.
+
+#### 16.2.2 Pagination
+
+Every listable group returns three ways to walk results, all sharing the same
+scoped-list validation:
+
+- **`list(params?)`** — one page envelope: `{ entities, page, pages, requestId,
+  limit }`.
+- **`listAll(params?)`** — fetches every page and concatenates `entities`.
+- **`iterate(params?)`** — an `AsyncIterableIterator` that yields entities
+  page-by-page (`for await (const c of favro.collections.iterate())`).
+
+Subsequent pages reuse the `requestId` from page 0 and pin to the same Favro
+backend process via the `X-Favro-Backend-Identifier` response/request header —
+Favro's own pagination contract for consistent results across pages.
+
+#### 16.2.3 Retry and errors
+
+A `429` response is retried automatically (bounded): the wait comes from
+`Retry-After` (seconds) or `X-RateLimit-Reset` (a UTC timestamp), falling back
+to 1s, and retry stops once `retry.max` attempts are used or the computed wait
+exceeds `retry.maxWaitMs`. Pass `retry: false` on `client()` to disable it
+entirely.
+
+Any non-2xx response (after retry is exhausted, if applicable) throws a
+`FavroError`:
+
+```ts
+class FavroError extends Error {
+  status: number;                 // the HTTP status
+  body: unknown;                  // parsed JSON error body (or raw string)
+  requestId?: string;             // from the response body, if present
+  rateLimit?: {                   // parsed X-RateLimit-* / Retry-After headers
+    limit?: number;
+    remaining?: number;
+    reset?: string;
+    retryAfter?: number;
+  };
+}
+```
+
+#### 16.2.4 Attachments
+
+`cards.uploadAttachment(cardId, input)` and
+`comments.uploadAttachment(commentId, input)` POST a
+`multipart/form-data` body via `net.http.request`'s `multipart` option:
+
+```ts
+await favro.cards.uploadAttachment("card123", {
+  filename: "spec.txt",
+  content: "hello",         // string | Uint8Array | ArrayBuffer
+  type: "text/plain",       // optional
+});
+```
+
+**Caveat:** Favro's exact multipart field name for the file part is
+unconfirmed against a live account. The library defaults to `field: "file"`;
+pass `input.field` to override it if your Favro instance expects a different
+name. Verify against a real (non-mock) upload before relying on this in
+production.
+
 ## 17. Binding reference (generated)
 
 The per-function reference below is generated from the structured binding

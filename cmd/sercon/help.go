@@ -1313,14 +1313,15 @@ const html = await fs.readText("report/index.html");
 await fs.remove("report"); // file or dir tree; no error if absent`)
 	note("fs.writeText/writeBytes fail if the parent directory is missing (Node-like) — fs.mkdir is the mkdir -p. readBytes returns a Uint8Array; stat gives { size, isDir, modifiedMs }. See examples/scripts/fs-report.ts for a screenshot report built on these.")
 
-	header(68, "Bundled payments library (paymentproviders)")
+	header(68, "Bundled libraries (paymentproviders, favro)")
 	code(`// Compiled into the binary — import it directly, no install.
 import { kcov3 } from "paymentproviders";
 const api = kcov3.client();                 // KCO_MERCHANT_ID/KCO_SHARED_SECRET/KCO_ENV from env
 const order = await api.getPayment(orderId);
 await api.capturePayment(orderId, { amount: order.order_amount });
-await api.refundPayment(orderId, { amount: 500 });`)
-	note("kcov3 (Kustom), netsv1 (Nets), sveacheckout2 (Svea), qlirov2 (Qliro), swedbankpayv2/v3 (SwedbankPay, HAL operations). Non-2xx throws PaymentError{provider,status,body}. Versioned namespaces. See examples/scripts/paymentproviders-*.ts.")
+await api.refundPayment(orderId, { amount: 500 });
+import { client } from "favro";  // Favro board/ticket API (pagination, CRUD, attachments)`)
+	note("kcov3 (Kustom), netsv1 (Nets), sveacheckout2 (Svea), qlirov2 (Qliro), swedbankpayv2/v3 (SwedbankPay, HAL operations). Non-2xx throws PaymentError{provider,status,body}. Versioned namespaces. See examples/scripts/paymentproviders-*.ts. favro: organizations/collections/widgets/columns/cards/comments/tasks/tasklists/tags/customFields/groups/webhooks, list/listAll/iterate pagination, bounded 429 retry, FavroError. See examples/scripts/favro.ts.")
 
 	header(69, "Fetch & parse web content (web)")
 	code(`// Feeds (RSS/Atom/JSON), sitemaps, and lenient HTML — from a string or URL.
