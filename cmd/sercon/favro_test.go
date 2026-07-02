@@ -179,3 +179,52 @@ func TestFavro_RetryFalseThrows429(t *testing.T) {
 		t.Fatalf("retry:false 429: %v", err)
 	}
 }
+
+func TestFavro_Pagination(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		const seen: any[] = [];
+		const srv = await server.http.listen({ port: 38313, routes: {
+			"GET /collections": (q: any, r: any) => {
+				seen.push({ page: (q.query.page || [])[0], requestId: (q.query.requestId || [])[0], backend: (q.headers["x-favro-backend-identifier"] || [])[0] });
+				const page = Number((q.query.page || ["0"])[0]);
+				if (page === 0) {
+					return r.header("X-Favro-Backend-Identifier", "backend-9").json({ limit: 100, page: 0, pages: 2, requestId: "req-1", entities: [{ collectionId: "a" }] });
+				}
+				return r.json({ limit: 100, page: 1, pages: 2, requestId: "req-1", entities: [{ collectionId: "b" }] });
+			},
+		}});
+		try {
+			const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o", baseUrl: "http://127.0.0.1:38313" });
+			const all = await c.collections.listAll();
+			runtime.assert.equal(all.length, 2, "listAll flattened both pages");
+			runtime.assert.equal(all[0].collectionId + all[1].collectionId, "ab", "order preserved");
+			// second request echoed page + requestId and the backend header
+			runtime.assert.equal(seen[1].page, "1", "page=1 echoed");
+			runtime.assert.equal(seen[1].requestId, "req-1", "requestId echoed");
+			runtime.assert.equal(seen[1].backend, "backend-9", "backend identifier pinned");
+
+			const got: string[] = [];
+			for await (const col of c.collections.iterate()) got.push(col.collectionId);
+			runtime.assert.equal(got.join(""), "ab", "iterate yielded both pages");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("pagination: %v", err)
+	}
+}
+
+func TestFavro_CardsListRequiresScope(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o" });
+		let threw = false;
+		try { await c.cards.list({}); } catch (e) { threw = String(e).includes("is required"); }
+		runtime.assert.ok(threw, "cards.list without a scope throws");
+	`)
+	if err != nil {
+		t.Fatalf("cards scope: %v", err)
+	}
+}

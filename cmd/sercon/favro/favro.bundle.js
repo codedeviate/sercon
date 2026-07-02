@@ -114,11 +114,108 @@ function organizations(ctx) {
   };
 }
 
-// cmd/sercon/favro/resources/cards.ts
-function cards(ctx) {
+// cmd/sercon/favro/core/pagination.ts
+var BACKEND_HEADER = "x-favro-backend-identifier";
+async function fetchPage(ctx, path, query, page, requestId, backendId) {
+  const q = { ...query };
+  if (requestId !== void 0) q.requestId = requestId;
+  if (page !== void 0) q.page = page;
+  const headers = {};
+  if (backendId) headers["X-Favro-Backend-Identifier"] = backendId;
+  const res = await request(ctx, "GET", path, { query: q, headers });
+  const b = res.body || {};
   return {
-    get: async (id, params = {}) => (await request(ctx, "GET", `/cards/${encodeURIComponent(id)}`, { query: params })).body
+    page: {
+      entities: b.entities || [],
+      page: b.page ?? 0,
+      pages: b.pages ?? 1,
+      requestId: b.requestId,
+      limit: b.limit ?? 100
+    },
+    backendId: res.headers[BACKEND_HEADER] || backendId
   };
+}
+async function listAll(ctx, path, query) {
+  const first = await fetchPage(ctx, path, query);
+  let out = first.page.entities.slice();
+  const { pages, requestId } = first.page;
+  const backendId = first.backendId;
+  for (let p = 1; p < pages; p++) {
+    const next = await fetchPage(ctx, path, query, p, requestId, backendId);
+    out = out.concat(next.page.entities);
+  }
+  return out;
+}
+async function* iterate(ctx, path, query) {
+  const first = await fetchPage(ctx, path, query);
+  for (const e of first.page.entities) yield e;
+  const { pages, requestId } = first.page;
+  const backendId = first.backendId;
+  for (let p = 1; p < pages; p++) {
+    const next = await fetchPage(ctx, path, query, p, requestId, backendId);
+    for (const e of next.page.entities) yield e;
+  }
+}
+
+// cmd/sercon/favro/core/resource.ts
+function collection(ctx, d) {
+  const orgScoped = d.orgScoped !== false;
+  const idPath = (id) => `${d.path}/${encodeURIComponent(id)}`;
+  const check = (params) => {
+    if (d.validateList) d.validateList(params);
+  };
+  return {
+    async list(params = {}) {
+      check(params);
+      return (await fetchPage(ctx, d.path, params)).page;
+    },
+    listAll(params = {}) {
+      check(params);
+      return listAll(ctx, d.path, params);
+    },
+    iterate(params = {}) {
+      check(params);
+      return iterate(ctx, d.path, params);
+    },
+    async get(id, params = {}) {
+      return (await request(ctx, "GET", idPath(id), { query: params, orgScoped })).body;
+    },
+    async create(body) {
+      return (await request(ctx, "POST", d.path, { body, orgScoped })).body;
+    },
+    async update(id, body) {
+      return (await request(ctx, "PUT", idPath(id), { body, orgScoped })).body;
+    },
+    async remove(id) {
+      await request(ctx, "DELETE", idPath(id), { orgScoped });
+    }
+  };
+}
+
+// cmd/sercon/favro/resources/cards.ts
+var CARD_SCOPES = ["widgetCommonId", "collectionId", "cardCommonId", "cardSequentialId", "todoList"];
+function validateCardList(params) {
+  if (!CARD_SCOPES.some((k) => params[k] !== void 0)) {
+    throw new Error("favro cards.list: one of " + CARD_SCOPES.join(", ") + " is required");
+  }
+}
+function cards(ctx) {
+  const c = collection(ctx, { path: "/cards", validateList: validateCardList });
+  return {
+    list: c.list,
+    listAll: c.listAll,
+    iterate: c.iterate,
+    get: c.get,
+    create: c.create,
+    update: c.update,
+    remove: c.remove
+  };
+}
+
+// cmd/sercon/favro/resources/collections.ts
+function collections(ctx) {
+  const c = collection(ctx, { path: "/collections" });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
 }
 
 // cmd/sercon/favro/index.ts
@@ -139,7 +236,8 @@ function client(overrides = {}) {
   };
   return {
     organizations: organizations(ctx),
-    cards: cards(ctx)
+    cards: cards(ctx),
+    collections: collections(ctx)
   };
 }
 export {

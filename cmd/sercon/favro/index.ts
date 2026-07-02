@@ -3,6 +3,7 @@ import { envGet, resolveBaseUrl } from "./core/config";
 import { ClientCtx, RetryConfig } from "./core/http";
 import { organizations } from "./resources/organizations";
 import { cards } from "./resources/cards";
+import { collections } from "./resources/collections";
 
 export interface FavroConfig {
   email?: string;
@@ -32,5 +33,6 @@ export function client(overrides: FavroConfig = {}) {
   return {
     organizations: organizations(ctx),
     cards: cards(ctx),
+    collections: collections(ctx),
   };
 }
