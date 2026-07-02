@@ -86,7 +86,6 @@ export async function request(ctx: ClientCtx, method: string, path: string, opts
     bodyStr = JSON.stringify(opts.body);
   }
 
-  const maxAttempts = ctx.retry === false ? 1 : ctx.retry.max + 1;
   let attempt = 0;
   for (;;) {
     const res = await net.http.request(method, url, { headers, body: bodyStr, follow: true });

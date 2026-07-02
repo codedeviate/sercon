@@ -1,8 +1,8 @@
 // Demonstrates the bundled `favro` library. Runs fully offline against a local
 // mock emulating the Favro API (auth, pagination, a card create/get, and an
-// attachment upload). If FAVRO_EMAIL + FAVRO_API_TOKEN + FAVRO_ORGANIZATION_ID
-// are set (e.g. via `sercon --env-file .env`), it ALSO does a live probe to
-// prove the credential pairing.
+// attachment upload). If FAVRO_EMAIL + FAVRO_API_TOKEN are set (e.g. via
+// `sercon --env-file .env`), it ALSO does a live probe to prove the credential
+// pairing.
 import { client } from "favro";
 
 // --- Offline mock round-trip (always runs) ---
