@@ -4927,7 +4927,7 @@ once, so Favro splits its identity:
 | Field | What it is | Use it for |
 | --- | --- | --- |
 | `cardId` | id of one *placement* of the card (per widget) | direct card ops: `cards.get`/`update`/`remove`, `cards.dependencies.*`, `cards.activities.list` |
-| `cardCommonId` | shared id across *all* placements of the same card | filtering `comments.list` / `tasks.list` / `tasklists.list` (that metadata belongs to the card, not a placement) |
+| `cardCommonId` | shared id across *all* placements of the same card | filtering `comments.list` / `tasks.list` / `tasklists.list` (that metadata belongs to the card, not a placement), and the `comments.create` body |
 | `sequentialId` | the human number on the card (for readable links) | display; to *find* by it, pass the **`cardSequentialId`** query param to `cards.list` (note the different spelling) |
 | `widgetCommonId` | the board's shared id | scoping `cards.list` / `columns.list` |
 | `columnId` | the column a card is in on a widget | `cards.list({ widgetCommonId, columnId })`; present only when the card is on a widget |
@@ -5013,6 +5013,11 @@ if (!field) throw new Error("no 'Product' custom field");
 // Resolve the option's item id from the field definition, then match cards.
 // (The item id is what a select card value contains.)
 const optionItemId = "the-option-item-id-for-Product-X";
+
+// inColumn: cards already narrowed by column (see 16.2.6.1)
+const widgetCommonId = "your-board-common-id";
+const columnId = "your-column-id";
+const inColumn = await favro.cards.listAll({ widgetCommonId, columnId });
 
 const productX = inColumn.filter((c) =>
   (c.customFields ?? []).some(
