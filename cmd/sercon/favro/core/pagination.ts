@@ -21,13 +21,14 @@ export async function fetchPage<T>(
   page?: number,
   requestId?: string,
   backendId?: string,
+  orgScoped: boolean = true,
 ): Promise<{ page: Page<T>; backendId?: string }> {
   const q = { ...query };
   if (requestId !== undefined) q.requestId = requestId;
   if (page !== undefined) q.page = page;
   const headers: Record<string, string> = {};
   if (backendId) headers["X-Favro-Backend-Identifier"] = backendId;
-  const res = await request(ctx, "GET", path, { query: q, headers });
+  const res = await request(ctx, "GET", path, { query: q, headers, orgScoped });
   const b = (res.body || {}) as any;
   return {
     page: {
@@ -41,25 +42,25 @@ export async function fetchPage<T>(
   };
 }
 
-export async function listAll<T>(ctx: ClientCtx, path: string, query: Record<string, any>): Promise<T[]> {
-  const first = await fetchPage<T>(ctx, path, query);
+export async function listAll<T>(ctx: ClientCtx, path: string, query: Record<string, any>, orgScoped: boolean = true): Promise<T[]> {
+  const first = await fetchPage<T>(ctx, path, query, undefined, undefined, undefined, orgScoped);
   let out = first.page.entities.slice();
   const { pages, requestId } = first.page;
   const backendId = first.backendId;
   for (let p = 1; p < pages; p++) {
-    const next = await fetchPage<T>(ctx, path, query, p, requestId, backendId);
+    const next = await fetchPage<T>(ctx, path, query, p, requestId, backendId, orgScoped);
     out = out.concat(next.page.entities);
   }
   return out;
 }
 
-export async function* iterate<T>(ctx: ClientCtx, path: string, query: Record<string, any>): AsyncIterableIterator<T> {
-  const first = await fetchPage<T>(ctx, path, query);
+export async function* iterate<T>(ctx: ClientCtx, path: string, query: Record<string, any>, orgScoped: boolean = true): AsyncIterableIterator<T> {
+  const first = await fetchPage<T>(ctx, path, query, undefined, undefined, undefined, orgScoped);
   for (const e of first.page.entities) yield e;
   const { pages, requestId } = first.page;
   const backendId = first.backendId;
   for (let p = 1; p < pages; p++) {
-    const next = await fetchPage<T>(ctx, path, query, p, requestId, backendId);
+    const next = await fetchPage<T>(ctx, path, query, p, requestId, backendId, orgScoped);
     for (const e of next.page.entities) yield e;
   }
 }

@@ -25,9 +25,9 @@ export function collection<T = any>(ctx: ClientCtx, d: ResourceDescriptor): Coll
   const idPath = (id: string) => `${d.path}/${encodeURIComponent(id)}`;
   const check = (params: Record<string, any>) => { if (d.validateList) d.validateList(params); };
   return {
-    async list(params = {}) { check(params); return (await fetchPage<T>(ctx, d.path, params)).page; },
-    listAll(params = {}) { check(params); return listAll<T>(ctx, d.path, params); },
-    iterate(params = {}) { check(params); return iterate<T>(ctx, d.path, params); },
+    async list(params = {}) { check(params); return (await fetchPage<T>(ctx, d.path, params, undefined, undefined, undefined, orgScoped)).page; },
+    listAll(params = {}) { check(params); return listAll<T>(ctx, d.path, params, orgScoped); },
+    iterate(params = {}) { check(params); return iterate<T>(ctx, d.path, params, orgScoped); },
     async get(id, params = {}) { return (await request(ctx, "GET", idPath(id), { query: params, orgScoped })).body as T; },
     async create(body) { return (await request(ctx, "POST", d.path, { body, orgScoped })).body as T; },
     async update(id, body) { return (await request(ctx, "PUT", idPath(id), { body, orgScoped })).body as T; },

@@ -116,13 +116,13 @@ function organizations(ctx) {
 
 // cmd/sercon/favro/core/pagination.ts
 var BACKEND_HEADER = "x-favro-backend-identifier";
-async function fetchPage(ctx, path, query, page, requestId, backendId) {
+async function fetchPage(ctx, path, query, page, requestId, backendId, orgScoped = true) {
   const q = { ...query };
   if (requestId !== void 0) q.requestId = requestId;
   if (page !== void 0) q.page = page;
   const headers = {};
   if (backendId) headers["X-Favro-Backend-Identifier"] = backendId;
-  const res = await request(ctx, "GET", path, { query: q, headers });
+  const res = await request(ctx, "GET", path, { query: q, headers, orgScoped });
   const b = res.body || {};
   return {
     page: {
@@ -135,24 +135,24 @@ async function fetchPage(ctx, path, query, page, requestId, backendId) {
     backendId: res.headers[BACKEND_HEADER] || backendId
   };
 }
-async function listAll(ctx, path, query) {
-  const first = await fetchPage(ctx, path, query);
+async function listAll(ctx, path, query, orgScoped = true) {
+  const first = await fetchPage(ctx, path, query, void 0, void 0, void 0, orgScoped);
   let out = first.page.entities.slice();
   const { pages, requestId } = first.page;
   const backendId = first.backendId;
   for (let p = 1; p < pages; p++) {
-    const next = await fetchPage(ctx, path, query, p, requestId, backendId);
+    const next = await fetchPage(ctx, path, query, p, requestId, backendId, orgScoped);
     out = out.concat(next.page.entities);
   }
   return out;
 }
-async function* iterate(ctx, path, query) {
-  const first = await fetchPage(ctx, path, query);
+async function* iterate(ctx, path, query, orgScoped = true) {
+  const first = await fetchPage(ctx, path, query, void 0, void 0, void 0, orgScoped);
   for (const e of first.page.entities) yield e;
   const { pages, requestId } = first.page;
   const backendId = first.backendId;
   for (let p = 1; p < pages; p++) {
-    const next = await fetchPage(ctx, path, query, p, requestId, backendId);
+    const next = await fetchPage(ctx, path, query, p, requestId, backendId, orgScoped);
     for (const e of next.page.entities) yield e;
   }
 }
@@ -167,15 +167,15 @@ function collection(ctx, d) {
   return {
     async list(params = {}) {
       check(params);
-      return (await fetchPage(ctx, d.path, params)).page;
+      return (await fetchPage(ctx, d.path, params, void 0, void 0, void 0, orgScoped)).page;
     },
     listAll(params = {}) {
       check(params);
-      return listAll(ctx, d.path, params);
+      return listAll(ctx, d.path, params, orgScoped);
     },
     iterate(params = {}) {
       check(params);
-      return iterate(ctx, d.path, params);
+      return iterate(ctx, d.path, params, orgScoped);
     },
     async get(id, params = {}) {
       return (await request(ctx, "GET", idPath(id), { query: params, orgScoped })).body;
