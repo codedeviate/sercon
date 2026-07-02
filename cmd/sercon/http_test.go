@@ -362,6 +362,61 @@ func TestHTTPRequest_Multipart(t *testing.T) {
 	}
 }
 
+func TestHTTPRequest_MultipartOverridesCallerContentType(t *testing.T) {
+	var gotCT string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	res := runHTTPReqScript(t, `
+		const r = await http.request("POST", `+"`"+srv.URL+"`"+`, {
+			headers: { "content-type": "text/plain" },
+			multipart: [ { name: "f", value: "v" } ],
+		});
+		const __result = String(r.status);
+	`)
+	if res != "200" {
+		t.Errorf("status: %v", res)
+	}
+	if !strings.HasPrefix(gotCT, "multipart/form-data; boundary=") {
+		t.Errorf("content-type: %q, want generated multipart content-type to override caller header", gotCT)
+	}
+}
+
+func TestHTTPRequest_MultipartFilePartDefaultContentType(t *testing.T) {
+	var gotCT string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		f, hdr, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer func() { _ = f.Close() }()
+		gotCT = hdr.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	res := runHTTPReqScript(t, `
+		const r = await http.request("POST", `+"`"+srv.URL+"`"+`, { multipart: [
+			{ name: "file", filename: "a.bin", content: new Uint8Array([1, 2, 3]) },
+		]});
+		const __result = String(r.status);
+	`)
+	if res != "200" {
+		t.Errorf("status: %v", res)
+	}
+	if gotCT != "application/octet-stream" {
+		t.Errorf("part content-type: %q, want application/octet-stream default", gotCT)
+	}
+}
+
 func TestHTTPRequest_BodyAndMultipartConflict(t *testing.T) {
 	vm := goja.New()
 	opts := map[string]any{
