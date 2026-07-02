@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.84.0] — 2026-07-02
+
 ### Added
 - `net.http.request` now accepts a binary `body` (`Uint8Array` / `ArrayBuffer`, sent byte-for-byte) and a `multipart` option for `multipart/form-data` uploads (text fields and file parts, assembled in-process; sets the `Content-Type` header). `body` and `multipart` are mutually exclusive.
 - Embedded `favro` library: `import { client } from "favro"` — a full client for the Favro API (organizations, collections, widgets, columns, cards, comments, tasks, tasklists, tags, custom fields, groups, webhooks) with auto-pagination (`list`/`listAll`/`iterate`), token-first Basic auth + `organizationId`, bounded opt-out 429 retry, `FavroError`, and multipart attachment upload.
