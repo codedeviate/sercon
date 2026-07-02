@@ -139,6 +139,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/paymentproviders-swedbankpay.ts \
 	examples/scripts/advanced/load-resilience.ts \
 	examples/scripts/advanced/http-api.ts \
+	examples/scripts/advanced/http-multipart.ts \
 	examples/scripts/advanced/smtp-pipeline.ts \
 	examples/scripts/advanced/tcp-proxy.ts \
 	examples/scripts/advanced/https-server.ts \

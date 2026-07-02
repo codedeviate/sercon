@@ -126,6 +126,7 @@ external service self-skip.
 | --- | --- |
 | `advanced/load-resilience.ts` | Resilience / load self-test — starts a loopback HTTP server, drives it at rising concurrency (4/16/32), reports latency p50/p95/max + error rate + throughput per level, and asserts the service stays healthy after the burst. Self-contained and offline; comments show how to repoint `TARGET` at a real endpoint you're authorized to test. |
 | `advanced/http-api.ts` | Full HTTP API on `server.http.listen` — middleware chain (request logger + bearer-token auth → 401 + error-catcher), CRUD over an in-memory store, a `/health` route; self-tests every path (incl. 401/201/404) then closes. Self-contained. |
+| `advanced/http-multipart.ts` | `net.http.request` multipart/form-data upload + binary body, self-tested against a local server |
 | `advanced/smtp-pipeline.ts` | `server.smtp.listen` receive → parse headers/body/attachment → `net.email.send` reply, full loopback round-trip with assertions. Self-contained. |
 | `advanced/tcp-proxy.ts` | A TCP proxy: `server.tcp.listen` relays a client connection to an upstream echo server (also started in-script) via `net.tcp.connect`, both directions; asserts the round-trip. Self-contained. |
 | `advanced/https-server.ts` | `server.https.listen` with the `cert: "self-signed"` shortcut (ephemeral in-process cert, no files); verifies the served cert via `net.probe.tls` (skip-verify). Self-contained. |
