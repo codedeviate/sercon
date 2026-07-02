@@ -131,3 +131,51 @@ func TestFavro_NonOkThrowsFavroError(t *testing.T) {
 		t.Fatalf("non-ok FavroError: %v", err)
 	}
 }
+
+func TestFavro_RetriesOn429(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		let calls = 0;
+		const srv = await server.http.listen({ port: 38311, routes: {
+			"GET /cards/c1": (q: any, r: any) => {
+				calls++;
+				if (calls === 1) return r.header("retry-after", "0").status(429).json({ message: "slow down" });
+				return r.json({ cardId: "c1", name: "ok" });
+			},
+		}});
+		try {
+			const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o", baseUrl: "http://127.0.0.1:38311" });
+			const card = await c.cards.get("c1");
+			runtime.assert.equal(card.name, "ok", "second attempt succeeded");
+			runtime.assert.equal(calls, 2, "retried exactly once");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("429 retry: %v", err)
+	}
+}
+
+func TestFavro_RetryFalseThrows429(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		let calls = 0;
+		const srv = await server.http.listen({ port: 38312, routes: {
+			"GET /cards/c1": (q: any, r: any) => { calls++; return r.header("x-ratelimit-remaining", "0").status(429).json({ message: "no" }); },
+		}});
+		try {
+			const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o", baseUrl: "http://127.0.0.1:38312", retry: false });
+			let err: any = null;
+			try { await c.cards.get("c1"); } catch (e) { err = e; }
+			runtime.assert.ok(err, "threw");
+			runtime.assert.equal(err.status, 429, "FavroError status 429");
+			runtime.assert.equal(err.name, "FavroError", "FavroError name");
+			runtime.assert.equal(err.rateLimit.remaining, 0, "rateLimit.remaining parsed");
+			runtime.assert.equal(calls, 1, "no retry when retry:false");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("retry:false 429: %v", err)
+	}
+}

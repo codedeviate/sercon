@@ -52,6 +52,27 @@ export function buildUrl(base: string, path: string, query?: RequestOpts["query"
   return url;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// retryWaitMs computes how long to wait before retrying a 429, from
+// Retry-After (seconds) or X-RateLimit-Reset (a UTC timestamp), falling back
+// to 1s when neither is present/parseable.
+function retryWaitMs(h: Record<string, string>): number {
+  const ra = h["retry-after"];
+  if (ra !== undefined) {
+    const s = Number(ra);
+    if (!isNaN(s)) return Math.max(0, s * 1000);
+  }
+  const reset = h["x-ratelimit-reset"];
+  if (reset !== undefined) {
+    const t = Date.parse(reset);
+    if (!isNaN(t)) return Math.max(0, t - Date.now());
+  }
+  return 1000;
+}
+
 // request performs one JSON API call and returns status + headers + parsed
 // body. Throws FavroError on non-2xx. Task 2 adds 429 retry to this function.
 export async function request(ctx: ClientCtx, method: string, path: string, opts: RequestOpts = {}): Promise<FavroResponse> {
@@ -65,15 +86,27 @@ export async function request(ctx: ClientCtx, method: string, path: string, opts
     bodyStr = JSON.stringify(opts.body);
   }
 
-  const res = await net.http.request(method, url, { headers, body: bodyStr, follow: true });
-  const respHeaders: Record<string, string> = res.headers || {};
-  let parsed: unknown = undefined;
-  if (res.body) {
-    try { parsed = JSON.parse(res.body); } catch { parsed = res.body; }
+  const maxAttempts = ctx.retry === false ? 1 : ctx.retry.max + 1;
+  let attempt = 0;
+  for (;;) {
+    const res = await net.http.request(method, url, { headers, body: bodyStr, follow: true });
+    const respHeaders: Record<string, string> = res.headers || {};
+    let parsed: unknown = undefined;
+    if (res.body) {
+      try { parsed = JSON.parse(res.body); } catch { parsed = res.body; }
+    }
+    if (res.status >= 200 && res.status < 300) {
+      return { status: res.status, headers: respHeaders, body: parsed };
+    }
+    if (res.status === 429 && ctx.retry !== false && attempt < ctx.retry.max) {
+      const waitMs = retryWaitMs(respHeaders);
+      if (waitMs <= ctx.retry.maxWaitMs) {
+        attempt++;
+        await sleep(waitMs);
+        continue;
+      }
+    }
+    const requestId = typeof (parsed as any)?.requestId === "string" ? (parsed as any).requestId : undefined;
+    throw new FavroError(res.status, parsed, requestId, rateLimitOf(respHeaders));
   }
-  if (res.status >= 200 && res.status < 300) {
-    return { status: res.status, headers: respHeaders, body: parsed };
-  }
-  const requestId = typeof (parsed as any)?.requestId === "string" ? (parsed as any).requestId : undefined;
-  throw new FavroError(res.status, parsed, requestId, rateLimitOf(respHeaders));
 }

@@ -52,6 +52,22 @@ function buildUrl(base, path, query) {
   }
   return url;
 }
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function retryWaitMs(h) {
+  const ra = h["retry-after"];
+  if (ra !== void 0) {
+    const s = Number(ra);
+    if (!isNaN(s)) return Math.max(0, s * 1e3);
+  }
+  const reset = h["x-ratelimit-reset"];
+  if (reset !== void 0) {
+    const t = Date.parse(reset);
+    if (!isNaN(t)) return Math.max(0, t - Date.now());
+  }
+  return 1e3;
+}
 async function request(ctx, method, path, opts = {}) {
   const orgScoped = opts.orgScoped !== false;
   const url = buildUrl(ctx.baseUrl, path, opts.query);
@@ -62,21 +78,33 @@ async function request(ctx, method, path, opts = {}) {
     headers["content-type"] = "application/json";
     bodyStr = JSON.stringify(opts.body);
   }
-  const res = await net.http.request(method, url, { headers, body: bodyStr, follow: true });
-  const respHeaders = res.headers || {};
-  let parsed = void 0;
-  if (res.body) {
-    try {
-      parsed = JSON.parse(res.body);
-    } catch {
-      parsed = res.body;
+  const maxAttempts = ctx.retry === false ? 1 : ctx.retry.max + 1;
+  let attempt = 0;
+  for (; ; ) {
+    const res = await net.http.request(method, url, { headers, body: bodyStr, follow: true });
+    const respHeaders = res.headers || {};
+    let parsed = void 0;
+    if (res.body) {
+      try {
+        parsed = JSON.parse(res.body);
+      } catch {
+        parsed = res.body;
+      }
     }
+    if (res.status >= 200 && res.status < 300) {
+      return { status: res.status, headers: respHeaders, body: parsed };
+    }
+    if (res.status === 429 && ctx.retry !== false && attempt < ctx.retry.max) {
+      const waitMs = retryWaitMs(respHeaders);
+      if (waitMs <= ctx.retry.maxWaitMs) {
+        attempt++;
+        await sleep(waitMs);
+        continue;
+      }
+    }
+    const requestId = typeof parsed?.requestId === "string" ? parsed.requestId : void 0;
+    throw new FavroError(res.status, parsed, requestId, rateLimitOf(respHeaders));
   }
-  if (res.status >= 200 && res.status < 300) {
-    return { status: res.status, headers: respHeaders, body: parsed };
-  }
-  const requestId = typeof parsed?.requestId === "string" ? parsed.requestId : void 0;
-  throw new FavroError(res.status, parsed, requestId, rateLimitOf(respHeaders));
 }
 
 // cmd/sercon/favro/resources/organizations.ts
