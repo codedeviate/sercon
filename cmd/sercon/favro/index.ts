@@ -11,6 +11,9 @@ import { tasklists } from "./resources/tasklists";
 import { tags } from "./resources/tags";
 import { groups } from "./resources/groups";
 import { users } from "./resources/users";
+import { comments } from "./resources/comments";
+import { customFields } from "./resources/customfields";
+import { webhooks } from "./resources/webhooks";
 
 export interface FavroConfig {
   email?: string;
@@ -48,5 +51,8 @@ export function client(overrides: FavroConfig = {}) {
     tags: tags(ctx),
     groups: groups(ctx),
     users: users(ctx),
+    comments: comments(ctx),
+    customFields: customFields(ctx),
+    webhooks: webhooks(ctx),
   };
 }

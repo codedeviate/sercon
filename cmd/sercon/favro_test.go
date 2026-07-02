@@ -281,6 +281,43 @@ func TestFavro_OrganizationsListOmitsOrgHeader(t *testing.T) {
 	}
 }
 
+func TestFavro_SpecialSurfaces(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		const seen: any[] = [];
+		const srv = await server.http.listen({ port: 38315, routes: {
+			"GET /customfields": (q: any, r: any) => r.json({ limit: 100, page: 0, pages: 1, requestId: "r", entities: [{ customFieldId: "cf1" }] }),
+			"POST /webhooks": (q: any, r: any) => { seen.push({ webhook: q.body }); return r.status(201).json({ webhookId: "wh1" }); },
+			"GET /cards/c1/dependencies": (q: any, r: any) => r.json({ dependencies: [] }),
+			"POST /cards/c1/dependencies": (q: any, r: any) => { seen.push({ dep: q.body }); return r.status(201).json({ ok: true }); },
+			"GET /cards/c1/activities": (q: any, r: any) => r.json({ limit: 100, page: 0, pages: 1, requestId: "r", entities: [{ activityId: "act1" }] }),
+		}});
+		try {
+			const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o", baseUrl: "http://127.0.0.1:38315" });
+
+			const cf = await c.customFields.listAll();
+			runtime.assert.equal(cf[0].customFieldId, "cf1", "customFields read-only list");
+			runtime.assert.ok(!(c.customFields as any).create, "customFields has no create");
+
+			const wh = await c.webhooks.create({ url: "https://x", name: "n" });
+			runtime.assert.equal(wh.webhookId, "wh1", "webhook created");
+			runtime.assert.ok(!(c.webhooks as any).update, "webhooks has no update");
+
+			const deps = await c.cards.dependencies.list("c1");
+			runtime.assert.ok(Array.isArray(deps.dependencies), "dependencies listed");
+			await c.cards.dependencies.add("c1", { cardCommonId: "x", type: "blockedBy" });
+			runtime.assert.ok(seen.find((s: any) => s.dep), "dependency add posted");
+
+			const acts = await c.cards.activities.list("c1");
+			runtime.assert.equal(acts.entities[0].activityId, "act1", "activities page returned");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("special surfaces: %v", err)
+	}
+}
+
 func TestFavro_CardsListRequiresScope(t *testing.T) {
 	eng := newFavroEngine(t)
 	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `

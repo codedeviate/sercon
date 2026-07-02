@@ -200,6 +200,7 @@ function validateCardList(params) {
 }
 function cards(ctx) {
   const c = collection(ctx, { path: "/cards", validateList: validateCardList });
+  const dep = (id) => `/cards/${encodeURIComponent(id)}/dependencies`;
   return {
     list: c.list,
     listAll: c.listAll,
@@ -207,7 +208,22 @@ function cards(ctx) {
     get: c.get,
     create: c.create,
     update: c.update,
-    remove: c.remove
+    remove: c.remove,
+    dependencies: {
+      list: async (cardId) => (await request(ctx, "GET", dep(cardId))).body,
+      add: async (cardId, body) => (await request(ctx, "POST", dep(cardId), { body })).body,
+      set: async (cardId, body) => (await request(ctx, "PUT", dep(cardId), { body })).body,
+      update: async (cardId, depId, body) => (await request(ctx, "PATCH", `${dep(cardId)}/${encodeURIComponent(depId)}`, { body })).body,
+      remove: async (cardId, depId) => {
+        await request(ctx, "DELETE", `${dep(cardId)}/${encodeURIComponent(depId)}`);
+      },
+      removeAll: async (cardId) => {
+        await request(ctx, "DELETE", dep(cardId));
+      }
+    },
+    activities: {
+      list: async (cardId, params = {}) => (await fetchPage(ctx, `/cards/${encodeURIComponent(cardId)}/activities`, params)).page
+    }
   };
 }
 
@@ -274,6 +290,29 @@ function users(ctx) {
   return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get };
 }
 
+// cmd/sercon/favro/resources/comments.ts
+function comments(ctx) {
+  const c = collection(ctx, {
+    path: "/comments",
+    validateList: (p) => {
+      if (p.cardCommonId === void 0) throw new Error("favro comments.list: cardCommonId is required");
+    }
+  });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
+}
+
+// cmd/sercon/favro/resources/customfields.ts
+function customFields(ctx) {
+  const c = collection(ctx, { path: "/customfields" });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get };
+}
+
+// cmd/sercon/favro/resources/webhooks.ts
+function webhooks(ctx) {
+  const c = collection(ctx, { path: "/webhooks" });
+  return { list: c.list, listAll: c.listAll, iterate: c.iterate, create: c.create, remove: c.remove };
+}
+
 // cmd/sercon/favro/index.ts
 function resolveRetry(r) {
   if (r === false) return false;
@@ -300,7 +339,10 @@ function client(overrides = {}) {
     tasklists: tasklists(ctx),
     tags: tags(ctx),
     groups: groups(ctx),
-    users: users(ctx)
+    users: users(ctx),
+    comments: comments(ctx),
+    customFields: customFields(ctx),
+    webhooks: webhooks(ctx)
   };
 }
 export {
