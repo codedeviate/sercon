@@ -108,3 +108,26 @@ func TestFavro_DoesNotShadowUserFile(t *testing.T) {
 		t.Fatalf("relative import must resolve to the user's file, not the bundle: %v", err)
 	}
 }
+
+func TestFavro_NonOkThrowsFavroError(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		const srv = await server.http.listen({ port: 38318, routes: {
+			"GET /cards/missing": (q: any, r: any) => r.status(404).json({ message: "not found", requestId: "rq-404" }),
+		}});
+		try {
+			const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o", baseUrl: "http://127.0.0.1:38318" });
+			let e: any = null;
+			try { await c.cards.get("missing"); } catch (err) { e = err; }
+			runtime.assert.ok(e, "threw on 404");
+			runtime.assert.equal(e.name, "FavroError", "FavroError name");
+			runtime.assert.equal(e.status, 404, "FavroError status 404");
+			runtime.assert.equal(e.body.message, "not found", "FavroError body carries parsed json");
+			runtime.assert.equal(e.requestId, "rq-404", "FavroError requestId from body");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("non-ok FavroError: %v", err)
+	}
+}
