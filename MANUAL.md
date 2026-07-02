@@ -4905,6 +4905,46 @@ pass `input.field` to override it if your Favro instance expects a different
 name. Verify against a real (non-mock) upload before relying on this in
 production.
 
+#### 16.2.5 Understanding Favro's model
+
+The recipes below assume this mental model. (Snippets in this manual are
+illustrative — copy-paste and adapt — unless a section says otherwise.)
+
+Favro nests like this:
+
+```
+organization
+└── collection            (a group of boards)
+    └── widget            (a board — the thing you look at)
+        ├── column        (a vertical status: "In progress", "Done", …)
+        └── lane          (a horizontal swimlane, when the board has lanes on)
+            └── card       (lives on the widget; can also live on other widgets)
+```
+
+**The identifiers that trip people up.** A card can sit on several widgets at
+once, so Favro splits its identity:
+
+| Field | What it is | Use it for |
+| --- | --- | --- |
+| `cardId` | id of one *placement* of the card (per widget) | direct card ops: `cards.get`/`update`/`remove`, `cards.dependencies.*`, `cards.activities.list` |
+| `cardCommonId` | shared id across *all* placements of the same card | filtering `comments.list` / `tasks.list` / `tasklists.list` (that metadata belongs to the card, not a placement) |
+| `sequentialId` | the human number on the card (for readable links) | display; to *find* by it, pass the **`cardSequentialId`** query param to `cards.list` (note the different spelling) |
+| `widgetCommonId` | the board's shared id | scoping `cards.list` / `columns.list` |
+| `columnId` | the column a card is in on a widget | `cards.list({ widgetCommonId, columnId })`; present only when the card is on a widget |
+| `laneId` | the lane a card is in | present only when the card is on a widget **and** that widget has lanes enabled |
+| `collectionId` | a collection's id | scoping `cards.list` to a whole collection |
+
+**Custom fields.** A card carries `customFields`, an array of
+`{ customFieldId, value }`. The `value` shape depends on the field's type — for
+a single/multiple-select field it is an array of the selected *item ids*, not
+their display names. The field's definition (name, type, and its selectable
+items) comes from `customFields.get(customFieldId)`.
+
+**The limitation that shapes every "filter" recipe.** `GET /cards` can filter
+by `widgetCommonId` and `columnId`, but there is **no lane or custom-field
+filter**. So the pattern is always: *narrow by column on the server, then
+filter by `laneId` or a custom-field value in memory.*
+
 ## 17. Binding reference (generated)
 
 The per-function reference below is generated from the structured binding
