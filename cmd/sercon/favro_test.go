@@ -331,3 +331,31 @@ func TestFavro_CardsListRequiresScope(t *testing.T) {
 		t.Fatalf("cards scope: %v", err)
 	}
 }
+
+func TestFavro_UploadAttachment(t *testing.T) {
+	eng := newFavroEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { client } from "favro";
+		const seen: any = {};
+		const srv = await server.http.listen({ port: 38316, routes: {
+			"POST /cards/c1/attachments": (q: any, r: any) => {
+				seen.ct = (q.headers["content-type"] || [])[0];
+				seen.body = q.body;
+				seen.auth = (q.headers["authorization"] || [])[0];
+				return r.status(201).json({ fileURL: "https://f/att1", name: "note.txt" });
+			},
+		}});
+		try {
+			const c = client({ email: "e@x.com", apiToken: "t", organizationId: "o", baseUrl: "http://127.0.0.1:38316" });
+			const att = await c.cards.uploadAttachment("c1", { filename: "note.txt", content: "hello favro", type: "text/plain" });
+			runtime.assert.equal(att.name, "note.txt", "attachment response parsed");
+			runtime.assert.ok(seen.ct.startsWith("multipart/form-data; boundary="), "multipart content-type");
+			runtime.assert.ok(seen.body.includes('filename="note.txt"'), "filename in multipart body");
+			runtime.assert.ok(seen.body.includes("hello favro"), "content in multipart body");
+			runtime.assert.ok(seen.auth.startsWith("Basic "), "basic auth sent");
+		} finally { await srv.close(); }
+	`)
+	if err != nil {
+		t.Fatalf("upload attachment: %v", err)
+	}
+}

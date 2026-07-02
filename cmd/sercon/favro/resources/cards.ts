@@ -1,6 +1,7 @@
 import { ClientCtx, request } from "../core/http";
 import { collection } from "../core/resource";
 import { fetchPage } from "../core/pagination";
+import { uploadAttachment, AttachmentInput } from "../core/attachments";
 
 const CARD_SCOPES = ["widgetCommonId", "collectionId", "cardCommonId", "cardSequentialId", "todoList"];
 
@@ -34,5 +35,7 @@ export function cards(ctx: ClientCtx) {
       list: async (cardId: string, params: Record<string, any> = {}) =>
         (await fetchPage(ctx, `/cards/${encodeURIComponent(cardId)}/activities`, params)).page,
     },
+    uploadAttachment: (cardId: string, input: AttachmentInput) =>
+      uploadAttachment(ctx, `/cards/${encodeURIComponent(cardId)}/attachments`, input),
   };
 }

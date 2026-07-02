@@ -191,6 +191,29 @@ function organizations(ctx) {
   return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update };
 }
 
+// cmd/sercon/favro/core/attachments.ts
+async function uploadAttachment(ctx, path, input) {
+  if (!input || !input.filename) throw new Error("favro uploadAttachment: filename is required");
+  if (input.content === void 0 || input.content === null) throw new Error("favro uploadAttachment: content is required");
+  const headers = { accept: "application/json", authorization: ctx.authHeader };
+  if (ctx.organizationId) headers["organizationId"] = ctx.organizationId;
+  const url = buildUrl(ctx.baseUrl, path);
+  const part = { name: input.field || "file", filename: input.filename, content: input.content };
+  if (input.type) part.type = input.type;
+  const res = await net.http.request("POST", url, { headers, multipart: [part], follow: true });
+  let parsed = void 0;
+  if (res.body) {
+    try {
+      parsed = JSON.parse(res.body);
+    } catch {
+      parsed = res.body;
+    }
+  }
+  if (res.status >= 200 && res.status < 300) return parsed;
+  const requestId = typeof parsed?.requestId === "string" ? parsed.requestId : void 0;
+  throw new FavroError(res.status, parsed, requestId, rateLimitOf(res.headers || {}));
+}
+
 // cmd/sercon/favro/resources/cards.ts
 var CARD_SCOPES = ["widgetCommonId", "collectionId", "cardCommonId", "cardSequentialId", "todoList"];
 function validateCardList(params) {
@@ -223,7 +246,8 @@ function cards(ctx) {
     },
     activities: {
       list: async (cardId, params = {}) => (await fetchPage(ctx, `/cards/${encodeURIComponent(cardId)}/activities`, params)).page
-    }
+    },
+    uploadAttachment: (cardId, input) => uploadAttachment(ctx, `/cards/${encodeURIComponent(cardId)}/attachments`, input)
   };
 }
 
@@ -298,7 +322,16 @@ function comments(ctx) {
       if (p.cardCommonId === void 0) throw new Error("favro comments.list: cardCommonId is required");
     }
   });
-  return { list: c.list, listAll: c.listAll, iterate: c.iterate, get: c.get, create: c.create, update: c.update, remove: c.remove };
+  return {
+    list: c.list,
+    listAll: c.listAll,
+    iterate: c.iterate,
+    get: c.get,
+    create: c.create,
+    update: c.update,
+    remove: c.remove,
+    uploadAttachment: (commentId, input) => uploadAttachment(ctx, `/comments/${encodeURIComponent(commentId)}/attachments`, input)
+  };
 }
 
 // cmd/sercon/favro/resources/customfields.ts
