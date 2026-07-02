@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -45,8 +46,21 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 	if retries < 0 {
 		retries = 0
 	}
-	body := optString(opts, "body", "")
 	headers := optStringMap(opts, "headers")
+
+	// Body: string | Uint8Array | ArrayBuffer. (Task 2 adds the mutually
+	// exclusive `multipart` option and the contentType it produces.)
+	var bodyBytes []byte
+	var contentType string
+	if opts != nil {
+		if bv, ok := opts["body"]; ok && bv != nil {
+			b, err := bytesFromExported(bv)
+			if err != nil {
+				return nil, fmt.Errorf("http.request: body: %w", err)
+			}
+			bodyBytes = b
+		}
+	}
 	follow := optBool(opts, "follow", true)
 	authUser := optString(opts, "username", "")
 	authPass := optString(opts, "password", "")
@@ -80,7 +94,7 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 			}
 		}
 
-		result, status, retryable, err := httpRequestOnce(ctx, client, method, url, body, headers, authUser, authPass)
+		result, status, retryable, err := httpRequestOnce(ctx, client, method, url, bodyBytes, contentType, headers, authUser, authPass)
 		if err != nil {
 			lastErr = err
 			if retryable && attempt < retries {
@@ -101,10 +115,10 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 // httpRequestOnce performs a single attempt. The bool return is
 // "retryable" — true for transport errors (worth retrying), used by
 // the caller's retry loop.
-func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body string, headers map[string]string, user, pass string) (*scriptengine.Ordered, int, bool, error) {
+func httpRequestOnce(ctx context.Context, client *http.Client, method, url string, body []byte, contentType string, headers map[string]string, user, pass string) (*scriptengine.Ordered, int, bool, error) {
 	var reqBody io.Reader
-	if body != "" {
-		reqBody = strings.NewReader(body)
+	if len(body) > 0 {
+		reqBody = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
@@ -113,6 +127,11 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
+	}
+	// A generated multipart Content-Type (with its boundary) must win over any
+	// caller-set content-type, so apply it after the caller headers.
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	if user != "" || pass != "" {
 		req.SetBasicAuth(user, pass)
@@ -160,4 +179,22 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url, body
 		Set("url", finalURL)
 
 	return result, resp.StatusCode, false, nil
+}
+
+// bytesFromExported coerces an already-exported JS value (a value pulled from
+// an opts map, so already run through goja's Export) into bytes: a string
+// yields its UTF-8 bytes, a Uint8Array exports to []byte, and an ArrayBuffer
+// to goja.ArrayBuffer. Mirrors exportBytes in compression.go, which takes a
+// goja.Value rather than an already-exported any and so can't be reused here.
+func bytesFromExported(v any) ([]byte, error) {
+	switch e := v.(type) {
+	case string:
+		return []byte(e), nil
+	case []byte:
+		return e, nil
+	case goja.ArrayBuffer:
+		return e.Bytes(), nil
+	default:
+		return nil, fmt.Errorf("want string, Uint8Array, or ArrayBuffer, got %T", e)
+	}
 }

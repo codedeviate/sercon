@@ -213,3 +213,40 @@ func TestHTTPDo_BodyBytesLatin1(t *testing.T) {
 		t.Fatalf("httpDo bodyBytes = % x, want % x", bs, latin1VaxjoBat)
 	}
 }
+
+func TestBytesFromExported(t *testing.T) {
+	if b, err := bytesFromExported("abc"); err != nil || string(b) != "abc" {
+		t.Errorf("string: %q %v", b, err)
+	}
+	if b, err := bytesFromExported([]byte{0, 255, 10}); err != nil || !bytes.Equal(b, []byte{0, 255, 10}) {
+		t.Errorf("[]byte: %v %v", b, err)
+	}
+	ab := goja.New().NewArrayBuffer([]byte{1, 2, 3})
+	if b, err := bytesFromExported(ab); err != nil || !bytes.Equal(b, []byte{1, 2, 3}) {
+		t.Errorf("arraybuffer: %v %v", b, err)
+	}
+	if _, err := bytesFromExported(42); err == nil {
+		t.Error("int should error")
+	}
+}
+
+func TestHTTPRequest_BinaryBody(t *testing.T) {
+	var got []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	res := runHTTPReqScript(t, `
+		const b = new Uint8Array([0, 255, 10, 13, 127, 128]);
+		const r = await http.request("POST", `+"`"+srv.URL+"`"+`, { body: b });
+		const __result = String(r.status);
+	`)
+	if res != "200" {
+		t.Errorf("status: %v", res)
+	}
+	if !bytes.Equal(got, []byte{0, 255, 10, 13, 127, 128}) {
+		t.Errorf("server received bytes: %v", got)
+	}
+}
