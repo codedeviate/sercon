@@ -47,7 +47,7 @@ RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 MANUAL_VERSION    := $(shell sed -nE 's|^const Version = "([^"]+)".*|\1|p' pkg/scriptengine/version.go)
 MANUAL_DATE       := $(shell date +%F)
 
-.PHONY: build release manual reference test test-integration vet lint demo types release-prep release-verify version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean
+.PHONY: build release manual reference test test-integration vet lint demo types release-prep release-verify version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean favro favro-check
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -343,6 +343,12 @@ paymentproviders:        ## bundle the embedded paymentproviders TS library
 paymentproviders-check:  ## fail if the committed paymentproviders bundle is stale
 	go run ./cmd/ppbundle --check
 
+favro:                   ## bundle the embedded favro TS library
+	go run ./cmd/favrobundle
+
+favro-check:             ## fail if the committed favro bundle is stale
+	go run ./cmd/favrobundle --check
+
 version-check:
 	@const=$$(sed -nE 's|^const Version = "([^"]+)".*$$|\1|p' pkg/scriptengine/version.go); \
 	footer=$$(sed -nE 's|\*This manual covers sercon v([0-9.]+)\..*|\1|p' MANUAL.md); \
@@ -356,6 +362,7 @@ version-check:
 	fi; \
 	echo "version markers in sync at $$const"
 	@go run ./cmd/ppbundle --check
+	@go run ./cmd/favrobundle --check
 
 clean:
 	rm -f $(BIN) MANUAL.pdf
