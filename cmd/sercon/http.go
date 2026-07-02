@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"sort"
 	"strings"
 	"time"
@@ -48,18 +50,35 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 	}
 	headers := optStringMap(opts, "headers")
 
-	// Body: string | Uint8Array | ArrayBuffer. (Task 2 adds the mutually
-	// exclusive `multipart` option and the contentType it produces.)
+	// Body vs. multipart: mutually exclusive. body is string | Uint8Array |
+	// ArrayBuffer sent byte-for-byte; multipart is assembled in Go and sets
+	// the Content-Type header (overriding any caller content-type).
 	var bodyBytes []byte
 	var contentType string
-	if opts != nil {
-		if bv, ok := opts["body"]; ok && bv != nil {
-			b, err := bytesFromExported(bv)
-			if err != nil {
-				return nil, fmt.Errorf("http.request: body: %w", err)
-			}
-			bodyBytes = b
+	bodyVal, hasBody := opts["body"]
+	hasBody = hasBody && bodyVal != nil
+	mpVal, hasMultipart := opts["multipart"]
+	hasMultipart = hasMultipart && mpVal != nil
+	if hasBody && hasMultipart {
+		return nil, errors.New("http.request: set either body or multipart, not both")
+	}
+	switch {
+	case hasMultipart:
+		parts, ok := mpVal.([]any)
+		if !ok {
+			return nil, errors.New("http.request: multipart must be an array of parts")
 		}
+		b, ct, err := buildMultipartBody(parts)
+		if err != nil {
+			return nil, fmt.Errorf("http.request: %w", err)
+		}
+		bodyBytes, contentType = b, ct
+	case hasBody:
+		b, err := bytesFromExported(bodyVal)
+		if err != nil {
+			return nil, fmt.Errorf("http.request: body: %w", err)
+		}
+		bodyBytes = b
 	}
 	follow := optBool(opts, "follow", true)
 	authUser := optString(opts, "username", "")
@@ -179,6 +198,65 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url strin
 		Set("url", finalURL)
 
 	return result, resp.StatusCode, false, nil
+}
+
+// buildMultipartBody assembles a multipart/form-data body from the script's
+// `multipart` option: an array of parts, each an object. A part with a
+// non-empty `filename` is a file part — its `content` (string | Uint8Array |
+// ArrayBuffer) is the file bytes and `type` sets the part's Content-Type
+// (default application/octet-stream via CreateFormFile). Any other part is a
+// text field carrying a string `value`. Returns the encoded body and the
+// Content-Type header value, which carries the generated boundary.
+func buildMultipartBody(parts []any) ([]byte, string, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	for i, p := range parts {
+		part, ok := p.(map[string]any)
+		if !ok {
+			return nil, "", fmt.Errorf("multipart[%d]: each part must be an object", i)
+		}
+		name, _ := part["name"].(string)
+		if name == "" {
+			return nil, "", fmt.Errorf("multipart[%d]: name is required", i)
+		}
+		if filename, _ := part["filename"].(string); filename != "" {
+			content, ok := part["content"]
+			if !ok || content == nil {
+				return nil, "", fmt.Errorf("multipart[%d] (%s): file part requires content", i, name)
+			}
+			b, err := bytesFromExported(content)
+			if err != nil {
+				return nil, "", fmt.Errorf("multipart[%d] (%s): content: %w", i, name, err)
+			}
+			var fw io.Writer
+			if ctype, _ := part["type"].(string); ctype != "" {
+				h := make(textproto.MIMEHeader)
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, name, filename))
+				h.Set("Content-Type", ctype)
+				fw, err = w.CreatePart(h)
+			} else {
+				fw, err = w.CreateFormFile(name, filename)
+			}
+			if err != nil {
+				return nil, "", fmt.Errorf("multipart[%d] (%s): %w", i, name, err)
+			}
+			if _, err := fw.Write(b); err != nil {
+				return nil, "", fmt.Errorf("multipart[%d] (%s): %w", i, name, err)
+			}
+			continue
+		}
+		value, ok := part["value"].(string)
+		if !ok {
+			return nil, "", fmt.Errorf("multipart[%d] (%s): text field requires a string value", i, name)
+		}
+		if err := w.WriteField(name, value); err != nil {
+			return nil, "", fmt.Errorf("multipart[%d] (%s): %w", i, name, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), w.FormDataContentType(), nil
 }
 
 // bytesFromExported coerces an already-exported JS value (a value pulled from

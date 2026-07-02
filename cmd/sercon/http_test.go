@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -248,5 +250,129 @@ func TestHTTPRequest_BinaryBody(t *testing.T) {
 	}
 	if !bytes.Equal(got, []byte{0, 255, 10, 13, 127, 128}) {
 		t.Errorf("server received bytes: %v", got)
+	}
+}
+
+func TestBuildMultipartBody(t *testing.T) {
+	fileBytes := []byte{0x89, 'P', 'N', 'G', 0x00, 0x0A, 0xFF}
+	parts := []any{
+		map[string]any{"name": "title", "value": "hello world"},
+		map[string]any{"name": "file", "filename": "logo.png", "content": fileBytes, "type": "image/png"},
+	}
+	body, ctype, err := buildMultipartBody(parts)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if !strings.HasPrefix(ctype, "multipart/form-data; boundary=") {
+		t.Fatalf("content-type: %q", ctype)
+	}
+	_, params, err := mime.ParseMediaType(ctype)
+	if err != nil {
+		t.Fatalf("parse media type: %v", err)
+	}
+	r := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+
+	p1, err := r.NextPart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p1.FormName() != "title" {
+		t.Errorf("field name: %q", p1.FormName())
+	}
+	v1, _ := io.ReadAll(p1)
+	if string(v1) != "hello world" {
+		t.Errorf("field value: %q", v1)
+	}
+
+	p2, err := r.NextPart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p2.FileName() != "logo.png" {
+		t.Errorf("filename: %q", p2.FileName())
+	}
+	if ct := p2.Header.Get("Content-Type"); ct != "image/png" {
+		t.Errorf("part content-type: %q", ct)
+	}
+	v2, _ := io.ReadAll(p2)
+	if !bytes.Equal(v2, fileBytes) {
+		t.Errorf("file content: %v", v2)
+	}
+}
+
+func TestBuildMultipartBody_Errors(t *testing.T) {
+	if _, _, err := buildMultipartBody([]any{map[string]any{"value": "x"}}); err == nil {
+		t.Error("missing name should error")
+	}
+	if _, _, err := buildMultipartBody([]any{map[string]any{"name": "f", "filename": "a.txt"}}); err == nil {
+		t.Error("file part missing content should error")
+	}
+	if _, _, err := buildMultipartBody([]any{map[string]any{"name": "f"}}); err == nil {
+		t.Error("text field missing value should error")
+	}
+	if _, _, err := buildMultipartBody([]any{map[string]any{"name": "f", "filename": "a", "content": 42}}); err == nil {
+		t.Error("bad content type should error")
+	}
+}
+
+func TestHTTPRequest_Multipart(t *testing.T) {
+	var gotField, gotFilename, gotCT string
+	var gotContent []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		gotField = r.FormValue("title")
+		f, hdr, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer func() { _ = f.Close() }()
+		gotFilename = hdr.Filename
+		gotContent, _ = io.ReadAll(f)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	res := runHTTPReqScript(t, `
+		const content = new Uint8Array([137, 80, 78, 71, 0, 10, 255]);
+		const r = await http.request("POST", `+"`"+srv.URL+"`"+`, { multipart: [
+			{ name: "title", value: "hello" },
+			{ name: "file", filename: "logo.png", content, type: "image/png" },
+		]});
+		const __result = String(r.status);
+	`)
+	if res != "200" {
+		t.Errorf("status: %v", res)
+	}
+	if gotField != "hello" {
+		t.Errorf("field: %q", gotField)
+	}
+	if gotFilename != "logo.png" {
+		t.Errorf("filename: %q", gotFilename)
+	}
+	if !bytes.Equal(gotContent, []byte{137, 80, 78, 71, 0, 10, 255}) {
+		t.Errorf("file content: %v", gotContent)
+	}
+	if !strings.HasPrefix(gotCT, "multipart/form-data; boundary=") {
+		t.Errorf("content-type: %q", gotCT)
+	}
+}
+
+func TestHTTPRequest_BodyAndMultipartConflict(t *testing.T) {
+	vm := goja.New()
+	opts := map[string]any{
+		"body":      "x",
+		"multipart": []any{map[string]any{"name": "f", "value": "v"}},
+	}
+	call := goja.FunctionCall{Arguments: []goja.Value{
+		vm.ToValue("POST"), vm.ToValue("http://127.0.0.1:0/"), vm.ToValue(opts),
+	}}
+	_, err := httpRequestCall(context.Background(), call)
+	if err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("expected conflict error, got %v", err)
 	}
 }
