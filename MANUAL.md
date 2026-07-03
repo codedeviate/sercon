@@ -792,6 +792,122 @@ The encrypt/decrypt/rekey calls throw on type/shape errors: wrong key kind
 (public where private is expected or vice versa), empty key lists, an
 unsupported data type, or no identity matching the ciphertext.
 
+#### 5.3.4 Concepts
+
+Three independent families, none of which share state or keys:
+
+- **`crypto.hash.*`** — one-shot digests (`md5`…`blake3`, `crc32`). Each
+  takes a single `string` (interpreted as UTF-8 bytes) and returns a
+  lowercase hex digest; there's no separate "hash a file" entry point —
+  read the file's text first (`fs.readText`), then hash the string.
+- **`crypto.jwt.*`** — `sign`/`view`/`validate`. This is also sercon's
+  only exposed HMAC surface: there is no standalone `crypto.hmac.*`
+  function, so "HMAC-sign a message" in sercon means `crypto.jwt.sign`
+  with an `HS256`/`HS384`/`HS512` algorithm (raw secret bytes) rather than
+  a bare MAC call. The same `sign`/`validate` pair also does asymmetric
+  signing (`RS*`/`PS*`/`ES*`/`EdDSA`) when `secret` is a PEM key or JWK.
+- **`crypto.encrypt.*`** — `keygen`/`encrypt`/`decrypt`/`rekey` over two
+  auto-dispatched backends, age and PGP (armor auto-detected on decrypt).
+
+All three families follow the same bytes convention used across sercon:
+inputs accept `string | Uint8Array | ArrayBuffer` (or, for `hash`, `string`
+only), and anything that returns raw bytes returns a `Uint8Array` — decode
+it with `new TextDecoder().decode(...)` (sync) or `await
+text.charset.decode(bytes, "utf-8")` (the codebase's async charset path,
+used throughout the example scripts) to get a string back.
+
+#### 5.3.5 Recipes
+
+##### 5.3.5.1 Hash a string or a file's contents
+
+```ts
+const digest = crypto.hash.sha256("abc");
+runtime.log(digest); // 64-char lowercase hex
+
+// "hash a file": crypto.hash.* only accepts a string, so read it as text
+// first — this hashes the file's UTF-8 text, not arbitrary binary bytes.
+const contents = await fs.readText("./notes.txt");
+const fileDigest = crypto.hash.sha256(contents);
+```
+
+Signatures: §17.4.11 (`sha256`); the same shape covers `md5`/`sha1`/
+`sha384`/`sha512`/`sha3_256`/`sha3_512`/`blake3`/`crc32` (§17.4.7–§17.4.15).
+Source: `examples/scripts/hash.ts`.
+
+##### 5.3.5.2 Authenticate a message with HMAC (via a JWT)
+
+sercon has no bare HMAC function — the HMAC algorithms live inside
+`crypto.jwt.sign`/`validate` (`HS256` is the default `opts.algorithm`).
+Signing a payload with a shared secret and checking it later is the
+practical equivalent of "HMAC-sign a message":
+
+```ts
+const secret = "shared-with-the-verifier-only";
+const token = crypto.jwt.sign({ sub: "u-42", action: "transfer" }, secret);
+
+// ... later, on the receiving side ...
+const verdict = crypto.jwt.validate(token, secret);
+if (verdict.valid) {
+  runtime.log("authentic, claims:", verdict.claims);
+} else {
+  runtime.log("rejected:", verdict.reason); // e.g. "signature is invalid"
+}
+```
+
+A tampered secret or payload makes `validate` resolve `{ valid: false,
+reason }` rather than throw — check `.valid`, don't wrap this in
+try/catch. Signatures: §17.4.16 (`sign`), §17.4.17 (`validate`).
+Source: `examples/scripts/jwt.ts`, `examples/scripts/advanced/crypto-pipeline.ts`.
+
+##### 5.3.5.3 Encrypt and decrypt with age
+
+```ts
+const alice = crypto.encrypt.keygen(); // { publicKey: "age1…", privateKey: "AGE-SECRET-KEY-1…" }
+
+const ct = crypto.encrypt.encrypt("hello, alice", alice.publicKey);
+const plain = crypto.encrypt.decrypt(ct, alice.privateKey);
+runtime.log(await text.charset.decode(plain, "utf-8")); // "hello, alice"
+
+// Multi-recipient: any listed identity can open it.
+const bob = crypto.encrypt.keygen();
+const shared = crypto.encrypt.encrypt("shared message", [alice.publicKey, bob.publicKey]);
+
+// ASCII armor for embedding in JSON / YAML / email; decrypt reads either form.
+const armored = crypto.encrypt.encrypt("embed me", alice.publicKey, { armored: true });
+```
+
+The wrong private key — or passing a public key where an identity is
+expected — throws a clean error rather than silently failing.
+Signatures: §17.4.4 (`keygen`), §17.4.3 (`encrypt`), §17.4.1 (`decrypt`),
+§17.4.6 (`rekey`), §17.4.2 (`detectBackend`).
+runnable: `examples/scripts/encrypt.ts`
+
+##### 5.3.5.4 Sign and verify a JWT
+
+```ts
+const secret = "topsecret-only-shared-with-the-verifier";
+const now = Math.floor(Date.now() / 1000);
+
+const tok = crypto.jwt.sign(
+  { sub: "alice", iat: now, exp: now + 3600, aud: "sercon-demo" },
+  secret,
+);
+
+const view = crypto.jwt.view(tok); // decodes without verifying — handy for debugging
+runtime.log(view.header.alg, view.payload.sub);
+
+const verdict = crypto.jwt.validate(tok, secret, { audience: "sercon-demo" });
+runtime.log(verdict.valid, verdict.claims?.sub);
+```
+
+`sign` does not synthesise `iat`/`exp` — set them yourself if you want
+them enforced. Asymmetric algorithms (`EdDSA`, `RS*`, `PS*`, `ES*`) use
+the same three calls with a PEM or JWK `secret` instead of raw bytes; a
+PEM key with an `HS*` algorithm is a cross-check error and throws at
+`sign`/`validate` rather than silently misbehaving.
+Signatures: §17.4.16 (`sign`), §17.4.18 (`view`), §17.4.17 (`validate`).
+runnable: `examples/scripts/jwt.ts`
+
 ### 5.4 `text`
 
 String, regex, charset, and data manipulation. The `str.*` and `preg*.*`
