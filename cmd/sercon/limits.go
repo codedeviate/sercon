@@ -55,6 +55,16 @@ const (
 	// entry is individually tiny. Callers may override per-call via the
 	// `maxEntries` option.
 	DefaultMaxArchiveEntries = 100_000
+
+	// DefaultMaxImagePixels caps the total pixel count (width * height)
+	// decodeImage will decode from attacker-controlled bytes. Without a
+	// cap, image.Decode allocates a full pixel buffer sized from the
+	// file's declared width/height — a crafted header can declare an
+	// extreme width x height while the file itself stays a few dozen
+	// bytes, triggering a multi-gigabyte allocation ("decode bomb").
+	// This is a hard cap: image.decode has no per-call opts surface, so
+	// unlike the other caps in this file there is no override knob.
+	DefaultMaxImagePixels = 64_000_000 // 64 megapixels
 )
 
 // readAllCapped reads all of r, capped at max bytes. It uses

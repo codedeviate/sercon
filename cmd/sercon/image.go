@@ -34,6 +34,17 @@ type encodeOpts struct{ quality int }
 // format name. Decoders for png/jpeg/gif (stdlib) and webp/tiff/bmp (x/image,
 // blank-imported) are registered, so image.Decode works by magic bytes.
 func decodeImage(data []byte) (image.Image, string, error) {
+	// Read the declared dimensions before decoding pixels. DecodeConfig only
+	// parses the header (e.g. PNG's IHDR chunk), so a crafted file can
+	// declare an extreme width x height while staying a few dozen bytes —
+	// image.Decode would then allocate a full pixel buffer sized from that
+	// declaration ("decode bomb"). Reject oversized declarations up front,
+	// before the expensive decode runs.
+	if cfg, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil {
+		if int64(cfg.Width)*int64(cfg.Height) > DefaultMaxImagePixels {
+			return nil, "", fmt.Errorf("image.decode: image dimensions %dx%d exceed max pixels (%d)", cfg.Width, cfg.Height, DefaultMaxImagePixels)
+		}
+	}
 	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, "", fmt.Errorf("image.decode: unsupported or corrupt image: %w", err)
