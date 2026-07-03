@@ -136,8 +136,9 @@ func phpVarExportDecode(text string, opts dumpOpts) (*irNode, error) {
 }
 
 type phpExpCursor struct {
-	s   string
-	pos int
+	s     string
+	pos   int
+	depth int
 }
 
 func (c *phpExpCursor) errf(format string, args ...any) error {
@@ -168,6 +169,11 @@ func (c *phpExpCursor) expect(lit string) error {
 }
 
 func (c *phpExpCursor) parseValue() (*irNode, error) {
+	c.depth++
+	if c.depth > MaxDecodeDepth {
+		return nil, fmt.Errorf("php.parseVarExport: max nesting depth %d exceeded", MaxDecodeDepth)
+	}
+	defer func() { c.depth-- }()
 	c.skipSpace()
 	if c.pos >= len(c.s) {
 		return nil, c.errf("unexpected end of input")

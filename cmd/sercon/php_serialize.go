@@ -95,10 +95,11 @@ func phpSerializeDecode(text string, opts dumpOpts) (*irNode, error) {
 }
 
 type phpCursor struct {
-	s    string
-	pos  int
-	refs []*irNode
-	path map[*irNode]bool
+	s     string
+	pos   int
+	refs  []*irNode
+	path  map[*irNode]bool
+	depth int
 }
 
 func (c *phpCursor) errf(format string, args ...any) error {
@@ -107,6 +108,11 @@ func (c *phpCursor) errf(format string, args ...any) error {
 }
 
 func (c *phpCursor) parseValue() (*irNode, error) {
+	c.depth++
+	if c.depth > MaxDecodeDepth {
+		return nil, fmt.Errorf("php.unserialize: max nesting depth %d exceeded", MaxDecodeDepth)
+	}
+	defer func() { c.depth-- }()
 	if c.pos >= len(c.s) {
 		return nil, c.errf("unexpected end of input")
 	}

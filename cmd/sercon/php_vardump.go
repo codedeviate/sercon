@@ -112,6 +112,7 @@ func phpVarDumpDecode(text string, opts dumpOpts) (*irNode, error) {
 type phpDumpCursor struct {
 	lines []string
 	line  int
+	depth int
 }
 
 func (c *phpDumpCursor) errf(format string, args ...any) error {
@@ -125,6 +126,11 @@ func (c *phpDumpCursor) lossy(reason string) error {
 
 // parseValue consumes the line(s) for one value starting at the cursor.
 func (c *phpDumpCursor) parseValue() (*irNode, error) {
+	c.depth++
+	if c.depth > MaxDecodeDepth {
+		return nil, fmt.Errorf("php.parseVarDump: max nesting depth %d exceeded", MaxDecodeDepth)
+	}
+	defer func() { c.depth-- }()
 	if c.line >= len(c.lines) {
 		return nil, c.errf("unexpected end of input")
 	}

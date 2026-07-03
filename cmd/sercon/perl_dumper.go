@@ -168,8 +168,9 @@ func perlDumperDecode(text string, opts dumpOpts) (*irNode, error) {
 }
 
 type perlCursor struct {
-	s   string
-	pos int
+	s     string
+	pos   int
+	depth int
 }
 
 func (c *perlCursor) errf(format string, args ...any) error {
@@ -199,6 +200,11 @@ func (c *perlCursor) expect(lit string) error {
 }
 
 func (c *perlCursor) parseValue() (*irNode, error) {
+	c.depth++
+	if c.depth > MaxDecodeDepth {
+		return nil, fmt.Errorf("perl.parseDumper: max nesting depth %d exceeded", MaxDecodeDepth)
+	}
+	defer func() { c.depth-- }()
 	if c.pos >= len(c.s) {
 		return nil, c.errf("unexpected end of input")
 	}
