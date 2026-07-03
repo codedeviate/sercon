@@ -4357,6 +4357,183 @@ listeners).
   `{ address: "icmp/<addr>", close() }`; it emits a READY line under
   `sercon serve` and joins graceful shutdown.
 
+### 6.9 Concepts
+
+Every `server.*` listener follows the same lifecycle, whichever protocol
+you pick: `await server.<proto>.listen({…})` binds **synchronously** (a
+port already in use throws before any Promise settles) and returns a
+**handle** — `address` (a `proto/host:port` string, with the OS-chosen
+port filled in when you pass `port: 0`) and `close()`. Binding parks a
+`HoldRun` sentinel (§6.1) so the engine's event loop stays alive while
+the listener is up; a script that just does `await server.http.listen(…)`
+and returns will keep running until something calls `close()` — that's
+why every example below ends with `await srv.close()`, exactly as the
+source scripts do. All handlers — HTTP routes, WebSocket loops, SMTP
+stage callbacks, TCP connection callbacks — run marshalled back onto the
+single goja loop, so **handlers serialize**: this rules out JS-level data
+races between requests, at the cost of no handler-level parallelism.
+
+For `server.http`/`server.https`, routes are keyed by stdlib
+`http.ServeMux` Go 1.22+ patterns (`"GET /path"`, `"GET /items/{id}"`,
+`"GET /assets/{rest...}"`), and every handler receives a fluent `res`
+builder — `res.status(code)` is chainable into `.json(obj)`, `.text(s)`,
+`.html(s)`, or `.empty()`. Global middleware (`use: [...]`) and an
+optional `onError(err, req, res)` wrap the whole route table; see §6.4
+and §6.2 for the full option surface. Full method reference: §17.10.
+
+### 6.10 Recipes
+
+#### 6.10.1 Serve a routed JSON API with middleware
+
+A request logger, bearer-token auth, and a try/catch error-catcher
+compose via `use: [...]`, applied in order to every route; a route can
+still short-circuit by not calling `next()`:
+
+```ts
+const TOKEN = "s3cr3t";
+
+const requestLogger = async (req: any, res: any, next: any) => {
+  const t0 = runtime.time.nowMs();
+  await next();
+  runtime.log(`${req.method} ${req.path} → ${runtime.time.nowMs() - t0}ms`);
+};
+
+const authMiddleware = async (req: any, res: any, next: any) => {
+  if (req.path === "/health") return next();
+  const authHeader: string = (req.headers["authorization"] ?? [""])[0];
+  if (authHeader !== `Bearer ${TOKEN}`) {
+    res.status(401).json({ error: "unauthorized" });
+    return; // do NOT call next — response is finalized
+  }
+  return next();
+};
+
+const srv = await server.http.listen({
+  port: 38200,
+  use: [requestLogger, authMiddleware],
+  routes: {
+    "GET /health":     (_req: any, res: any) => res.json({ ok: true }),
+    "GET /items":      (_req: any, res: any) => res.json(Array.from(items.values())),
+    "POST /items":     (req: any, res: any) => {
+      const body = JSON.parse(req.body || "{}");
+      if (!body.name) return res.status(400).json({ error: "name required" });
+      const id = nextId++;
+      items.set(id, { id, name: body.name });
+      res.status(201).json({ id, name: body.name });
+    },
+  },
+});
+
+await srv.close();
+```
+
+runnable: `examples/scripts/advanced/http-api.ts`
+
+#### 6.10.2 Serve static files
+
+`server.http.static({dir, stripPrefix})` returns a route handler you
+mount under a wildcard pattern — it's a plain `RouteValue`, so it composes
+with the rest of your route table:
+
+```ts
+const srv = await server.http.listen({
+  port: 38081,
+  routes: {
+    "GET /assets/{rest...}": server.http.static({
+      dir: root,
+      stripPrefix: "/assets/",
+    }),
+    "GET /": (req: any, res: any) => res.text("home"),
+  },
+});
+
+await srv.close();
+```
+
+runnable: `examples/scripts/server-static.ts`
+
+#### 6.10.3 Handle a WebSocket
+
+A route handler calls `res.upgradeWebSocket()` to hijack the connection;
+the returned handle is an `AsyncIterable<WSMessage>`, so `for await`
+walks frames until you `break` and close:
+
+```ts
+const srv = await server.http.listen({
+  port: 38082,
+  routes: {
+    "GET /ws": async (req: any, res: any) => {
+      const ws = await res.upgradeWebSocket();
+      for await (const msg of ws) {
+        if (msg.type === "text" && msg.text === "bye") {
+          await ws.close(1000, "bye");
+          break;
+        }
+        if (msg.type === "text") {
+          await ws.send("echo:" + msg.text);
+        }
+      }
+    },
+  },
+});
+
+await srv.close();
+```
+
+runnable: `examples/scripts/server-ws.ts`
+
+#### 6.10.4 Receive email
+
+`server.smtp.listen` takes per-stage handlers — `onMail`/`onRcpt` accept
+or reject the envelope, `onData` receives the fully parsed message:
+
+```ts
+let captured: { subject: string; body: string; from: string } | null = null;
+
+const srv = await server.smtp.listen({
+  port: 38095,
+  hostname: "test.local",
+  handlers: {
+    onMail: () => true,
+    onRcpt: () => true,
+    onData: (env: any, msg: any) => {
+      captured = { subject: msg.subject, body: msg.body.text, from: env.from };
+      return true;
+    },
+  },
+});
+
+// ... net.email.send({..., server: { host: "127.0.0.1", port, tls: "none" }}) ...
+
+await srv.close();
+```
+
+runnable: `examples/scripts/server-smtp.ts`
+
+#### 6.10.5 Run a TCP line server
+
+`server.tcp.listen({…}, conn => {…})` invokes the connection handler once
+per accepted socket; `conn` is the same handle shape as
+`net.tcp.connect` — `onData`/`onClose`/`onError`/`write`/`close`:
+
+```ts
+const srv: any = await server.tcp.listen({ port: 0 }, (conn: any) => {
+  conn.onData((ev: any) => conn.write(ev.bytes));   // echo bytes back
+  conn.onError((e: any) => runtime.log("server conn error", String(e)));
+});
+
+const port = Number(srv.address.split(":").pop());   // "tcp/0.0.0.0:PORT"
+// ... net.tcp.connect("127.0.0.1", port) to talk to it ...
+
+await srv.close();
+```
+
+runnable: `examples/scripts/server-tcp.ts`
+
+**Notes**
+- Method names and option shapes above are confirmed against §17.10 (the
+  source of truth for the full surface) and `examples/scripts/sercon.d.ts`.
+
 ## 7. JavaScript runtime built-ins (goja)
 
 `scriptengine` runs on goja, which implements **ES5.1 + a large subset of
