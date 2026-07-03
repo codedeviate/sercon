@@ -1673,6 +1673,129 @@ Transport `errors` are bucketed by kind (`timeout`, `refused`, `dns`,
 (Run end / `--timeout` aborts in-flight requests). See
 `examples/scripts/load.ts`.
 
+#### 5.7.8 Concepts
+
+`net.http` is the general-purpose HTTP client — reach for it first for
+calling APIs and fetching pages. The rest of `net` is diagnostic tooling
+layered on top, aimed at host reconnaissance and testing: `net.probe.*`
+runs one-shot reachability/handshake checks (`tcp`, `dns`, `tls`, `ntp`,
+`whois`, `ping`, `traceroute`, `smtp`, `wss`); `net.email.*` checks a
+domain's DNS-based deliverability / anti-spoofing posture (SPF, DMARC,
+MTA-STS, TLS-RPT, BIMI); `net.capture` / `net.raw` / `net.icmp` work at the
+packet level, for traffic analysis and crafted-packet probing. **Packet
+capture and raw sockets need elevated privileges** — live capture
+(`net.capture.open`) and `net.raw.*` / `net.icmp.open` need root /
+`CAP_NET_RAW` on Linux or `/dev/bpf` access on macOS; the offline pcap-file
+path (`net.capture.toFile` / `openFile`) needs none. `net.load.http` is a
+separate, **authorized** in-process HTTP load / resilience self-test — a
+plain worker-pool HTTP client loop, not a raw-packet flood tool — for
+exercising a service you operate under rising concurrency.
+
+#### 5.7.9 Recipes
+
+##### 5.7.9.1 Make an authenticated JSON request with retry
+
+```ts
+const r = await net.http.request("GET", "https://api.example.com/status", {
+  headers: { Authorization: "Bearer " + token },
+  retry: 2,       // extra attempts on transport errors + 5xx (linear backoff, capped at 1s)
+  timeout: 10000,
+});
+if (r.ok) {
+  runtime.log(r.status, r.body);
+} else {
+  runtime.log("request failed with status", r.status);
+}
+```
+
+See §5.7.1 for the full `opts` shape.
+
+##### 5.7.9.2 Probe a host:port for reachability + latency
+
+```ts
+const tcp = await net.probe.tcp(TARGET + ":443", { timeout: 5000 });
+runtime.log("port open, resolved to", tcp.ip, "latency", tcp.latencyMs.toFixed(1), "ms");
+```
+
+runnable: `examples/scripts/advanced/recon-host-report.ts`
+
+##### 5.7.9.3 Check a TLS certificate's expiry
+
+```ts
+const tls = await net.probe.tls(TARGET, { timeout: 8000 });
+const status = tls.daysRemaining > 30 ? "OK" : tls.daysRemaining > 7 ? "WARNING" : "CRITICAL";
+runtime.log(tls.cn, "expires", tls.notAfter.slice(0, 10), `(${tls.daysRemaining}d) [${status}]`);
+```
+
+runnable: `examples/scripts/advanced/recon-host-report.ts`
+
+##### 5.7.9.4 Check a domain's email-authentication posture (SPF / DMARC / …)
+
+```ts
+const posture = await net.email.all("example.com"); // spf, dmarc, mtaSts, tlsRpt, bimi in parallel
+for (const k of ["spf", "dmarc", "mtaSts", "tlsRpt", "bimi"] as const) {
+  const probe = posture[k];
+  runtime.log(k, probe.error ? "ERROR " + probe.error : probe.present ? "present" : "absent");
+}
+```
+
+See §5.7.3. **Note:** there is no standalone DKIM probe — DKIM is a
+per-message signature keyed by a selector, not a single domain-wide DNS
+record the way SPF/DMARC/MTA-STS/TLS-RPT/BIMI are, so it isn't part of the
+`net.email` surface.
+
+##### 5.7.9.5 Capture packets to a file
+
+```ts
+const w = net.capture.toFile("/tmp/capture.pcap", { snaplen: 65536 });
+w.write(frameBytes, { ts: Date.now() }); // frameBytes: a raw Ethernet/IPv4/… frame
+await w.close();
+
+await net.capture.openFile("/tmp/capture.pcap", (pkt: any) => {
+  const proto = pkt.tcp ? "tcp" : pkt.udp ? "udp" : "other";
+  runtime.log(proto, pkt.tcp?.dstPort ?? pkt.udp?.dstPort);
+});
+```
+
+**Notes**
+- This file round-trip (`toFile` / `openFile`) needs no privileges.
+- Live capture (`net.capture.open({ iface, … }, pkt => {…})`) needs root /
+  `CAP_NET_RAW` (Linux) or `/dev/bpf` access (macOS); pick `iface` from
+  `net.capture.interfaces()`.
+
+runnable: `examples/scripts/advanced/packet-analysis.ts`
+
+##### 5.7.9.6 Run a quick load / resilience self-test
+
+```ts
+const srv = await server.http.listen({
+  port: 38090,
+  routes: { "GET /work": (_req: any, res: any) => res.json({ ok: true }) },
+});
+
+const report = await net.load.http({
+  url: `http://127.0.0.1:38090/work`,
+  requests: 200,
+  concurrency: 10,
+});
+
+runtime.log("sent:", report.sent, "completed:", report.completed, "rps:", report.rps);
+runtime.log("p50/p95/max ms:", report.latency.p50, report.latency.p95, report.latency.max);
+runtime.assert.equal(report.failed, 0, "no transport failures");
+
+await srv.close();
+```
+
+**Notes**
+- Loopback / private / link-local / `localhost` targets run unconditionally;
+  a public host is refused unless `confirm: true` is passed (§5.7.7).
+- `examples/scripts/advanced/load-resilience.ts` demonstrates the same
+  ramp-and-assert pattern hand-rolled directly on `net.http.get` with custom
+  latency-percentile math — reach for that shape when you need assertions or
+  metrics beyond `net.load.http`'s built-in report.
+
+runnable: `examples/scripts/load.ts`
+
 ### 5.8 `db`
 
 Database / KV / directory clients:
