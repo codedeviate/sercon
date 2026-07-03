@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
@@ -242,6 +243,90 @@ func TestDecodeFramesAny_PixelBombGuard(t *testing.T) {
 		t.Fatal("decodeFramesAny should reject an oversized declared pixel count")
 	} else if !bytes.Contains([]byte(err.Error()), []byte("exceed")) {
 		t.Fatalf("decodeFramesAny error = %q, want a pixel-limit message", err)
+	}
+}
+
+// apngFcTLBomb builds a minimal-but-well-formed APNG whose IHDR canvas is
+// canvasW x canvasH but whose single fcTL chunk declares a frame of
+// frameW x frameH — the "small canvas, huge frame" decode-bomb shape.
+// checkFramesPixelBudget (which reads image.DecodeConfig, i.e. the IHDR
+// canvas) does not catch this: kettek/apng's decoder overwrites frame 0's
+// working width/height from the fcTL chunk (reader.go parsefcTL) before
+// allocating that frame's pixel buffer in readImagePass — off the fcTL
+// dimensions, not the IHDR canvas — during apng.DecodeAll.
+func apngFcTLBomb(t *testing.T, canvasW, canvasH, frameW, frameH uint32) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	buf.Write([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
+
+	writeChunk := func(typ string, data []byte) {
+		var lenBuf [4]byte
+		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(data)))
+		buf.Write(lenBuf[:])
+		buf.WriteString(typ)
+		buf.Write(data)
+		crc := crc32.NewIEEE()
+		crc.Write([]byte(typ))
+		crc.Write(data)
+		var crcBuf [4]byte
+		binary.BigEndian.PutUint32(crcBuf[:], crc.Sum32())
+		buf.Write(crcBuf[:])
+	}
+
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], canvasW)
+	binary.BigEndian.PutUint32(ihdr[4:8], canvasH)
+	ihdr[8] = 8  // bit depth
+	ihdr[9] = 6  // color type: RGBA
+	ihdr[10] = 0 // compression
+	ihdr[11] = 0 // filter
+	ihdr[12] = 0 // interlace
+	writeChunk("IHDR", ihdr)
+
+	actl := make([]byte, 8)
+	binary.BigEndian.PutUint32(actl[0:4], 1) // num_frames
+	binary.BigEndian.PutUint32(actl[4:8], 0) // num_plays (0 = loop forever)
+	writeChunk("acTL", actl)
+
+	fctl := make([]byte, 26)
+	binary.BigEndian.PutUint32(fctl[0:4], 0)       // sequence_number
+	binary.BigEndian.PutUint32(fctl[4:8], frameW)  // width
+	binary.BigEndian.PutUint32(fctl[8:12], frameH) // height
+	binary.BigEndian.PutUint32(fctl[12:16], 0)     // x_offset
+	binary.BigEndian.PutUint32(fctl[16:20], 0)     // y_offset
+	binary.BigEndian.PutUint16(fctl[20:22], 1)     // delay_num
+	binary.BigEndian.PutUint16(fctl[22:24], 100)   // delay_den
+	fctl[24] = 0 // dispose_op
+	fctl[25] = 0 // blend_op
+	writeChunk("fcTL", fctl)
+
+	// Placeholder IDAT: not valid zlib data. The guard must reject this
+	// file before apng.DecodeAll ever attempts to inflate/allocate a frame
+	// buffer from it, so the contents don't matter here.
+	writeChunk("IDAT", []byte{0x00})
+	writeChunk("IEND", nil)
+
+	return buf.Bytes()
+}
+
+// TestDecodeFramesAPNG_PerFrameFcTLBombGuard verifies decodeFramesAPNG
+// rejects an APNG whose IHDR canvas is small (10x10, passes
+// checkFramesPixelBudget) but whose fcTL chunk declares a huge frame
+// (9000x9000 = 81,000,000 px, over the 64,000,000 cap). kettek/apng
+// allocates each frame's pixel buffer from the fcTL-declared dimensions
+// during apng.DecodeAll (see readImagePass in reader.go), not the IHDR
+// canvas, so the canvas-only guard added in v0.85.0 lets this bomb through.
+func TestDecodeFramesAPNG_PerFrameFcTLBombGuard(t *testing.T) {
+	bomb := apngFcTLBomb(t, 10, 10, 9000, 9000)
+	doc, err := decodeFramesAPNG(bomb)
+	if err == nil {
+		t.Fatal("decodeFramesAPNG should reject an oversized fcTL frame declaration")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("exceed")) {
+		t.Fatalf("decodeFramesAPNG error = %q, want a pixel-limit message", err)
+	}
+	if len(doc.frames) != 0 {
+		t.Fatalf("doc.frames = %d, want 0 (no decode should have happened)", len(doc.frames))
 	}
 }
 

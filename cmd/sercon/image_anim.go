@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
@@ -107,8 +108,50 @@ func decodeFramesGIF(data []byte) (animDoc, error) {
 	return doc, nil
 }
 
+// checkAPNGFramePixelBudget pre-scans the raw PNG/APNG chunk stream for fcTL
+// chunks and rejects any whose declared frame width x height exceeds
+// DefaultMaxImagePixels. This must run before apng.DecodeAll, not after:
+// kettek/apng's decoder overwrites a frame's working width/height from its
+// fcTL chunk (reader.go parsefcTL) and then allocates that frame's pixel
+// buffer from those dimensions in readImagePass — before any row data is
+// read — so a small IHDR canvas (which checkFramesPixelBudget validates via
+// image.DecodeConfig) does not prevent an oversized fcTL from triggering the
+// allocation. A malformed chunk stream is left for apng.DecodeAll itself to
+// report, since that's a format problem unrelated to the pixel budget.
+func checkAPNGFramePixelBudget(data []byte) error {
+	const sigLen = 8
+	if len(data) < sigLen {
+		return nil
+	}
+	pos := sigLen
+	for pos+8 <= len(data) {
+		length := int64(binary.BigEndian.Uint32(data[pos : pos+4]))
+		typ := string(data[pos+4 : pos+8])
+		dataStart := pos + 8
+		remaining := int64(len(data) - dataStart)
+		if length < 0 || length > remaining {
+			return nil // malformed chunk length; let apng.DecodeAll report it
+		}
+		if typ == "fcTL" && length >= 12 {
+			w := int64(binary.BigEndian.Uint32(data[dataStart+4 : dataStart+8]))
+			h := int64(binary.BigEndian.Uint32(data[dataStart+8 : dataStart+12]))
+			if w*h > DefaultMaxImagePixels {
+				return fmt.Errorf("image.decodeFrames: apng frame dimensions %dx%d exceed max pixels (%d)", w, h, DefaultMaxImagePixels)
+			}
+		}
+		if typ == "IEND" {
+			break
+		}
+		pos = dataStart + int(length) + 4 // skip chunk data + trailing CRC
+	}
+	return nil
+}
+
 func decodeFramesAPNG(data []byte) (animDoc, error) {
 	if err := checkFramesPixelBudget(data); err != nil {
+		return animDoc{}, err
+	}
+	if err := checkAPNGFramePixelBudget(data); err != nil {
 		return animDoc{}, err
 	}
 	a, err := apng.DecodeAll(bytes.NewReader(data))
