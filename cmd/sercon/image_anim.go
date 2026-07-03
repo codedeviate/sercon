@@ -133,9 +133,17 @@ func checkAPNGFramePixelBudget(data []byte) error {
 			return nil // malformed chunk length; let apng.DecodeAll report it
 		}
 		if typ == "fcTL" && length >= 12 {
-			w := int64(binary.BigEndian.Uint32(data[dataStart+4 : dataStart+8]))
-			h := int64(binary.BigEndian.Uint32(data[dataStart+8 : dataStart+12]))
-			if w*h > DefaultMaxImagePixels {
+			w := binary.BigEndian.Uint32(data[dataStart+4 : dataStart+8])
+			h := binary.BigEndian.Uint32(data[dataStart+8 : dataStart+12])
+			// w and h are uint32 (up to ~4.29e9 each); w*h as int64*int64 can
+			// overflow int64 (max ~9.22e18) once both dimensions exceed
+			// ~3.04e9, wrapping to a small/negative value and silently
+			// bypassing the ">" comparison below. Compare via division
+			// instead: DefaultMaxImagePixels/int64(h) can't overflow, and if
+			// int64(w) exceeds that quotient then w*h would exceed the cap.
+			// A zero-valued dimension is 0 pixels (not a bomb), not a
+			// division-by-zero risk to guard against multiplying.
+			if w > 0 && h > 0 && int64(w) > DefaultMaxImagePixels/int64(h) {
 				return fmt.Errorf("image.decodeFrames: apng frame dimensions %dx%d exceed max pixels (%d)", w, h, DefaultMaxImagePixels)
 			}
 		}

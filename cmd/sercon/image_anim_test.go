@@ -330,6 +330,42 @@ func TestDecodeFramesAPNG_PerFrameFcTLBombGuard(t *testing.T) {
 	}
 }
 
+// TestCheckAPNGFramePixelBudget_Int64OverflowGuard verifies
+// checkAPNGFramePixelBudget still rejects an fcTL frame whose width x height
+// individually fit in uint32 (as the raw chunk bytes require) but whose
+// product overflows int64 when computed naively as int64(w)*int64(h): both
+// dimensions here are individually valid (well under uint32's ~4.29e9 max)
+// yet 3_200_000_000 * 3_200_000_000 = 1.024e19, past int64's ~9.22e18 max, so
+// a naive multiply-then-compare wraps to a small/negative value and the
+// ">DefaultMaxImagePixels" check silently passes — reopening the exact
+// decode-bomb checkAPNGFramePixelBudget exists to close. Exercises the guard
+// function directly (not through decodeFramesAPNG/apng.DecodeAll): a real
+// 3.2-billion-pixel-per-side decode attempt would try to allocate a
+// slice far past the runtime's max allocation size, which is unnecessary
+// risk for a check that never needs to reach the decoder if the guard works.
+func TestCheckAPNGFramePixelBudget_Int64OverflowGuard(t *testing.T) {
+	const big = 3_200_000_000 // uint32-valid; big*big overflows int64
+	bomb := apngFcTLBomb(t, 10, 10, big, big)
+	err := checkAPNGFramePixelBudget(bomb)
+	if err == nil {
+		t.Fatal("checkAPNGFramePixelBudget should reject a fcTL frame whose w*h overflows int64, not silently pass it")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("exceed")) {
+		t.Fatalf("checkAPNGFramePixelBudget error = %q, want a pixel-limit message", err)
+	}
+}
+
+// TestCheckAPNGFramePixelBudget_ZeroDimensionNoFalsePositive confirms the
+// division-based rewrite (int64(w) > DefaultMaxImagePixels/int64(h)) doesn't
+// divide by zero and doesn't false-trip on a zero-area fcTL frame — 0 pixels
+// is not a bomb, regardless of how large the other dimension declares.
+func TestCheckAPNGFramePixelBudget_ZeroDimensionNoFalsePositive(t *testing.T) {
+	bomb := apngFcTLBomb(t, 10, 10, 0, 4_000_000_000)
+	if err := checkAPNGFramePixelBudget(bomb); err != nil {
+		t.Fatalf("checkAPNGFramePixelBudget(width=0) = %v, want nil (zero-area frame is not a bomb)", err)
+	}
+}
+
 func TestDecodeFramesAny_NonAnimated(t *testing.T) {
 	// plainPNG is defined in exif_engine_test.go (same package).
 	doc, err := decodeFramesAny(plainPNG(t))
