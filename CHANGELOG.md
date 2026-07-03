@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.84.1] — 2026-07-03
+
+### Documentation
+- Manual cookbook expansion: task-oriented Concepts primers + Recipes added
+  across the manual, following a new per-section recipe convention (recorded in
+  CLAUDE.md). Covers the embedded libraries — `favro` (§16.2) and
+  `paymentproviders` (§16.1) — and the I/O & network reserved globals: `fs`
+  (§5.6), `net` (§5.7), `server` (§6), `web` (§5.12), and `services` (§5.9).
+  Recipes are illustrative and derived from the runnable example scripts.
+
 ## [0.84.0] — 2026-07-02
 
 ### Added
