@@ -48,7 +48,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: imageHandleTS,
 			Returns:    "Image — a handle exposing read-only width/height/format and chainable transform methods.",
-			Errors:     "Throws (\"image.open: …\") if the file cannot be read, or (\"image.decode: …\") if the bytes are not a recognised/decodable image.",
+			Errors:     "Throws (\"image.open: …\") if the file cannot be read, (\"image.decode: …\") if the bytes are not a recognised/decodable image, or if the declared width x height exceeds a hard 64-megapixel cap (a \"decode bomb\" guard; not configurable).",
 			Example:    `const im = image.open("avatar.jpg", { autoOrient: true });`,
 		},
 		"decode": {
@@ -59,7 +59,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: imageHandleTS,
 			Returns:    "Image — a handle exposing read-only width/height/format and chainable transform methods.",
-			Errors:     "Throws a TypeError if data is not a Uint8Array, or (\"image.decode: …\") if the bytes are not a recognised/decodable image.",
+			Errors:     "Throws a TypeError if data is not a Uint8Array, (\"image.decode: …\") if the bytes are not a recognised/decodable image, or if the declared width x height exceeds a hard 64-megapixel cap (a \"decode bomb\" guard; not configurable — see DefaultMaxImagePixels).",
 			Example:    `const im = image.decode(pngBytes, { autoOrient: true });`,
 		},
 		"rasterizeSVG": {

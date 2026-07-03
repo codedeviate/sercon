@@ -1,8 +1,9 @@
 package scriptengine
 
 // Version is the released version of the scriptengine library and the
-// bundled sercon CLI. Bumped automatically by release-please from the
-// release PR; the `x-release-please-version` marker below tells the
-// generic file updater which line to rewrite. The git tag (with `v`
-// prefix) is created in the same release-please commit.
+// bundled sercon CLI. Bumped by hand via `make release-prep VERSION=x.y.z`
+// (see CLAUDE.md § Versioning and commits); the `x-release-please-version`
+// marker below is a leftover from the release-please era, kept only because
+// `make release-prep` still locates this line by it. The git tag (with `v`
+// prefix) is created and pushed manually by the maintainer after the cut.
 const Version = "0.84.3" // x-release-please-version

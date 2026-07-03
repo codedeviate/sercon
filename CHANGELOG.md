@@ -8,6 +8,52 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- Size-cap guards against decompression-/decode-bomb resource exhaustion:
+  `net.http.request` and every `web.*.load` accept `maxBytes` (response body
+  cap, default 256 MB); `server.http.listen` / `server.https.listen` accept
+  `maxBodyBytes` (inbound request body cap, default 32 MB, `413` on exceed);
+  `codec.compression.decompress` accepts `maxBytes` (decompressed output cap,
+  default 512 MB); `fs.archive.extract` accepts `maxTotalBytes` (default
+  1 GB) and `maxEntries` (default 100000).
+- `image.decode` / `image.open` (and `codec.barcode.decode`, which decodes
+  through the same path) now reject a source whose declared width × height
+  exceeds a hard 64-megapixel cap before allocating the pixel buffer; not
+  configurable.
+- kcov3 payment-provider mutations (`acknowledge`, `capturePayment`,
+  `refundPayment`, `cancelPayment`, `releaseRemainingAuthorization`) accept
+  an optional `idempotencyKey` so a caller can pin a stable key across
+  retries instead of getting a fresh, non-deduping key per call.
+
+### Fixed
+- `codec.php` / `codec.perl` dump decoders now cap recursion depth instead
+  of stack-overflow crashing on deeply nested untrusted input.
+- `sercon serve` now performs a *real* graceful shutdown on SIGTERM/SIGINT:
+  every active listener's close hook (HTTP/HTTPS `Server.Shutdown`, SMTP
+  `Server.Close`, TCP/UDP/ICMP socket close) runs concurrently within
+  `--shutdown-timeout` before the run context is force-cancelled as a
+  fallback — previously the handler just waited out the timer without ever
+  closing the listeners.
+- SMTP listener close is now safe against a concurrent double-close.
+- The favro library is now importable under `sercon run` / `sercon serve`
+  (previously failed to resolve).
+- A retried kcov3 capture/refund could double-charge because each call
+  generated its own fresh idempotency key by default; see the `idempotencyKey`
+  option above.
+- `PromisifyAsync` work now observes the current Run's context (timeout and
+  cancellation) instead of `context.Background()`, so async bindings abort
+  in step with the rest of the script.
+- Documentation accuracy: the false "`Run`'s return value is always
+  `undefined`" claim (§3.3); `services.pdf.available`'s gating binary
+  (`pdftoppm`, not `pdfinfo`); the missing `-emit-reference PATH` flag in the
+  §4 flags table; `services.doctor`'s tool list and `requires` categories
+  omitting `pdf`/poppler; the §5.7 `net.capture` summary omitting `routes()`;
+  the §3.1 `Options` struct block omitting `ProgramName`/`WatchMode`; a
+  §4.6 "Recipes" heading nested one level too deep; the `version.go` header
+  comment still describing an automated release-please bump instead of the
+  manual `make release-prep` flow; and CLAUDE.md's async-iterator polyfill
+  key (`Symbol.for("Symbol.asyncIterator")`, not `"@@asyncIterator"`).
+
 ## [0.84.3] — 2026-07-03
 
 ### Documentation

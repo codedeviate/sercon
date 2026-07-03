@@ -71,7 +71,7 @@ const capped = await codec.compression.decompress("gzip", packed, { maxBytes: 1 
 			},
 			ReturnType: "Promise<{ format: string, text: string }>",
 			Returns:    "Promise<{ format: string, text: string }> — the detected symbology name and the decoded payload.",
-			Errors:     "Throws if data is missing/empty or not a string/ArrayBuffer/Uint8Array, the image cannot be decoded, the format hint is unsupported, or no barcode is recognised.",
+			Errors:     "Throws if data is missing/empty or not a string/ArrayBuffer/Uint8Array, the image cannot be decoded (including exceeding the shared hard 64-megapixel decode-bomb cap — see image.decode), the format hint is unsupported, or no barcode is recognised.",
 			Example:    `const { format, text } = await codec.barcode.decode(png);`,
 		},
 		"checkdigit.algos": {

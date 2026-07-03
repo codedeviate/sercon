@@ -211,6 +211,8 @@ type Options struct {
     DisableConsole bool          // turn off the goja_nodejs console module
     Verbose        io.Writer     // diagnostic traces, prefixed "[sercon] "
     ModuleLoader   func(candidatePath string) (source string, found bool, err error)
+    ProgramName    string        // argv[0] for runtime.argv; defaults to filepath.Base(os.Args[0])
+    WatchMode      bool          // set by the CLI's --watch loop; read via Engine.WatchMode()
 }
 
 func New(opts Options) *Engine
@@ -301,8 +303,11 @@ func (e *Engine) RunFile(ctx context.Context, path string, opts ...RunOption) (g
 ```
 
 `Run` executes `source` as an entry-script TS. `name` is used in stack
-traces. The returned value is currently always `undefined` — top-level
-expression capture is on the backlog.
+traces. The returned value is the resolved value of the script's
+top-level `export default <expr>`, if any; scripts without a default
+export resolve to `undefined` (see [§9. TypeScript
+support](#9-typescript-support) for how the `sercon` CLI uses this to
+print a script's result as JSON).
 
 Both methods respect `Options.Timeout` *and* `ctx` cancellation, whichever
 fires first; the resulting error is either `ErrScriptTimeout`, `ctx.Err()`,
@@ -455,13 +460,14 @@ sercon --examples | --help | --version
 | `-timeout DURATION` | Wall-clock limit per script (default `10s`; `0` disables). |
 | `-root DIR` | Override the script root for `require`/`import` resolution. |
 | `-emit-dts PATH` | Write the example bindings' `.d.ts` to `PATH` and exit. |
+| `-emit-reference PATH` | Write the markdown binding reference to `PATH` and exit. |
 | `-v`, `--verbose` | Print a `PASS <name> (<time>)` line per script on success (default is quiet — only failures print). Also traces the rewritten entry-script JS and each module resolution to stderr, and prints duration on failure. |
 | `--silent` | Suppress the runner's `PASS`/`FAIL` status lines entirely. Script console output and the export-default result still print; failure is signalled only by the exit code. |
 | `-h`, `--help` | In-depth colorized help. |
 | `--examples` | In-depth colorized walkthrough of every feature. |
 | `--no-pager` | Don't page `--help` / `--examples`. By default, when stdout is a terminal they pipe through `$PAGER` (falling back to `less` with `LESS=FRX`, color preserved); a pipe/redirect, `--no-pager`, or `PAGER=cat` renders directly. |
 | `--version` | Print the engine version (plus goja/esbuild build-info versions). |
-| `--doctor` | Check external tool requirements (git, gh, AI providers, agent-browser, chromedriver/geckodriver, typst, recon/curl, clipboard/image): installed?, version, purpose — and validate the chromedriver↔Chrome major-version match; then exit. Prints a category-grouped table. Exits `0` normally (missing tools are optional), `5` on a detected compatibility conflict. Same report as the `services.doctor` binding. |
+| `--doctor` | Check external tool requirements (git, gh, AI providers, agent-browser, chromedriver/geckodriver, typst, poppler/pdf, recon/curl, clipboard/image): installed?, version, purpose — and validate the chromedriver↔Chrome major-version match; then exit. Prints a category-grouped table. Exits `0` normally (missing tools are optional), `5` on a detected compatibility conflict. Same report as the `services.doctor` binding. |
 | `--watch` | Re-run on file change under the script root. Debounced 150 ms. Ctrl-C exits. |
 | `--secrets-prefix=P` | Namespace prefix for `runtime.secrets` keystore items. Overrides `$SERCON_SECRETS_PREFIX`; default `sercon/`. |
 | `--env-file=PATH` | Load `KEY=VALUE` pairs from a `.env` file into the environment before running (repeatable). Parses `KEY=VALUE`, `#` comments, blank lines, an optional leading `export`, and optional surrounding quotes — no shell expansion. A variable already in the real environment always wins; among multiple files, a later file overrides an earlier one. Replaces the `set -a; source .env; set +a` ritual and makes shebang scripts self-sufficient. |
@@ -692,11 +698,14 @@ Behavioural deltas vs vanilla `sercon`:
   produce one READY line each. Supervisors that read-line on
   startup (`systemd-notify`, `docker-compose` healthchecks) can
   wait on it.
-- **Graceful shutdown.** SIGTERM / SIGINT triggers `srv.close()`
-  on every active listener concurrently, then waits up to
-  `--shutdown-timeout` for the script to drain. Clean exit is
-  exit code `0`. Past the deadline, `loop.Terminate()` fires
-  and the process exits with the usual classification.
+- **Graceful shutdown.** SIGTERM / SIGINT invokes every active
+  listener's close hook concurrently — the same underlying close
+  path the script's own `srv.close()` takes (HTTP/HTTPS
+  `Server.Shutdown`, SMTP `Server.Close`, TCP/UDP/ICMP socket
+  close) — and waits up to `--shutdown-timeout` for them all to
+  finish. Clean exit is exit code `0`. Past the deadline (or if a
+  hook hangs), the run context is force-cancelled as a fallback,
+  which drives the usual `vm.Interrupt` + `loop.Terminate` path.
 - **No `--watch`.** Re-running while a listener is bound would
   race port rebinding; `sercon serve --watch …` exits with a
   usage error. Use vanilla `sercon --watch script.ts` for the
@@ -708,7 +717,7 @@ sercon serve --port-override 9090 server.ts
 sercon serve --shutdown-timeout 10s server.ts
 ```
 
-#### 4.6 Recipes
+### 4.6 Recipes
 
 Common command-line patterns. (Flags are documented in the FLAGS table in
 §4 and in `sercon --help`.)
@@ -1397,9 +1406,13 @@ returns them in registration order: `gzip`, `deflate`, `zlib`, `bzip2`, `zstd`,
   `compress` and `decompress` are **async** (they run off the loop via
   `PromisifyAsync`). `data` is a string (taken as its UTF-8 bytes), a
   `Uint8Array`, or an `ArrayBuffer`.
-- `codec.compression.decompress(algo, data): Promise<Uint8Array>` — the inverse;
-  pass the **same** algorithm name you compressed with. The frame format is
-  algorithm-specific and not self-describing, so there is no auto-detection.
+- `codec.compression.decompress(algo, data, opts?): Promise<Uint8Array>` — the
+  inverse; pass the **same** algorithm name you compressed with. The frame
+  format is algorithm-specific and not self-describing, so there is no
+  auto-detection. `opts.maxBytes` caps the decompressed output size in bytes
+  (default 512 MB; a non-positive value falls back to the default) — a guard
+  against a decompression bomb, a small crafted input that inflates to
+  gigabytes in memory. Exceeding it throws.
 
 Notes on the implementations: `bzip2` is compressed via `dsnet/compress` (Go's
 standard `compress/bzip2` is decompression-only); `snappy` uses its one-shot
@@ -1419,7 +1432,9 @@ algorithm; cross-algorithm or truncated input throws.
   (`codec.barcode.decodableFormats()`): the encodable set minus `pdf417` (gozxing
   has no PDF417 reader) plus `code93`, `upce`, and `itf`. With no `format` hint
   every reader is tried in priority order and the first hit wins; a hint runs
-  only that reader.
+  only that reader. `decode` shares the same hard 64-megapixel decode guard as
+  `image.decode` (§5.11) — an image whose declared width x height exceeds it
+  throws before the pixel buffer is allocated; there is no override.
 
 **Dimensions and the quiet zone.** `opts.width` / `opts.height` default to
 256×256 for the 2D codes (`qr`, `datamatrix`, `aztec`) and 400×120 for the 1D
@@ -1823,8 +1838,12 @@ Filesystem operations:
   (entries that resolve outside `destDir` via an absolute path or a `..`
   component reject the whole call), and honours `opts.overwrite` — the default
   `false` opens targets with `O_EXCL` so an entry colliding with an existing
-  file fails; pass `true` to clobber. It resolves to
-  `{ path, format, dest, entries }`.
+  file fails; pass `true` to clobber. `opts.maxTotalBytes` (default 1 GB) caps
+  the cumulative decompressed bytes written across all members, and
+  `opts.maxEntries` (default 100000) caps the number of members processed —
+  both are decompression-bomb guards (a non-positive value falls back to its
+  default), and extraction aborts as soon as either cap is exceeded. It
+  resolves to `{ path, format, dest, entries }`.
 
 General file read/write (all async; paths used as given, no sandboxing —
 matching `image.save` and the WebDriver `screenshot` writers):
@@ -1919,7 +1938,7 @@ Network clients and probes:
 - `net.tcp.connect(host, port, opts?)` — open a TCP client socket.
 - `net.udp.open(opts)` — open a UDP socket (connected or bound).
 - `net.icmp.open(opts?)` — open a raw ICMP socket (needs privileges).
-- `net.capture.{interfaces, open, openFile, toFile}` — packet capture
+- `net.capture.{interfaces, routes, open, openFile, toFile}` — packet capture
   (live + pcap file I/O), pure-Go gopacket.
 - `net.raw.{open, tcp}` — craft & send raw IPv4 packets (TCP flags / UDP /
   arbitrary IP protocol) and receive replies (needs privileges).
@@ -1942,9 +1961,12 @@ rejects** — it resolves with the status set; only transport-level failures
 - `net.http.request(method, url, opts?)` — the full client. `opts` is
   `{ headers?, body?, multipart?, timeout? (ms, default 30000), retry?
   (extra attempts, default 0), follow? (default true), username?,
-  password? }`. `retry` applies **only** to transport errors and 5xx, with
-  linear backoff capped at 1 s; a malformed method/URL rejects immediately
-  and is not retried. `follow: false` stops at the first 3xx. Resolves to
+  password?, maxBytes? (default 256 MB) }`. `retry` applies **only** to
+  transport errors and 5xx, with linear backoff capped at 1 s; a malformed
+  method/URL rejects immediately and is not retried. `follow: false` stops
+  at the first 3xx. `maxBytes` caps the response body size read into memory
+  — a caller may raise or lower it; a response over the cap rejects instead
+  of resolving. Resolves to
   `{ status, ok, headers, body, bodyBytes, url }` — `ok` is `status` in
   `[200, 400)`; `headers` is a lower-cased name→value map (last value
   wins); `url` is the final URL after redirects. `net.http.request` also
@@ -3702,7 +3724,7 @@ shell, no cgo. Follows the same opt-in, feature-detected model as
 `services.typst` / `services.git` / `services.agentBrowser`.
 
 **Availability gate.** `services.pdf.available` is a sync boolean —
-true when `pdfinfo` is on PATH. Gate on it; every other pdf binding throws
+true when `pdftoppm` is on PATH. Gate on it; every other pdf binding throws
 a clean error when the tool is absent. Install with `brew install poppler`
 (macOS) or `apt install poppler-utils` (Debian/Ubuntu).
 
@@ -3712,7 +3734,7 @@ adapt when only a subset of poppler is installed.
 
 **Surface.**
 
-- `services.pdf.available` — `boolean`. True when `pdfinfo` is on PATH.
+- `services.pdf.available` — `boolean`. True when `pdftoppm` is on PATH.
 - `services.pdf.backend` — `string`. Always `"poppler"`.
 - `services.pdf.tools` — `{ pdftoppm, pdftotext, pdftohtml, pdfinfo: boolean }`.
   Per-binary availability flags.
@@ -3793,15 +3815,16 @@ const r = await services.doctor(requires?: string[]);
 
 Tools probed include `git`, `gh`, the AI providers (`claude`, `codex`,
 `copilot`, `gemini`), `agent-browser`, `chromedriver` / `geckodriver`,
-`typst`, the HTTP backends (`recon`, `curl`), and the platform clipboard /
+`typst`, the poppler PDF tools (`pdftoppm`, `pdftotext`, `pdftohtml`,
+`pdfinfo`), the HTTP backends (`recon`, `curl`), and the platform clipboard /
 image tools (`pbcopy` / `pbpaste` / `osascript` / `pngpaste` on macOS,
 `wl-copy` / `wl-paste` / `xclip` / `xsel` on Linux, `clip` / `powershell`
 on Windows).
 
 **`requires` — assert prerequisites.** Each entry is either a
 feature/category name (`"webdriver"`, `"typst"`, `"ai"`, `"git"`, `"gh"`,
-`"agentBrowser"`, `"clipboard"`, `"image"`, `"http"`) or a specific binary
-name (`"chromedriver"`, `"pngpaste"`, `"claude"`, …). A category is met
+`"agentBrowser"`, `"pdf"`, `"clipboard"`, `"image"`, `"http"`) or a specific
+binary name (`"chromedriver"`, `"pngpaste"`, `"claude"`, `"pdftoppm"`, …). A category is met
 when at least one tool in it is installed and `ok`. Anything unmet lands in
 `unmet` — **a missing tool is reported, not thrown**, so a script can
 self-skip an optional feature. An **unknown** requirement name (a typo)
@@ -4139,6 +4162,12 @@ source format string, or `"svg"` for a rasterized SVG).
 - **`orient(n)`** applies one of the 8 EXIF pixel transforms directly (n 1..8;
   1 is a no-op copy). Use this when you already know the orientation integer; use
   `autoOrient` to drive it from the source file's tag.
+- **Hard 64-megapixel decode guard.** `image.open`/`image.decode` reject a
+  source whose declared `width * height` exceeds 64,000,000 pixels *before*
+  allocating the pixel buffer — a crafted header can claim an enormous
+  resolution while the file itself stays a few dozen bytes ("decode bomb").
+  This cap is not configurable (no opts knob); `codec.barcode.decode` (§5.5.2)
+  decodes through the same path and shares it.
 
 ```ts
 const im = image.open("avatar.png");
@@ -4543,9 +4572,10 @@ pure-Go, no cgo.
 
 **Shared fetch options.** Every `load(url, opts?)` reuses the `net.http`
 option surface — `timeout` (ms number or duration string), `headers`,
-`follow` (redirects), `userAgent`, and basic-auth `username`/`password`
-— and sends a default `sercon-web/<version>` User-Agent unless you
-override it. A non-2xx response throws.
+`follow` (redirects), `userAgent`, basic-auth `username`/`password`, and
+`maxBytes` (response body size cap, default 256 MB; a response over the
+cap rejects) — and sends a default `sercon-web/<version>` User-Agent
+unless you override it. A non-2xx response throws.
 
 #### 5.12.1 `web.feed`
 
@@ -4914,6 +4944,7 @@ await srv.stopped;    // Promise that resolves when the listener exits
 | `routes` | `Record<string, RouteValue>` | Required (may be `{}`). Keys are stdlib `http.ServeMux` patterns. |
 | `use` | `Middleware[]` | Optional global middleware; runs in array order before any per-route middleware. |
 | `onError` | `(err, req, res) => unknown` | Optional error handler; renders a custom response when a handler/middleware throws or rejects. See below. |
+| `maxBodyBytes` | `number` | Caps an inbound request body read into memory before any route handler or middleware runs. Default 32 MB (a non-positive value falls back to the default). An over-limit body gets a `413` without invoking any JS. |
 | `cert` | `string` | **HTTPS only.** File path, inline PEM, *or* the literal `"self-signed"` to mint an ephemeral in-process dev cert. |
 | `key`  | `string` | **HTTPS only.** File path *or* inline PEM. Not needed (ignored) when `cert` is `"self-signed"`. |
 
@@ -6139,8 +6170,11 @@ All six providers are built on a small shared core (`core/`):
 
   Catch it to branch on `status` (e.g. distinguish a `404` from a `401`).
 - **Idempotency keys.** Mutating KCO calls send an auto-generated
-  `klarna-idempotency-key`; the generator (`idempotencyKey()`) is a
-  timestamp+random base36 string.
+  `klarna-idempotency-key` by default; the generator (`idempotencyKey()`) is a
+  timestamp+random base36 string. Every kcov3 mutation also accepts an
+  optional `{ idempotencyKey? }` as its last argument so a caller can pin a
+  stable key across retries of the same logical call — see
+  [§16.1.8.7](#161807-retry-safely-with-idempotency-kcov3).
 - **Amounts are integer minor units** (öre / cents), matching the provider APIs.
   `core/money.ts` exposes `major`/`minor` helpers if you need to convert.
 
@@ -6158,16 +6192,18 @@ Wraps Kustom's Order-Management v1 + Checkout v3 APIs.
   `KCO_ENV` (`test`|`prod`), `KCO_BASE_URL` (overrides env selection).
 - **Base URLs.** test `https://api.playground.kustom.co` ·
   prod `https://api.kustom.co`.
-- **Idempotency.** All POST mutations send a fresh `klarna-idempotency-key`.
+- **Idempotency.** All POST mutations send a fresh `klarna-idempotency-key`
+  by default; pass `{ idempotencyKey }` as the trailing opts argument to pin
+  a caller-chosen key instead (e.g. across retries).
 
 | Method | Params | Returns | Throws |
 | --- | --- | --- | --- |
 | `getPayment(id)` | order id | the order-management order | `PaymentError` on non-2xx |
-| `acknowledge(id)` | order id | ack result | `PaymentError` |
-| `capturePayment(id, { amount, orderLines?, description? })` | id + capture input (sent as `captured_amount`/`order_lines`/`description`) | capture result | `PaymentError` |
-| `refundPayment(id, { amount, orderLines?, description? })` | id + refund input (sent as `refunded_amount`/`order_lines`/`description`) | refund result | `PaymentError` |
-| `cancelPayment(id)` | order id | cancel result | `PaymentError` |
-| `releaseRemainingAuthorization(id)` | order id | release result | `PaymentError` |
+| `acknowledge(id, opts?)` | order id + `{ idempotencyKey? }` | ack result | `PaymentError` |
+| `capturePayment(id, { amount, orderLines?, description? }, opts?)` | id + capture input (sent as `captured_amount`/`order_lines`/`description`) + `{ idempotencyKey? }` | capture result | `PaymentError` |
+| `refundPayment(id, { amount, orderLines?, description? }, opts?)` | id + refund input (sent as `refunded_amount`/`order_lines`/`description`) + `{ idempotencyKey? }` | refund result | `PaymentError` |
+| `cancelPayment(id, opts?)` | order id + `{ idempotencyKey? }` | cancel result | `PaymentError` |
+| `releaseRemainingAuthorization(id, opts?)` | order id + `{ idempotencyKey? }` | release result | `PaymentError` |
 | `createCheckout(order)` | checkout order object | created checkout order | `PaymentError` |
 | `getCheckout(id)` | checkout order id | checkout order | `PaymentError` |
 
@@ -6341,9 +6377,11 @@ handles it for you either way — you just supply credentials: kcov3 sends
 sveacheckout2 and qlirov2 **sign the request body** (a computed signature over
 the serialised JSON — svea uses SHA-512, qliro SHA-256); swedbankpayv2/v3 send
 a **Bearer access token** (`Authorization: Bearer <accessToken>`). kcov3
-mutations carry an idempotency key so a retried capture/refund isn't
-double-applied. Any non-2xx throws a
-`PaymentError { provider, status, body, requestId? }`.
+mutations carry an idempotency key — auto-generated fresh per call by
+default, or pass `{ idempotencyKey }` to pin a stable value across retries
+so a retried capture/refund isn't double-applied (see
+[§16.1.8.7](#161807-retry-safely-with-idempotency-kcov3)). Any non-2xx
+throws a `PaymentError { provider, status, body, requestId? }`.
 
 **Config & test-vs-prod.** `client(overrides?)` reads env with precedence
 `overrides.X ?? env(PROVIDER_X)`. It targets the **test** environment by
@@ -6490,21 +6528,33 @@ const order = await qliro.createOrder({
 
 ##### 16.1.8.7 Retry safely with idempotency (kcov3)
 
-kcov3 mutations send a unique `klarna-idempotency-key`, so re-issuing the same
-capture/refund after a transient failure won't apply it twice.
+Every kcov3 mutation (`acknowledge`, `capturePayment`, `refundPayment`,
+`cancelPayment`, `releaseRemainingAuthorization`) takes an optional
+`{ idempotencyKey? }` as its last argument. Left unset, each *call* gets its
+own fresh, auto-generated `klarna-idempotency-key` — which means a naive
+retry loop that just calls the method again on failure sends a **different**
+key per attempt and is not deduped server-side. To make a retry loop safe,
+generate one key **before** the loop and pass the same value on every
+attempt:
 
 ```ts
 async function captureWithRetry(kco: any, orderId: string, amount: number) {
+  // Pinned once, before the loop — reused on every attempt below.
+  const idempotencyKey = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await kco.capturePayment(orderId, { amount });   // idempotent server-side
+      return await kco.capturePayment(orderId, { amount }, { idempotencyKey });
     } catch (e: any) {
-      if (e.status >= 500 && attempt < 2) continue;           // transient — safe to retry
+      if (e.status >= 500 && attempt < 2) continue;   // transient — safe to retry, same key
       throw e;
     }
   }
 }
 ```
+
+**Note:** a stable key only dedupes retries of the *same logical operation*.
+Don't reuse it across unrelated calls (e.g. two different captures on the
+same order) — that would incorrectly collapse them into one.
 
 ##### 16.1.8.8 Configure auth and pick test vs prod
 
@@ -7120,7 +7170,7 @@ Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hi
 
 **Returns:** Promise<{ format: string, text: string }> — the detected symbology name and the decoded payload.
 
-**Throws:** Throws if data is missing/empty or not a string/ArrayBuffer/Uint8Array, the image cannot be decoded, the format hint is unsupported, or no barcode is recognised.
+**Throws:** Throws if data is missing/empty or not a string/ArrayBuffer/Uint8Array, the image cannot be decoded (including exceeding the shared hard 64-megapixel decode-bomb cap — see image.decode), the format hint is unsupported, or no barcode is recognised.
 
 ```ts
 const { format, text } = await codec.barcode.decode(png);
@@ -7284,7 +7334,7 @@ const packed = await codec.compression.compress("gzip", "hello world");
 #### 17.2.11 codec.compression.decompress
 
 ```
-decompress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>
+decompress(algo: string, data: string | Uint8Array | ArrayBuffer, opts?: { maxBytes?: number }): Promise<Uint8Array>
 ```
 
 Decompress data previously produced by compress (same algorithm name required). Returns Uint8Array. Async.
@@ -7293,14 +7343,17 @@ Decompress data previously produced by compress (same algorithm name required). 
 
 - `algo` *(string)* — Algorithm name (case-insensitive), matching the one used to compress: gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy.
 - `data` *(string | Uint8Array | ArrayBuffer)* — Compressed input bytes.
+- `opts` *({ maxBytes?: number }, optional)* — maxBytes caps the decompressed output size in bytes (default 512 MB); a non-positive value also falls back to the default. Guards against a decompression bomb — a small crafted input that inflates to gigabytes.
 
 **Returns:** Promise<Uint8Array> — the original decompressed bytes.
 
-**Throws:** Throws if data is undefined/null or an unsupported type, the algorithm name is unknown, or the input is not valid for that algorithm.
+**Throws:** Throws if data is undefined/null or an unsupported type, the algorithm name is unknown, the input is not valid for that algorithm, or the decompressed output exceeds maxBytes.
 
 ```ts
 const raw = await codec.compression.decompress("gzip", packed);
 const text = new TextDecoder().decode(raw);
+// cap output at 1 MB for untrusted input:
+const capped = await codec.compression.decompress("gzip", packed, { maxBytes: 1 << 20 });
 ```
 
 #### 17.2.12 codec.doc.formats
@@ -8495,23 +8548,23 @@ runtime.log(r.format, r.entries.length);
 #### 17.6.2 fs.archive.extract
 
 ```
-extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<{ path: string; format: string; dest: string; entries: string[] }>
+extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean, maxTotalBytes?: number, maxEntries?: number }): Promise<{ path: string; format: string; dest: string; entries: string[] }>
 ```
 
-Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour.
+Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour; opts.maxTotalBytes/maxEntries cap decompression-bomb risk.
 
 **Parameters**
 
 - `archivePath` *(string)* — Path to the archive. Format is inferred from its extension (.zip, .tar, .tar.gz, .tgz).
 - `destDir` *(string)* — Destination directory; created (recursively) if absent. All entries are confined to this directory via zip-slip / tar-slip protection.
-- `opts` *({ overwrite?: boolean }, optional)* — overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL).
+- `opts` *({ overwrite?: boolean, maxTotalBytes?: number, maxEntries?: number }, optional)* — overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL). maxTotalBytes caps the cumulative decompressed bytes written across all members (default 1 GB; a non-positive value falls back to the default). maxEntries caps the number of archive members processed (default 100000; a non-positive value falls back to the default). Both guard against a small crafted archive decompressing into an enormous amount of disk I/O (a decompression bomb); extraction stops as soon as either cap is exceeded.
 
 **Returns:** Promise<{ path: string, format: string, dest: string, entries: string[] }> — path is archivePath, format is the inferred format, dest is destDir, and entries lists the extracted entry names (regular files only).
 
-**Throws:** Rejects if archivePath or destDir is empty, the format cannot be inferred, destDir cannot be created, the archive cannot be opened / decoded, an entry escapes destDir (absolute path or '..' component), or (with overwrite false) an entry collides with an existing file.
+**Throws:** Rejects if archivePath or destDir is empty, the format cannot be inferred, destDir cannot be created, the archive cannot be opened / decoded, an entry escapes destDir (absolute path or '..' component), (with overwrite false) an entry collides with an existing file, the entry count exceeds maxEntries, or the cumulative decompressed size exceeds maxTotalBytes.
 
 ```ts
-const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true });
+const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true, maxTotalBytes: 1 << 28, maxEntries: 5000 });
 runtime.log(r.entries.length, "files extracted");
 ```
 
@@ -8740,7 +8793,7 @@ Decode in-memory image bytes into a chainable Image handle. The format is sniffe
 
 **Returns:** Image — a handle exposing read-only width/height/format and chainable transform methods.
 
-**Throws:** Throws a TypeError if data is not a Uint8Array, or ("image.decode: …") if the bytes are not a recognised/decodable image.
+**Throws:** Throws a TypeError if data is not a Uint8Array, ("image.decode: …") if the bytes are not a recognised/decodable image, or if the declared width x height exceeds a hard 64-megapixel cap (a "decode bomb" guard; not configurable — see DefaultMaxImagePixels).
 
 ```ts
 const im = image.decode(pngBytes, { autoOrient: true });
@@ -8894,7 +8947,7 @@ Read an image file from disk and decode it into a chainable Image handle. The fo
 
 **Returns:** Image — a handle exposing read-only width/height/format and chainable transform methods.
 
-**Throws:** Throws ("image.open: …") if the file cannot be read, or ("image.decode: …") if the bytes are not a recognised/decodable image.
+**Throws:** Throws ("image.open: …") if the file cannot be read, ("image.decode: …") if the bytes are not a recognised/decodable image, or if the declared width x height exceeds a hard 64-megapixel cap (a "decode bomb" guard; not configurable).
 
 ```ts
 const im = image.open("avatar.jpg", { autoOrient: true });
@@ -9360,16 +9413,16 @@ const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1
 #### 17.8.16 net.http.request
 
 ```
-request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
+request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string, maxBytes?: number }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
 ```
 
-Full HTTP client: method, url, opts {headers, body|multipart, timeout, retry, follow, username, password}. body is string|Uint8Array|ArrayBuffer; multipart builds a multipart/form-data upload. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
+Full HTTP client: method, url, opts {headers, body|multipart, timeout, retry, follow, username, password, maxBytes}. body is string|Uint8Array|ArrayBuffer; multipart builds a multipart/form-data upload. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
 
 **Parameters**
 
 - `method` *(string)* — HTTP method (GET, POST, PUT, …); upper-cased internally. Required.
 - `url` *(string)* — Absolute request URL. Required.
-- `opts` *({ headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }, optional)* — headers sets request headers; body is the request body (a string is sent as UTF-8, a Uint8Array/ArrayBuffer byte-for-byte); multipart builds a multipart/form-data body from an array of parts (a part with a filename is a file part whose content is string|Uint8Array|ArrayBuffer and type sets its Content-Type, default application/octet-stream; any other part is a text field carrying value) — body and multipart are mutually exclusive, and multipart sets the Content-Type header with its boundary, overriding any caller-set content-type; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth.
+- `opts` *({ headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string, maxBytes?: number }, optional)* — headers sets request headers; body is the request body (a string is sent as UTF-8, a Uint8Array/ArrayBuffer byte-for-byte); multipart builds a multipart/form-data body from an array of parts (a part with a filename is a file part whose content is string|Uint8Array|ArrayBuffer and type sets its Content-Type, default application/octet-stream; any other part is a text field carrying value) — body and multipart are mutually exclusive, and multipart sets the Content-Type header with its boundary, overriding any caller-set content-type; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth; maxBytes caps the response body size in bytes (default 256 MiB) — a caller may raise or lower it; exceeding it rejects with a size-limit error.
 
 **Returns:** Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text (UTF-8); bodyBytes is the raw, undecoded response bytes (pair with text.charset.decode for non-UTF-8 content like ISO-8859-1); url is the final URL after redirects.
 
@@ -10162,14 +10215,14 @@ Network servers: HTTP/HTTPS listeners with routing, middleware, static files, We
 #### 17.10.1 server.http.listen
 
 ```
-listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown }): { address: string; stopped: Promise<void>; close(): Promise<void> }
+listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown; maxBodyBytes?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
 ```
 
-Bind an HTTP listener: server.http.listen({port, host?, routes, use?, onError?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Optional onError(err, req, res) renders a custom response when a handler/middleware throws or rejects (else a stock 500). Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}. Handlers can also call res.sse(opts?) to start a one-way Server-Sent Events stream — returns a handle with send(data) (string → `data:`; or {event,data,id,retry} with object data JSON-encoded), close(), and a `closed` Promise (resolves on close or client disconnect); opts: {keepAlive?: ms, retry?: ms}.
+Bind an HTTP listener: server.http.listen({port, host?, routes, use?, onError?, maxBodyBytes?}) → handle with .address, .close(), .stopped Promise. routes is a map of stdlib http.ServeMux patterns ('GET /users/{id}') to handlers (req, res) => res.json({...}) or {use: [...], handler: fn} for per-route middleware. Optional onError(err, req, res) renders a custom response when a handler/middleware throws or rejects (else a stock 500). Request bodies are capped at maxBodyBytes (default 32 MiB) — an over-limit body gets a 413 before any route handler or middleware runs. Handlers can call res.upgradeWebSocket(opts?) to hijack the connection and return an AsyncIterable<WSMessage> with .send / .close — `for await (const msg of ws)` walks frames; msg is {type:'text',text} or {type:'binary',bytes:Uint8Array}. Handlers can also call res.sse(opts?) to start a one-way Server-Sent Events stream — returns a handle with send(data) (string → `data:`; or {event,data,id,retry} with object data JSON-encoded), close(), and a `closed` Promise (resolves on close or client disconnect); opts: {keepAlive?: ms, retry?: ms}.
 
 **Parameters**
 
-- `opts` *({ port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown })* — Listener config. port is required; host defaults to "0.0.0.0". routes maps Go 1.22+ ServeMux patterns ('GET /', 'POST /users/{id}', 'GET /assets/{rest...}') to a handler function or a {use, handler} object for per-route middleware. use is a global middleware chain run before every route. onError(err, req, res) is invoked when a handler or middleware throws/rejects — render a response with res.* (it may be async); if it doesn't finalize, or itself throws, the stock 500 is sent. Under `sercon serve`, --port-override replaces port.
+- `opts` *({ port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown; maxBodyBytes?: number })* — Listener config. port is required; host defaults to "0.0.0.0". routes maps Go 1.22+ ServeMux patterns ('GET /', 'POST /users/{id}', 'GET /assets/{rest...}') to a handler function or a {use, handler} object for per-route middleware. use is a global middleware chain run before every route. onError(err, req, res) is invoked when a handler or middleware throws/rejects — render a response with res.* (it may be async); if it doesn't finalize, or itself throws, the stock 500 is sent. maxBodyBytes caps the size of an inbound request body read into memory before dispatch; absent or <=0 falls back to a 32 MiB default, and an over-limit body is rejected with 413 without invoking any JS. Under `sercon serve`, --port-override replaces port.
 
 **Returns:** A server handle (returned synchronously): address is 'tcp/host:port' (resolved, so a port:0 ephemeral bind reports its OS-chosen port); stopped resolves when the server stops (rejects if Serve fails with a non-close error); close() begins a graceful 30s shutdown and resolves with the same stopped Promise.
 
@@ -10210,14 +10263,14 @@ server.http.listen({
 #### 17.10.3 server.https.listen
 
 ```
-listen(opts: { port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] }): { address: string; stopped: Promise<void>; close(): Promise<void> }
+listen(opts: { port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; maxBodyBytes?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
 ```
 
 Like server.http.listen plus a cert (file path OR inline PEM string) and matching key. Set cert: "self-signed" to mint an ephemeral in-process dev cert (no key needed) instead — covers localhost / 127.0.0.1 / ::1 plus the listen host. No autocert (own production certs in your supervisor).
 
 **Parameters**
 
-- `opts` *({ port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[] })* — Same shape as server.http.listen plus cert and key. cert is a filesystem path, an inline PEM string (detected by a leading '-----BEGIN'), or the literal "self-signed" to generate an ephemeral P-256 cert in-process (key is then ignored). key is required for the path/PEM forms. TLS is pinned to a minimum of TLS 1.2. Self-signed certs fail normal client verification by design — dev only.
+- `opts` *({ port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; maxBodyBytes?: number })* — Same shape as server.http.listen plus cert and key. cert is a filesystem path, an inline PEM string (detected by a leading '-----BEGIN'), or the literal "self-signed" to generate an ephemeral P-256 cert in-process (key is then ignored). key is required for the path/PEM forms. TLS is pinned to a minimum of TLS 1.2. Self-signed certs fail normal client verification by design — dev only. maxBodyBytes caps the inbound request body (default 32 MiB); an over-limit body gets a 413 before any JS runs.
 
 **Returns:** Same handle shape as server.http.listen; address is 'tcp/host:port'.
 
@@ -12120,7 +12173,7 @@ Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip
 #### 17.14.1 web.feed.load
 
 ```
-load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>
+load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>
 ```
 
 Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option surface and sends a default User-Agent unless overridden. Throws on a non-2xx response.
@@ -12128,7 +12181,7 @@ Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option 
 **Parameters**
 
 - `url` *(string)* — The feed URL to GET.
-- `opts` *({ timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }, optional)* — Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password.
+- `opts` *({ timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }, optional)* — Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password, maxBytes (response body size cap, default 256 MiB).
 
 **Returns:** A promise resolving to the normalized feed object.
 
@@ -12161,7 +12214,7 @@ const f = web.feed.parse(xml); f.items[0].title;
 #### 17.14.3 web.html.load
 
 ```
-load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>
+load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>
 ```
 
 Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the net.http option surface with a default User-Agent. Throws on a non-2xx response.
@@ -12169,7 +12222,7 @@ Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the 
 **Parameters**
 
 - `url` *(string)* — The page URL to GET.
-- `opts` *({ timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }, optional)* — Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password.
+- `opts` *({ timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }, optional)* — Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password, maxBytes (response body size cap, default 256 MiB).
 
 **Returns:** A promise resolving to the document Node handle.
 
@@ -12202,7 +12255,7 @@ const doc = web.html.parse(html); doc.find("h1").text();
 #### 17.14.5 web.sitemap.load
 
 ```
-load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>
+load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>
 ```
 
 Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic-byte detection on the body; a Content-Encoding: gzip response is unwrapped by the HTTP transport). For a sitemapindex, pass {expand:true} to fetch all child sitemaps (bounded; per-child errors collected in `errors[]`) and merge their urls into `urls`.
@@ -12210,7 +12263,7 @@ Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic
 **Parameters**
 
 - `url` *(string)* — The sitemap URL to GET (may be .xml.gz).
-- `opts` *({ expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }, optional)* — expand:true fetches & merges child sitemaps for an index. Plus the standard fetch options.
+- `opts` *({ expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }, optional)* — expand:true fetches & merges child sitemaps for an index. Plus the standard fetch options.
 
 **Returns:** A promise resolving to the sitemap object.
 
