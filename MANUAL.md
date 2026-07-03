@@ -573,6 +573,112 @@ sercon serve --port-override 9090 server.ts
 sercon serve --shutdown-timeout 10s server.ts
 ```
 
+#### 4.6 Recipes
+
+Common command-line patterns. (Flags are documented in the FLAGS table in
+§4 and in `sercon --help`.)
+
+##### 4.6.1 Pass arguments to a script
+
+Everything after a standalone `--` becomes `runtime.argv` (see §4.1).
+
+```bash
+sercon report.ts -- --out /tmp/r.json prod
+# report.ts: runtime.argv.slice(2) → ["--out", "/tmp/r.json", "prod"]
+```
+
+##### 4.6.2 Load config and secrets from a `.env`
+
+```bash
+sercon --env-file .env deploy.ts
+# .env lines (API_TOKEN=…) are readable via runtime.env.get("API_TOKEN");
+# a real environment variable of the same name always wins.
+sercon --secrets-prefix myapp/ deploy.ts
+# namespaces runtime.secrets keystore items under "myapp/" instead of the
+# default "sercon/" (also settable via $SERCON_SECRETS_PREFIX).
+```
+
+##### 4.6.3 Auto-rerun while developing
+
+Re-runs on every `.ts`/`.tsx`/`.js`/`.jsx`/`.json`/`.d.ts` change under the
+script root; `Ctrl-C` exits (see §4.2).
+
+```bash
+sercon --watch dashboard.ts
+```
+
+##### 4.6.4 Bound a run and gate on the exit code
+
+`-timeout` (default `10s`) caps the run; exceeding it exits non-zero
+(`ErrScriptTimeout`), as does any thrown/rejected script — so `$?` drives a
+CI gate (see §12 Timeouts, §13 Error semantics).
+
+```bash
+sercon -timeout 5s healthcheck.ts && echo "healthy" || echo "unhealthy ($?)"
+```
+
+##### 4.6.5 Use sercon in a shell pipeline
+
+`sercon -` reads the entry *script* (not data) from stdin; scripts write
+results to stdout via `console.log` / `runtime.log` for piping onward.
+
+```bash
+echo 'runtime.log(6 * 7)' | sercon -     # reads the script from stdin
+sercon gen.ts | jq .                     # pipe a script's stdout into jq
+```
+
+**Note:** there is no `runtime.stdin` API for piped *data* — the positional
+`-` argument is for the script source itself. To consume piped data on
+Unix, read the pipe as a file from inside the script:
+
+```ts
+const input = await fs.readText("/dev/stdin");
+```
+
+##### 4.6.6 Run a long-lived server
+
+`sercon serve` keeps the event loop alive for a script that binds a
+listener, prints a `READY` line per listener, and shuts down gracefully on
+SIGTERM/SIGINT (see §4.5).
+
+```bash
+sercon serve --shutdown-timeout 5s app.ts
+# app.ts calls server.http.listen({...}); -timeout defaults to 0 (disabled)
+# under serve; --shutdown-timeout (default 30s) bounds the graceful drain.
+```
+
+##### 4.6.7 Make a script directly executable
+
+A plain shebang works for a script that takes no arguments (see §4.4):
+
+```bash
+#!/usr/bin/env sercon
+runtime.log("hello from an executable script");
+```
+
+For a script that takes arguments, shebang into the **`run`** subcommand
+instead — `sercon run` hands every token after the script path straight to
+`runtime.argv[2:]`, with no `--` separator (a shebang line can't inject
+one):
+
+```bash
+#!/usr/bin/env -S sercon run
+runtime.log("args:", JSON.stringify(runtime.argv.slice(2)));
+```
+
+```bash
+chmod +x deploy.ts
+./deploy.ts --dry-run alice        # runtime.argv.slice(2) → ["--dry-run","alice"]
+```
+
+##### 4.6.8 Emit tooling artifacts for your editor
+
+```bash
+sercon init                      # writes ./sercon.d.ts + ./jsconfig.json (§4.3)
+sercon init --force tools/       # same, into tools/, overwriting existing files
+sercon -emit-dts sercon.d.ts     # emit just the reserved-global .d.ts directly
+```
+
 ## 5. Reserved globals (script surface)
 
 sercon scripts get twelve reserved top-level globals. Use them directly —
