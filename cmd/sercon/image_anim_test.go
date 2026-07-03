@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"image"
 	"image/color"
 	"image/gif"
@@ -10,6 +11,25 @@ import (
 
 	"github.com/kettek/apng"
 )
+
+// oversizedHeaderGIF builds a minimal GIF: the 6-byte signature plus a
+// 7-byte Logical Screen Descriptor declaring width x height, then an
+// immediate trailer (no image descriptor, no pixel data at all). This is
+// enough for image.DecodeConfig / gif.DecodeConfig to read the declared
+// canvas size cheaply from a ~20-byte file — the same "tiny file, huge
+// declared dimensions" decode-bomb shape as oversizedHeaderPNG, but for the
+// animated GIF container.
+func oversizedHeaderGIF(t *testing.T, width, height uint16) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	buf.WriteString("GIF89a")
+	lsd := make([]byte, 7)
+	binary.LittleEndian.PutUint16(lsd[0:2], width)
+	binary.LittleEndian.PutUint16(lsd[2:4], height)
+	buf.Write(lsd)
+	buf.WriteByte(0x3B) // trailer
+	return buf.Bytes()
+}
 
 // makeGIF builds an in-memory animated GIF: 2 frames, 3x2, delays 10 & 20 (1/100s),
 // disposal background on frame 2, loop 0.
@@ -175,6 +195,53 @@ func TestEncodeDecodeAPNG_LongDelay(t *testing.T) {
 func TestEncodeFramesGIF_Empty(t *testing.T) {
 	if _, err := encodeFramesGIF(animDoc{format: "gif"}); err == nil {
 		t.Fatal("empty frames should error")
+	}
+}
+
+// TestDecodeFramesGIF_PixelBombGuard verifies decodeFramesGIF rejects a tiny
+// GIF whose Logical Screen Descriptor declares dimensions beyond
+// DefaultMaxImagePixels before attempting gif.DecodeAll (which would
+// allocate a full paletted frame buffer sized from the declaration).
+func TestDecodeFramesGIF_PixelBombGuard(t *testing.T) {
+	bomb := oversizedHeaderGIF(t, 40000, 40000) // 1.6e9 px, ~20-byte file
+	doc, err := decodeFramesGIF(bomb)
+	if err == nil {
+		t.Fatal("decodeFramesGIF should reject an oversized declared pixel count")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("exceed")) {
+		t.Fatalf("decodeFramesGIF error = %q, want a pixel-limit message", err)
+	}
+	if len(doc.frames) != 0 {
+		t.Fatalf("doc.frames = %d, want 0 (no decode should have happened)", len(doc.frames))
+	}
+}
+
+// TestDecodeFramesAPNG_PixelBombGuard mirrors the GIF case for the APNG
+// container, reusing the PNG IHDR-bomb builder from image_test.go (same
+// package) since kettek/apng shares PNG's magic bytes and IHDR layout.
+func TestDecodeFramesAPNG_PixelBombGuard(t *testing.T) {
+	bomb := oversizedHeaderPNG(t, 40000, 40000)
+	doc, err := decodeFramesAPNG(bomb)
+	if err == nil {
+		t.Fatal("decodeFramesAPNG should reject an oversized declared pixel count")
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("exceed")) {
+		t.Fatalf("decodeFramesAPNG error = %q, want a pixel-limit message", err)
+	}
+	if len(doc.frames) != 0 {
+		t.Fatalf("doc.frames = %d, want 0 (no decode should have happened)", len(doc.frames))
+	}
+}
+
+// TestDecodeFramesAny_PixelBombGuard confirms the guard is reachable through
+// the public image.decodeFrames entry point (decodeFramesAny), not just the
+// unexported per-format helpers.
+func TestDecodeFramesAny_PixelBombGuard(t *testing.T) {
+	bomb := oversizedHeaderGIF(t, 40000, 40000)
+	if _, err := decodeFramesAny(bomb); err == nil {
+		t.Fatal("decodeFramesAny should reject an oversized declared pixel count")
+	} else if !bytes.Contains([]byte(err.Error()), []byte("exceed")) {
+		t.Fatalf("decodeFramesAny error = %q, want a pixel-limit message", err)
 	}
 }
 

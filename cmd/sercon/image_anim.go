@@ -57,7 +57,30 @@ func apngBlendToStr(b byte) string {
 	return "source"
 }
 
+// checkFramesPixelBudget rejects a container whose declared canvas
+// dimensions exceed DefaultMaxImagePixels, mirroring decodeImage's guard for
+// the static image path. image.DecodeConfig only parses the header (GIF's
+// Logical Screen Descriptor / PNG's IHDR), so a crafted file can declare an
+// extreme width x height while staying a few dozen bytes — gif.DecodeAll /
+// apng.DecodeAll would otherwise allocate a full frame buffer sized from
+// that declaration before any real pixel data is read ("decode bomb"). A
+// DecodeConfig error is left for the real decoder to report, since that's a
+// format problem unrelated to the pixel budget.
+func checkFramesPixelBudget(data []byte) error {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > DefaultMaxImagePixels {
+		return fmt.Errorf("image.decodeFrames: image dimensions %dx%d exceed max pixels (%d)", cfg.Width, cfg.Height, DefaultMaxImagePixels)
+	}
+	return nil
+}
+
 func decodeFramesGIF(data []byte) (animDoc, error) {
+	if err := checkFramesPixelBudget(data); err != nil {
+		return animDoc{}, err
+	}
 	g, err := gif.DecodeAll(bytes.NewReader(data))
 	if err != nil {
 		return animDoc{}, fmt.Errorf("image.decodeFrames: gif: %w", err)
@@ -85,6 +108,9 @@ func decodeFramesGIF(data []byte) (animDoc, error) {
 }
 
 func decodeFramesAPNG(data []byte) (animDoc, error) {
+	if err := checkFramesPixelBudget(data); err != nil {
+		return animDoc{}, err
+	}
 	a, err := apng.DecodeAll(bytes.NewReader(data))
 	if err != nil {
 		return animDoc{}, fmt.Errorf("image.decodeFrames: apng: %w", err)
