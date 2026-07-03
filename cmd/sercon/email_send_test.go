@@ -56,3 +56,27 @@ func TestComposeMIME_WithAttachment(t *testing.T) {
 		t.Errorf("expected base64 transfer encoding for attachment")
 	}
 }
+
+func TestComposeMIME_AttachmentHeaderInjection(t *testing.T) {
+	body, err := composeMIME(sendOpts{
+		to: []string{"a@x.com"}, from: "b@y.com", subject: "hi", body: "see attached",
+		attachments: []sendAttachment{
+			{
+				Filename:    "evil\r\nBcc: attacker@evil.com",
+				ContentType: "application/octet-stream\r\nBcc: attacker@evil.com",
+				Bytes:       []byte("ABCDEF"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(body)
+	// The real injection signal is "Bcc:" landing on its own header line
+	// (preceded by a line break) — a bare substring match doesn't prove
+	// anything since the sanitized filename still contains the literal
+	// text "Bcc: attacker@evil.com", just glued onto the same line.
+	if strings.Contains(s, "\r\nBcc") || strings.Contains(s, "\nBcc") {
+		t.Errorf("injected header line survived sanitization; got:\n%s", s)
+	}
+}

