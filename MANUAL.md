@@ -2254,6 +2254,209 @@ fleet: it brings the fleet up, runs the tests (postgres / mysql / mariadb /
 clickhouse / redis / valkey / memcached / ldap), and tears it down. Requires
 Docker + Compose v2.
 
+#### 5.8.1 Concepts
+
+All six SQL engines (`sqlite` / `postgres` / `mysql` / `mssql` /
+`clickhouse` / `oracle`) share the same handle shape — `open()` resolves
+to `{ exec, query, queryValue, begin, prepare, close }`. The recipes below
+use `db.sqlite`, the pure-Go, cgo-free engine that needs no external
+server (`":memory:"` or a file path), but the exec/query/queryValue/
+begin/prepare/close vocabulary carries over verbatim to the other five —
+only the placeholder syntax and connection options differ (see the intro
+above).
+
+- **`exec(sql, ...params)`** runs a non-`SELECT` statement (DDL,
+  `INSERT`/`UPDATE`/`DELETE`) and resolves to `{ rowsAffected,
+  lastInsertId }`.
+- **`query(sql, ...params)`** runs a `SELECT` and resolves to one ordered
+  object per row, keyed by column name.
+- **`queryValue(sql, ...params)`** is a shortcut for a single scalar — the
+  first column of the first row, or `null` when nothing matches (built
+  for `COUNT(*)`/`EXISTS`-style probes).
+- **Bind parameters, don't string-concatenate.** Pass values as `?`
+  placeholders (sqlite's positional placeholder) after the SQL string
+  rather than splicing them into the SQL text — bound params are
+  injection-safe and let the driver do type coercion. Values cross to Go
+  losslessly (numbers, strings, booleans, `null`, `Uint8Array` →
+  `[]byte`).
+- **`begin()`** returns a transaction handle with the same
+  exec/query/queryValue plus `commit()`/`rollback()` — group related
+  writes so they become visible atomically, or not at all on rollback (or
+  a thrown error left unhandled).
+- **`prepare(sql)`** compiles a statement once and returns `{ exec, query,
+  queryValue, close }` that take only bind params — reach for it before a
+  loop of many similar writes/reads instead of re-parsing the same SQL
+  string on every call.
+- **No finalizer.** Every `open()` needs a matching `close()`, every
+  `begin()` a `commit()` or `rollback()`, and every `prepare()` a
+  `close()` — a leaked transaction or statement pins a pooled connection
+  until the process exits.
+
+#### 5.8.2 Recipes
+
+##### 5.8.2.1 Open a database and query rows
+
+```ts
+const conn = await db.sqlite.open(":memory:");
+
+await conn.exec(`
+  CREATE TABLE users (
+    id   INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    age  INTEGER
+  )
+`);
+await conn.exec("INSERT INTO users (name, age) VALUES (?, ?)", "Alice", 30);
+await conn.exec("INSERT INTO users (name, age) VALUES (?, ?)", "Bob", 27);
+
+const rows = await conn.query("SELECT name, age FROM users ORDER BY age DESC");
+for (const r of rows) runtime.log(r.name, r.age);
+
+// queryValue is a shortcut for a single scalar.
+runtime.log("user count:", await conn.queryValue("SELECT count(*) FROM users"));
+
+await conn.close();
+```
+
+`query()` resolves to an array of row objects keyed by column name;
+`queryValue()` resolves to the first column of the first row (or `null`
+when nothing matches). Always `close()` — there is no finalizer.
+Signatures: §17.5.11 (`db.sqlite.open`).
+runnable: `examples/scripts/sqlite.ts`
+
+##### 5.8.2.2 Insert with parameterized statements
+
+```ts
+// Bind params as ? placeholders — never string-concatenate values into SQL.
+await conn.exec(
+  "INSERT INTO users (name, age, email) VALUES (?, ?, ?)",
+  "Alice", 30, "alice@example.com",
+);
+
+// Uint8Array round-trips as a BLOB column.
+await conn.exec("CREATE TABLE files (name TEXT, data BLOB)");
+await conn.exec(
+  "INSERT INTO files (name, data) VALUES (?, ?)",
+  "logo.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+);
+const data = await conn.queryValue("SELECT data FROM files WHERE name = ?", "logo.png");
+```
+
+Mixed types are fine — goja exports JS numbers/strings/`null`/
+`Uint8Array` straight through to the driver; `exec()` resolves to `{
+rowsAffected, lastInsertId }`, and a `BLOB` column round-trips back out as
+a `Uint8Array`. Signatures: §17.5.11 (`db.sqlite.open`).
+runnable: `examples/scripts/sqlite.ts`
+
+##### 5.8.2.3 Run a transaction
+
+```ts
+const tx = await conn.begin();
+await tx.exec("INSERT INTO users (name, age) VALUES (?, ?)", "Dave", 50);
+await tx.exec("INSERT INTO users (name, age) VALUES (?, ?)", "Eve", 22);
+await tx.commit(); // both rows become visible atomically
+
+// A constraint violation (or any thrown error) should be followed by a rollback.
+const tx2 = await conn.begin();
+try {
+  await tx2.exec("INSERT INTO users (id, name) VALUES (?, ?)", 1, "duplicate-id");
+} catch (e) {
+  runtime.log("constraint caught:", String(e).slice(0, 60));
+}
+await tx2.rollback();
+```
+
+`begin()` returns a handle with the same exec/query/queryValue plus
+`commit()`/`rollback()` — every `begin()` must reach exactly one of the
+two, or the connection leaks. Bulk writes inside a transaction (looping
+`tx.exec(...)` over a batch, as in the ETL recipe below) is the standard
+shape for a batch load. Signatures: §17.5.11 (`db.sqlite.open`).
+runnable: `examples/scripts/sqlite.ts`
+
+##### 5.8.2.4 Apply a simple migration
+
+```ts
+await conn.exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`);
+if (Number(await conn.queryValue("SELECT count(*) FROM schema_version")) === 0) {
+  await conn.exec("INSERT INTO schema_version (version) VALUES (0)");
+}
+
+const migrations = [
+  { to: 1, up: async () => {
+      await conn.exec(`CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL)`);
+  }},
+  { to: 2, up: async () => {
+      await conn.exec(`ALTER TABLE customers ADD COLUMN tier TEXT NOT NULL DEFAULT 'standard'`);
+  }},
+];
+
+async function migrate() {
+  let applied = 0;
+  for (const m of migrations) {
+    const current = Number(await conn.queryValue("SELECT version FROM schema_version"));
+    if (current < m.to) {
+      await m.up();
+      await conn.exec("UPDATE schema_version SET version = ?", m.to);
+      applied++;
+    }
+  }
+  return applied; // 0 on a re-run — the hallmark of an idempotent migration
+}
+```
+
+A `schema_version` table tracks the highest applied migration; the runner
+applies only migrations greater than the recorded version, so re-running
+`migrate()` is a no-op. Signatures: §17.5.11 (`db.sqlite.open`).
+runnable: `examples/scripts/advanced/sqlite-migration.ts`
+
+##### 5.8.2.5 Sweep an ETL load
+
+```ts
+const conn = await db.sqlite.open(":memory:");
+await conn.exec(`
+  CREATE TABLE events (
+    region   TEXT    NOT NULL,
+    product  TEXT    NOT NULL,
+    quantity INTEGER NOT NULL,
+    revenue  REAL    NOT NULL
+  )
+`);
+
+// Bulk insert inside a transaction so all writes are atomic.
+const tx = await conn.begin();
+for (const [region, product, quantity, revenue] of eventData) {
+  await tx.exec(
+    "INSERT INTO events (region, product, quantity, revenue) VALUES (?, ?, ?, ?)",
+    region, product, quantity, revenue,
+  );
+}
+await tx.commit();
+
+// Prepared statement: compile once, reuse for repeated lookups.
+const byRegion = await conn.prepare("SELECT count(*) FROM events WHERE region = ?");
+for (const r of ["EU", "US", "APAC"]) {
+  runtime.log(r, await byRegion.queryValue(r));
+}
+await byRegion.close();
+
+// Aggregate query — hand the rows to codec.json / codec.xml for export.
+const summary = await conn.query(`
+  SELECT region, count(*) AS num_orders, sum(quantity) AS total_units,
+         round(sum(revenue), 2) AS total_revenue
+  FROM events
+  GROUP BY region
+  ORDER BY region
+`);
+```
+
+The full script goes on to export `summary` as both JSON
+(`JSON.stringify`) and XML (`codec.xml.encode`) — a sweep like this is the
+usual shape for a scheduled load-and-report job: bulk-insert under one
+transaction, look up via a prepared statement, aggregate with `GROUP BY`,
+then hand the row objects to a codec. Signatures: §17.5.11
+(`db.sqlite.open`), §17.2 (`codec.xml`).
+runnable: `examples/scripts/advanced/sqlite-etl.ts`
+
 ### 5.9 `services`
 
 Subprocess and external-CLI / service wrappers (was `tools` in
