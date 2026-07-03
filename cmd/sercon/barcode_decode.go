@@ -115,17 +115,20 @@ var autoDecodeOrder = []string{
 	"itf", "codabar",
 }
 
-// decodeImageBytes decodes a PNG/JPEG/WebP byte slice via image.Decode,
-// which finds the right decoder by sniffing the magic bytes of every
-// format registered in image's package init blocks. PNG and JPEG are
-// registered by stdlib; WebP is registered by the blank-import of
-// golang.org/x/image/webp at the top of this file.
+// decodeImageBytes decodes a PNG/JPEG/WebP byte slice via decodeImage
+// (image.go), which finds the right decoder by sniffing the magic bytes
+// of every format registered in image's package init blocks (PNG/JPEG
+// via stdlib, WebP via the blank-import in image.go) and rejects a
+// declared pixel count over DefaultMaxImagePixels before the expensive
+// full decode — codec.barcode.decode feeds attacker-controlled image
+// bytes through here just like image.decode, so it needs the same
+// decode-bomb guard rather than a second copy of it.
 func decodeImageBytes(data []byte) (image.Image, string, error) {
-	img, format, err := image.Decode(bytes.NewReader(data))
+	img, format, err := decodeImage(data)
 	if err != nil {
-		// image.Decode's "image: unknown format" is the common case
-		// when callers hand in non-image bytes. Rewrap so the prefix
-		// names the binding rather than image's package path.
+		// decodeImage's error is prefixed "image.decode: ...". Rewrap so
+		// the prefix names this binding instead, matching the existing
+		// "decode image" wording callers/tests key off of.
 		return nil, "", fmt.Errorf("decode image: %w", err)
 	}
 	return img, format, nil

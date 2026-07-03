@@ -279,6 +279,41 @@ func TestBarcodeDecode_UnknownFormatHint(t *testing.T) {
 	}
 }
 
+// TestDecodeImageBytes_PixelBombGuard verifies decodeImageBytes (the
+// helper backing codec.barcode.decode) rejects a tiny PNG whose IHDR
+// declares dimensions beyond DefaultMaxImagePixels before attempting the
+// full pixel decode. Mirrors TestDecodeImage_PixelBombGuard in
+// image_test.go (reusing its oversizedHeaderPNG builder) — closes the
+// same decode-bomb gap for the separate barcode.decode code path.
+func TestDecodeImageBytes_PixelBombGuard(t *testing.T) {
+	// 40000 x 40000 = 1.6e9 pixels, well beyond the 64,000,000 cap, but the
+	// PNG file itself is under 100 bytes (header only, no pixel data).
+	bomb := oversizedHeaderPNG(t, 40000, 40000)
+	if _, _, err := decodeImageBytes(bomb); err == nil {
+		t.Fatal("decodeImageBytes should reject an oversized declared pixel count")
+	} else if !strings.Contains(err.Error(), "exceed") {
+		t.Fatalf("decodeImageBytes error = %q, want a pixel-limit message", err)
+	}
+}
+
+// TestDecodeImageBytes_PixelBombGuard_AllowsNormalImage ensures the guard
+// doesn't false-positive on ordinary, well-within-limits images — the
+// barcode decoder must still be able to decode them.
+func TestDecodeImageBytes_PixelBombGuard_AllowsNormalImage(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 20, 12))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	decoded, _, err := decodeImageBytes(buf.Bytes())
+	if err != nil {
+		t.Fatalf("decodeImageBytes(normal png): %v", err)
+	}
+	if decoded.Bounds().Dx() != 20 || decoded.Bounds().Dy() != 12 {
+		t.Fatalf("dims = %v", decoded.Bounds())
+	}
+}
+
 // sniffImageFormat unit-tests the magic-byte recogniser without
 // touching gozxing. PNG / JPEG / WebP markers map to the right
 // labels; anything else returns "".
