@@ -359,3 +359,26 @@ func TestFavro_UploadAttachment(t *testing.T) {
 		t.Fatalf("upload attachment: %v", err)
 	}
 }
+
+// TestFavro_ImportableWithPaymentProviders verifies that favro is importable
+// when using the module-loader composition that includes both favroLoader
+// and paymentprovidersLoader (the composition used by `sercon run` and
+// `sercon serve` after the fix).
+func TestFavro_ImportableWithPaymentProviders(t *testing.T) {
+	dir := t.TempDir()
+	opts := scriptengine.Options{ScriptRoot: dir, Timeout: 10 * time.Second}
+	// Simulate the fixed run/serve composition: favroLoader wrapped over paymentprovidersLoader
+	opts.ModuleLoader = favroLoader(paymentprovidersLoader(opts.ModuleLoader))
+	eng := scriptengine.New(opts)
+	if err := registerSurface(eng); err != nil {
+		t.Fatalf("registerSurface: %v", err)
+	}
+	_, err := eng.Run(context.Background(), filepath.Join(dir, "main.ts"), `
+		import { client } from "favro";
+		const c = client({ email: "e@x.com", apiToken: "tok", organizationId: "org1" });
+		if (typeof c.cards.get !== "function") throw new Error("no cards.get");
+	`)
+	if err != nil {
+		t.Fatalf("favro import with paymentproviders loader: %v", err)
+	}
+}
