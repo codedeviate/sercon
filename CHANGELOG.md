@@ -8,6 +8,51 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Security
+- `web.sitemap.load(url, { expand: true })` now only fetches same-site
+  child sitemaps — same scheme and registrable domain as the index's own
+  URL — including across a redirect the child fetch follows; a cross-site
+  child is reported in `errors[]` instead of being fetched. Closes an SSRF
+  vector where a remote, attacker-controlled sitemapindex could point
+  expansion at an internal host or cloud metadata endpoint.
+- `net.load.http`'s public-target `confirm: true` guardrail is now
+  re-applied on every redirect hop, not just the initial URL — a redirect
+  to a public host without `confirm: true` is refused instead of being
+  followed transparently.
+- Email attachment `filename`/`contentType` are now sanitized (CR/LF and
+  other control characters stripped) before being written into MIME part
+  headers, closing a header-injection path via a crafted attachment name.
+- APNG decoding now validates each frame's declared `fcTL` width × height
+  against the 64-megapixel decode-bomb cap before decoding — previously only
+  the image canvas was checked, so a small-canvas APNG carrying an oversized
+  frame chunk could still force a multi-gigabyte allocation. This per-frame
+  check and the existing `image.decode`/`image.open` guard (reachable with a
+  large-dimension TIFF) are both overflow-safe, so a crafted width × height
+  that overflowed the internal comparison can no longer bypass the cap.
+- Internal WebDriver/CDP/browser-endpoint HTTP response reads are now
+  bounded by the same response-size cap used elsewhere, instead of
+  buffering an unbounded body from a misbehaving local driver process.
+
+### Fixed
+- Closed a race in the WebSocket upgrade path where the request could be
+  reported finished before the connection hijack actually completed.
+- `net.tcp`/`net.udp`/`net.icmp` listeners now release their run-hold and
+  close out on any accept/read error, not just an explicit `close()` —
+  previously a non-close error left a zombie listener holding the run
+  open indefinitely.
+- `services.git.*` and `services.gh.*` calls are now bounded by a fixed
+  30-second subprocess timeout, and `services.webdriver` session teardown
+  by ~10 seconds, so a hung subprocess can no longer hang the run
+  indefinitely — most relevant under `sercon serve`, where the run's own
+  `--timeout` is disabled.
+- `services.pdf.*` output-file matching no longer treats glob
+  metacharacters in a caller-supplied path prefix as a pattern, and
+  `services.typst.*` now inserts a `--` end-of-options separator before
+  positional paths — both close a way a crafted path could be
+  misinterpreted by the underlying tool.
+- A CDP response-size-cap error is now surfaced instead of silently
+  swallowed.
+
 ## [0.85.0] — 2026-07-03
 
 ### Added

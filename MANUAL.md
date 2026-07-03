@@ -2267,7 +2267,11 @@ spoofing, amplification, or randomized-target fan-out**.
 > `net.load.http: refusing to load-test public host <h> without confirm:true (authorized self-testing only)`.
 > `confirm: true` is the script author asserting they are authorized to
 > load-test that host. Concurrency is hard-capped at **1000** (values above
-> throw); the default is a conservative **10**.
+> throw); the default is a conservative **10**. The guardrail is re-applied
+> on every redirect hop, not just the initial URL — a redirect (a
+> response-controlled, not author-controlled, value) to a public host
+> without `confirm: true` is refused the same way, and the chain is capped
+> at 10 hops.
 
 ```ts
 net.load.http({
@@ -2772,6 +2776,12 @@ working directory):
   get `{ stdout, stderr, exitCode }`; the exit code is **data**, so a
   non-zero status does not throw.
 
+Every `services.git.*` call is bounded by a fixed 30-second subprocess
+timeout (there's no `opts.timeout` override on these positional bindings);
+a `git` process that hangs past it is killed and the call rejects instead
+of hanging the run — this matters most under `sercon serve`, where the
+Run's own `--timeout` is disabled.
+
 The **`services.gh.{authStatus, prList, repoView}`** wrappers are thin
 `gh` CLI bindings. `authStatus()` is deliberately non-throwing — a missing
 `gh` or an unauthenticated session resolves with `{ authenticated: false,
@@ -2780,7 +2790,10 @@ unconditionally. `prList({ cwd?, state?, limit?, author? })` returns one
 object per PR with `author` flattened from gh's `{ login }` wrapper and
 ISO-8601 `createdAt`/`updatedAt`; `repoView(repo?, { cwd? })` returns repo
 metadata with `owner`/`defaultBranch` pre-flattened (omit `repo` for the
-cwd's repo, or pass `"owner/name"` for any repo gh can see).
+cwd's repo, or pass `"owner/name"` for any repo gh can see). Like
+`services.git.*`, every `gh` invocation is bounded by a fixed 30-second
+subprocess timeout — a hung `gh` process is killed rather than left to
+hang the run.
 
 The **`services.ai.{providers, send}`** client is provider-agnostic.
 `providers()` is **synchronous** and returns the subset of
@@ -3310,7 +3323,9 @@ omitted, it locates the driver binary on PATH, picks an ephemeral port, starts
 the driver as a subprocess, and dials it. The resolved session handle has the
 same surface in both cases. Sessions quit (and any started subprocess is
 stopped) when the Run ends; call `session.quit()` explicitly for deterministic
-teardown.
+teardown. Both the quit and the subprocess stop are bounded by a fixed
+~10-second timeout each, so a wedged driver process can't hang the call (or
+the Run) indefinitely — teardown proceeds best-effort past that point.
 
 **Probe.** `probe({ url })` checks whether a WebDriver endpoint is ready
 without opening a session. Returns `{ ready: boolean, status?: number }` on
@@ -4608,6 +4623,16 @@ pass `{ expand: true }` to fetch every child sitemap (bounded,
 single-level expansion — a child that is itself a `sitemapindex` is
 not recursed) and merge their URLs into `urls`; per-child fetch/parse
 failures are collected in `errors[]` rather than thrown.
+
+**Same-site expansion (SSRF guardrail).** A `<loc>` child URL is data read
+from the fetched sitemapindex, not a maintainer-authored path, so `expand`
+only follows children that are same-site — same scheme and registrable
+domain — as the index's own URL, and re-checks that on every redirect hop a
+child fetch takes. A cross-site child (including one reached only via
+redirect) is never fetched; it's recorded in `errors[]` instead
+(`"skipped: cross-site child (same-site only)"` or the redirect-hop
+variant). This restriction applies only to expansion; the top-level URL you
+pass to `load` is unaffected.
 
 #### 5.12.3 `web.html`
 
