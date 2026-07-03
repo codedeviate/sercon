@@ -104,3 +104,38 @@ func TestBrowserWSURLFromCaps(t *testing.T) {
 		t.Fatalf("debuggerAddress: got %q err %v", got, err)
 	}
 }
+
+// TestFetchBrowserWSURL_CapsOversizedResponse verifies that a /json/version
+// response body over DefaultMaxHTTPBodyBytes surfaces the readAllCapped
+// size-limit error instead of silently proceeding with truncated bytes (the
+// original bug: the error return was discarded with `body, _ := ...`).
+func TestFetchBrowserWSURL_CapsOversizedResponse(t *testing.T) {
+	const chunkSize = 1 << 20 // 1 MB
+	chunk := make([]byte, chunkSize)
+	over := int64(DefaultMaxHTTPBodyBytes) + chunkSize // safely over the cap
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, _ := w.(http.Flusher)
+		written := int64(0)
+		for written < over {
+			n, err := w.Write(chunk)
+			if err != nil {
+				return
+			}
+			written += int64(n)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	_, err := fetchBrowserWSURL(addr)
+	if err == nil {
+		t.Fatal("expected an error for an over-cap CDP response, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds maxBytes limit") {
+		t.Fatalf("expected a maxBytes-limit error, got: %v", err)
+	}
+}

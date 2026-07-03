@@ -223,7 +223,10 @@ func fetchBrowserWSURL(addr string) (string, error) {
 		return "", fmt.Errorf("webdriver: querying CDP endpoint %s: %w", addr, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, _ := readAllCapped(resp.Body, DefaultMaxHTTPBodyBytes, "CDP response")
+	body, err := readAllCapped(resp.Body, DefaultMaxHTTPBodyBytes, "CDP response")
+	if err != nil {
+		return "", fmt.Errorf("webdriver: reading CDP response from %s: %w", addr, err)
+	}
 	var v struct {
 		WS string `json:"webSocketDebuggerUrl"`
 	}
