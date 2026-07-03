@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.84.3] — 2026-07-03
+
 ### Documentation
 - Backlog polish sweep: normalized the net/services/web recipe cross-links to
   the canonical §17 binding reference (matching the other recipes); aligned the
