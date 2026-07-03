@@ -144,3 +144,43 @@ func TestHoldRun_DrainsOnRunEnd(t *testing.T) {
 		t.Fatalf("second Run took %s; cleanup drain did not release held sentinel", dur)
 	}
 }
+
+// TestHoldRunBegin_ResetsShutdownHooks asserts that holdRunBegin clears any
+// leftover shutdownHooks at the start of a Run, mirroring the holdRunSentinels
+// reset above it. This is belt-and-suspenders — drainRunCleanups already
+// clears shutdownHooks at the end of every Run, so there's no known leak —
+// but it keeps the two per-Run slices reset symmetrically at Run start.
+func TestHoldRunBegin_ResetsShutdownHooks(t *testing.T) {
+	eng := New(Options{DisableConsole: true})
+	// Register a hook the way a prior Run's long-lived binding would,
+	// without going through a real Run (simulates a leftover that survived
+	// past Run end despite drainRunCleanups).
+	_ = eng.AddShutdownHook(func(context.Context) error { return nil })
+	eng.runCleanupMu.Lock()
+	before := len(eng.shutdownHooks)
+	eng.runCleanupMu.Unlock()
+	if before == 0 {
+		t.Fatalf("setup: expected a leftover shutdown hook registered before Run")
+	}
+
+	var sawDuringRun int
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"check": func() goja.Value {
+				eng.runCleanupMu.Lock()
+				sawDuringRun = len(eng.shutdownHooks)
+				eng.runCleanupMu.Unlock()
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := eng.Run(context.Background(), "reset.ts", `test.check();`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if sawDuringRun != 0 {
+		t.Fatalf("shutdownHooks not reset at Run start: len=%d (want 0)", sawDuringRun)
+	}
+}

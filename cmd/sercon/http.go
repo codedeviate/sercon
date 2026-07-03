@@ -167,12 +167,15 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url strin
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	respBody, err := readAllCapped(resp.Body, maxBytes, "response body")
 	if err != nil {
+		// readAllCapped's own size-limit error is deterministic (not
+		// retryable); anything else came from the underlying io.ReadAll and
+		// is a transport-class failure worth retrying, same as before.
+		if strings.Contains(err.Error(), "exceeds maxBytes limit") {
+			return nil, 0, false, err
+		}
 		return nil, 0, true, fmt.Errorf("read body: %w", err)
-	}
-	if int64(len(respBody)) > maxBytes {
-		return nil, 0, false, fmt.Errorf("response body exceeds maxBytes limit (%d)", maxBytes)
 	}
 
 	// Build the headers sub-object with a stable, canonical key order:

@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
@@ -96,12 +96,16 @@ func webFetch(ctx context.Context, url string, fo fetchOpts) (body []byte, final
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxHTTPBodyBytes
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	b, err := readAllCapped(resp.Body, maxBytes, "response body")
 	if err != nil {
+		// Same distinction as http.go's httpRequestOnce: readAllCapped's own
+		// size-limit error keeps its message as-is; anything else came from
+		// the underlying io.ReadAll and gets the same "read body: " wrap as
+		// before.
+		if strings.Contains(err.Error(), "exceeds maxBytes limit") {
+			return nil, url, resp.StatusCode, err
+		}
 		return nil, url, resp.StatusCode, fmt.Errorf("read body: %w", err)
-	}
-	if int64(len(b)) > maxBytes {
-		return nil, url, resp.StatusCode, fmt.Errorf("response body exceeds maxBytes limit (%d)", maxBytes)
 	}
 	finalURL = url
 	if resp.Request != nil && resp.Request.URL != nil {

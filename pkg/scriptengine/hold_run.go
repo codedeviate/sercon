@@ -77,7 +77,9 @@ func (e *Engine) HoldRun(reason string) (release func()) {
 // holdRunBegin is called by Engine.Run at loop setup. Records the loop
 // pointer for HoldRun calls to enqueue against. Resets any leftover
 // sentinels from a prior Run (safety net; the cleanup drain should have
-// done this already).
+// done this already). Also clears any leftover shutdownHooks from a prior
+// Run for the same reason — drainRunCleanups already clears them at Run
+// end, so this is belt-and-suspenders, not a fix for a known leak.
 func (e *Engine) holdRunBegin(loop *eventloop.EventLoop) {
 	e.holdRunMu.Lock()
 	e.holdRunLoop = loop
@@ -86,6 +88,10 @@ func (e *Engine) holdRunBegin(loop *eventloop.EventLoop) {
 	}
 	e.holdRunSentinels = nil
 	e.holdRunMu.Unlock()
+
+	e.runCleanupMu.Lock()
+	e.shutdownHooks = nil
+	e.runCleanupMu.Unlock()
 }
 
 // holdRunEnd is called by Engine.Run after the loop returns. Releases any
