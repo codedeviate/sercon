@@ -197,7 +197,37 @@ func (r *wdRegistry) closeAll() {
 	}
 }
 
+// wdCloseTimeout bounds session teardown (wd.Quit / svc.Stop) so a wedged
+// driver process can't hang the Run — mirrors agentBrowser's abCloseTimeout.
+// Neither selenium.WebDriver.Quit nor selenium.Service.Stop accepts a
+// context, so runBounded races each call against a timer instead of
+// threading a deadline through. Var (not const) so tests can shrink it
+// without waiting out the real 10s.
+var wdCloseTimeout = 10 * time.Second
+
+// wdRunBounded runs fn on its own goroutine and returns once fn completes or
+// timeout elapses, whichever comes first. On timeout the goroutine is left
+// to finish on its own (best effort, matching the fire-and-forget teardown
+// semantics elsewhere in this file) — the point is only that the caller
+// (shutdown/closeAll, ultimately the Run) is never blocked past timeout.
+// Distinct from secrets.go's runBounded[T]: that one returns (T, error) with
+// a fixed timeout; this one is void-returning with a caller-supplied
+// duration (wdCloseTimeout, shrinkable in tests).
+func wdRunBounded(timeout time.Duration, fn func()) {
+	done := make(chan struct{})
+	go func() {
+		fn()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
+}
+
 // shutdown quits the WebDriver and stops a started Service. Idempotent.
+// Both calls are bounded by wdCloseTimeout via runBounded so a wedged
+// driver process can't hang the Run (or an explicit quit() call) forever.
 func (s *wdSession) shutdown() {
 	if s.closed.Swap(true) {
 		return
@@ -211,10 +241,10 @@ func (s *wdSession) shutdown() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.wd != nil {
-		_ = s.wd.Quit()
+		wdRunBounded(wdCloseTimeout, func() { _ = s.wd.Quit() })
 	}
 	if s.svc != nil {
-		_ = s.svc.Stop()
+		wdRunBounded(wdCloseTimeout, func() { _ = s.svc.Stop() })
 	}
 }
 

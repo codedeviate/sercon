@@ -32,6 +32,56 @@ func TestWDCommandTimeout(t *testing.T) {
 	}
 }
 
+// hangingWD embeds selenium.WebDriver (leaving every other method nil / to
+// panic-on-call) so it satisfies the interface while only overriding Quit,
+// which blocks for blockFor before returning. Used to prove shutdown()
+// bounds a wedged driver teardown instead of hanging the Run.
+type hangingWD struct {
+	selenium.WebDriver
+	blockFor time.Duration
+}
+
+func (h *hangingWD) Quit() error {
+	time.Sleep(h.blockFor)
+	return nil
+}
+
+// shutdown must bound wd.Quit() with wdCloseTimeout so a wedged driver
+// process can't hang the Run (or the explicit quit() call) forever.
+func TestShutdown_BoundsHangingQuit(t *testing.T) {
+	orig := wdCloseTimeout
+	wdCloseTimeout = 30 * time.Millisecond
+	defer func() { wdCloseTimeout = orig }()
+
+	s := &wdSession{
+		reg: &wdRegistry{sessions: map[*wdSession]struct{}{}},
+		wd:  &hangingWD{blockFor: 5 * time.Second},
+	}
+	start := time.Now()
+	s.shutdown()
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("shutdown took %v, want bounded near the shrunk wdCloseTimeout (30ms)", elapsed)
+	}
+}
+
+// closeAll drives shutdown() for every tracked session; it must inherit the
+// same bound rather than hanging on a wedged Quit.
+func TestCloseAll_BoundsHangingQuit(t *testing.T) {
+	orig := wdCloseTimeout
+	wdCloseTimeout = 30 * time.Millisecond
+	defer func() { wdCloseTimeout = orig }()
+
+	r := &wdRegistry{sessions: map[*wdSession]struct{}{}}
+	s := &wdSession{reg: r, wd: &hangingWD{blockFor: 5 * time.Second}}
+	r.track(s)
+
+	start := time.Now()
+	r.closeAll()
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("closeAll took %v, want bounded near the shrunk wdCloseTimeout (30ms)", elapsed)
+	}
+}
+
 // TestWDShutdownCancelsCtx verifies shutdown() cancels the session context so
 // an in-flight raw command unblocks promptly.
 func TestWDShutdownCancelsCtx(t *testing.T) {

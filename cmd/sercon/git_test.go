@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -290,6 +291,37 @@ func TestGitBranch_DetachedHEAD(t *testing.T) {
 	}
 	if b.Current != "" {
 		t.Errorf("current: %q (want empty)", b.Current)
+	}
+}
+
+// gitRun must bound the subprocess with its own timeout so a hung git
+// process can't hang the Run forever (matters under `sercon serve`, where
+// the Run's own timeout is disabled). We point gitRun at a fake `git` on
+// PATH that sleeps far longer than a shrunk gitTimeout and assert gitRun
+// returns an error well within that shrunk bound rather than hanging.
+func TestGitRun_TimeoutBounded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script PATH shim requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "git")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	orig := gitTimeout
+	gitTimeout = 50 * time.Millisecond
+	defer func() { gitTimeout = orig }()
+
+	start := time.Now()
+	_, _, _, err := gitRun(context.Background(), "", "status")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected gitRun to return an error when the subprocess hangs past gitTimeout")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("gitRun took %v to return, want bounded near the shrunk gitTimeout (50ms)", elapsed)
 	}
 }
 

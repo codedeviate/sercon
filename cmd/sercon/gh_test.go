@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -115,6 +119,37 @@ func TestGhAuthStatus_NoGhResolvesFalse(t *testing.T) {
 	}
 	if out.Raw != "gh not on PATH" {
 		t.Errorf("raw: %q", out.Raw)
+	}
+}
+
+// ghRun must bound the subprocess with its own timeout so a hung gh
+// process can't hang the Run forever (matters under `sercon serve`, where
+// the Run's own timeout is disabled). We point ghRun at a fake `gh` on
+// PATH that sleeps far longer than a shrunk ghTimeout and assert ghRun
+// returns an error well within that shrunk bound rather than hanging.
+func TestGhRun_TimeoutBounded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script PATH shim requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "gh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	orig := ghTimeout
+	ghTimeout = 50 * time.Millisecond
+	defer func() { ghTimeout = orig }()
+
+	start := time.Now()
+	_, _, _, err := ghRun(context.Background(), "", "auth", "status")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected ghRun to return an error when the subprocess hangs past ghTimeout")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("ghRun took %v to return, want bounded near the shrunk ghTimeout (50ms)", elapsed)
 	}
 }
 

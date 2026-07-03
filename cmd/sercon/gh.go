@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -173,6 +174,15 @@ func ghNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	}
 }
 
+// ghTimeout bounds every `gh` subprocess invocation so a hung gh process
+// can't hang the Run forever — this matters under `sercon serve`, where
+// the Run's own timeout is disabled. Mirrors exec.go's subprocess default
+// (optMillis(opts, "timeout", 30*time.Second)); the gh bindings are
+// positional with no opts surface, so this is a fixed default rather than
+// a per-call override. Var (not const) so tests can shrink it without
+// waiting out the real 30s.
+var ghTimeout = 30 * time.Second
+
 // ghRun spawns `gh <args>` in cwd and returns the captured streams. The
 // caller decides whether non-zero exit is a throw or a signal (authStatus
 // treats it as a signal; the others throw).
@@ -180,7 +190,9 @@ func ghRun(ctx context.Context, cwd string, args ...string) (string, string, int
 	if _, err := exec.LookPath("gh"); err != nil {
 		return "", "", 0, fmt.Errorf("gh not on PATH: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, "gh", args...)
+	runCtx, cancel := context.WithTimeout(ctx, ghTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, "gh", args...)
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
@@ -188,7 +200,7 @@ func ghRun(ctx context.Context, cwd string, args ...string) (string, string, int
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 	if err := cmd.Run(); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr := runCtx.Err(); ctxErr != nil {
 			return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("gh: %w", ctxErr)
 		}
 		var exitErr *exec.ExitError

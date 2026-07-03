@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -35,12 +36,23 @@ func gitNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	}
 }
 
+// gitTimeout bounds every `git` subprocess invocation so a hung git
+// process can't hang the Run forever — this matters under `sercon serve`,
+// where the Run's own timeout is disabled. Mirrors exec.go's subprocess
+// default (optMillis(opts, "timeout", 30*time.Second)); git/gh bindings
+// are positional with no opts surface, so this is a fixed default rather
+// than a per-call override. Var (not const) so tests can shrink it
+// without waiting out the real 30s.
+var gitTimeout = 30 * time.Second
+
 // gitRun spawns `git <args>` in cwd and returns the captured streams.
 // Non-zero exit is reported via the integer return so callers can choose
 // whether to throw or surface it (runText surfaces it; the typed
 // bindings throw via gitRunChecked).
 func gitRun(ctx context.Context, cwd string, args ...string) (string, string, int, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	runCtx, cancel := context.WithTimeout(ctx, gitTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, "git", args...)
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
@@ -49,7 +61,7 @@ func gitRun(ctx context.Context, cwd string, args ...string) (string, string, in
 	cmd.Stderr = &stderrBuf
 	err := cmd.Run()
 	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
+		if ctxErr := runCtx.Err(); ctxErr != nil {
 			return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("git: %w", ctxErr)
 		}
 		var exitErr *exec.ExitError
