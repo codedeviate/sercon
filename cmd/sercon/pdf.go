@@ -280,15 +280,59 @@ func pdfToImageOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 }
 
 // globGenerated returns the files pdftoppm produced for a prefix, sorted. It
-// matches "<prefix>-NN.<ext>" and the singleton "<prefix>.<ext>".
+// matches the literal singleton "<prefix>.<ext>" and the multi-page
+// "<prefix>-N.<ext>" (N a run of digits — pdftoppm's page-number suffix).
+//
+// prefix is caller/user-controlled (it's derived from the `dest` option), so
+// this deliberately avoids filepath.Glob: glob metacharacters (*, ?, [) in
+// prefix would otherwise be interpreted as pattern syntax instead of literal
+// text, corrupting the match (or matching unrelated files). Listing the
+// directory and comparing the entry name against the literal prefix by string
+// operations sidesteps that entirely — no part of prefix is ever compiled as
+// a pattern.
 func globGenerated(prefix, ext string) ([]string, error) {
-	matches, err := filepath.Glob(prefix + "*." + ext)
+	dir := filepath.Dir(prefix)
+	base := filepath.Base(prefix)
+	suffix := "." + ext
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	// pdftoppm also writes <prefix>-1.png etc.; Glob above catches them. Sort.
+	var matches []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasPrefix(name, base) || !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		mid := name[len(base) : len(name)-len(suffix)]
+		switch {
+		case mid == "":
+			// "<prefix>.<ext>" singleton.
+		case mid[0] == '-' && isDigits(mid[1:]):
+			// "<prefix>-N.<ext>".
+		default:
+			continue
+		}
+		matches = append(matches, filepath.Join(dir, name))
+	}
 	sort.Strings(matches)
 	return matches, nil
+}
+
+// isDigits reports whether s is non-empty and consists entirely of ASCII digits.
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func pdfToTextOp(ctx context.Context, call goja.FunctionCall) (any, error) {

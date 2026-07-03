@@ -2,7 +2,10 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -67,6 +70,57 @@ func TestBuildPdfHTMLArgs(t *testing.T) {
 	want := []string{"-i", "-noframes", "-f", "2", "-l", "2", "--", "in.pdf", "out.html"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildPdfHTMLArgs:\n got %v\nwant %v", got, want)
+	}
+}
+
+// TestGlobGenerated_MetacharacterPrefix guards against a `dest` prefix that
+// contains glob metacharacters (*, ?, [) corrupting the match: pdftoppm writes
+// files named after the literal prefix on disk, but filepath.Glob would
+// interpret those characters as patterns instead of literal text.
+func TestGlobGenerated_MetacharacterPrefix(t *testing.T) {
+	dir := t.TempDir()
+	prefix := filepath.Join(dir, "re[po]rt")
+	want := []string{
+		filepath.Join(dir, "re[po]rt-1.png"),
+		filepath.Join(dir, "re[po]rt-2.png"),
+	}
+	decoys := []string{
+		filepath.Join(dir, "re[po]rtX.png"), // no numeric suffix after "-"
+		filepath.Join(dir, "re[po]rt-1.jpeg"), // wrong extension
+		filepath.Join(dir, "other-1.png"),     // unrelated prefix
+	}
+	for _, p := range append(append([]string{}, want...), decoys...) {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatalf("seed %s: %v", p, err)
+		}
+	}
+	got, err := globGenerated(prefix, "png")
+	if err != nil {
+		t.Fatalf("globGenerated: %v", err)
+	}
+	wantSorted := append([]string{}, want...)
+	sort.Strings(wantSorted)
+	if !reflect.DeepEqual(got, wantSorted) {
+		t.Fatalf("globGenerated(%q) = %v, want %v", prefix, got, wantSorted)
+	}
+}
+
+// TestGlobGenerated_SingletonMetacharacterPrefix covers the single-page case
+// (no "-N" suffix, just "<prefix>.<ext>") with a "?" metacharacter in prefix.
+func TestGlobGenerated_SingletonMetacharacterPrefix(t *testing.T) {
+	dir := t.TempDir()
+	prefix := filepath.Join(dir, "p?age")
+	singleton := filepath.Join(dir, "p?age.png")
+	if err := os.WriteFile(singleton, []byte("x"), 0o600); err != nil {
+		t.Fatalf("seed %s: %v", singleton, err)
+	}
+	got, err := globGenerated(prefix, "png")
+	if err != nil {
+		t.Fatalf("globGenerated: %v", err)
+	}
+	want := []string{singleton}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("globGenerated(%q) = %v, want %v", prefix, got, want)
 	}
 }
 

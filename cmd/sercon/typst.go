@@ -72,7 +72,10 @@ func buildCompileArgs(s compileSpec) []string {
 	if s.format == "png" && s.ppi > 0 {
 		args = append(args, "--ppi", strconv.Itoa(s.ppi))
 	}
-	args = append(args, s.inputPath, s.outputPath)
+	// "--" ends option parsing so an inputPath/outputPath starting with "-"
+	// (e.g. a file named "-x.typ") can't be mis-parsed as a flag. Mirrors the
+	// safePathArgs idiom used for the poppler tools in pdf.go.
+	args = append(args, "--", s.inputPath, s.outputPath)
 	return args
 }
 
@@ -101,7 +104,9 @@ func buildQueryArgs(s querySpec) []string {
 	if s.one {
 		args = append(args, "--one")
 	}
-	args = append(args, s.inputPath, s.selector)
+	// "--" ends option parsing so an inputPath/selector starting with "-"
+	// can't be mis-parsed as a flag. Mirrors buildCompileArgs above.
+	args = append(args, "--", s.inputPath, s.selector)
 	return args
 }
 

@@ -40,7 +40,7 @@ func TestBuildCompileArgs(t *testing.T) {
 		ppi: 0, fontPaths: []string{"/f1", "/f2"},
 	})
 	want := []string{"compile", "--root", "/r", "--font-path", "/f1", "--font-path", "/f2",
-		"--input", "a=1", "--input", "b=2", "--format", "pdf", "in.typ", "out.pdf"}
+		"--input", "a=1", "--input", "b=2", "--format", "pdf", "--", "in.typ", "out.pdf"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("compile args:\n got %v\nwant %v", got, want)
 	}
@@ -58,9 +58,73 @@ func TestBuildCompileArgs(t *testing.T) {
 func TestBuildQueryArgs(t *testing.T) {
 	got := buildQueryArgs(querySpec{inputPath: "in.typ", selector: "<a>", field: "value", one: true,
 		root: "/r", inputs: map[string]string{"k": "v"}})
-	want := []string{"query", "--root", "/r", "--input", "k=v", "--field", "value", "--one", "in.typ", "<a>"}
+	want := []string{"query", "--root", "/r", "--input", "k=v", "--field", "value", "--one", "--", "in.typ", "<a>"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("query args:\n got %v\nwant %v", got, want)
+	}
+}
+
+// TestBuildCompileArgs_DashSeparator guards against a path/output starting
+// with "-" being parsed as a flag: "--" must sit immediately before the
+// positional inputPath/outputPath pair, regardless of which options precede it.
+func TestBuildCompileArgs_DashSeparator(t *testing.T) {
+	tests := []struct {
+		name string
+		spec compileSpec
+	}{
+		{"bare", compileSpec{inputPath: "-weird.typ", outputPath: "-out.pdf", format: "pdf"}},
+		{"withOpts", compileSpec{
+			inputPath: "-in.typ", outputPath: "-out.png", format: "png",
+			root: "/r", inputs: map[string]string{"k": "v"}, ppi: 300, fontPaths: []string{"/f1"},
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			args := buildCompileArgs(tc.spec)
+			idx := typstIndexOf(args, "--")
+			if idx == -1 {
+				t.Fatalf("buildCompileArgs(%+v): missing \"--\": %v", tc.spec, args)
+			}
+			if idx+2 != len(args)-1 && idx+1 >= len(args) {
+				t.Fatalf("buildCompileArgs(%+v): malformed argv: %v", tc.spec, args)
+			}
+			if args[idx+1] != tc.spec.inputPath {
+				t.Fatalf("buildCompileArgs(%+v): \"--\" not immediately before inputPath: %v", tc.spec, args)
+			}
+			if args[len(args)-1] != tc.spec.outputPath {
+				t.Fatalf("buildCompileArgs(%+v): outputPath not last: %v", tc.spec, args)
+			}
+		})
+	}
+}
+
+// TestBuildQueryArgs_DashSeparator mirrors TestBuildCompileArgs_DashSeparator
+// for `typst query`'s positional inputPath/selector pair.
+func TestBuildQueryArgs_DashSeparator(t *testing.T) {
+	tests := []struct {
+		name string
+		spec querySpec
+	}{
+		{"bare", querySpec{inputPath: "-weird.typ", selector: "-suspicious"}},
+		{"withOpts", querySpec{
+			inputPath: "-in.typ", selector: "-<a>", field: "value", one: true,
+			root: "/r", inputs: map[string]string{"k": "v"},
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			args := buildQueryArgs(tc.spec)
+			idx := typstIndexOf(args, "--")
+			if idx == -1 {
+				t.Fatalf("buildQueryArgs(%+v): missing \"--\": %v", tc.spec, args)
+			}
+			if args[idx+1] != tc.spec.inputPath {
+				t.Fatalf("buildQueryArgs(%+v): \"--\" not immediately before inputPath: %v", tc.spec, args)
+			}
+			if args[len(args)-1] != tc.spec.selector {
+				t.Fatalf("buildQueryArgs(%+v): selector not last: %v", tc.spec, args)
+			}
+		})
 	}
 }
 
@@ -71,4 +135,13 @@ func typstContains(xs []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func typstIndexOf(xs []string, s string) int {
+	for i, x := range xs {
+		if x == s {
+			return i
+		}
+	}
+	return -1
 }
