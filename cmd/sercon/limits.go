@@ -1,5 +1,10 @@
 package main
 
+import (
+	"fmt"
+	"io"
+)
+
 // Shared safety caps for parsers that consume untrusted external dumps
 // (PHP serialize/var_dump/var_export, Perl Data::Dumper, and friends). These
 // exist to turn pathological input (deeply nested structures, oversized
@@ -26,4 +31,29 @@ const (
 	// request. Listeners may override per-listener via the `maxBodyBytes`
 	// option; a request over the cap gets a 413 without invoking JS.
 	DefaultMaxServerBodyBytes = 32 << 20 // 32 MB
+
+	// DefaultMaxDecompressBytes caps the decompressed output size read from
+	// a decompressing reader by codec.compression.decompress and the
+	// web.sitemap gzip path. Without a cap, a small crafted compressed
+	// input can inflate to gigabytes in memory (a "decompression bomb").
+	// codec.compression.decompress may override this per-call via the
+	// `maxBytes` option; the sitemap gzip path has no opts surface and
+	// always uses this default.
+	DefaultMaxDecompressBytes = 512 << 20 // 512 MB
 )
+
+// readAllCapped reads all of r, capped at max bytes. It uses
+// io.LimitReader(r, max+1) so a stream of exactly max bytes still succeeds
+// (reading max+1 is what distinguishes "at the cap" from "over the cap"
+// without buffering an unbounded amount first). what names what was being
+// read, for the error message.
+func readAllCapped(r io.Reader, max int64, what string) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > max {
+		return nil, fmt.Errorf("%s exceeds maxBytes limit (%d)", what, max)
+	}
+	return b, nil
+}

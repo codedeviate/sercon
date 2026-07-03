@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/andybalholm/brotli"
@@ -80,7 +79,12 @@ func decompressCall(_ context.Context, call goja.FunctionCall) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decompress: %w", err)
 	}
-	return decompressBytes(algo, in)
+	opts := thirdArgAsMap(call)
+	maxBytes := int64(optInt(opts, "maxBytes", DefaultMaxDecompressBytes))
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxDecompressBytes
+	}
+	return decompressBytes(algo, in, maxBytes)
 }
 
 // compressBytes routes by algorithm name. Each branch handles writer
@@ -196,9 +200,27 @@ func compressBytes(algo string, in []byte) ([]byte, error) {
 // decompressBytes routes by algorithm name. Readers that implement
 // `io.Closer` are closed via a deferred call inside their case so we don't
 // leak any compressor-side resources (decoder pools, internal buffers).
-func decompressBytes(algo string, in []byte) ([]byte, error) {
+//
+// maxBytes caps the decompressed output size, guarding against a
+// decompression bomb (a small crafted input that inflates to gigabytes). A
+// non-positive maxBytes means "use the default". Every reader-based
+// algorithm goes through readAllCapped (io.LimitReader(zr, maxBytes+1) plus
+// an overflow check); snappy has no streaming reader, so it's guarded via
+// the format's own length header (snappy.DecodedLen) before ever
+// allocating the output buffer.
+func decompressBytes(algo string, in []byte, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxDecompressBytes
+	}
 	switch algo {
 	case "snappy":
+		n, err := snappy.DecodedLen(in)
+		if err != nil {
+			return nil, err
+		}
+		if int64(n) > maxBytes {
+			return nil, fmt.Errorf("decompressed output exceeds maxBytes limit (%d)", maxBytes)
+		}
 		return snappy.Decode(nil, in)
 	case "gzip":
 		zr, err := gzip.NewReader(bytes.NewReader(in))
@@ -206,38 +228,38 @@ func decompressBytes(algo string, in []byte) ([]byte, error) {
 			return nil, err
 		}
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(zr)
+		return readAllCapped(zr, maxBytes, "decompressed output")
 	case "deflate":
 		zr := flate.NewReader(bytes.NewReader(in))
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(zr)
+		return readAllCapped(zr, maxBytes, "decompressed output")
 	case "zlib":
 		zr, err := zlib.NewReader(bytes.NewReader(in))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(zr)
+		return readAllCapped(zr, maxBytes, "decompressed output")
 	case "bzip2":
 		// stdlib bzip2 reader is fine for decompression.
-		return io.ReadAll(bzip2.NewReader(bytes.NewReader(in)))
+		return readAllCapped(bzip2.NewReader(bytes.NewReader(in)), maxBytes, "decompressed output")
 	case "zstd":
 		zr, err := zstd.NewReader(bytes.NewReader(in))
 		if err != nil {
 			return nil, err
 		}
 		defer zr.Close()
-		return io.ReadAll(zr)
+		return readAllCapped(zr, maxBytes, "decompressed output")
 	case "brotli":
-		return io.ReadAll(brotli.NewReader(bytes.NewReader(in)))
+		return readAllCapped(brotli.NewReader(bytes.NewReader(in)), maxBytes, "decompressed output")
 	case "lz4":
-		return io.ReadAll(lz4.NewReader(bytes.NewReader(in)))
+		return readAllCapped(lz4.NewReader(bytes.NewReader(in)), maxBytes, "decompressed output")
 	case "xz":
 		zr, err := xz.NewReader(bytes.NewReader(in))
 		if err != nil {
 			return nil, err
 		}
-		return io.ReadAll(zr)
+		return readAllCapped(zr, maxBytes, "decompressed output")
 	default:
 		return nil, fmt.Errorf("unknown algorithm %q (supported: %s)", algo,
 			strings.Join(compressionAlgos, ", "))

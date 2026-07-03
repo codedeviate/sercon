@@ -636,9 +636,10 @@ declare const codec: {
      * Decompress data previously produced by compress (same algorithm name required). Returns Uint8Array. Async.
      * @param algo Algorithm name (case-insensitive), matching the one used to compress: gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy.
      * @param data Compressed input bytes.
+     * @param opts maxBytes caps the decompressed output size in bytes (default 512 MB); a non-positive value also falls back to the default. Guards against a decompression bomb — a small crafted input that inflates to gigabytes.
      * @returns Promise<Uint8Array> — the original decompressed bytes.
      */
-    decompress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>;
+    decompress(algo: string, data: string | Uint8Array | ArrayBuffer, opts?: { maxBytes?: number }): Promise<Uint8Array>;
   };
   doc: {
     /**

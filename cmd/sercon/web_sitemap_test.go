@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -113,5 +114,48 @@ func TestSitemap_GzipAndExpand(t *testing.T) {
 	}
 	if errs := sm["errors"].([]map[string]any); len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+}
+
+// A crafted small .xml.gz can inflate far beyond a reasonable sitemap size
+// (a "decompression bomb"); gunzipIfNeeded must cap the output rather than
+// io.ReadAll-ing it unbounded. gunzipIfNeededMax lets the test exercise the
+// cap with a small bound instead of inflating gigabytes to hit the real
+// DefaultMaxDecompressBytes default.
+func TestSitemap_GunzipCap(t *testing.T) {
+	payload := bytes.Repeat([]byte("<url><loc>https://e.example/x</loc></url>"), 50_000)
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(payload); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	compressed := buf.Bytes()
+
+	if _, err := gunzipIfNeededMax(compressed, 1024); err == nil {
+		t.Fatal("expected error for gunzip output exceeding maxBytes")
+	} else if !strings.Contains(err.Error(), "exceeds maxBytes limit") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Exactly at the cap must succeed — off-by-one boundary correctness.
+	out, err := gunzipIfNeededMax(compressed, int64(len(payload)))
+	if err != nil {
+		t.Fatalf("gunzip at exact cap: %v", err)
+	}
+	if !bytes.Equal(out, payload) {
+		t.Fatal("gunzip at exact cap: mismatch")
+	}
+
+	// Non-gzip input passes through unchanged regardless of the cap.
+	plain := []byte(urlsetXML)
+	out2, err := gunzipIfNeededMax(plain, 1)
+	if err != nil {
+		t.Fatalf("passthrough: %v", err)
+	}
+	if !bytes.Equal(out2, plain) {
+		t.Fatal("passthrough mismatch")
 	}
 }

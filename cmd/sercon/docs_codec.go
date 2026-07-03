@@ -27,12 +27,15 @@ func codecDocs() map[string]scriptengine.MemberDoc {
 			Params: []scriptengine.Param{
 				{Name: "algo", Type: "string", Desc: "Algorithm name (case-insensitive), matching the one used to compress: gzip / deflate / zlib / bzip2 / zstd / brotli / lz4 / xz / snappy."},
 				{Name: "data", Type: "string | Uint8Array | ArrayBuffer", Desc: "Compressed input bytes."},
+				{Name: "opts", Type: "{ maxBytes?: number }", Optional: true, Desc: "maxBytes caps the decompressed output size in bytes (default 512 MB); a non-positive value also falls back to the default. Guards against a decompression bomb — a small crafted input that inflates to gigabytes."},
 			},
 			ReturnType: "Promise<Uint8Array>",
 			Returns:    "Promise<Uint8Array> — the original decompressed bytes.",
-			Errors:     "Throws if data is undefined/null or an unsupported type, the algorithm name is unknown, or the input is not valid for that algorithm.",
+			Errors:     "Throws if data is undefined/null or an unsupported type, the algorithm name is unknown, the input is not valid for that algorithm, or the decompressed output exceeds maxBytes.",
 			Example: `const raw = await codec.compression.decompress("gzip", packed);
-const text = new TextDecoder().decode(raw);`,
+const text = new TextDecoder().decode(raw);
+// cap output at 1 MB for untrusted input:
+const capped = await codec.compression.decompress("gzip", packed, { maxBytes: 1 << 20 });`,
 		},
 		"barcode.formats": {
 			Summary:    "Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / codabar / ean13 / ean8 / upca).",

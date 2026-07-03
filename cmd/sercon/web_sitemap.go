@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 
@@ -39,8 +38,18 @@ type smIndex struct {
 }
 
 // gunzipIfNeeded decompresses data when it carries the gzip magic header,
-// otherwise returns it unchanged.
+// otherwise returns it unchanged. Decompressed output is capped at
+// DefaultMaxDecompressBytes — this path has no opts surface to override it —
+// so a crafted small .xml.gz can't inflate to gigabytes (a "decompression
+// bomb") before the sitemap parser ever sees it.
 func gunzipIfNeeded(data []byte) ([]byte, error) {
+	return gunzipIfNeededMax(data, DefaultMaxDecompressBytes)
+}
+
+// gunzipIfNeededMax is gunzipIfNeeded with an explicit cap, split out so
+// tests can exercise the overflow path with a small bound instead of
+// inflating real gigabytes to hit the default.
+func gunzipIfNeededMax(data []byte, maxBytes int64) ([]byte, error) {
 	if len(data) < 2 || data[0] != 0x1f || data[1] != 0x8b {
 		return data, nil
 	}
@@ -49,7 +58,7 @@ func gunzipIfNeeded(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = zr.Close() }()
-	return io.ReadAll(zr)
+	return readAllCapped(zr, maxBytes, "decompressed sitemap")
 }
 
 // urlEntry converts a parsed urlset entry to the result map (priority parsed as
