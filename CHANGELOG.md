@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.85.0] — 2026-07-03
+
 ### Added
 - Size-cap guards against decompression-/decode-bomb resource exhaustion:
   `net.http.request` and every `web.*.load` accept `maxBytes` (response body
