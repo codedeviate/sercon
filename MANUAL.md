@@ -599,7 +599,7 @@ with no plugin or manual config:
 - **`sercon.d.ts`** — the binding declarations (same content as
   `sercon -emit-dts`): ambient `declare const` blocks for `runtime`,
   `crypto`, `text`, `codec`, `fs`, `net`, `db`, `server`, `services`,
-  `tui`, and `console`, each with JSDoc.
+  `tui`, `image`, `web`, `audio`, and `console`, each with JSDoc.
 - **`jsconfig.json`** — points the language server at `sercon.d.ts` and
   sets `moduleResolution: "Bundler"` (so the extensionless relative
   imports sercon scripts use resolve) and `types: []` (sercon isn't
