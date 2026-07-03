@@ -112,7 +112,7 @@ func (s *browserSession) do(ctx context.Context, method, url, body string) (map[
 		return nil, fmt.Errorf("browser.%s: %w", strings.ToLower(method), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readAllCapped(resp.Body, DefaultMaxHTTPBodyBytes, "browser response")
 	if err != nil {
 		return nil, fmt.Errorf("browser.%s: read body: %w", strings.ToLower(method), err)
 	}

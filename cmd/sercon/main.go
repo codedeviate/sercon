@@ -591,7 +591,7 @@ func httpDo(ctx context.Context, method, url, body string) (map[string]any, erro
 		return nil, err
 	}
 	defer resp.Body.Close()
-	bs, err := io.ReadAll(resp.Body)
+	bs, err := readAllCapped(resp.Body, DefaultMaxHTTPBodyBytes, "response body")
 	if err != nil {
 		return nil, err
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 
@@ -224,7 +223,7 @@ func fetchBrowserWSURL(addr string) (string, error) {
 		return "", fmt.Errorf("webdriver: querying CDP endpoint %s: %w", addr, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readAllCapped(resp.Body, DefaultMaxHTTPBodyBytes, "CDP response")
 	var v struct {
 		WS string `json:"webSocketDebuggerUrl"`
 	}

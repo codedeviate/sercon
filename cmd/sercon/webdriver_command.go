@@ -50,7 +50,7 @@ func (s *wdSession) command(method, path string, body any) (any, error) {
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := readAllCapped(resp.Body, DefaultMaxHTTPBodyBytes, "webdriver response")
 	if err != nil {
 		return nil, err
 	}
