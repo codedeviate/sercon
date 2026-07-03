@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -180,6 +181,31 @@ func smtpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	stoppedPromise, stoppedResolve, _ := vm.NewPromise()
 	closed := atomic.Bool{}
 
+	// gracefulClose performs the same teardown the JS close() does; shared
+	// so both the explicit close() and the shutdown hook drive it. Both
+	// server.Close() and ln.Close() are goroutine-safe, and release()
+	// (ClearTimeout via the loop's aux-job queue) is safe off-loop, so this
+	// can run from the serve signal handler's non-loop goroutine.
+	gracefulClose := func() {
+		// server.Close() closes s.done so Serve returns cleanly, but it
+		// only closes listeners already registered in s.listeners. If it
+		// races ahead of the `go server.Serve(ln)` registration step, Serve
+		// would otherwise block in Accept forever. Closing ln directly
+		// guarantees Accept unblocks regardless of ordering. Double-close is
+		// harmless (ignored). release() is idempotent — the serve goroutine
+		// below also releases once Serve returns.
+		_ = server.Close()
+		_ = ln.Close()
+		release()
+	}
+
+	// Register a graceful-shutdown hook so `sercon serve` can stop this
+	// listener on SIGTERM/SIGINT. An explicit close() removes it first.
+	removeHook := eng.AddShutdownHook(func(context.Context) error {
+		gracefulClose()
+		return nil
+	})
+
 	go func() {
 		serveErr := server.Serve(ln)
 		loop.RunOnLoop(func(vm *goja.Runtime) {
@@ -199,16 +225,8 @@ func smtpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		if closed.Swap(true) {
 			return vm.ToValue(stoppedPromise)
 		}
-		go func() {
-			// server.Close() closes s.done so Serve returns cleanly, but it
-			// only closes listeners already registered in s.listeners. If
-			// close() races ahead of the `go server.Serve(ln)` goroutine's
-			// registration step, Serve would otherwise block in Accept
-			// forever. Closing ln directly guarantees Accept unblocks
-			// regardless of ordering. Double-close is harmless (ignored).
-			_ = server.Close()
-			_ = ln.Close()
-		}()
+		removeHook() // don't let GracefulShutdown close it a second time
+		go gracefulClose()
 		return vm.ToValue(stoppedPromise)
 	})
 	return handle

@@ -107,6 +107,13 @@ type Engine struct {
 	runCleanupMu sync.Mutex
 	runCleanups  []func()
 
+	// shutdownHooks is the per-Run set of graceful-shutdown hooks
+	// registered via AddShutdownHook (typically by a server/listener
+	// binding) and invoked by GracefulShutdown. Guarded by runCleanupMu —
+	// the same mutex as runCleanups — and cleared on Run end so hooks do
+	// not leak across runs.
+	shutdownHooks []*shutdownHook
+
 	// holdRun* support Engine.HoldRun for long-lived bindings. The loop
 	// pointer is set at the top of Run and cleared at the end via
 	// holdRunBegin/holdRunEnd; sentinels are released en masse at Run end
@@ -688,13 +695,99 @@ func (e *Engine) AddRunCleanup(fn func()) {
 }
 
 // drainRunCleanups removes and returns the current set of cleanup
-// callbacks. Called by Run after loop.Run completes.
+// callbacks. Called by Run after loop.Run completes. It also clears the
+// per-Run shutdown-hook slice (guarded by the same mutex) so registered
+// hooks do not leak into the next Run.
 func (e *Engine) drainRunCleanups() []func() {
 	e.runCleanupMu.Lock()
 	out := e.runCleanups
 	e.runCleanups = nil
+	e.shutdownHooks = nil
 	e.runCleanupMu.Unlock()
 	return out
+}
+
+// shutdownHook is one registered graceful-shutdown callback. Wrapped in a
+// pointer struct so AddShutdownHook's remover can identify and drop this
+// exact hook (func values are not comparable).
+type shutdownHook struct {
+	fn func(context.Context) error
+}
+
+// AddShutdownHook registers fn as a graceful-shutdown hook for the current
+// Run and returns a remover that unregisters it. GracefulShutdown invokes
+// every registered hook concurrently; a long-lived binding (an HTTP/HTTPS
+// server, an SMTP/TCP/UDP/ICMP listener) registers a hook that performs its
+// graceful close so `sercon serve` can tear the listener down on
+// SIGTERM/SIGINT without the script's cooperation.
+//
+// The returned remover is called by the binding's own explicit close()
+// (e.g. the JS `srv.close()`) so an already-closed listener is not closed a
+// second time by a later GracefulShutdown. The remover is idempotent.
+//
+// Hooks live only for the current Run: the slice is guarded by the same
+// mutex as run cleanups and cleared on Run end, so nothing leaks across
+// runs. Safe to call concurrently from within a Run.
+func (e *Engine) AddShutdownHook(fn func(context.Context) error) (remove func()) {
+	if fn == nil {
+		return func() {}
+	}
+	h := &shutdownHook{fn: fn}
+	e.runCleanupMu.Lock()
+	e.shutdownHooks = append(e.shutdownHooks, h)
+	e.runCleanupMu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			e.runCleanupMu.Lock()
+			for i, x := range e.shutdownHooks {
+				if x == h {
+					e.shutdownHooks = append(e.shutdownHooks[:i], e.shutdownHooks[i+1:]...)
+					break
+				}
+			}
+			e.runCleanupMu.Unlock()
+		})
+	}
+}
+
+// GracefulShutdown invokes every shutdown hook registered on the current
+// Run concurrently and returns when they all complete or ctx is done,
+// whichever comes first. With no hooks registered it returns nil
+// immediately.
+//
+// Safe to call from a non-loop goroutine — the `sercon serve` signal
+// handler drives it. Each hook closes its listener (unblocking the
+// accept/read loop) and releases its HoldRun hold; once the holds drop, the
+// loop's job count falls to zero and RunFile returns naturally. The caller
+// (serve) still cancels the run context afterwards as a fallback for
+// anything that fails to close within the window.
+func (e *Engine) GracefulShutdown(ctx context.Context) error {
+	e.runCleanupMu.Lock()
+	hooks := make([]func(context.Context) error, 0, len(e.shutdownHooks))
+	for _, h := range e.shutdownHooks {
+		hooks = append(hooks, h.fn)
+	}
+	e.runCleanupMu.Unlock()
+	if len(hooks) == 0 {
+		return nil
+	}
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	for _, h := range hooks {
+		wg.Add(1)
+		go func(h func(context.Context) error) {
+			defer wg.Done()
+			_ = h(ctx)
+		}(h)
+	}
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // reflectConstructor wraps an arbitrary Go constructor func into a goja native

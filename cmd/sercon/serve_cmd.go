@@ -102,19 +102,19 @@ func runServe(args []string) int {
 	defer signal.Stop(sigCh)
 	go func() {
 		select {
-		case sig := <-sigCh:
-			_ = sig
+		case <-sigCh:
 			signaledShutdown.Store(true)
-			// Give the script `shutdown` time to drain before hard-cancelling.
-			// The script's HoldRun sentinels keep the loop alive until each
-			// listener's .close() fires; if they don't all close within the
-			// shutdown window, we force-cancel.
-			t := time.NewTimer(*shutdown)
-			defer t.Stop()
-			select {
-			case <-t.C:
-			case <-ctx.Done():
-			}
+			// Gracefully close every listener the script registered (HTTP/HTTPS
+			// Server.Shutdown; SMTP/TCP/UDP/ICMP socket close) within the
+			// shutdown window. GracefulShutdown runs each listener's close hook
+			// off-loop and returns once they all complete (or the deadline
+			// elapses); each hook releases that listener's HoldRun, so once
+			// they're done the loop's job count drops and RunFile returns
+			// naturally. cancel() then force-cancels the run context as a
+			// fallback for anything still holding the loop.
+			shutdownCtx, c := context.WithTimeout(context.Background(), *shutdown)
+			defer c()
+			_ = eng.GracefulShutdown(shutdownCtx)
 			cancel()
 		case <-ctx.Done():
 			// runServe returning naturally — unblock and exit so we don't leak.

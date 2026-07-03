@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1227,4 +1228,22 @@ func TestAbortRun_CancelsInFlightRun(t *testing.T) {
 func TestAbortRun_NoopWhenIdle(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
 	eng.AbortRun() // must not panic when no Run is active
+}
+
+// TestGracefulShutdown_InvokesHooksThenClears verifies AddShutdownHook /
+// GracefulShutdown: every registered hook is invoked, and a hook whose
+// remover was called (an explicitly-closed listener) is NOT invoked.
+func TestGracefulShutdown_InvokesHooksThenClears(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{})
+	var closed int32
+	// Simulate a Run scope: register two hooks, then GracefulShutdown.
+	rm1 := eng.AddShutdownHook(func(context.Context) error { atomic.AddInt32(&closed, 1); return nil })
+	_ = eng.AddShutdownHook(func(context.Context) error { atomic.AddInt32(&closed, 1); return nil })
+	rm1() // an explicitly-closed listener removes its hook
+	if err := eng.GracefulShutdown(context.Background()); err != nil {
+		t.Fatalf("GracefulShutdown: %v", err)
+	}
+	if got := atomic.LoadInt32(&closed); got != 1 {
+		t.Fatalf("expected 1 remaining hook invoked (one was removed), got %d", got)
+	}
 }

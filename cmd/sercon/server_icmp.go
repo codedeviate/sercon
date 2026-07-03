@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -88,13 +89,30 @@ func icmpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	handle := vm.NewObject()
 	_ = handle.Set("address", fmt.Sprintf("icmp/%s", conn.LocalAddr().String()))
 	closeOnce := atomic.Bool{}
+	// doClose closes the socket (unblocking the read loop) and releases the
+	// HoldRun. Shared by the JS close() and the shutdown hook. Both
+	// conn.Close() and release() (ClearTimeout via the loop aux-job queue)
+	// are safe to call from the serve signal handler's non-loop goroutine.
+	doClose := func() {
+		if closeOnce.Swap(true) {
+			return
+		}
+		_ = conn.Close()
+		release()
+	}
+
+	// Register a graceful-shutdown hook so `sercon serve` can close this
+	// listener on SIGTERM/SIGINT. An explicit close() removes it first.
+	removeHook := eng.AddShutdownHook(func(context.Context) error {
+		doClose()
+		return nil
+	})
+
 	// close() returns Promise<void> for parity with the rest of server.*.
 	_ = handle.Set("close", func(goja.FunctionCall) goja.Value {
 		promise, resolve, _ := vm.NewPromise()
-		if !closeOnce.Swap(true) {
-			_ = conn.Close()
-			release()
-		}
+		removeHook() // don't let GracefulShutdown close it a second time
+		doClose()
 		_ = resolve(goja.Undefined())
 		return vm.ToValue(promise)
 	})

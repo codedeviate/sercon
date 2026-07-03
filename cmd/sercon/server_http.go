@@ -182,6 +182,19 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	var serveErr atomic.Value // error
 	closed := atomic.Bool{}
 
+	// Register a graceful-shutdown hook so `sercon serve` can close this
+	// listener on SIGTERM/SIGINT without the script's cooperation. The hook
+	// runs from a non-loop goroutine (the serve signal handler): both
+	// http.Server.Shutdown and release() (ClearTimeout, enqueued as an
+	// aux-job on the loop) are safe to call off-loop. An explicit
+	// srv.close() removes this hook first so the listener isn't torn down
+	// twice.
+	removeHook := eng.AddShutdownHook(func(ctx context.Context) error {
+		err := srv.Shutdown(ctx)
+		release()
+		return err
+	})
+
 	go func() {
 		err := srv.Serve(ln)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -207,6 +220,7 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		if closed.Swap(true) {
 			return vm.ToValue(stoppedPromise) // already closing
 		}
+		removeHook() // don't let GracefulShutdown close it a second time
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go func() {
 			defer cancel()

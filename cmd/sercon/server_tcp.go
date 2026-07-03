@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strconv"
@@ -110,27 +111,46 @@ func tcpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 	handle := vm.NewObject()
 	_ = handle.Set("address", fmt.Sprintf("tcp/%s", ln.Addr().String()))
 	closeOnce := atomic.Bool{}
+	// doClose tears down the listener + all accepted connections and releases
+	// the HoldRun. Shared by the JS close() and the shutdown hook. Every step
+	// is off-loop-safe: ln.Close() unblocks the accept loop, closeFromScript
+	// works via atomics/channels/net (no vm access — the onClose JS callback
+	// it triggers is marshalled onto the loop separately), and release()
+	// (ClearTimeout) is enqueued as a loop aux-job.
+	doClose := func() {
+		if closeOnce.Swap(true) {
+			return
+		}
+		_ = ln.Close()
+		// Snapshot and close active connections through their handle's
+		// closeFromScript, which releases each per-connection HoldRun
+		// (incl. the no-dispatcher path). onRelease deregisters them.
+		connMu.Lock()
+		closing = true
+		snapshot := make([]*pushSocket, 0, len(conns))
+		for s := range conns {
+			snapshot = append(snapshot, s)
+		}
+		connMu.Unlock()
+		for _, s := range snapshot {
+			_ = s.closeFromScript()
+		}
+		release()
+	}
+
+	// Register a graceful-shutdown hook so `sercon serve` can close this
+	// listener on SIGTERM/SIGINT. An explicit close() removes it first.
+	removeHook := eng.AddShutdownHook(func(context.Context) error {
+		doClose()
+		return nil
+	})
+
 	// close() returns Promise<void> for parity with the rest of server.* (the
 	// drain is synchronous, so it resolves immediately).
 	_ = handle.Set("close", func(goja.FunctionCall) goja.Value {
 		promise, resolve, _ := vm.NewPromise()
-		if !closeOnce.Swap(true) {
-			_ = ln.Close()
-			// Snapshot and close active connections through their handle's
-			// closeFromScript, which releases each per-connection HoldRun
-			// (incl. the no-dispatcher path). onRelease deregisters them.
-			connMu.Lock()
-			closing = true
-			snapshot := make([]*pushSocket, 0, len(conns))
-			for s := range conns {
-				snapshot = append(snapshot, s)
-			}
-			connMu.Unlock()
-			for _, s := range snapshot {
-				_ = s.closeFromScript()
-			}
-			release()
-		}
+		removeHook() // don't let GracefulShutdown close it a second time
+		doClose()
 		_ = resolve(goja.Undefined())
 		return vm.ToValue(promise)
 	})
