@@ -49,6 +49,47 @@ func oversizedHeaderPNG(t *testing.T, width, height uint32) []byte {
 	return buf.Bytes()
 }
 
+// oversizedHeaderTIFF builds a minimal-but-valid little-endian TIFF: an
+// 8-byte header ("II" + magic 42 + IFD offset) followed by an IFD declaring
+// only ImageWidth (tag 256) and ImageLength (tag 257), both as LONG (type 4)
+// values equal to width/height, plus the trailing next-IFD offset (0 = none).
+// x/image/tiff's newDecoder only requires ImageWidth+ImageLength for
+// DecodeConfig to succeed (PhotometricInterpretation/BitsPerSample default to
+// values newDecoder accepts), so this is enough to reach decodeImage's guard
+// while the file itself stays well under 100 bytes — no pixel data at all.
+// Tags must appear in ascending numeric order (256 before 257) or the
+// decoder rejects the IFD as malformed.
+func oversizedHeaderTIFF(t *testing.T, width, height uint32) []byte {
+	t.Helper()
+	const ifdOffset = 8
+	buf := make([]byte, 0, ifdOffset+2+12*2+4)
+	buf = append(buf, 'I', 'I') // little-endian
+	buf = append(buf, 0x2A, 0x00)
+	var off [4]byte
+	binary.LittleEndian.PutUint32(off[:], ifdOffset)
+	buf = append(buf, off[:]...)
+
+	var n [2]byte
+	binary.LittleEndian.PutUint16(n[:], 2) // 2 IFD entries
+	buf = append(buf, n[:]...)
+
+	writeEntry := func(tag, typ uint16, count, value uint32) {
+		var e [12]byte
+		binary.LittleEndian.PutUint16(e[0:2], tag)
+		binary.LittleEndian.PutUint16(e[2:4], typ)
+		binary.LittleEndian.PutUint32(e[4:8], count)
+		binary.LittleEndian.PutUint32(e[8:12], value) // LONG count=1 fits inline
+		buf = append(buf, e[:]...)
+	}
+	const dtLong = 4
+	writeEntry(256, dtLong, 1, width)  // ImageWidth
+	writeEntry(257, dtLong, 1, height) // ImageLength
+
+	var next [4]byte // no next IFD
+	buf = append(buf, next[:]...)
+	return buf
+}
+
 // genImage builds an w×h image with a simple gradient for round-trip tests.
 func genImage(w, h int) image.Image {
 	m := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -118,6 +159,36 @@ func TestDecodeImage_PixelBombGuard(t *testing.T) {
 	if _, _, err := decodeImage(bomb); err == nil {
 		t.Fatal("decodeImage should reject an oversized declared pixel count")
 	} else if !bytes.Contains([]byte(err.Error()), []byte("exceed")) {
+		t.Fatalf("decodeImage error = %q, want a pixel-limit message", err)
+	}
+}
+
+// TestDecodeImage_PixelBombGuard_TIFFInt64OverflowGuard verifies decodeImage
+// still rejects a TIFF whose IFD declares ImageWidth/ImageLength individually
+// valid as uint32 LONG values (well under uint32's ~4.29e9 max) but whose
+// product overflows int64 when computed naively as
+// int64(cfg.Width)*int64(cfg.Height): 3_200_000_000 * 3_200_000_000 =
+// 1.024e19, past int64's ~9.22e18 max, so a naive multiply-then-compare
+// wraps to a small/negative value and the ">DefaultMaxImagePixels" check
+// silently passes — reopening the exact decode-bomb the guard exists to
+// close. x/image/tiff's decoder assigns cfg.Width/Height as
+// int(uint32 IFD value) with no int31 cast (unlike GIF/PNG/JPEG/BMP/WebP,
+// which all bound declared dimensions under 2^31), so a crafted TIFF is the
+// vector that reaches this overflow in practice.
+func TestDecodeImage_PixelBombGuard_TIFFInt64OverflowGuard(t *testing.T) {
+	const big = 3_200_000_000 // uint32-valid; big*big overflows int64
+	bomb := oversizedHeaderTIFF(t, big, big)
+	if _, _, err := image.DecodeConfig(bytes.NewReader(bomb)); err != nil {
+		t.Fatalf("sanity check: oversizedHeaderTIFF should be DecodeConfig-parseable, got %v", err)
+	}
+	img, _, err := decodeImage(bomb)
+	if err == nil {
+		t.Fatal("decodeImage should reject a TIFF whose w*h overflows int64, not silently decode it")
+	}
+	if img != nil {
+		t.Fatalf("decodeImage returned an image (%v) alongside the error; no decode should have happened", img)
+	}
+	if !bytes.Contains([]byte(err.Error()), []byte("exceed")) {
 		t.Fatalf("decodeImage error = %q, want a pixel-limit message", err)
 	}
 }

@@ -41,7 +41,22 @@ func decodeImage(data []byte) (image.Image, string, error) {
 	// declaration ("decode bomb"). Reject oversized declarations up front,
 	// before the expensive decode runs.
 	if cfg, _, err := image.DecodeConfig(bytes.NewReader(data)); err == nil {
-		if int64(cfg.Width)*int64(cfg.Height) > DefaultMaxImagePixels {
+		// cfg.Width/Height are declared as int, but most decoders populate
+		// them from a format-native integer field. x/image/tiff in
+		// particular reads ImageWidth/ImageLength as a full uint32 (up to
+		// ~4.29e9) with no int31 cast, so on a 64-bit build cfg.Width and
+		// cfg.Height can each individually exceed 2^31 while still being
+		// individually valid. int64(w)*int64(h) can then overflow int64
+		// (max ~9.22e18) once both dimensions exceed ~3.04e9, wrapping to a
+		// small/negative value and silently bypassing the ">" comparison.
+		// Compare via division instead: DefaultMaxImagePixels/int64(h)
+		// can't overflow, and if int64(w) exceeds that quotient then w*h
+		// would exceed the cap. A zero-valued dimension is 0 pixels (not a
+		// bomb), not a division-by-zero risk to guard against multiplying.
+		// (GIF/PNG/JPEG/BMP/WebP all bound their declared dimensions well
+		// under 2^31, so they can't trigger this path — this guard exists
+		// for TIFF.)
+		if cfg.Width > 0 && cfg.Height > 0 && int64(cfg.Width) > DefaultMaxImagePixels/int64(cfg.Height) {
 			return nil, "", fmt.Errorf("image.decode: image dimensions %dx%d exceed max pixels (%d)", cfg.Width, cfg.Height, DefaultMaxImagePixels)
 		}
 	}
