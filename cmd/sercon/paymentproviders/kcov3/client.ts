@@ -14,13 +14,15 @@ export interface KcoConfig {
 export interface CaptureInput { amount: number; orderLines?: unknown[]; description?: string; }
 export interface RefundInput { amount: number; orderLines?: unknown[]; description?: string; }
 
+export interface KcoIdempotencyOpts { idempotencyKey?: string; }
+
 export interface KcoClient {
   getPayment(id: string): Promise<any>;
-  acknowledge(id: string): Promise<any>;
-  capturePayment(id: string, input: CaptureInput): Promise<any>;
-  refundPayment(id: string, input: RefundInput): Promise<any>;
-  cancelPayment(id: string): Promise<any>;
-  releaseRemainingAuthorization(id: string): Promise<any>;
+  acknowledge(id: string, opts?: KcoIdempotencyOpts): Promise<any>;
+  capturePayment(id: string, input: CaptureInput, opts?: KcoIdempotencyOpts): Promise<any>;
+  refundPayment(id: string, input: RefundInput, opts?: KcoIdempotencyOpts): Promise<any>;
+  cancelPayment(id: string, opts?: KcoIdempotencyOpts): Promise<any>;
+  releaseRemainingAuthorization(id: string, opts?: KcoIdempotencyOpts): Promise<any>;
   createCheckout(order: Record<string, unknown>): Promise<any>;
   getCheckout(id: string): Promise<any>;
 }
@@ -35,20 +37,20 @@ export function client(overrides: KcoConfig = {}): KcoClient {
   const ctx: ClientCtx = { baseUrl, provider: "kcov3", sign: () => ({ Authorization: basicAuth(merchantId, sharedSecret) }) };
 
   const om = (id: string) => `/ordermanagement/v1/orders/${encodeURIComponent(id)}`;
-  const idem = () => ({ "klarna-idempotency-key": idempotencyKey() });
+  const idem = (key?: string) => ({ "klarna-idempotency-key": key ?? idempotencyKey() });
 
   return {
     getPayment: (id) => apiRequest("GET", om(id), ctx),
-    acknowledge: (id) => apiRequest("POST", `${om(id)}/acknowledge`, ctx, undefined, idem()),
-    capturePayment: (id, input) =>
+    acknowledge: (id, opts) => apiRequest("POST", `${om(id)}/acknowledge`, ctx, undefined, idem(opts?.idempotencyKey)),
+    capturePayment: (id, input, opts) =>
       apiRequest("POST", `${om(id)}/captures`, ctx,
-        { captured_amount: input.amount, order_lines: input.orderLines, description: input.description }, idem()),
-    refundPayment: (id, input) =>
+        { captured_amount: input.amount, order_lines: input.orderLines, description: input.description }, idem(opts?.idempotencyKey)),
+    refundPayment: (id, input, opts) =>
       apiRequest("POST", `${om(id)}/refunds`, ctx,
-        { refunded_amount: input.amount, order_lines: input.orderLines, description: input.description }, idem()),
-    cancelPayment: (id) => apiRequest("POST", `${om(id)}/cancel`, ctx, undefined, idem()),
-    releaseRemainingAuthorization: (id) =>
-      apiRequest("POST", `${om(id)}/release-remaining-authorization`, ctx, undefined, idem()),
+        { refunded_amount: input.amount, order_lines: input.orderLines, description: input.description }, idem(opts?.idempotencyKey)),
+    cancelPayment: (id, opts) => apiRequest("POST", `${om(id)}/cancel`, ctx, undefined, idem(opts?.idempotencyKey)),
+    releaseRemainingAuthorization: (id, opts) =>
+      apiRequest("POST", `${om(id)}/release-remaining-authorization`, ctx, undefined, idem(opts?.idempotencyKey)),
     createCheckout: (order) => apiRequest("POST", "/checkout/v3/orders", ctx, order),
     getCheckout: (id) => apiRequest("GET", `/checkout/v3/orders/${encodeURIComponent(id)}`, ctx),
   };

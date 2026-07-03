@@ -112,26 +112,26 @@ function client(overrides = {}) {
   const baseUrl = pickBaseUrl(env, overrides.baseUrl ?? envGet("KCO_BASE_URL"), TEST_URL, PROD_URL);
   const ctx = { baseUrl, provider: "kcov3", sign: () => ({ Authorization: basicAuth(merchantId, sharedSecret) }) };
   const om = (id) => `/ordermanagement/v1/orders/${encodeURIComponent(id)}`;
-  const idem = () => ({ "klarna-idempotency-key": idempotencyKey() });
+  const idem = (key) => ({ "klarna-idempotency-key": key ?? idempotencyKey() });
   return {
     getPayment: (id) => apiRequest("GET", om(id), ctx),
-    acknowledge: (id) => apiRequest("POST", `${om(id)}/acknowledge`, ctx, void 0, idem()),
-    capturePayment: (id, input) => apiRequest(
+    acknowledge: (id, opts) => apiRequest("POST", `${om(id)}/acknowledge`, ctx, void 0, idem(opts?.idempotencyKey)),
+    capturePayment: (id, input, opts) => apiRequest(
       "POST",
       `${om(id)}/captures`,
       ctx,
       { captured_amount: input.amount, order_lines: input.orderLines, description: input.description },
-      idem()
+      idem(opts?.idempotencyKey)
     ),
-    refundPayment: (id, input) => apiRequest(
+    refundPayment: (id, input, opts) => apiRequest(
       "POST",
       `${om(id)}/refunds`,
       ctx,
       { refunded_amount: input.amount, order_lines: input.orderLines, description: input.description },
-      idem()
+      idem(opts?.idempotencyKey)
     ),
-    cancelPayment: (id) => apiRequest("POST", `${om(id)}/cancel`, ctx, void 0, idem()),
-    releaseRemainingAuthorization: (id) => apiRequest("POST", `${om(id)}/release-remaining-authorization`, ctx, void 0, idem()),
+    cancelPayment: (id, opts) => apiRequest("POST", `${om(id)}/cancel`, ctx, void 0, idem(opts?.idempotencyKey)),
+    releaseRemainingAuthorization: (id, opts) => apiRequest("POST", `${om(id)}/release-remaining-authorization`, ctx, void 0, idem(opts?.idempotencyKey)),
     createCheckout: (order) => apiRequest("POST", "/checkout/v3/orders", ctx, order),
     getCheckout: (id) => apiRequest("GET", `/checkout/v3/orders/${encodeURIComponent(id)}`, ctx)
   };

@@ -101,6 +101,43 @@ func TestPaymentProviders_KcoMockRoundtrip(t *testing.T) {
 	}
 }
 
+// TestPaymentProviders_KcoIdempotencyKeyOverride verifies the caller-supplied
+// idempotencyKey override (Critical #5): passing the same key on repeated
+// mutating calls must dedupe at Klarna (same header value every time), while
+// omitting it keeps the old auto-generate-per-call behavior.
+func TestPaymentProviders_KcoIdempotencyKeyOverride(t *testing.T) {
+	eng := newPPEngine(t)
+	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `
+		import { kcov3 } from "paymentproviders";
+
+		const seenIdem: string[] = [];
+		const srv = await server.http.listen({ port: 38279, routes: {
+			"POST /ordermanagement/v1/orders/ord_1/captures": (q: any, r: any) => {
+				seenIdem.push(q.headers["klarna-idempotency-key"][0]);
+				return r.status(201).json({ capture_id: "cap_1" });
+			},
+		}});
+		try {
+			const api = kcov3.client({ merchantId: "M", sharedSecret: "S", baseUrl: "http://127.0.0.1:38279" });
+
+			await api.capturePayment("ord_1", { amount: 1000 }, { idempotencyKey: "fixed-abc" });
+			await api.capturePayment("ord_1", { amount: 1000 }, { idempotencyKey: "fixed-abc" });
+			runtime.assert.equal(seenIdem[0], "fixed-abc", "first call uses the caller-supplied key");
+			runtime.assert.equal(seenIdem[1], "fixed-abc", "retry with the same key reuses it (dedupe)");
+
+			await api.capturePayment("ord_1", { amount: 1000 });
+			await api.capturePayment("ord_1", { amount: 1000 });
+			runtime.assert.ok(seenIdem[2] && seenIdem[2].length > 0, "omitted key still auto-generates a non-empty header");
+			runtime.assert.ok(seenIdem[2] !== seenIdem[3], "omitted key auto-generates a fresh value per call");
+		} finally {
+			await srv.close();
+		}
+	`)
+	if err != nil {
+		t.Fatalf("kco idempotency key override: %v", err)
+	}
+}
+
 func TestPaymentProviders_NetsMockRoundtrip(t *testing.T) {
 	eng := newPPEngine(t)
 	_, err := eng.Run(context.Background(), filepath.Join(t.TempDir(), "main.ts"), `

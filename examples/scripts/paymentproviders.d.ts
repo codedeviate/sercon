@@ -19,6 +19,14 @@ declare module "paymentproviders" {
     }
     interface CaptureInput { amount: number; orderLines?: unknown[]; description?: string; }
     interface RefundInput { amount: number; orderLines?: unknown[]; description?: string; }
+    interface KcoIdempotencyOpts {
+      /**
+       * Pin the `klarna-idempotency-key` header to this exact value instead of
+       * auto-generating one. Reuse the same value across retries of the same
+       * logical mutation so Klarna dedupes instead of double-processing it.
+       */
+      idempotencyKey?: string;
+    }
     interface KcoClient {
       /**
        * Fetch an order-management order.
@@ -30,42 +38,52 @@ declare module "paymentproviders" {
       /**
        * Acknowledge an order (POST, idempotency-keyed).
        * @param id Kustom order id.
+       * @param opts Optional `{ idempotencyKey }` to pin the retry key instead
+       *   of auto-generating one.
        * @returns The acknowledge result.
        * @throws PaymentError on a non-2xx response.
        */
-      acknowledge(id: string): Promise<any>;
+      acknowledge(id: string, opts?: KcoIdempotencyOpts): Promise<any>;
       /**
        * Capture (fully or partially) an authorized order.
        * @param id Kustom order id.
        * @param input Capture input; `amount` is sent as `captured_amount`,
        *   `orderLines` as `order_lines`. Minor units (öre).
+       * @param opts Optional `{ idempotencyKey }` to pin the retry key instead
+       *   of auto-generating one.
        * @returns The capture result.
        * @throws PaymentError on a non-2xx response.
        */
-      capturePayment(id: string, input: CaptureInput): Promise<any>;
+      capturePayment(id: string, input: CaptureInput, opts?: KcoIdempotencyOpts): Promise<any>;
       /**
        * Refund a captured order.
        * @param id Kustom order id.
        * @param input Refund input; `amount` is sent as `refunded_amount`,
        *   `orderLines` as `order_lines`. Minor units (öre).
+       * @param opts Optional `{ idempotencyKey }` to pin the retry key instead
+       *   of auto-generating one.
        * @returns The refund result.
        * @throws PaymentError on a non-2xx response.
        */
-      refundPayment(id: string, input: RefundInput): Promise<any>;
+      refundPayment(id: string, input: RefundInput, opts?: KcoIdempotencyOpts): Promise<any>;
       /**
        * Cancel an order (releases the full authorization).
        * @param id Kustom order id.
+       * @param opts Optional `{ idempotencyKey }` to pin the retry key instead
+       *   of auto-generating one.
        * @returns The cancel result.
        * @throws PaymentError on a non-2xx response.
        */
-      cancelPayment(id: string): Promise<any>;
+      cancelPayment(id: string, opts?: KcoIdempotencyOpts): Promise<any>;
       /**
        * Release the remaining (uncaptured) authorization on an order.
        * @param id Kustom order id.
+       * @param opts Optional `{ idempotencyKey }` to pin the retry key instead
+       *   of auto-generating one.
        * @returns The release result.
        * @throws PaymentError on a non-2xx response.
        */
-      releaseRemainingAuthorization(id: string): Promise<any>;
+      releaseRemainingAuthorization(id: string, opts?: KcoIdempotencyOpts): Promise<any>;
       /**
        * Create a Checkout v3 order.
        * @param order The checkout order body.
@@ -83,9 +101,10 @@ declare module "paymentproviders" {
     }
     /**
      * Build a KCO v3 (Kustom) client. Auth is HTTP Basic
-     * (`merchantId:sharedSecret`); POST mutations carry an auto-generated
-     * `klarna-idempotency-key`. Base URLs: test `api.playground.kustom.co`,
-     * prod `api.kustom.co`.
+     * (`merchantId:sharedSecret`); POST mutations carry a
+     * `klarna-idempotency-key` that is auto-generated unless the call's
+     * `opts.idempotencyKey` pins it. Base URLs: test
+     * `api.playground.kustom.co`, prod `api.kustom.co`.
      * @param overrides Optional config; each field falls back to the
      *   environment: `KCO_MERCHANT_ID`, `KCO_SHARED_SECRET`, `KCO_ENV`,
      *   `KCO_BASE_URL`.
