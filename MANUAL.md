@@ -1218,6 +1218,55 @@ matching `image.save` and the WebDriver `screenshot` writers):
 first (Node-like); reads and `stat` reject when the target is absent. See
 `examples/scripts/fs-report.ts` for a per-step screenshot report built on these.
 
+#### 5.6.1 Concepts
+
+`fs` reads and writes the real filesystem — there is **no sandbox**; paths are
+resolved as given. Text vs bytes: `readText`/`writeText` handle UTF-8 strings,
+`readBytes`/`writeBytes` handle a `Uint8Array` for binary data. A write's
+**parent directory must already exist** (Node-like) — create it with
+`fs.mkdir` first (which itself creates any missing parents, `mkdir -p`).
+`fs.stat` reports size, whether the path is a directory (`isDir`), and
+last-modified time (`modifiedMs`); `fs.exists` is a boolean guard that never
+throws for a missing path.
+
+#### 5.6.2 Recipes
+
+##### 5.6.2.1 Read a file as text or bytes
+
+```ts
+const text = await fs.readText("./config.json");
+const bytes = await fs.readBytes("./logo.png");   // Uint8Array for binary
+```
+
+##### 5.6.2.2 Write a file, creating its directory first
+
+```ts
+await fs.mkdir("./out/reports");                        // creates parents recursively
+await fs.writeText("./out/reports/summary.txt", "done\n"); // parent must already exist
+```
+
+##### 5.6.2.3 Guard an operation with exists / stat
+
+```ts
+if (await fs.exists("./cache.db")) {
+  const st = await fs.stat("./cache.db");
+  runtime.log("cache size:", st.size);
+} else {
+  runtime.log("no cache yet");
+}
+```
+
+##### 5.6.2.4 Create and extract an archive
+
+```ts
+await fs.archive.create("./backup.tar.gz", ["./out", "./config.json"]);
+await fs.archive.extract("./backup.tar.gz", "./restored");
+```
+
+**Notes**
+- `archive.create`/`archive.extract` argument order and the `stat` field names
+  are confirmed against §17.6 (the source of truth for the full surface).
+
 ### 5.7 `net`
 
 Network clients and probes:
