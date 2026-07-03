@@ -832,7 +832,7 @@ const fileDigest = crypto.hash.sha256(contents);
 
 Signatures: §17.4.11 (`sha256`); the same shape covers `md5`/`sha1`/
 `sha384`/`sha512`/`sha3_256`/`sha3_512`/`blake3`/`crc32` (§17.4.7–§17.4.15).
-Source: `examples/scripts/hash.ts`.
+runnable: `examples/scripts/hash.ts`
 
 ##### 5.3.5.2 Verify a payload's integrity with a hash claim
 
@@ -1064,6 +1064,7 @@ set `" \t\n\r\v\f"`). `reverse` and the `pad` family count runes, so
 multi-byte text stays intact. Signatures: §17.12.32 (`trim`), §17.12.22
 (`ltrim`), §17.12.29 (`rtrim`), §17.12.25 (`pad`), §17.12.21 (`lpad`),
 §17.12.28 (`rpad`), §17.12.27 (`reverse`), §17.12.31 (`stripHtml`).
+runnable: `examples/scripts/strings.ts`
 
 ##### 5.4.2.3 Base64 encode/decode
 
@@ -1084,6 +1085,7 @@ padding — URL-safe input (`-`/`_`) is *not* auto-detected and throws.
 §5): encode emits no padding, and decode accepts both padded and unpadded
 input. Signatures: §17.12.16 (`base64Encode`), §17.12.15 (`base64Decode`),
 §17.12.18 (`base64UrlEncode`), §17.12.17 (`base64UrlDecode`).
+runnable: `examples/scripts/strings.ts`
 
 ### 5.5 `codec`
 
