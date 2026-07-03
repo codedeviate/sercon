@@ -4793,6 +4793,60 @@ await api.capturePayment(po, {
 });
 ```
 
+#### 16.1.7 Understanding payment providers
+
+All six providers wrap the same payment lifecycle, so learn it once and map it
+onto each. (Snippets here are illustrative — see §16.1's lead.)
+
+**Lifecycle.** `create → get status → capture → refund → cancel`:
+
+- **create** a checkout / order / payment order (this authorises an amount).
+- **capture** moves money — up to the authorised amount, in one or more calls
+  (partial captures).
+- **refund** returns captured money — up to what was captured.
+- **cancel / void** releases an authorisation that was never (fully) captured.
+
+**Amounts are integer minor units** (öre / cents) everywhere — `15000` means
+150.00 SEK, never `150`.
+
+**Auth & the shared core (§16.1.1).** Auth is either HTTP Basic (kcov3, netsv1)
+or a **signed body** (sveacheckout2, qlirov2 compute a signature over the
+serialised JSON — the library does this for you). kcov3 mutations carry an
+idempotency key so a retried capture/refund isn't double-applied. Any non-2xx
+throws a `PaymentError { provider, status, body, requestId? }`.
+
+**Config & test-vs-prod.** `client(overrides?)` reads env with precedence
+`overrides.X ?? env(PROVIDER_X)`. It targets the **test** environment by
+default; `env: "prod"` (or `PROVIDER_ENV=prod`) selects production, and an
+explicit `baseUrl` always wins.
+
+| Provider | Env vars |
+| --- | --- |
+| `kcov3` | `KCO_MERCHANT_ID`, `KCO_SHARED_SECRET`, `KCO_ENV`, `KCO_BASE_URL` |
+| `netsv1` | `NETS_SECRET_KEY`, `NETS_ENV`, `NETS_BASE_URL` |
+| `sveacheckout2` | `SCO_MERCHANT_ID`, `SCO_SECRET_KEY`, `SCO_ENV`, `SCO_BASE_URL` (note: `SCO_`, not `SVEA_`) |
+| `qlirov2` | `QLIRO_API_KEY`, `QLIRO_APIPASSWORD`, `QLIRO_ENV`, `QLIRO_BASE_URL` (note: `QLIRO_APIPASSWORD`, no underscore) |
+| `swedbankpayv2` / `swedbankpayv3` | `SWEDBANKPAY_ACCESS_TOKEN`, `SWEDBANKPAY_MERCHANT_ID`, `SWEDBANKPAY_ENV`, `SWEDBANKPAY_BASE_URL` |
+
+**Method-equivalence table.** Only *create*/*get* differ by provider;
+capture/refund/cancel share names:
+
+| Step | `kcov3` | `netsv1` | `sveacheckout2` | `qlirov2` | `swedbankpayv2/v3` |
+| --- | --- | --- | --- | --- | --- |
+| create | `createCheckout` | `createPayment` | `createOrder` | `createOrder` | `createPaymentOrder` |
+| get | `getCheckout` / `getPayment` | `getPayment` | `getOrder` / `getPayment` | `getOrder` / `getPayment` | `getPaymentOrder` / `getPayment` |
+| capture | `capturePayment` | `capturePayment` | `capturePayment` | `capturePayment` | `capturePayment`¹ |
+| refund | `refundPayment` | `refundPayment` | `refundPayment` | `refundPayment` | `refundPayment`¹ |
+| cancel | `cancelPayment` | `cancelPayment` | `cancelPayment` | `cancelPayment` | `cancelPayment`¹ |
+
+¹ SwedbankPay's capture/refund/cancel are thin wrappers over
+`operation(paymentOrder, "capture" / "reversal" / "cancel", body)`;
+`operation()` also follows any other HAL rel (see 16.1.8). `kcov3` additionally
+has `acknowledge` and `releaseRemainingAuthorization`. Capture/refund input
+shapes vary: kcov3 `{ amount, orderLines?, description? }`, netsv1
+`{ amount, orderItems? }`, svea/qliro `{ amount, rows? }`, swedbankpay
+`{ transaction: { … } }`.
+
 ### 16.2 `favro`
 
 A TypeScript client for the [Favro](https://favro.com) API, compiled into the
