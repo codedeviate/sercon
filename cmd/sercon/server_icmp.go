@@ -13,6 +13,13 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
+// icmpConnHookForTest, when non-nil, is invoked with the bound
+// *icmp.PacketConn right after a successful bind. It exists solely so tests
+// can grab the raw conn and close it out from under the read loop to
+// simulate a genuine (non-close()) read error, without exposing the conn on
+// the JS handle. Nil in production; never touched outside tests.
+var icmpConnHookForTest func(*icmp.PacketConn)
+
 // icmpServerMembers builds the {listen} map exposed as server.icmp.
 func icmpServerMembers(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) map[string]any {
 	return map[string]any{
@@ -49,10 +56,27 @@ func icmpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	if err != nil {
 		panic(vm.NewGoError(fmt.Errorf("server.icmp.listen: %w (raw ICMP needs root / CAP_NET_RAW)", err)))
 	}
+	if icmpConnHookForTest != nil {
+		icmpConnHookForTest(conn)
+	}
 	if serveReadyWriter != nil {
 		fmt.Fprintf(serveReadyWriter, "READY listening on icmp/%s\n", conn.LocalAddr().String())
 	}
 	release := eng.HoldRun("server.icmp listen " + conn.LocalAddr().String())
+
+	closeOnce := atomic.Bool{}
+	// doClose closes the socket (unblocking the read loop) and releases the
+	// HoldRun. Shared by the JS close(), the shutdown hook, and the read
+	// loop's own error-exit path (below) — closeOnce makes it safe for all
+	// three to race to be first. Both conn.Close() and release() (ClearTimeout
+	// via the loop aux-job queue) are safe to call from a non-loop goroutine.
+	doClose := func() {
+		if closeOnce.Swap(true) {
+			return
+		}
+		_ = conn.Close()
+		release()
+	}
 
 	// Read loop (off-loop). Parse each packet, copy the body, capture the
 	// sender, then invoke the handler ON the loop via LoopCallable. The message
@@ -81,25 +105,22 @@ func icmpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 				}
 			}
 			if rerr != nil {
-				return // listener closed (or read error) → exit
+				// ReadFrom() fails both when the socket was closed via
+				// doClose() (srv.close() / shutdown hook — doClose is then a
+				// no-op here) AND on a genuine, unrelated read error. Either
+				// way the loop is done, so always drive doClose(): idempotent
+				// on the former, and on the latter it's what actually
+				// releases the HoldRun sentinel and closes the socket —
+				// without this call that path leaked both, keeping the event
+				// loop (and Run) alive forever.
+				doClose()
+				return
 			}
 		}
 	}()
 
 	handle := vm.NewObject()
 	_ = handle.Set("address", fmt.Sprintf("icmp/%s", conn.LocalAddr().String()))
-	closeOnce := atomic.Bool{}
-	// doClose closes the socket (unblocking the read loop) and releases the
-	// HoldRun. Shared by the JS close() and the shutdown hook. Both
-	// conn.Close() and release() (ClearTimeout via the loop aux-job queue)
-	// are safe to call from the serve signal handler's non-loop goroutine.
-	doClose := func() {
-		if closeOnce.Swap(true) {
-			return
-		}
-		_ = conn.Close()
-		release()
-	}
 
 	// Register a graceful-shutdown hook so `sercon serve` can close this
 	// listener on SIGTERM/SIGINT. An explicit close() removes it first.

@@ -14,6 +14,13 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
+// tcpListenerHookForTest, when non-nil, is invoked with the bound
+// net.Listener right after a successful bind. It exists solely so tests can
+// grab the raw listener and close it out from under the accept loop to
+// simulate a genuine (non-close()) accept error, without exposing the
+// listener on the JS handle. Nil in production; never touched outside tests.
+var tcpListenerHookForTest func(net.Listener)
+
 // tcpServerMembers builds the {listen} map exposed as server.tcp.
 func tcpServerMembers(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) map[string]any {
 	return map[string]any{
@@ -59,6 +66,9 @@ func tcpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 	if err != nil {
 		panic(vm.NewGoError(fmt.Errorf("server.tcp.listen %s: %w", addr, err)))
 	}
+	if tcpListenerHookForTest != nil {
+		tcpListenerHookForTest(ln)
+	}
 	if serveReadyWriter != nil {
 		fmt.Fprintf(serveReadyWriter, "READY listening on tcp/%s\n", ln.Addr().String())
 	}
@@ -74,6 +84,36 @@ func tcpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 		closing bool
 	)
 
+	closeOnce := atomic.Bool{}
+	// doClose tears down the listener + all accepted connections and releases
+	// the HoldRun. Shared by the JS close(), the shutdown hook, and the accept
+	// loop's own error-exit path (below) — every one of those can race to be
+	// first, so closeOnce makes it safe to call from all three. Every step is
+	// off-loop-safe: ln.Close() unblocks the accept loop, closeFromScript
+	// works via atomics/channels/net (no vm access — the onClose JS callback
+	// it triggers is marshalled onto the loop separately), and release()
+	// (ClearTimeout) is enqueued as a loop aux-job.
+	doClose := func() {
+		if closeOnce.Swap(true) {
+			return
+		}
+		_ = ln.Close()
+		// Snapshot and close active connections through their handle's
+		// closeFromScript, which releases each per-connection HoldRun
+		// (incl. the no-dispatcher path). onRelease deregisters them.
+		connMu.Lock()
+		closing = true
+		snapshot := make([]*pushSocket, 0, len(conns))
+		for s := range conns {
+			snapshot = append(snapshot, s)
+		}
+		connMu.Unlock()
+		for _, s := range snapshot {
+			_ = s.closeFromScript()
+		}
+		release()
+	}
+
 	// Accept loop (off-loop). For each connection, build the handle + invoke
 	// the handler ON the loop via LoopCallable (buildTCPObject needs the vm
 	// and must run on the loop).
@@ -81,7 +121,17 @@ func tcpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				return // listener closed → exit
+				// Accept() fails both when the listener was closed via
+				// doClose() (srv.close() / shutdown hook — where doClose is a
+				// no-op here, already run) AND on a genuine, unrelated accept
+				// error (e.g. the listener's fd was closed or errored out from
+				// under us some other way). Either way the loop is done, so
+				// always drive doClose(): idempotent on the former, and on the
+				// latter it's what actually releases the HoldRun sentinel and
+				// closes the listener — without this call that path leaked
+				// both, keeping the event loop (and Run) alive forever.
+				doClose()
+				return
 			}
 			_, _ = handler.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
 				obj, s := buildTCPObject(vm, loop, eng, conn, bufSize)
@@ -110,33 +160,6 @@ func tcpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 
 	handle := vm.NewObject()
 	_ = handle.Set("address", fmt.Sprintf("tcp/%s", ln.Addr().String()))
-	closeOnce := atomic.Bool{}
-	// doClose tears down the listener + all accepted connections and releases
-	// the HoldRun. Shared by the JS close() and the shutdown hook. Every step
-	// is off-loop-safe: ln.Close() unblocks the accept loop, closeFromScript
-	// works via atomics/channels/net (no vm access — the onClose JS callback
-	// it triggers is marshalled onto the loop separately), and release()
-	// (ClearTimeout) is enqueued as a loop aux-job.
-	doClose := func() {
-		if closeOnce.Swap(true) {
-			return
-		}
-		_ = ln.Close()
-		// Snapshot and close active connections through their handle's
-		// closeFromScript, which releases each per-connection HoldRun
-		// (incl. the no-dispatcher path). onRelease deregisters them.
-		connMu.Lock()
-		closing = true
-		snapshot := make([]*pushSocket, 0, len(conns))
-		for s := range conns {
-			snapshot = append(snapshot, s)
-		}
-		connMu.Unlock()
-		for _, s := range snapshot {
-			_ = s.closeFromScript()
-		}
-		release()
-	}
 
 	// Register a graceful-shutdown hook so `sercon serve` can close this
 	// listener on SIGTERM/SIGINT. An explicit close() removes it first.
