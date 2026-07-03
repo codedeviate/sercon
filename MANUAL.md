@@ -3525,6 +3525,85 @@ Pure-Go stack: `mmcdole/gofeed` (feeds) + `andybalholm/cascadia`
 (CSS selectors over `golang.org/x/net/html`) + `antchfx/htmlquery`
 (XPath). No cgo.
 
+#### 5.12.4 Concepts
+
+Reach for `parse` when you already have the bytes — a fixture string, a
+file you read yourself — and `load` when you want sercon to fetch first;
+`load(url, opts?)` is `parse` layered on the shared `net.http` fetch (same
+`timeout`/`headers`/`follow`/`userAgent`/basic-auth surface, same default
+`sercon-web/<version>` User-Agent, same throw-on-non-2xx). All three
+families share that shape, so a failure's origin tells you which half
+broke: a `load` throw is the fetch (bad URL, timeout, non-2xx status);
+a `parse` throw is the format assumption being wrong — except
+`web.html.parse`, which never throws on bad markup, it accepts real-world
+tag soup and does its best.
+
+`web.html.parse`/`load` return a chainable **Node** instead of raw HTML
+text: `find`/`findAll` run CSS selectors (`andybalholm/cascadia`) and
+`xpath`/`xpathAll` run XPath (`antchfx/htmlquery`); `text()`/`html()`/
+`attr(name)`/… read data back out. Sub-queries are scoped to the receiver
+node, so calling `.findAll(...)` on a node found earlier stays localized
+to that subtree — use `.//` for a relative XPath, a leading `//` is
+document-wide.
+
+#### 5.12.5 Recipes
+
+##### 5.12.5.1 Fetch and parse an RSS/Atom feed
+
+```ts
+const feed = await web.feed.load("https://hnrss.org/frontpage", { timeout: "5s" });
+runtime.log(feed.feedType, feed.items.length, "items");
+for (const item of feed.items) {
+  runtime.log(item.title, item.link, item.published);
+}
+```
+
+Format (RSS/Atom/JSON-feed) is auto-detected; `feedType` reports which one.
+See §5.12.1. runnable: `examples/scripts/web-feed.ts`
+
+##### 5.12.5.2 Crawl a sitemap, expanding an index
+
+```ts
+const sm = await web.sitemap.load("https://www.sitemaps.org/sitemap.xml", {
+  timeout: "5s",
+  expand: true,
+});
+runtime.log(sm.type, sm.urls.length, "urls,", sm.sitemaps.length, "child sitemaps");
+```
+
+`{ expand: true }` only matters when `type` is `"sitemapindex"` — it fetches
+every child sitemap and merges their URLs into `urls` (single-level,
+bounded; a child that is itself an index is not recursed). Per-child
+fetch/parse failures land in `errors[]` instead of throwing, so check that
+array rather than wrapping the call in try/catch.
+See §5.12.2. runnable: `examples/scripts/web-sitemap.ts`
+
+##### 5.12.5.3 Scrape a page with CSS selectors
+
+```ts
+const doc = await web.html.load("https://example.com", { timeout: "5s" });
+const links = doc.findAll("li.p a").map((a: any) => a.attr("href"));
+const title = doc.find("h1").text();
+```
+
+`find` returns the first match or `null`; `findAll` returns a `Node[]` you
+can `.map`/`.forEach` over, each entry chainable the same way as the root.
+See §5.12.3. runnable: `examples/scripts/web-html.ts`
+
+##### 5.12.5.4 Extract with XPath
+
+```ts
+const doc = web.html.parse(
+  `<ul><li class="p"><a href="/a">Alpha<li class="p"><a href="/b">Beta</ul>`,
+);
+const firstHref = doc.xpath("//a/@href").text(); // "/a"
+```
+
+`xpath`/`xpathAll` mirror `find`/`findAll` but take an XPath expression
+instead of a CSS selector — useful when a selector can't express the
+match (attribute values, text-content predicates, ancestor axes).
+See §5.12.3. runnable: `examples/scripts/web-html.ts`
+
 ### 5.13 `audio`
 
 The `audio` global reads and writes audio files and hides payloads inside
