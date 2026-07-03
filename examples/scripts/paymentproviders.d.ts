@@ -84,7 +84,7 @@ declare module "paymentproviders" {
     /**
      * Build a KCO v3 (Kustom) client. Auth is HTTP Basic
      * (`merchantId:sharedSecret`); POST mutations carry an auto-generated
-     * `Klarna-Idempotency-Key`. Base URLs: test `api.playground.kustom.co`,
+     * `klarna-idempotency-key`. Base URLs: test `api.playground.kustom.co`,
      * prod `api.kustom.co`.
      * @param overrides Optional config; each field falls back to the
      *   environment: `KCO_MERCHANT_ID`, `KCO_SHARED_SECRET`, `KCO_ENV`,

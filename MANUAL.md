@@ -2331,7 +2331,7 @@ if (r.ok) {
 }
 ```
 
-See §5.7.1 for the full `opts` shape.
+See §17.8.16 (`net.http.request`) for the full `opts` shape.
 
 ##### 5.7.9.2 Probe a host:port for reachability + latency
 
@@ -2362,7 +2362,7 @@ for (const k of ["spf", "dmarc", "mtaSts", "tlsRpt", "bimi"] as const) {
 }
 ```
 
-See §5.7.3. **Note:** there is no standalone DKIM probe — DKIM is a
+See §17.8.7 (`net.email.all`). **Note:** there is no standalone DKIM probe — DKIM is a
 per-message signature keyed by a selector, not a single domain-wide DNS
 record the way SPF/DMARC/MTA-STS/TLS-RPT/BIMI are, so it isn't part of the
 `net.email` surface.
@@ -3877,7 +3877,7 @@ const need = await services.doctor(["git"]);
 runtime.assert.ok(need.satisfied, "git must be installed");
 ```
 
-See §5.9.6 for the full `doctor` report shape.
+See §17.11.18 (`services.doctor`) for the full report shape.
 
 ##### 5.9.8.2 Render a Typst document to a PDF
 
@@ -3900,7 +3900,7 @@ if (!services.typst.available) {
 }
 ```
 
-See §5.9.4 (`typst.compile`) and §5.9.5 (`pdf.info`).
+See §17.11.47 (`services.typst.compile`) and §17.11.36 (`services.pdf.info`).
 
 ##### 5.9.8.3 Drive a headless browser to screenshot / extract
 
@@ -3944,7 +3944,7 @@ if (auth.authenticated) {
 }
 ```
 
-See §5.9 (`git.*` / `gh.*` reference).
+See §17.11 (`services.git.*` / `services.gh.*`).
 
 ### 5.10 `tui`
 
@@ -4655,7 +4655,7 @@ for (const item of feed.items) {
 ```
 
 Format (RSS/Atom/JSON-feed) is auto-detected; `feedType` reports which one.
-See §5.12.1. runnable: `examples/scripts/web-feed.ts`
+See §17.14.1 (`web.feed.load`); the feed result model is in §5.12.1. runnable: `examples/scripts/web-feed.ts`
 
 ##### 5.12.5.2 Crawl a sitemap, expanding an index
 
@@ -4672,7 +4672,7 @@ every child sitemap and merges their URLs into `urls` (single-level,
 bounded; a child that is itself an index is not recursed). Per-child
 fetch/parse failures land in `errors[]` instead of throwing, so check that
 array rather than wrapping the call in try/catch.
-See §5.12.2. runnable: `examples/scripts/web-sitemap.ts`
+See §17.14.5 (`web.sitemap.load`); the sitemap result model is in §5.12.2. runnable: `examples/scripts/web-sitemap.ts`
 
 ##### 5.12.5.3 Scrape a page with CSS selectors
 
@@ -4684,7 +4684,7 @@ const title = doc.find("h1").text();
 
 `find` returns the first match or `null`; `findAll` returns a `Node[]` you
 can `.map`/`.forEach` over, each entry chainable the same way as the root.
-See §5.12.3. runnable: `examples/scripts/web-html.ts`
+See §17.14.3 (`web.html.load`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
 
 ##### 5.12.5.4 Extract with XPath
 
@@ -4698,7 +4698,7 @@ const firstHref = doc.xpath("//a/@href").text(); // "/a"
 `xpath`/`xpathAll` mirror `find`/`findAll` but take an XPath expression
 instead of a CSS selector — useful when a selector can't express the
 match (attribute values, text-content predicates, ancestor axes).
-See §5.12.3. runnable: `examples/scripts/web-html.ts`
+See §17.14.4 (`web.html.parse`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
 
 ### 5.13 `audio`
 
@@ -4824,8 +4824,10 @@ FTP, and POP3 against the same engine foundation.
 Every listener follows the same shape: a **synchronous bind** (a port
 already in use throws immediately, before any Promise), a background
 serve loop kept alive by one `HoldRun` sentinel (§6.1), and a handle
-exposing `address` (a `proto/host:port` string, with the OS-chosen port
-filled in for `port: 0`) and a `close()` that returns `Promise<void>`.
+exposing `address` (a `proto/host:port` string; the raw TCP/UDP listeners
+accept `port: 0` for an OS-chosen ephemeral port, filled into `address` —
+HTTP, HTTPS, and SMTP require an explicit port) and a `close()` that
+returns `Promise<void>`.
 The HTTP and SMTP handles additionally carry a `stopped` Promise that
 resolves when the listener exits (and rejects on a non-close serve
 error).
@@ -6137,7 +6139,7 @@ All six providers are built on a small shared core (`core/`):
 
   Catch it to branch on `status` (e.g. distinguish a `404` from a `401`).
 - **Idempotency keys.** Mutating KCO calls send an auto-generated
-  `Klarna-Idempotency-Key`; the generator (`idempotencyKey()`) is a
+  `klarna-idempotency-key`; the generator (`idempotencyKey()`) is a
   timestamp+random base36 string.
 - **Amounts are integer minor units** (öre / cents), matching the provider APIs.
   `core/money.ts` exposes `major`/`minor` helpers if you need to convert.
@@ -6156,7 +6158,7 @@ Wraps Kustom's Order-Management v1 + Checkout v3 APIs.
   `KCO_ENV` (`test`|`prod`), `KCO_BASE_URL` (overrides env selection).
 - **Base URLs.** test `https://api.playground.kustom.co` ·
   prod `https://api.kustom.co`.
-- **Idempotency.** All POST mutations send a fresh `Klarna-Idempotency-Key`.
+- **Idempotency.** All POST mutations send a fresh `klarna-idempotency-key`.
 
 | Method | Params | Returns | Throws |
 | --- | --- | --- | --- |

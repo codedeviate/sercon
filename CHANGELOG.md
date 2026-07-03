@@ -8,6 +8,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Documentation
+- Backlog polish sweep: normalized the net/services/web recipe cross-links to
+  the canonical §17 binding reference (matching the other recipes); aligned the
+  KCO/Klarna idempotency header casing in the docs to the code's actual
+  lowercase `klarna-idempotency-key`; and scoped the §6 chapter-intro `port: 0`
+  claim to the raw TCP/UDP listeners (HTTP/HTTPS/SMTP require an explicit port).
+
 ## [0.84.2] — 2026-07-03
 
 ### Documentation
