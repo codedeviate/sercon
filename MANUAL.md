@@ -1392,6 +1392,161 @@ const f = codec.sheet.formats();
 // f.xls  => { read: true, write: false }
 ```
 
+#### 5.5.8 Concepts
+
+`codec` is a grab-bag of **independent format families**, not a single
+uniform `parse`/`stringify` pair applied across every format — each member
+below exists because a real script needed that specific format, and the
+method names differ per family:
+
+- **`codec.toml`** — `parse(text)` / `stringify(value)`. The one family
+  that mirrors native `JSON.parse`/`JSON.stringify` shape-for-shape.
+- **`codec.xml`** — `decode(xml)` / `encode(value, opts?)`, using the
+  `@`-attribute / `#text` convention (§5.5 above has the full rules).
+- **`codec.dotenv`** — `parse(text)` / `stringify(obj)`, pure (never
+  touches the process environment — see `runtime.env.load` in §17.9 to
+  apply a file).
+- **`codec.sheet`** — `read(src, opts?)` / `write(model, opts)` for
+  tabular data; **CSV lives here**, not as its own namespace — pass
+  `opts.format: "csv"` (see §5.5.7 above for the full CSV/XLSX/ODS/legacy
+  walkthrough).
+- **`codec.php`** / **`codec.perl`** — dump-format encoders/decoders
+  (`serialize`/`unserialize`, `varExport`/`parseVarExport`,
+  `varDump`/`parseVarDump`, `dumper`/`parseDumper`).
+- **`codec.doc`**, **`codec.barcode`**, **`codec.checkdigit`**,
+  **`codec.compression`** — document text extraction, barcode image
+  codecs, check-digit validation, and binary compression, each with their
+  own method names (§5.5.1–§5.5.4 above).
+
+**There is no `codec.json` and no YAML codec.** JSON needs no wrapper —
+use the built-in `JSON.parse`/`JSON.stringify` — and YAML isn't part of
+the reserved surface at all.
+
+**Round-trip fidelity varies by format.** `codec.toml` preserves
+ints/floats/bools/nested tables (datetimes come back as strings);
+`codec.xml.decode` is fully untyped (every leaf is a string, per the XML
+spec); `codec.sheet` preserves types through XLSX/ODS but flattens
+everything to strings through CSV/TSV; `codec.dotenv.stringify` is
+designed so `parse(stringify(obj))` deep-equals `obj`; `codec.php.varDump`
+/ `codec.perl.dumper` are debug formats — `parseVarDump` is best-effort
+and throws on lossy markers it can't faithfully reconstruct (§5.5.4).
+
+#### 5.5.9 Recipes
+
+##### 5.5.9.1 Parse and stringify a TOML document
+
+```ts
+const cfg = codec.toml.parse(`
+title = "sercon demo"
+[server]
+port = 8080
+hosts = ["a.example", "b.example"]
+`);
+runtime.assert.equal(cfg.server.port, 8080, "parsed int");
+runtime.assert.equal(cfg.server.hosts.length, 2, "parsed array");
+
+const text = codec.toml.stringify({ name: "demo", flags: { debug: true } });
+const back = codec.toml.parse(text);
+runtime.assert.equal(back.flags.debug, true, "round-trip bool");
+```
+
+Tables become nested objects, arrays become JS arrays, and ints/floats/bools
+map to their JS equivalents; only datetimes come back as strings. The
+top-level value passed to `stringify` must be an object (TOML documents are
+tables). Signatures: §17.2.28 (`codec.toml.parse`), §17.2.29
+(`codec.toml.stringify`).
+runnable: `examples/scripts/codec-toml.ts`
+
+##### 5.5.9.2 Round-trip tabular data as CSV
+
+```ts
+const wb = { sheets: [{ name: "Inventory", rows: [
+  ["Name", "Qty", "InStock"],
+  ["Widget", 42, true],
+] }] };
+
+const csv = codec.sheet.write(wb, { format: "csv" });
+const back = codec.sheet.read(csv.bytes, { format: "csv" });
+runtime.assert.equal(back.sheets[0].rows[1][1], "42", "csv cells are strings");
+```
+
+CSV is one of `codec.sheet`'s formats, not a standalone codec — pass
+`opts.format: "csv"` to both `read` and `write`. Unlike XLSX/ODS, CSV is
+untyped: every cell round-trips as a string (`42` becomes `"42"`). See
+§5.5.7 above for the XLSX/ODS-typed and legacy-format variants. Signatures:
+§17.2.26 (`codec.sheet.read`), §17.2.27 (`codec.sheet.write`).
+runnable: `examples/scripts/sheet.ts`
+
+##### 5.5.9.3 Convert a parsed document into another format
+
+```ts
+const cfg = codec.toml.parse('title = "demo"\n[server]\nport = 8080\n');
+
+// codec.xml.encode needs a single-key root object — cfg has two top-level
+// keys (title, server), so wrap it with opts.rootName instead of nesting
+// it under one key by hand.
+const xml = codec.xml.encode(cfg, { rootName: "config", indent: "  " });
+runtime.log(xml);
+// <config><title>demo</title><server><port>8080</port></server></config>
+```
+
+Because every `codec.*` parser lands on plain JS values (objects, arrays,
+strings, numbers, booleans), the value one format parses is exactly what
+another format's encoder accepts — no adapter layer needed. `codec.xml.encode`
+without `opts.rootName` requires a single-key object naming the root, so a
+multi-key parse result (like a TOML table) needs `rootName` to wrap it.
+Signatures: §17.2.28 (`codec.toml.parse`), §17.2.31 (`codec.xml.encode`).
+runnable: `examples/scripts/codec-toml.ts`, `examples/scripts/codec-xml.ts`
+
+##### 5.5.9.4 Parse and apply a `.env` file
+
+```ts
+// Pure parse — no environment side effects.
+const cfg = codec.dotenv.parse('GREETING="hello world"\n# comment\nexport COUNT=3\n');
+runtime.assert.equal(cfg.GREETING, "hello world", "parse strips quotes");
+runtime.assert.equal(cfg.COUNT, "3", "parse handles export");
+
+// Round-trip: stringify sorts keys and quotes where needed.
+const text = codec.dotenv.stringify({ A: "1", B: "two words", FLAG: true });
+runtime.assert.equal(codec.dotenv.parse(text).B, "two words", "stringify round-trips");
+
+// Load a real file AND apply it to the process environment (a `runtime`
+// binding, not `codec` — see §17.9.12).
+await fs.writeText("/tmp/demo.env", 'DEMO_KEY="from file"\n');
+const loaded = await runtime.env.load("/tmp/demo.env");
+runtime.assert.equal(runtime.env.get("DEMO_KEY"), "from file", "load applied to env");
+```
+
+`codec.dotenv.parse`/`stringify` never touch the process environment —
+reach for `runtime.env.load` when a script needs the values applied, not
+just parsed. Signatures: §17.2.15 (`codec.dotenv.parse`), §17.2.16
+(`codec.dotenv.stringify`), §17.9.12 (`runtime.env.load`).
+runnable: `examples/scripts/env.ts`
+
+##### 5.5.9.5 Round-trip PHP and Perl dump formats
+
+```ts
+const order = { __class: "Order", id: 7, items: ["a", "b"], paid: true, note: null };
+
+const s = codec.php.serialize(order);
+const decoded = codec.php.unserialize(s);
+// decoded deep-equals order — the __class sentinel round-trips as a PHP object
+
+const flags = { active: true, archived: false, label: "vip" };
+const pl = codec.perl.dumper(flags);
+const back = codec.perl.parseDumper(pl);
+// back deep-equals flags — JS booleans round-trip via the JSON::XS::Boolean convention
+```
+
+`codec.php.serialize` is deterministic (stable key order), which matters
+when the output feeds a canonical-hash comparison; `codec.php.varDump` /
+`codec.perl.dumper` are debug formats and their parsers are best-effort
+(`parseVarDump` throws on lossy markers like `*RECURSION*` — see §5.5.4).
+Signatures: §17.2.21 (`codec.php.serialize`), §17.2.22
+(`codec.php.unserialize`), §17.2.17 (`codec.perl.dumper`), §17.2.18
+(`codec.perl.parseDumper`).
+runnable: `examples/scripts/dump-codec.ts`
+
 ### 5.6 `fs`
 
 Filesystem operations:
