@@ -722,7 +722,7 @@ sercon serve --shutdown-timeout 10s server.ts
 Common command-line patterns. (Flags are documented in the FLAGS table in
 §4 and in `sercon --help`.)
 
-##### 4.6.1 Pass arguments to a script
+#### 4.6.1 Pass arguments to a script
 
 Everything after a standalone `--` becomes `runtime.argv` (see §4.1).
 
@@ -731,7 +731,7 @@ sercon report.ts -- --out /tmp/r.json prod
 # report.ts: runtime.argv.slice(2) → ["--out", "/tmp/r.json", "prod"]
 ```
 
-##### 4.6.2 Load config and secrets from a `.env`
+#### 4.6.2 Load config and secrets from a `.env`
 
 ```bash
 sercon --env-file .env deploy.ts
@@ -742,7 +742,7 @@ sercon --secrets-prefix myapp/ deploy.ts
 # default "sercon/" (also settable via $SERCON_SECRETS_PREFIX).
 ```
 
-##### 4.6.3 Auto-rerun while developing
+#### 4.6.3 Auto-rerun while developing
 
 Re-runs on every `.ts`/`.tsx`/`.js`/`.jsx`/`.json`/`.d.ts` change under the
 script root; `Ctrl-C` exits (see §4.2).
@@ -751,7 +751,7 @@ script root; `Ctrl-C` exits (see §4.2).
 sercon --watch dashboard.ts
 ```
 
-##### 4.6.4 Bound a run and gate on the exit code
+#### 4.6.4 Bound a run and gate on the exit code
 
 `-timeout` (default `10s`) caps the run; exceeding it exits non-zero
 (`ErrScriptTimeout`), as does any thrown/rejected script — so `$?` drives a
@@ -761,7 +761,7 @@ CI gate (see §12 Timeouts, §13 Error semantics).
 sercon -timeout 5s healthcheck.ts && echo "healthy" || echo "unhealthy ($?)"
 ```
 
-##### 4.6.5 Use sercon in a shell pipeline
+#### 4.6.5 Use sercon in a shell pipeline
 
 `sercon -` reads the entry *script* (not data) from stdin; scripts write
 results to stdout via `console.log` / `runtime.log` for piping onward.
@@ -779,7 +779,7 @@ Unix, read the pipe as a file from inside the script:
 const input = await fs.readText("/dev/stdin");
 ```
 
-##### 4.6.6 Run a long-lived server
+#### 4.6.6 Run a long-lived server
 
 `sercon serve` keeps the event loop alive for a script that binds a
 listener, prints a `READY` line per listener, and shuts down gracefully on
@@ -791,7 +791,7 @@ sercon serve --shutdown-timeout 5s app.ts
 # under serve; --shutdown-timeout (default 30s) bounds the graceful drain.
 ```
 
-##### 4.6.7 Make a script directly executable
+#### 4.6.7 Make a script directly executable
 
 A plain shebang works for a script that takes no arguments (see §4.4):
 
@@ -815,7 +815,7 @@ chmod +x deploy.ts
 ./deploy.ts --dry-run alice        # runtime.argv.slice(2) → ["--dry-run","alice"]
 ```
 
-##### 4.6.8 Emit tooling artifacts for your editor
+#### 4.6.8 Emit tooling artifacts for your editor
 
 ```bash
 sercon init                      # writes ./sercon.d.ts + ./jsconfig.json (§4.3)

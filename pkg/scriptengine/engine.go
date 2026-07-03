@@ -461,8 +461,8 @@ func WithArgs(args []string) RunOption {
 
 // Run executes source as the entry script for this engine. name is used in
 // stack traces and diagnostics. The returned value is the resolved value of
-// the script's top-level expression (currently always undefined; the spec
-// reserves this slot for future top-level export support).
+// the script's top-level export default <expr>, if any; scripts without a
+// default export resolve to undefined.
 func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption) (goja.Value, error) {
 	if ctx == nil {
 		ctx = context.Background()
