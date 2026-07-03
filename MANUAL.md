@@ -4809,11 +4809,16 @@ onto each. (Snippets here are illustrative — see §16.1's lead.)
 **Amounts are integer minor units** (öre / cents) everywhere — `15000` means
 150.00 SEK, never `150`.
 
-**Auth & the shared core (§16.1.1).** Auth is either HTTP Basic (kcov3, netsv1)
-or a **signed body** (sveacheckout2, qlirov2 compute a signature over the
-serialised JSON — the library does this for you). kcov3 mutations carry an
-idempotency key so a retried capture/refund isn't double-applied. Any non-2xx
-throws a `PaymentError { provider, status, body, requestId? }`.
+**Auth & the shared core (§16.1.1).** Auth varies by provider, but the library
+handles it for you either way — you just supply credentials: kcov3 sends
+**HTTP Basic** (`base64(merchantId:sharedSecret)`); netsv1 sends its secret key
+**as the `Authorization` header value verbatim** (no `Basic`/`Bearer` scheme);
+sveacheckout2 and qlirov2 **sign the request body** (a computed signature over
+the serialised JSON — svea uses SHA-512, qliro SHA-256); swedbankpayv2/v3 send
+a **Bearer access token** (`Authorization: Bearer <accessToken>`). kcov3
+mutations carry an idempotency key so a retried capture/refund isn't
+double-applied. Any non-2xx throws a
+`PaymentError { provider, status, body, requestId? }`.
 
 **Config & test-vs-prod.** `client(overrides?)` reads env with precedence
 `overrides.X ?? env(PROVIDER_X)`. It targets the **test** environment by
@@ -4844,7 +4849,10 @@ capture/refund/cancel share names:
 `operation()` also follows any other HAL rel (see 16.1.8). `kcov3` additionally
 has `acknowledge` and `releaseRemainingAuthorization`. Capture/refund input
 shapes vary: kcov3 `{ amount, orderLines?, description? }`, netsv1
-`{ amount, orderItems? }`, svea/qliro `{ amount, rows? }`, swedbankpay
+`{ amount, orderItems? }`, sveacheckout2 `{ amount, rows? }`, qlirov2 —
+optional management fields merged into the signed
+`{ RequestId, OrderId, MerchantApiKey }` envelope (capture →
+`MarkItemsAsShipped`, refund → `ReturnItems`; no `amount`/`rows`), swedbankpay
 `{ transaction: { … } }`.
 
 ### 16.2 `favro`
