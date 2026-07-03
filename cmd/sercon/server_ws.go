@@ -50,15 +50,33 @@ type wsState struct {
 var installAsyncIteratorProg = goja.MustCompile("internal:install-async-iter",
 	`(obj) => { obj[Symbol.asyncIterator] = function() { return this; }; }`, false)
 
+// wsUpgradeOrderHook, when non-nil, is invoked with "accept" right after
+// websocket.Accept returns and with "markFinal" right before
+// state.markFinal signals the dispatcher goroutine that the response is
+// complete. Production code leaves this nil (zero overhead). It exists
+// so tests can assert the fix for the upgrade/hijack race (#13) — that
+// Accept always completes before markFinal unblocks the dispatcher —
+// without needing to force the underlying network race deterministically.
+var wsUpgradeOrderHook func(event string)
+
 // upgradeWebSocketImpl is invoked from res.upgradeWebSocket(opts?). It
 // performs the HTTP upgrade via coder/websocket, spawns a reader
 // goroutine, and returns a JS object that's both an AsyncIterable and
 // carries send/close/remote.
 //
-// state.upgrade is set (under the state mutex) + state.markFinal() is
-// called BEFORE Accept so the dispatcher's <-state.notify unblocks and
-// writeResponse sees state.upgrade=true and skips header/body writes
-// (the websocket library hijacks the connection and owns it from here).
+// Ordering (fix for #13): websocket.Accept is called FIRST, and
+// state.upgrade + state.markFinal() are only set/called AFTER Accept
+// returns. Accept always fully consumes w before returning — on success
+// it hijacks the connection (WriteHeader(101) + Hijack()); on failure it
+// writes an HTTP error response itself (http.Error) before returning the
+// error. Either way, by the time Accept returns, whatever it was going
+// to do to w has already happened. Only then is it safe to close
+// state.notify: that unblocks dispatchHandler's `<-state.notify`, which
+// lets it return from the handler and allows the stdlib http.Server to
+// finalize the request. Doing this before Accept returned (the previous
+// order) raced the dispatcher's return against Accept's hijack, letting
+// net/http potentially write to or close the connection while Accept was
+// still hijacking it.
 func upgradeWebSocketImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, state *responseState, w http.ResponseWriter, r *http.Request, opts goja.Value) goja.Value {
 	bufSize := 64
 	if opts != nil && !goja.IsUndefined(opts) && !goja.IsNull(opts) {
@@ -70,15 +88,23 @@ func upgradeWebSocketImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scri
 		}
 	}
 
-	// Mark the response as upgraded BEFORE Accept so the dispatcher
-	// doesn't try to write headers after the websocket library hijacks
-	// the connection.
+	conn, err := websocket.Accept(w, r, nil)
+	if wsUpgradeOrderHook != nil {
+		wsUpgradeOrderHook("accept")
+	}
+
+	// Mark the response as upgraded now that Accept has fully finished
+	// interacting with w (hijacked it on success, or written an error
+	// response itself on failure). Either way writeResponse must not
+	// touch w again, and the dispatcher can now safely be unblocked.
+	if wsUpgradeOrderHook != nil {
+		wsUpgradeOrderHook("markFinal")
+	}
 	state.mu.Lock()
 	state.upgrade = true
 	state.mu.Unlock()
 	state.markFinal()
 
-	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		panic(vm.NewGoError(fmt.Errorf("upgradeWebSocket: %w", err)))
 	}
