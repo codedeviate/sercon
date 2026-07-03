@@ -1487,7 +1487,12 @@ const cfg = codec.toml.parse('title = "demo"\n[server]\nport = 8080\n');
 // it under one key by hand.
 const xml = codec.xml.encode(cfg, { rootName: "config", indent: "  " });
 runtime.log(xml);
-// <config><title>demo</title><server><port>8080</port></server></config>
+// <config>
+//   <title>demo</title>
+//   <server>
+//     <port>8080</port>
+//   </server>
+// </config>
 ```
 
 Because every `codec.*` parser lands on plain JS values (objects, arrays,
