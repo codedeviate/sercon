@@ -116,6 +116,52 @@ await srv.close();
 	}
 }
 
+// TestServerHTTP_MaxBodyBytes verifies a per-listener maxBodyBytes cap: a
+// POST body over the cap gets a 413 and never reaches the JS route handler
+// (proven via a counter the handler increments), while a body under the cap
+// reaches the handler normally.
+func TestServerHTTP_MaxBodyBytes(t *testing.T) {
+	port := freePort(t)
+	eng := scriptengine.New(scriptengine.Options{
+		ScriptRoot:     t.TempDir(),
+		DisableConsole: true,
+		Timeout:        5 * time.Second,
+	})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+
+	p := strconv.Itoa(port)
+	script := `
+let hits = 0;
+const srv = await server.http.listen({
+  port: ` + p + `,
+  maxBodyBytes: 16,
+  routes: {
+    "POST /echo": (req, res) => { hits++; res.text("ok:" + req.body.length); },
+  },
+});
+
+const base = "http://127.0.0.1:` + p + `";
+
+// Over the cap: 413, handler must NOT run.
+const big = await net.http.request("POST", base + "/echo", { body: "x".repeat(64) });
+if (big.status !== 413) throw new Error("expected 413, got " + big.status);
+if (hits !== 0) throw new Error("handler ran on oversized body, hits=" + hits);
+
+// Under the cap: reaches the handler.
+const small = await net.http.request("POST", base + "/echo", { body: "hi" });
+if (small.status !== 200) throw new Error("expected 200, got " + small.status);
+if (small.body !== "ok:2") throw new Error("small body: " + small.body);
+if (hits !== 1) throw new Error("expected 1 hit, got " + hits);
+
+await srv.close();
+`
+	if _, err := eng.Run(context.Background(), "test.ts", script); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 // TestServerHTTP_OnErrorFallback verifies the stock 500 is emitted when an
 // onError handler itself throws (so a buggy error handler can't wedge the
 // request).

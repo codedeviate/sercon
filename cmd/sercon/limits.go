@@ -18,4 +18,12 @@ const (
 	// io.ReadAll can OOM the process. Callers may override per-call via the
 	// `maxBytes` option.
 	DefaultMaxHTTPBodyBytes = 256 << 20 // 256 MB
+
+	// DefaultMaxServerBodyBytes caps the size of an inbound request body
+	// read into memory by server.http.listen / server.https.listen before
+	// a route handler or middleware runs. Without a cap, a large POST body
+	// read via io.ReadAll can OOM the process before any JS code sees the
+	// request. Listeners may override per-listener via the `maxBodyBytes`
+	// option; a request over the cap gets a 413 without invoking JS.
+	DefaultMaxServerBodyBytes = 32 << 20 // 32 MB
 )

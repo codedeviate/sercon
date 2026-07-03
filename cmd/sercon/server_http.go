@@ -93,6 +93,16 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		}
 	}
 
+	// Optional per-listener request-body cap. Absent or <=0 falls back to
+	// DefaultMaxServerBodyBytes. Enforced in dispatchHandler via
+	// http.MaxBytesReader before any JS handler/middleware runs.
+	maxBodyBytes := DefaultMaxServerBodyBytes
+	if v := optsObj.Get("maxBodyBytes"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		if n := int(v.ToInteger()); n > 0 {
+			maxBodyBytes = n
+		}
+	}
+
 	// Optional onError handler: (err, req, res) => … invoked when a handler
 	// or middleware throws/rejects, in place of the stock 500.
 	var onError *scriptengine.LoopCallable
@@ -121,7 +131,7 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		chain := append([]*scriptengine.LoopCallable{}, globalMW...)
 		chain = append(chain, perRouteMW...)
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			dispatchHandler(loop, eng, chain, handler, onError, w, r)
+			dispatchHandler(loop, eng, chain, handler, onError, w, r, maxBodyBytes)
 		})
 	}
 
@@ -392,11 +402,30 @@ func (rs *responseState) markError(msg string) {
 // schedules a loop callback that builds req/res, invokes the middleware
 // chain + handler, and waits on res.notify for finalization (either via
 // a terminal call or via the handler-Promise's settlement).
-func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, onError *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request) {
+func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, onError *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request, maxBodyBytes int) {
 	startTime := time.Now()
-	// Read body up front; small price for the simpler script API.
-	bodyBytes, _ := io.ReadAll(r.Body)
+	// Read body up front; small price for the simpler script API. Cap it
+	// with MaxBytesReader so a large POST can't OOM the process before any
+	// JS handler/middleware runs — an over-limit body gets a 413 here,
+	// before the loop is ever scheduled.
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBodyBytes))
+	bodyBytes, err := io.ReadAll(r.Body)
 	_ = r.Body.Close()
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			_, _ = fmt.Fprintln(w, "Request Entity Too Large")
+			if serveAccessLogger != nil {
+				serveAccessLogger(r.RemoteAddr, r.Method, r.URL.Path, http.StatusRequestEntityTooLarge, time.Since(startTime))
+			}
+			return
+		}
+		// Non-size read errors (e.g. client hung up mid-body): fall through
+		// with whatever partial bytes were read, matching the previous
+		// best-effort behaviour.
+	}
 
 	state := newResponseState()
 
@@ -404,7 +433,7 @@ func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain 
 	// At dispatch time we invoke from a single Schedule call: the loop
 	// callback builds req/res, then walks the chain by recursively
 	// invoking each middleware with a `next` function.
-	_, err := loopSchedule(loop, func(vm *goja.Runtime) (goja.Value, error) {
+	_, err = loopSchedule(loop, func(vm *goja.Runtime) (goja.Value, error) {
 		req := buildRequestObject(vm, r, bodyBytes)
 		res := buildResponseObject(vm, loop, eng, state, w, r)
 
