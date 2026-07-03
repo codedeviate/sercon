@@ -976,13 +976,13 @@ declare const net: {
      */
     post(url: string, body?: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>;
     /**
-     * Full HTTP client: method, url, opts {headers, body|multipart, timeout, retry, follow, username, password}. body is string|Uint8Array|ArrayBuffer; multipart builds a multipart/form-data upload. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
+     * Full HTTP client: method, url, opts {headers, body|multipart, timeout, retry, follow, username, password, maxBytes}. body is string|Uint8Array|ArrayBuffer; multipart builds a multipart/form-data upload. Returns {status, ok, headers, body, bodyBytes, url}. 4xx/5xx dont throw; retry covers transport errors + 5xx.
      * @param method HTTP method (GET, POST, PUT, …); upper-cased internally. Required.
      * @param url Absolute request URL. Required.
-     * @param opts headers sets request headers; body is the request body (a string is sent as UTF-8, a Uint8Array/ArrayBuffer byte-for-byte); multipart builds a multipart/form-data body from an array of parts (a part with a filename is a file part whose content is string|Uint8Array|ArrayBuffer and type sets its Content-Type, default application/octet-stream; any other part is a text field carrying value) — body and multipart are mutually exclusive, and multipart sets the Content-Type header with its boundary, overriding any caller-set content-type; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth.
+     * @param opts headers sets request headers; body is the request body (a string is sent as UTF-8, a Uint8Array/ArrayBuffer byte-for-byte); multipart builds a multipart/form-data body from an array of parts (a part with a filename is a file part whose content is string|Uint8Array|ArrayBuffer and type sets its Content-Type, default application/octet-stream; any other part is a text field carrying value) — body and multipart are mutually exclusive, and multipart sets the Content-Type header with its boundary, overriding any caller-set content-type; timeout is the per-attempt client timeout in ms (default 30000); retry is the number of extra attempts (default 0) applied only to transport errors and 5xx with linear backoff capped at 1s; follow toggles redirect following (default true — false stops at the first 3xx); username/password set HTTP Basic auth; maxBytes caps the response body size in bytes (default 256 MiB) — a caller may raise or lower it; exceeding it rejects with a size-limit error.
      * @returns Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }> — status is the final status code; ok is status in [200,400); headers is a lower-cased name → value map (last value wins, alphabetically ordered); body is the response text (UTF-8); bodyBytes is the raw, undecoded response bytes (pair with text.charset.decode for non-UTF-8 content like ISO-8859-1); url is the final URL after redirects.
      */
-    request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>;
+    request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string, maxBytes?: number }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>;
   };
   icmp: {
     /**
@@ -1661,10 +1661,10 @@ declare const web: {
     /**
      * Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option surface and sends a default User-Agent unless overridden. Throws on a non-2xx response.
      * @param url The feed URL to GET.
-     * @param opts Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password.
+     * @param opts Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password, maxBytes (response body size cap, default 256 MiB).
      * @returns A promise resolving to the normalized feed object.
      */
-    load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>;
+    load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>;
     /**
      * Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-detected; feedType reports it. RSS/Atom field differences are unified (pubDate/updated, description/summary). Each item carries a `raw` escape hatch with format-specific extras (enclosures, namespaced elements like media:*/dc:*).
      * @param source The feed document text (RSS/Atom XML or JSON Feed).
@@ -1676,10 +1676,10 @@ declare const web: {
     /**
      * Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the net.http option surface with a default User-Agent. Throws on a non-2xx response.
      * @param url The page URL to GET.
-     * @param opts Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password.
+     * @param opts Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password, maxBytes (response body size cap, default 256 MiB).
      * @returns A promise resolving to the document Node handle.
      */
-    load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>;
+    load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>;
     /**
      * Parse HTML leniently (real-world tag soup is accepted, never throws on bad markup) into a chainable Node. Query with CSS (find/findAll) or XPath (xpath/xpathAll); read with text/html/innerHTML/tag/attr/attrs. Sub-queries are scoped to the receiver node (use .// for relative XPath; // is document-wide).
      * @param source The HTML document text.
@@ -1694,7 +1694,7 @@ declare const web: {
      * @param opts expand:true fetches & merges child sitemaps for an index. Plus the standard fetch options.
      * @returns A promise resolving to the sitemap object.
      */
-    load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>;
+    load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>;
     /**
      * Parse a sitemap document (urlset or sitemapindex) into {type, urls, sitemaps, errors}. urls carry loc/lastmod/changefreq/priority; an index lists child sitemap URLs in `sitemaps`.
      * @param source The sitemap XML text (decompressed).

@@ -49,6 +49,10 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 		retries = 0
 	}
 	headers := optStringMap(opts, "headers")
+	maxBytes := int64(optInt(opts, "maxBytes", DefaultMaxHTTPBodyBytes))
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxHTTPBodyBytes
+	}
 
 	// Body vs. multipart: mutually exclusive. body is string | Uint8Array |
 	// ArrayBuffer sent byte-for-byte; multipart is assembled in Go and sets
@@ -113,7 +117,7 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 			}
 		}
 
-		result, status, retryable, err := httpRequestOnce(ctx, client, method, url, bodyBytes, contentType, headers, authUser, authPass)
+		result, status, retryable, err := httpRequestOnce(ctx, client, method, url, bodyBytes, contentType, headers, authUser, authPass, maxBytes)
 		if err != nil {
 			lastErr = err
 			if retryable && attempt < retries {
@@ -134,7 +138,7 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 // httpRequestOnce performs a single attempt. The bool return is
 // "retryable" — true for transport errors (worth retrying), used by
 // the caller's retry loop.
-func httpRequestOnce(ctx context.Context, client *http.Client, method, url string, body []byte, contentType string, headers map[string]string, user, pass string) (*scriptengine.Ordered, int, bool, error) {
+func httpRequestOnce(ctx context.Context, client *http.Client, method, url string, body []byte, contentType string, headers map[string]string, user, pass string, maxBytes int64) (*scriptengine.Ordered, int, bool, error) {
 	var reqBody io.Reader
 	if len(body) > 0 {
 		reqBody = bytes.NewReader(body)
@@ -163,9 +167,12 @@ func httpRequestOnce(ctx context.Context, client *http.Client, method, url strin
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, 0, true, fmt.Errorf("read body: %w", err)
+	}
+	if int64(len(respBody)) > maxBytes {
+		return nil, 0, false, fmt.Errorf("response body exceeds maxBytes limit (%d)", maxBytes)
 	}
 
 	// Build the headers sub-object with a stable, canonical key order:

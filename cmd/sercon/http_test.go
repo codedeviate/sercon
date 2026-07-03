@@ -135,6 +135,31 @@ func TestHTTPRequest_NoFollow(t *testing.T) {
 	}
 }
 
+func TestHTTPRequest_MaxBytesExceeded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte("a"), 1024))
+	}))
+	defer srv.Close()
+	got := mustErr(t, `await http.request("GET", `+"`"+srv.URL+"`"+`, { maxBytes: 100 });`)
+	if !strings.Contains(got, "maxBytes") {
+		t.Errorf("expected maxBytes-limit error, got: %v", got)
+	}
+}
+
+func TestHTTPRequest_MaxBytesUnderCapSucceeds(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("hi"))
+	}))
+	defer srv.Close()
+	got := runHTTPReqScript(t, `
+		const r = await http.request("GET", `+"`"+srv.URL+"`"+`, { maxBytes: 100 });
+		const __result = r.body;
+	`)
+	if got != "hi" {
+		t.Errorf("maxBytes under cap: %v", got)
+	}
+}
+
 func TestHTTPRequest_TransportErrorThrows(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
 	if err := eng.RegisterNamespaceFactory("http", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {

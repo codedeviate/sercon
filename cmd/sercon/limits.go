@@ -11,4 +11,11 @@ const (
 	// exhaust a goroutine stack, but far beyond any realistic well-formed
 	// dump.
 	MaxDecodeDepth = 10_000
+
+	// DefaultMaxHTTPBodyBytes caps the size of an HTTP response body read
+	// into memory by net.http.request and the shared web.* fetch helper
+	// (webFetch). Without a cap, a large or slow-drip response body read via
+	// io.ReadAll can OOM the process. Callers may override per-call via the
+	// `maxBytes` option.
+	DefaultMaxHTTPBodyBytes = 256 << 20 // 256 MB
 )

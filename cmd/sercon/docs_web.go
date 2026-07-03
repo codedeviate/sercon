@@ -23,7 +23,7 @@ const webSitemapTS = `{ type: "urlset" | "sitemapindex"; ` +
 	`sitemaps: string[]; errors: Array<{ url: string; error: string }> }`
 
 const webFetchOptsTS = `{ timeout?: number | string; headers?: Record<string, string>; ` +
-	`follow?: boolean; userAgent?: string; username?: string; password?: string }`
+	`follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }`
 
 // webDocs documents the `web` global. The html node handle methods are carried
 // as prose in MANUAL (the per-call handle is not reflected into the surface),
@@ -42,7 +42,7 @@ func webDocs() map[string]scriptengine.MemberDoc {
 			Summary: "Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option surface and sends a default User-Agent unless overridden. Throws on a non-2xx response.",
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "The feed URL to GET."},
-				{Name: "opts", Type: webFetchOptsTS, Optional: true, Desc: "Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password."},
+				{Name: "opts", Type: webFetchOptsTS, Optional: true, Desc: "Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password, maxBytes (response body size cap, default 256 MiB)."},
 			},
 			ReturnType: "Promise<" + webFeedTS + ">",
 			Returns:    "A promise resolving to the normalized feed object.",
@@ -80,7 +80,7 @@ func webDocs() map[string]scriptengine.MemberDoc {
 			Summary: "Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the net.http option surface with a default User-Agent. Throws on a non-2xx response.",
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "The page URL to GET."},
-				{Name: "opts", Type: webFetchOptsTS, Optional: true, Desc: "Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password."},
+				{Name: "opts", Type: webFetchOptsTS, Optional: true, Desc: "Fetch options: timeout (ms or duration string), headers, follow redirects, userAgent, basic-auth username/password, maxBytes (response body size cap, default 256 MiB)."},
 			},
 			ReturnType: "Promise<" + webNodeTS + ">",
 			Returns:    "A promise resolving to the document Node handle.",

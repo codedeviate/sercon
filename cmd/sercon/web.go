@@ -25,13 +25,18 @@ type fetchOpts struct {
 	userAgent string
 	user      string
 	pass      string
+	maxBytes  int64
 }
 
 // parseFetchOpts reads a JS opts object into fetchOpts, reusing the same option
 // helpers net.http.request uses so the surfaces stay consistent.
 func parseFetchOpts(opts map[string]any) fetchOpts {
 	if opts == nil {
-		return fetchOpts{timeout: 30 * time.Second, follow: true}
+		return fetchOpts{timeout: 30 * time.Second, follow: true, maxBytes: DefaultMaxHTTPBodyBytes}
+	}
+	maxBytes := int64(optInt(opts, "maxBytes", DefaultMaxHTTPBodyBytes))
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxHTTPBodyBytes
 	}
 	return fetchOpts{
 		timeout:   optMillis(opts, "timeout", 30*time.Second),
@@ -40,6 +45,7 @@ func parseFetchOpts(opts map[string]any) fetchOpts {
 		userAgent: optString(opts, "userAgent", ""),
 		user:      optString(opts, "username", ""),
 		pass:      optString(opts, "password", ""),
+		maxBytes:  maxBytes,
 	}
 }
 
@@ -74,9 +80,16 @@ func webFetch(ctx context.Context, url string, fo fetchOpts) (body []byte, final
 		return nil, url, 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	b, err := io.ReadAll(resp.Body)
+	maxBytes := fo.maxBytes
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxHTTPBodyBytes
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, url, resp.StatusCode, fmt.Errorf("read body: %w", err)
+	}
+	if int64(len(b)) > maxBytes {
+		return nil, url, resp.StatusCode, fmt.Errorf("response body exceeds maxBytes limit (%d)", maxBytes)
 	}
 	finalURL = url
 	if resp.Request != nil && resp.Request.URL != nil {
