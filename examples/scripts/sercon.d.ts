@@ -799,13 +799,13 @@ declare const fs: {
      */
     create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<{ path: string; format: string; entries: string[]; bytes?: number }>;
     /**
-     * Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour.
+     * Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour; opts.maxTotalBytes/maxEntries cap decompression-bomb risk.
      * @param archivePath Path to the archive. Format is inferred from its extension (.zip, .tar, .tar.gz, .tgz).
      * @param destDir Destination directory; created (recursively) if absent. All entries are confined to this directory via zip-slip / tar-slip protection.
-     * @param opts overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL).
+     * @param opts overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL). maxTotalBytes caps the cumulative decompressed bytes written across all members (default 1 GB; a non-positive value falls back to the default). maxEntries caps the number of archive members processed (default 100000; a non-positive value falls back to the default). Both guard against a small crafted archive decompressing into an enormous amount of disk I/O (a decompression bomb); extraction stops as soon as either cap is exceeded.
      * @returns Promise<{ path: string, format: string, dest: string, entries: string[] }> — path is archivePath, format is the inferred format, dest is destDir, and entries lists the extracted entry names (regular files only).
      */
-    extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean }): Promise<{ path: string; format: string; dest: string; entries: string[] }>;
+    extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean, maxTotalBytes?: number, maxEntries?: number }): Promise<{ path: string; format: string; dest: string; entries: string[] }>;
   };
   /**
    * Report whether a path exists. Never throws for a missing path.

@@ -105,7 +105,10 @@ func archiveCreate(_ context.Context, call goja.FunctionCall) (map[string]any, e
 // `overwrite` opt controls whether existing files at the destination are
 // clobbered (default false — extraction errors out on collisions). All
 // entry names are run through safeJoin so a malicious archive can't write
-// outside destDir (zip-slip / tar-slip protection).
+// outside destDir (zip-slip / tar-slip protection). `maxTotalBytes` and
+// `maxEntries` (defaulting to DefaultMaxArchiveBytes / DefaultMaxArchiveEntries)
+// cap the cumulative decompressed size and member count so a small crafted
+// archive can't be a decompression bomb.
 func archiveExtract(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
 	archivePath := call.Argument(0).String()
 	destDir := call.Argument(1).String()
@@ -116,12 +119,20 @@ func archiveExtract(_ context.Context, call goja.FunctionCall) (map[string]any, 
 	// so the 2-arg optsAsMap helper would mistake destDir for opts.
 	// Pull the third arg out by hand. Same shape as the diff.compare fix.
 	overwrite := false
+	maxTotalBytes := int64(DefaultMaxArchiveBytes)
+	maxEntries := DefaultMaxArchiveEntries
 	if len(call.Arguments) >= 3 {
 		arg := call.Argument(2)
 		if arg != nil && !goja.IsUndefined(arg) && !goja.IsNull(arg) {
 			if m, ok := arg.Export().(map[string]any); ok {
 				if b, ok := m["overwrite"].(bool); ok {
 					overwrite = b
+				}
+				if v := optInt(m, "maxTotalBytes", DefaultMaxArchiveBytes); v > 0 {
+					maxTotalBytes = int64(v)
+				}
+				if v := optInt(m, "maxEntries", DefaultMaxArchiveEntries); v > 0 {
+					maxEntries = v
 				}
 			}
 		}
@@ -143,16 +154,16 @@ func archiveExtract(_ context.Context, call goja.FunctionCall) (map[string]any, 
 	var entries []string
 	switch format {
 	case "zip":
-		entries, err = extractZip(f, destDir, overwrite)
+		entries, err = extractZip(f, destDir, overwrite, maxTotalBytes, maxEntries)
 	case "tar":
-		entries, err = extractTar(f, destDir, overwrite)
+		entries, err = extractTar(f, destDir, overwrite, maxTotalBytes, maxEntries)
 	case "tar.gz":
 		gr, gErr := gzip.NewReader(f)
 		if gErr != nil {
 			return nil, gErr
 		}
 		defer func() { _ = gr.Close() }()
-		entries, err = extractTar(gr, destDir, overwrite)
+		entries, err = extractTar(gr, destDir, overwrite, maxTotalBytes, maxEntries)
 	}
 	if err != nil {
 		return nil, err
@@ -334,7 +345,7 @@ func writeTar(w io.Writer, sources []archiveSource) ([]string, error) {
 	return entries, nil
 }
 
-func extractZip(f *os.File, destDir string, overwrite bool) ([]string, error) {
+func extractZip(f *os.File, destDir string, overwrite bool, maxTotalBytes int64, maxEntries int) ([]string, error) {
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -344,7 +355,13 @@ func extractZip(f *os.File, destDir string, overwrite bool) ([]string, error) {
 		return nil, err
 	}
 	var entries []string
+	var written int64
+	count := 0
 	for _, zf := range zr.File {
+		count++
+		if count > maxEntries {
+			return nil, fmt.Errorf("archive exceeds maxEntries limit (%d)", maxEntries)
+		}
 		target, err := safeJoin(destDir, zf.Name)
 		if err != nil {
 			return nil, err
@@ -375,20 +392,30 @@ func extractZip(f *os.File, destDir string, overwrite bool) ([]string, error) {
 			_ = out.Close()
 			return nil, err
 		}
-		_, copyErr := io.Copy(out, rc)
+		remaining := maxTotalBytes - written
+		if remaining < 0 {
+			remaining = 0
+		}
+		n, copyErr := io.Copy(out, io.LimitReader(rc, remaining+1))
+		written += n
 		_ = rc.Close()
 		_ = out.Close()
 		if copyErr != nil {
 			return nil, copyErr
+		}
+		if written > maxTotalBytes {
+			return nil, fmt.Errorf("archive exceeds maxTotalBytes limit (%d)", maxTotalBytes)
 		}
 		entries = append(entries, zf.Name)
 	}
 	return entries, nil
 }
 
-func extractTar(r io.Reader, destDir string, overwrite bool) ([]string, error) {
+func extractTar(r io.Reader, destDir string, overwrite bool, maxTotalBytes int64, maxEntries int) ([]string, error) {
 	tr := tar.NewReader(r)
 	var entries []string
+	var written int64
+	count := 0
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -396,6 +423,10 @@ func extractTar(r io.Reader, destDir string, overwrite bool) ([]string, error) {
 		}
 		if err != nil {
 			return nil, err
+		}
+		count++
+		if count > maxEntries {
+			return nil, fmt.Errorf("archive exceeds maxEntries limit (%d)", maxEntries)
 		}
 		target, err := safeJoin(destDir, hdr.Name)
 		if err != nil {
@@ -422,10 +453,18 @@ func extractTar(r io.Reader, destDir string, overwrite bool) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			_, copyErr := io.Copy(out, tr) //nolint:gosec // archive size bounded by caller's input
+			remaining := maxTotalBytes - written
+			if remaining < 0 {
+				remaining = 0
+			}
+			n, copyErr := io.Copy(out, io.LimitReader(tr, remaining+1)) //nolint:gosec // capped by maxTotalBytes check below
+			written += n
 			_ = out.Close()
 			if copyErr != nil {
 				return nil, copyErr
+			}
+			if written > maxTotalBytes {
+				return nil, fmt.Errorf("archive exceeds maxTotalBytes limit (%d)", maxTotalBytes)
 			}
 			entries = append(entries, hdr.Name)
 		}

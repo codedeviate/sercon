@@ -36,16 +36,16 @@ func fsDocs() map[string]scriptengine.MemberDoc {
 runtime.log(r.format, r.entries.length);`,
 		},
 		"archive.extract": {
-			Summary: "Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour.",
+			Summary: "Extract a zip / tar / tar.gz to destDir. opts.overwrite controls O_EXCL behaviour; opts.maxTotalBytes/maxEntries cap decompression-bomb risk.",
 			Params: []scriptengine.Param{
 				{Name: "archivePath", Type: "string", Desc: "Path to the archive. Format is inferred from its extension (.zip, .tar, .tar.gz, .tgz)."},
 				{Name: "destDir", Type: "string", Desc: "Destination directory; created (recursively) if absent. All entries are confined to this directory via zip-slip / tar-slip protection."},
-				{Name: "opts", Type: "{ overwrite?: boolean }", Optional: true, Desc: "overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL)."},
+				{Name: "opts", Type: "{ overwrite?: boolean, maxTotalBytes?: number, maxEntries?: number }", Optional: true, Desc: "overwrite (default false) clobbers existing files; when false, an entry colliding with an existing file fails the call (O_EXCL). maxTotalBytes caps the cumulative decompressed bytes written across all members (default 1 GB; a non-positive value falls back to the default). maxEntries caps the number of archive members processed (default 100000; a non-positive value falls back to the default). Both guard against a small crafted archive decompressing into an enormous amount of disk I/O (a decompression bomb); extraction stops as soon as either cap is exceeded."},
 			},
 			ReturnType: "Promise<{ path: string; format: string; dest: string; entries: string[] }>",
 			Returns:    "Promise<{ path: string, format: string, dest: string, entries: string[] }> — path is archivePath, format is the inferred format, dest is destDir, and entries lists the extracted entry names (regular files only).",
-			Errors:  "Rejects if archivePath or destDir is empty, the format cannot be inferred, destDir cannot be created, the archive cannot be opened / decoded, an entry escapes destDir (absolute path or '..' component), or (with overwrite false) an entry collides with an existing file.",
-			Example: `const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true });
+			Errors:  "Rejects if archivePath or destDir is empty, the format cannot be inferred, destDir cannot be created, the archive cannot be opened / decoded, an entry escapes destDir (absolute path or '..' component), (with overwrite false) an entry collides with an existing file, the entry count exceeds maxEntries, or the cumulative decompressed size exceeds maxTotalBytes.",
+			Example: `const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true, maxTotalBytes: 1 << 28, maxEntries: 5000 });
 runtime.log(r.entries.length, "files extracted");`,
 		},
 		"writeText": {

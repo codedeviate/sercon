@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -89,15 +90,15 @@ func TestArchive_RoundTrip(t *testing.T) {
 			var readErr error
 			switch detectArchiveFormat(dest) {
 			case "zip":
-				_, readErr = extractZip(in, extract, false)
+				_, readErr = extractZip(in, extract, false, DefaultMaxArchiveBytes, DefaultMaxArchiveEntries)
 			case "tar":
-				_, readErr = extractTar(in, extract, false)
+				_, readErr = extractTar(in, extract, false, DefaultMaxArchiveBytes, DefaultMaxArchiveEntries)
 			case "tar.gz":
 				gr, err := gzip.NewReader(in)
 				if err != nil {
 					t.Fatal(err)
 				}
-				_, readErr = extractTar(gr, extract, false)
+				_, readErr = extractTar(gr, extract, false, DefaultMaxArchiveBytes, DefaultMaxArchiveEntries)
 				_ = gr.Close()
 			}
 			if readErr != nil {
@@ -163,7 +164,7 @@ func TestArchive_ZipSlipRejected(t *testing.T) {
 	}
 
 	dest := t.TempDir()
-	_, err := extractTar(&buf, dest, false)
+	_, err := extractTar(&buf, dest, false, DefaultMaxArchiveBytes, DefaultMaxArchiveEntries)
 	if err == nil {
 		t.Fatal("expected extract to reject the escaping entry")
 	}
@@ -210,7 +211,7 @@ func TestArchive_OverwriteFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = extractZip(zf, dest, false /* overwrite */)
+	_, err = extractZip(zf, dest, false /* overwrite */, DefaultMaxArchiveBytes, DefaultMaxArchiveEntries)
 	_ = zf.Close()
 	if !errors.Is(err, os.ErrExist) && err == nil {
 		t.Errorf("expected overwrite-false to error on collision, got nil")
@@ -221,7 +222,7 @@ func TestArchive_OverwriteFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = zf2.Close() }()
-	if _, err := extractZip(zf2, dest, true /* overwrite */); err != nil {
+	if _, err := extractZip(zf2, dest, true /* overwrite */, DefaultMaxArchiveBytes, DefaultMaxArchiveEntries); err != nil {
 		t.Fatalf("overwrite-true should succeed: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(dest, "x.txt"))
@@ -278,5 +279,210 @@ func TestArchiveExtract_OverwriteOptThroughBinding(t *testing.T) {
 	// With overwrite:true it should succeed — this was the silently-dropped path.
 	if _, err := archiveExtract(context.Background(), mk(map[string]any{"overwrite": true})); err != nil {
 		t.Errorf("extract with overwrite:true: %v", err)
+	}
+}
+
+// buildTarWithSize returns a single-entry tar containing name filled with
+// size zero bytes.
+func buildTarWithSize(t *testing.T, name string, size int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	hdr := &tar.Header{
+		Name:     name,
+		Mode:     0o600,
+		Size:     int64(size),
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(make([]byte, size)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// buildTarWithEntries returns a tar with n tiny regular-file entries named
+// f0, f1, ....
+func buildTarWithEntries(t *testing.T, n int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for i := 0; i < n; i++ {
+		body := []byte("x")
+		hdr := &tar.Header{
+			Name:     fmt.Sprintf("f%d", i),
+			Mode:     0o600,
+			Size:     int64(len(body)),
+			Typeflag: tar.TypeReg,
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// A member whose decompressed size exceeds a tiny maxTotalBytes must abort
+// extraction with an error, and the running total must never be allowed to
+// grow past the cap by more than the single-byte "at the boundary" slack
+// (io.LimitReader(rc, remaining+1), same trick as readAllCapped) — i.e. this
+// is the decompression-bomb guard for fs.archive.extract.
+func TestArchiveExtract_MaxTotalBytesCap(t *testing.T) {
+	const size = 5 * 1024 * 1024 // 5 MB of zeros
+	const tinyCap = 1024         // tiny cap
+	data := buildTarWithSize(t, "big.bin", size)
+
+	dest := t.TempDir()
+	_, err := extractTar(bytes.NewReader(data), dest, false, tinyCap, DefaultMaxArchiveEntries)
+	if err == nil {
+		t.Fatal("expected extract to fail once the cap is exceeded")
+	}
+	if !strings.Contains(err.Error(), "maxTotalBytes") {
+		t.Errorf("expected a maxTotalBytes error, got: %v", err)
+	}
+
+	// The partially-written file (if any) must not have grown past the
+	// cap-plus-one-byte boundary.
+	if fi, statErr := os.Stat(filepath.Join(dest, "big.bin")); statErr == nil {
+		if fi.Size() > tinyCap+1 {
+			t.Errorf("wrote %d bytes, want <= %d (cap+1)", fi.Size(), tinyCap+1)
+		}
+	}
+}
+
+// Same guard, exercised through extractZip.
+func TestArchiveExtract_MaxTotalBytesCap_Zip(t *testing.T) {
+	const size = 5 * 1024 * 1024
+	const tinyCap = 1024
+	work := t.TempDir()
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	f, err := zw.Create("big.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(make([]byte, size)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	zipPath := filepath.Join(work, "big.zip")
+	if err := os.WriteFile(zipPath, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	zf, err := os.Open(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = zf.Close() }()
+
+	dest := filepath.Join(work, "out")
+	_, err = extractZip(zf, dest, false, tinyCap, DefaultMaxArchiveEntries)
+	if err == nil {
+		t.Fatal("expected extract to fail once the cap is exceeded")
+	}
+	if !strings.Contains(err.Error(), "maxTotalBytes") {
+		t.Errorf("expected a maxTotalBytes error, got: %v", err)
+	}
+	if fi, statErr := os.Stat(filepath.Join(dest, "big.bin")); statErr == nil {
+		if fi.Size() > tinyCap+1 {
+			t.Errorf("wrote %d bytes, want <= %d (cap+1)", fi.Size(), tinyCap+1)
+		}
+	}
+}
+
+// An archive with more entries than a tiny maxEntries must abort with an
+// entry-count error, leaving the entries beyond the cap unwritten.
+func TestArchiveExtract_MaxEntriesCap(t *testing.T) {
+	data := buildTarWithEntries(t, 5)
+	dest := t.TempDir()
+
+	const maxEntries = 2
+	_, err := extractTar(bytes.NewReader(data), dest, false, DefaultMaxArchiveBytes, maxEntries)
+	if err == nil {
+		t.Fatal("expected extract to fail once the entry-count cap is exceeded")
+	}
+	if !strings.Contains(err.Error(), "maxEntries") {
+		t.Errorf("expected a maxEntries error, got: %v", err)
+	}
+	for i := 0; i < maxEntries; i++ {
+		if _, statErr := os.Stat(filepath.Join(dest, fmt.Sprintf("f%d", i))); statErr != nil {
+			t.Errorf("entry f%d should have been written before the cap tripped: %v", i, statErr)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(dest, fmt.Sprintf("f%d", maxEntries))); statErr == nil {
+		t.Errorf("entry f%d should not have been written past the cap", maxEntries)
+	}
+}
+
+// A normal small archive within both caps must extract fully — the caps
+// must not clip well-formed input.
+func TestArchiveExtract_CapsAllowNormalArchive(t *testing.T) {
+	data := buildTarWithEntries(t, 3)
+	dest := t.TempDir()
+	entries, err := extractTar(bytes.NewReader(data), dest, false, DefaultMaxArchiveBytes, DefaultMaxArchiveEntries)
+	if err != nil {
+		t.Fatalf("normal archive should extract cleanly: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Errorf("expected 3 entries, got %d", len(entries))
+	}
+	for i := 0; i < 3; i++ {
+		if _, statErr := os.Stat(filepath.Join(dest, fmt.Sprintf("f%d", i))); statErr != nil {
+			t.Errorf("missing f%d: %v", i, statErr)
+		}
+	}
+}
+
+// maxTotalBytes / maxEntries opts must thread through the JS-facing
+// archiveExtract binding, not just the direct extractTar/extractZip calls.
+func TestArchiveExtract_CapsThroughBinding(t *testing.T) {
+	work := t.TempDir()
+	zipPath := filepath.Join(work, "big.zip")
+	{
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		f, err := zw.Create("big.bin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(make([]byte, 1<<20)); err != nil { // 1 MiB
+			t.Fatal(err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(zipPath, buf.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dest := filepath.Join(work, "out")
+	vm := goja.New()
+	mk := func(opts map[string]any) goja.FunctionCall {
+		args := []goja.Value{vm.ToValue(zipPath), vm.ToValue(dest), vm.ToValue(opts)}
+		return goja.FunctionCall{Arguments: args}
+	}
+
+	_, err := archiveExtract(context.Background(), mk(map[string]any{"maxTotalBytes": 1024}))
+	if err == nil {
+		t.Fatal("expected maxTotalBytes opt to abort extraction")
+	}
+	if !strings.Contains(err.Error(), "maxTotalBytes") {
+		t.Errorf("expected a maxTotalBytes error, got: %v", err)
 	}
 }

@@ -40,6 +40,21 @@ const (
 	// `maxBytes` option; the sitemap gzip path has no opts surface and
 	// always uses this default.
 	DefaultMaxDecompressBytes = 512 << 20 // 512 MB
+
+	// DefaultMaxArchiveBytes caps the total decompressed size written to
+	// disk across all members by fs.archive.extract. Without a cap, a
+	// small crafted .tar.gz/.zip can be a decompression bomb: each member
+	// is copied via io.Copy with no limit on the individual or cumulative
+	// output size. Callers may override per-call via the `maxTotalBytes`
+	// option.
+	DefaultMaxArchiveBytes = 1 << 30 // 1 GB
+
+	// DefaultMaxArchiveEntries caps the number of members fs.archive.extract
+	// will process from a single archive. Without a cap, an archive with
+	// an enormous entry count can exhaust disk inodes / time even if each
+	// entry is individually tiny. Callers may override per-call via the
+	// `maxEntries` option.
+	DefaultMaxArchiveEntries = 100_000
 )
 
 // readAllCapped reads all of r, capped at max bytes. It uses
