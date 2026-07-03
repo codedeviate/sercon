@@ -4140,6 +4140,154 @@ image as a PNG: hidden LSB data typically shows as structured noise in the
 low planes (plane 0 is the LSB). All three are purely read-only and never
 alter the carrier.
 
+#### 5.11.4 Concepts
+
+`decode`/`open`/`rasterizeSVG` (and each frame's `image` field from
+`decodeFrames`) all return the same **Image handle**: read-only
+`width`/`height`/`format` plus the chainable transform methods listed in
+the handle-methods table above. Every transform returns a *fresh* handle —
+`im.resize(...).grayscale().blur(...)` composes without you tracking
+intermediate copies, and the source handle is never mutated. There's no
+separate "convert format" call: format conversion falls out of the same
+`bytes(format)` / `save(path)` step you'd already use to get output —
+decode a PNG, `.bytes("webp")` it, done.
+
+Three families sit alongside the base decode → transform → encode loop
+without changing its shape:
+
+- **Animated frames (§5.11.1)** — `decodeFrames`/`encodeFrames` treat a
+  GIF/APNG as an ordered list of per-frame Image handles plus
+  timing/placement metadata. Build or inspect an animation by working with
+  individual frames exactly like a single image; a non-animated source
+  just yields a one-frame list.
+- **`image.exif` (§5.11.2)** — reads/writes metadata alongside pixels,
+  independent of geometry/color adjustment; writes are JPEG/PNG only.
+- **`image.stego` (§5.11.3)** — hides/recovers a payload in an image's
+  least-significant bits. It works on raw bytes/paths rather than a
+  chainable handle (`embed` returns `{bytes}`/`{path}`, not an `Image`),
+  because the goal is bit-exact pixel data, not a transform pipeline;
+  `detect`/`analyze`/`bitplane` are read-only companions for inspecting a
+  carrier without modifying it.
+
+**SVG is rasterize-*in* only** — `rasterizeSVG` turns an SVG subset into a
+normal Image handle you then encode as PNG/JPEG/etc.; there's no SVG
+encoder to go back the other way.
+
+#### 5.11.5 Recipes
+
+##### 5.11.5.1 Resize an image and convert its format
+
+```ts
+const im = image.decode(await fs.readBytes("medium.png"));
+const thumb = im.resize(200, 0).grayscale(); // 0 height preserves aspect ratio
+
+// "convert" is just encoding to a different target format —
+// there is no separate convert call.
+await fs.writeBytes("thumb.png", thumb.bytes("png"));
+await fs.writeBytes("thumb.jpg", thumb.bytes("jpeg"));
+runtime.log(`${thumb.width}x${thumb.height} grayscale, written as PNG + JPEG`);
+```
+
+`resize`'s `0` dimension computes the missing side to preserve aspect
+ratio; `bytes(format)` picks the encoder independently of how the source
+was decoded, so one resized handle can feed as many output formats as you
+need. Signatures: §17.7.1 (`image.decode`) — handle methods appear inline
+on its `Image` return type; see the handle-methods table above for the
+full list.
+runnable: `examples/recipes/image-pipeline.ts`
+
+##### 5.11.5.2 Crop and correct orientation
+
+```ts
+const im = image.decode(png);
+
+// Crop a rectangle, then round-trip it through disk.
+im.crop(2, 2, 10, 10).save(tmpPath);
+const cropped = image.open(tmpPath);
+runtime.assert.equal(cropped.width, 10, "cropped width");
+
+// Apply a known EXIF orientation value directly...
+const oriented = image.decode(png).orient(6); // 90° CW pixel transform
+
+// ...or let decode/open read it from the source file's own EXIF tag.
+const upright = image.open("photo.jpg", { autoOrient: true });
+```
+
+`orient(n)` applies one of the 8 EXIF pixel transforms directly when you
+already know the orientation integer; `autoOrient` drives the same
+transform from the source's own `Orientation` tag (a no-op when the tag is
+absent or unreadable — it never throws). `rotate90()`/`rotate180()`/
+`rotate270()` are the lossless quarter-turn siblings of `orient` for a
+fixed rotation that isn't EXIF-driven. Signatures: §17.7.1
+(`image.decode`), §17.7.8 (`image.open`).
+runnable: `examples/scripts/image.ts`
+
+##### 5.11.5.3 Apply brightness / contrast / filter adjustments
+
+```ts
+const im = image.decode(png);
+const out = im.resize(8, 0).grayscale().blur(0.5); // desaturate + soften after resizing
+
+runtime.assert.equal(out.width, 8, "resized width");
+```
+
+`brightness(pct)`/`contrast(pct)`/`saturation(pct)` (a percentage in
+`[-100, 100]`), `gamma(g)`, `sharpen(sigma)`, and `invert()` share the same
+shape as `grayscale()`/`blur(sigma)` above — chain any of them the same
+way; each returns a fresh handle so the source is never mutated.
+Signatures: §17.7.1 (`image.decode`) — see the handle-methods table above
+for the full adjustment/filter method list.
+runnable: `examples/scripts/image.ts`
+
+##### 5.11.5.4 Embed and extract steganographic data
+
+```ts
+const carrier = await fs.readBytes("cover.png");
+const secret = "rendezvous at 0900";
+
+const stego = image.stego.embed(carrier, secret, { password: "p@ss" });
+await fs.writeBytes("stego.png", stego.bytes);
+
+const recovered = image.stego.extract(await fs.readBytes("stego.png"), { password: "p@ss" });
+runtime.assert.equal(recovered, secret, "stego round-trip");
+```
+
+`embed`'s output is always PNG regardless of the carrier's source format —
+re-encoding to anything lossy would destroy the hidden bits. `extract`
+auto-detects the bit depth from the stego header, so higher-capacity
+payloads (`opts.bits`, 1..4) need no extra argument on the way back out;
+`image.stego.capacity(carrier, { bits })` tells you how many bytes fit
+before you embed. Signatures: §17.7.14 (`image.stego.embed`), §17.7.15
+(`image.stego.extract`), §17.7.12 (`image.stego.capacity`).
+runnable: `examples/recipes/stego-hide.ts`, `examples/scripts/stego.ts`
+
+##### 5.11.5.5 Build a two-frame animation
+
+```ts
+const base = image.decode(png);
+
+const spec = {
+  width: base.width,
+  height: base.height,
+  loopCount: 0, // loop forever
+  frames: [
+    { image: base,             delayMs: 100 },
+    { image: base.grayscale(), delayMs: 200 },
+  ],
+};
+
+const gif = image.encodeFrames(spec, { format: "gif" });
+const back = image.decodeFrames(gif.bytes);
+runtime.assert.equal(back.frames.length, 2, "round-trip frame count");
+```
+
+Each frame's `image` is a regular Image handle, so building an animation
+is just assembling already-familiar handles into a `frames` array — swap
+`{ format: "gif" }` for `{ format: "apng" }` for full-color output (GIF
+palettizes to 256 colors with dithering). Signatures: §17.7.3
+(`image.encodeFrames`), §17.7.2 (`image.decodeFrames`).
+runnable: `examples/scripts/image-anim.ts`
+
 ### 5.12 `web`
 
 Fetch & parse web documents. Three families — `web.feed` (RSS/Atom/JSON
