@@ -4362,8 +4362,7 @@ listeners).
 Every `server.*` listener follows the same lifecycle, whichever protocol
 you pick: `await server.<proto>.listen({…})` binds **synchronously** (a
 port already in use throws before any Promise settles) and returns a
-**handle** — `address` (a `proto/host:port` string, with the OS-chosen
-port filled in when you pass `port: 0`) and `close()`. Binding parks a
+**handle** — `address` (a `proto/host:port` string; `server.tcp.listen`/`server.udp.listen` accept `port: 0` for an OS-assigned ephemeral port, while `server.http`, `server.https`, and `server.smtp` require an explicit port) and `close()`. Binding parks a
 `HoldRun` sentinel (§6.1) so the engine's event loop stays alive while
 the listener is up; a script that just does `await server.http.listen(…)`
 and returns will keep running until something calls `close()` — that's
