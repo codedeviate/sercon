@@ -26,6 +26,15 @@ type fetchOpts struct {
 	user      string
 	pass      string
 	maxBytes  int64
+	// redirectGuard, when set, is installed as the http.Client's CheckRedirect
+	// for this fetch — it runs on every redirect hop, not just the initial
+	// URL. Left nil by default (and by parseFetchOpts), so ordinary
+	// author-named fetches (web.feed.load, web.html.load, a sitemap's own
+	// top-level URL) keep stdlib's default "follow up to 10 redirects"
+	// behavior unchanged. Callers that fetch a DATA-named target (attacker-
+	// controllable, e.g. a sitemapindex child <loc>) can set this to
+	// re-validate each hop instead of trusting only the pre-redirect URL.
+	redirectGuard func(req *http.Request, via []*http.Request) error
 }
 
 // parseFetchOpts reads a JS opts object into fetchOpts, reusing the same option
@@ -55,10 +64,13 @@ func parseFetchOpts(opts map[string]any) fetchOpts {
 // here (callers decide; sitemap-expand tolerates per-child non-2xx).
 func webFetch(ctx context.Context, url string, fo fetchOpts) (body []byte, finalURL string, status int, err error) {
 	client := &http.Client{Timeout: fo.timeout}
-	if !fo.follow {
+	switch {
+	case !fo.follow:
 		client.CheckRedirect = func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
+	case fo.redirectGuard != nil:
+		client.CheckRedirect = fo.redirectGuard
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

@@ -141,6 +141,48 @@ func TestSitemap_ExpandRestrictsToSameSite(t *testing.T) {
 	}
 }
 
+// A same-site child <loc> that 302-redirects to a cross-site/internal target
+// is the redirect-bypass variant of the SSRF that TestSitemap_ExpandRestrictsToSameSite
+// covers: the pre-redirect URL passes sameSite, but the hop itself leaves the
+// parent's site. That hop must be blocked — the child lands in errors[] and
+// the redirect target (an unroutable metadata-style address, as in the
+// sibling test) is never actually dialed: http.Client's CheckRedirect runs
+// before the second request is issued, so a blocking guard prevents the
+// dial entirely.
+func TestSitemap_ExpandBlocksCrossSiteRedirect(t *testing.T) {
+	const crossSiteTarget = "http://169.254.169.254/x.xml"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ok.xml", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(urlsetXML))
+	})
+	mux.HandleFunc("/redirect.xml", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, crossSiteTarget, http.StatusFound)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	idx := `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+	  <sitemap><loc>` + srv.URL + `/ok.xml</loc></sitemap>
+	  <sitemap><loc>` + srv.URL + `/redirect.xml</loc></sitemap></sitemapindex>`
+	sm, err := loadSitemap(context.Background(), srv.URL+"/index.xml", []byte(idx), nil, true)
+	if err != nil {
+		t.Fatalf("loadSitemap: %v", err)
+	}
+	// only the non-redirecting same-site child's 2 urls are merged; the
+	// redirecting child is blocked at the hop and never lands its urls.
+	if got := len(sm["urls"].([]map[string]any)); got != 2 {
+		t.Fatalf("merged urls = %d, want 2 (redirecting child blocked)", got)
+	}
+	errs := sm["errors"].([]map[string]any)
+	if len(errs) != 1 || errs[0]["url"] != srv.URL+"/redirect.xml" {
+		t.Fatalf("expected 1 blocked redirecting child, got %v", errs)
+	}
+	if msg, _ := errs[0]["error"].(string); !strings.Contains(msg, "cross-site") {
+		t.Fatalf("expected cross-site redirect error message, got %v", errs[0]["error"])
+	}
+}
+
 func TestSitemap_GzipAndExpand(t *testing.T) {
 	// child served gzipped; index points to it; expand must merge + gunzip.
 	var childURL string
