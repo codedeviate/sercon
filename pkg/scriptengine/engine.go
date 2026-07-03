@@ -25,6 +25,21 @@ import (
 // `runtime = {argv: ...}` global.
 const reservedRuntimeName = "runtime"
 
+// runCtxGlobalName is the vm-global key Engine.Run stashes the current Run's
+// context.Context under, in the same spirit as "__resolve"/"__reject": an
+// internal handoff that lives on the per-Run goja.Runtime rather than on the
+// Engine, so it never needs explicit cross-Run clearing (a fresh vm is
+// created every Run — see the package doc comment on per-Run isolation).
+// PromisifyAsync (pkg/scriptengine/bindings.go) reads it via
+// runContextFromVM so in-flight async work observes the Run's
+// timeout/cancellation instead of hanging on context.Background().
+const runCtxGlobalName = "__runCtx"
+
+// runCtxHolder wraps a context.Context so it round-trips through goja's
+// vm.Set/vm.Get/Export cleanly as a concrete Go pointer type, rather than
+// relying on goja's reflection-based wrapping of a bare interface value.
+type runCtxHolder struct{ ctx context.Context }
+
 // Options configures an Engine.
 type Options struct {
 	// Timeout is the per-script wall clock limit. Zero disables the timeout.
@@ -568,6 +583,12 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 		vmRef.Store(vm)
 		vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
 		installPolyfills(vm)
+
+		// Stash this Run's context on the vm before any registrations run, so
+		// any PromisifyAsync-based binding constructed by a factory below can
+		// read it the moment a script calls it. See runCtxGlobalName's doc
+		// comment for why this lives on the vm rather than on the Engine.
+		_ = vm.Set(runCtxGlobalName, &runCtxHolder{ctx: runCtx})
 
 		if err := e.applyRegistrations(vm, loop); err != nil {
 			scriptErr = err

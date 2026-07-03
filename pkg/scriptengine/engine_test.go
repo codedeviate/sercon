@@ -259,6 +259,49 @@ func TestRun_CtxCancelInterrupts(t *testing.T) {
 	}
 }
 
+// 8b. PromisifyAsync work must observe the Run's own context, not
+// context.Background() — otherwise the Run's timeout/cancel never reaches
+// in-flight async work and it can never be aborted (a hung DB query,
+// oversized read, etc. would leak forever). A work func that blocks on
+// <-ctx.Done() must unblock (and report the ctx's cancellation) once the
+// Run times out; with context.Background() it would never see Done and
+// hang until the process exits.
+func TestRun_PromisifyAsyncObservesRunContextCancellation(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{
+		ScriptRoot:     t.TempDir(),
+		DisableConsole: true,
+		Timeout:        150 * time.Millisecond,
+	})
+	observed := make(chan error, 1)
+	if err := eng.RegisterFactory("blockUntilCancel", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
+		return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+			<-ctx.Done()
+			err := ctx.Err()
+			observed <- err
+			return nil, err
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err := eng.Run(context.Background(), "block.ts", `await blockUntilCancel();`)
+	elapsed := time.Since(start)
+	if !errors.Is(err, scriptengine.ErrScriptTimeout) {
+		t.Fatalf("expected ErrScriptTimeout from Run, got %v", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Run took too long to return: %s", elapsed)
+	}
+	select {
+	case werr := <-observed:
+		if werr == nil {
+			t.Fatal("work's ctx.Err() was nil after Done() fired")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("work never observed the Run's context cancellation — still blocked on context.Background()")
+	}
+}
+
 // 9. .d.ts output for a small fixture binding set matches a golden file.
 func TestWriteTypes_Golden(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})

@@ -57,7 +57,7 @@ type AsyncBinding struct {
 func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work func(ctx context.Context, call goja.FunctionCall) (T, error)) AsyncBinding {
 	fn := func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := vm.NewPromise()
-		ctx := context.Background()
+		ctx := runContextFromVM(vm)
 
 		// goja_nodejs/eventloop only counts setTimeout/setInterval/setImmediate
 		// as "live" tasks; RunOnLoop alone does not keep loop.Run from returning.
@@ -100,6 +100,25 @@ func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work fun
 	tsRet := tsType(newTypeCtx(), reflect.TypeOf((*T)(nil)).Elem())
 
 	return AsyncBinding{Func: fn, TSReturnType: tsRet}
+}
+
+// runContextFromVM retrieves the current Run's context.Context, stashed on
+// vm by Engine.Run under runCtxGlobalName (see engine.go) — the same
+// "internal global on vm" mechanism used for __resolve/__reject. This lets
+// PromisifyAsync (a package-level generic function with no Engine handle of
+// its own) observe the enclosing Run's timeout/cancellation without
+// widening its public signature. Falls back to context.Background() if
+// nothing is stashed (e.g. a vm not produced by Engine.Run), matching the
+// previous behaviour for that edge case.
+func runContextFromVM(vm *goja.Runtime) context.Context {
+	v := vm.Get(runCtxGlobalName)
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return context.Background()
+	}
+	if h, ok := v.Export().(*runCtxHolder); ok && h != nil && h.ctx != nil {
+		return h.ctx
+	}
+	return context.Background()
 }
 
 // unwrapAsyncBindings walks v and replaces any AsyncBinding with its bare
