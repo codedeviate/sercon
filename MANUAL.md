@@ -834,30 +834,49 @@ Signatures: §17.4.11 (`sha256`); the same shape covers `md5`/`sha1`/
 `sha384`/`sha512`/`sha3_256`/`sha3_512`/`blake3`/`crc32` (§17.4.7–§17.4.15).
 Source: `examples/scripts/hash.ts`.
 
-##### 5.3.5.2 Authenticate a message with HMAC (via a JWT)
+##### 5.3.5.2 Verify a payload's integrity with a hash claim
 
-sercon has no bare HMAC function — the HMAC algorithms live inside
-`crypto.jwt.sign`/`validate` (`HS256` is the default `opts.algorithm`).
-Signing a payload with a shared secret and checking it later is the
-practical equivalent of "HMAC-sign a message":
+A JWT can carry more than its own claims — embed a hash of some other
+payload as a custom claim, and the token becomes a tamper-evident anchor
+for data that travels separately (e.g. a JSON body alongside an
+`Authorization` header, or a message queued for later processing). This
+is a different job from §5.3.5.4's "sign a claims object": there the JWT
+*is* the message; here the JWT *attests to* a message it doesn't carry.
 
 ```ts
-const secret = "shared-with-the-verifier-only";
-const token = crypto.jwt.sign({ sub: "u-42", action: "transfer" }, secret);
+// Sender: hash the payload, embed the digest as a claim, sign the token.
+const payload = JSON.stringify({ userId: "u-42", action: "transfer", amount: 1234.56 });
+const payloadHash = crypto.hash.sha256(payload);
 
-// ... later, on the receiving side ...
+const secret = "shared-with-the-verifier-only";
+const now = Math.floor(Date.now() / 1000);
+const token = crypto.jwt.sign(
+  { sub: "u-42", iat: now, exp: now + 3600, phash: payloadHash },
+  secret,
+);
+
+// ... payload and token travel separately; time passes ...
+
+// Receiver: validate the token, then re-hash the payload and compare.
 const verdict = crypto.jwt.validate(token, secret);
-if (verdict.valid) {
-  runtime.log("authentic, claims:", verdict.claims);
-} else {
-  runtime.log("rejected:", verdict.reason); // e.g. "signature is invalid"
+if (!verdict.valid) {
+  throw new Error(`token rejected: ${verdict.reason}`);
 }
+const rehash = crypto.hash.sha256(payload);
+if (rehash !== verdict.claims.phash) {
+  throw new Error("payload does not match the hash claim — tampered in transit");
+}
+runtime.log("payload integrity verified");
 ```
 
-A tampered secret or payload makes `validate` resolve `{ valid: false,
-reason }` rather than throw — check `.valid`, don't wrap this in
-try/catch. Signatures: §17.4.16 (`sign`), §17.4.17 (`validate`).
-Source: `examples/scripts/jwt.ts`, `examples/scripts/advanced/crypto-pipeline.ts`.
+`validate` resolves `{ valid: false, reason }` on a bad signature or
+expired token rather than throwing — check `.valid` before trusting
+`claims`. The hash comparison is a second, independent check: it catches
+a payload that was swapped out *without* touching the token (the
+signature alone can't detect that, since the token never contained the
+payload itself). Signatures: §17.4.11 (`sha256`), §17.4.16 (`sign`),
+§17.4.17 (`validate`).
+runnable: `examples/scripts/advanced/crypto-pipeline.ts`
 
 ##### 5.3.5.3 Encrypt and decrypt with age
 
