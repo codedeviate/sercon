@@ -1000,6 +1000,91 @@ families are **synchronous**; `charset.*`, `jq.*`, and `diff.*` return
   `Uint8Array`). There is no separate capacity call — zero-width characters
   cost only 8 runes per payload byte, so practical limits are high.
 
+#### 5.4.1 Concepts
+
+sercon is UTF-8 internally and at every script boundary — strings coming
+back from `fs`, `net`, and `text.str.*` are already UTF-8. `text.charset.*`
+is the escape hatch for bytes that *aren't*: a legacy log file, a mainframe
+export, or an HTTP body served as `Content-Type: text/html;
+charset=Shift_JIS`.
+
+- **`text.str.*`** — synchronous string helpers. These operate purely on
+  JS strings (already UTF-8) and never consult an external encoding
+  table; `reverse` and the `pad` family count **runes**, not bytes, so
+  multi-byte text survives round-trips intact.
+- **`text.charset.*`** — **async** (Promise-returning) conversion between
+  a named WHATWG/HTML5 encoding (ISO-8859-1, Windows-1252, Shift_JIS, GBK,
+  …) and UTF-8, plus best-guess `detect`. Reach for this whenever bytes
+  didn't originate as UTF-8 — decoding a legacy file, an HTTP body with a
+  non-UTF-8 `charset=` header, or data round-tripped through a system
+  that only speaks Latin-1. `encode` has no lossy fallback: a character
+  with no representation in the target charset rejects rather than being
+  silently dropped.
+
+#### 5.4.2 Recipes
+
+##### 5.4.2.1 Decode non-UTF-8 bytes to a string
+
+```ts
+// Round-trip through a legacy charset: encode a UTF-8 string to
+// Windows-1252 bytes, then decode those bytes back to UTF-8.
+const bytes = await text.charset.encode("café crème — 1985", "Windows-1252");
+const decoded = await text.charset.decode(bytes, "Windows-1252");
+runtime.log(decoded); // "café crème — 1985"
+
+// Unknown provenance? detect() ranks candidates by confidence (0-100).
+const guess = await text.charset.detect(bytes);
+runtime.log(guess.charset, guess.confidence);
+```
+
+`charset` names are WHATWG/HTML5 encoding names or aliases (UTF-8,
+ISO-8859-1, Windows-1252, Shift_JIS, GBK, …); an unknown name or bytes
+invalid for that encoding rejects. Signatures: §17.12.3 (`encode`),
+§17.12.1 (`decode`), §17.12.2 (`detect`).
+runnable: `examples/scripts/charset.ts`
+
+##### 5.4.2.2 Use the string utilities
+
+```ts
+text.str.trim("  hi  ");           // "hi"
+text.str.ltrim("xxhi", "x");       // "hi"
+text.str.rtrim("hixx", "x");       // "hi"
+
+text.str.pad("7", 3, "0", "left"); // "007"
+text.str.lpad("7", 3, "0");        // "007" — shortcut for pad(side: "left")
+text.str.rpad("7", 3, ".");        // "7.."
+
+text.str.reverse("café");          // "éfac" — rune-aware, not byte-aware
+text.str.stripHtml("<b>hi</b>");   // "hi"
+```
+
+`trim`/`ltrim`/`rtrim` take a PHP-style cutset **mask**, not a prefix —
+every character in the mask is stripped (default mask is the whitespace
+set `" \t\n\r\v\f"`). `reverse` and the `pad` family count runes, so
+multi-byte text stays intact. Signatures: §17.12.32 (`trim`), §17.12.22
+(`ltrim`), §17.12.29 (`rtrim`), §17.12.25 (`pad`), §17.12.21 (`lpad`),
+§17.12.28 (`rpad`), §17.12.27 (`reverse`), §17.12.31 (`stripHtml`).
+
+##### 5.4.2.3 Base64 encode/decode
+
+```ts
+const enc = text.str.base64Encode("hi");
+const dec = text.str.base64Decode(enc);
+runtime.log(enc, dec); // "aGk=" "hi"
+
+// URL-safe alphabet (no padding on encode) for URLs, filenames, JWT segments.
+const urlSafe = text.str.base64UrlEncode("a?b");
+const back = text.str.base64UrlDecode(urlSafe);
+runtime.log(urlSafe, back); // "YT9i" "a?b"
+```
+
+`base64Encode`/`base64Decode` are the **standard** RFC 4648 alphabet with
+padding — URL-safe input (`-`/`_`) is *not* auto-detected and throws.
+`base64UrlEncode`/`base64UrlDecode` use the URL-safe alphabet (RFC 4648
+§5): encode emits no padding, and decode accepts both padded and unpadded
+input. Signatures: §17.12.16 (`base64Encode`), §17.12.15 (`base64Decode`),
+§17.12.18 (`base64UrlEncode`), §17.12.17 (`base64UrlDecode`).
+
 ### 5.5 `codec`
 
 Binary-format codecs (was `format` in v0.8.0). Members:
