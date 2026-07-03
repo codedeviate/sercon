@@ -6,6 +6,8 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -77,5 +79,89 @@ func TestLoadHTTP_PublicNeedsConfirm(t *testing.T) {
 	}
 	if targetIsPublic(context.Background(), "127.0.0.1") {
 		t.Error("127.0.0.1 should be private (guard allows it)")
+	}
+}
+
+// TestRedirectGuard_BlocksPublicWithoutConfirm covers the redirect-hop guard
+// at the Go level (deterministic, no engine / no traffic): a redirect whose
+// Location is a public IP literal must be refused without confirm:true,
+// while a redirect to loopback is allowed. IP literals classify without a
+// DNS lookup (see targetIsPublic), so this trips reliably offline.
+func TestRedirectGuard_BlocksPublicWithoutConfirm(t *testing.T) {
+	ctx := context.Background()
+	guard := redirectGuard(ctx, false)
+
+	pub, err := url.Parse("http://8.8.8.8/next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gerr := guard(&http.Request{URL: pub}, []*http.Request{{}}); gerr == nil {
+		t.Fatal("expected a redirect-to-public-host error, got nil")
+	} else if !strings.Contains(gerr.Error(), "public host") {
+		t.Fatalf("error = %q, want it to mention the public host refusal", gerr)
+	}
+
+	loop, err := url.Parse("http://127.0.0.1/next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gerr := guard(&http.Request{URL: loop}, []*http.Request{{}}); gerr != nil {
+		t.Fatalf("redirect to loopback should be allowed, got %v", gerr)
+	}
+}
+
+// TestRedirectGuard_ConfirmAllowsPublic asserts confirm:true lets a redirect
+// to a public host through, matching the initial-URL guard's behaviour.
+func TestRedirectGuard_ConfirmAllowsPublic(t *testing.T) {
+	guard := redirectGuard(context.Background(), true)
+	pub, err := url.Parse("http://8.8.8.8/next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gerr := guard(&http.Request{URL: pub}, []*http.Request{{}}); gerr != nil {
+		t.Fatalf("confirm:true should allow a redirect to a public host, got %v", gerr)
+	}
+}
+
+// TestRedirectGuard_CapsRedirectChain asserts the 10-hop cap applies
+// regardless of confirm, independent of the public-host check.
+func TestRedirectGuard_CapsRedirectChain(t *testing.T) {
+	guard := redirectGuard(context.Background(), true)
+	loop, err := url.Parse("http://127.0.0.1/next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	via := make([]*http.Request, 10)
+	if gerr := guard(&http.Request{URL: loop}, via); gerr == nil {
+		t.Fatal("expected a redirect-cap error after 10 hops, got nil")
+	} else if !strings.Contains(gerr.Error(), "10 redirects") {
+		t.Fatalf("error = %q, want it to mention the redirect cap", gerr)
+	}
+}
+
+// TestLoadHTTP_FollowsNonPublicRedirect is an end-to-end regression check:
+// net.load.http against a loopback server that 302s to another loopback
+// server must still complete normally, proving the new CheckRedirect hook
+// doesn't break ordinary same-network redirects.
+func TestLoadHTTP_FollowsNonPublicRedirect(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	defer target.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	got := runCaptureScript(t, fmt.Sprintf(`
+		const r = await net.load.http({ url: %q, requests: 5, concurrency: 2 });
+		__capture(r);
+	`, redirector.URL), nil)
+	m, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("report not an object: %#v", got)
+	}
+	if fmt.Sprintf("%v", m["completed"]) != "5" {
+		t.Fatalf("completed = %v, want 5 (redirect to loopback should still be followed)", m["completed"])
 	}
 }

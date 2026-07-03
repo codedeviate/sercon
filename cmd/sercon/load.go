@@ -62,6 +62,25 @@ func targetIsPublic(ctx context.Context, host string) bool {
 	return false
 }
 
+// redirectGuard returns an http.Client.CheckRedirect that re-applies the
+// public-target guardrail to every redirect hop, not just the initial URL.
+// The HTTP client follows redirects transparently, so without this a
+// data-named target (a redirect Location, which is attacker/server
+// controllable) could bounce a "confirmed non-public" load test onto a
+// public host, bypassing the dual-use guard entirely. The chain is also
+// capped at 10 hops as a sanity backstop.
+func redirectGuard(ctx context.Context, confirm bool) func(req *http.Request, via []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("net.load.http: stopped after 10 redirects")
+		}
+		if targetIsPublic(ctx, req.URL.Hostname()) && !confirm {
+			return fmt.Errorf("net.load.http: refusing to follow redirect to public host %q without confirm:true", req.URL.Hostname())
+		}
+		return nil
+	}
+}
+
 // percentiles returns nearest-rank percentile values (ps in 0..100) over xs.
 // xs is sorted in place. Empty xs → zeros.
 func percentiles(xs []float64, ps ...float64) []float64 {
@@ -164,6 +183,7 @@ func loadHTTPOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 			MaxIdleConnsPerHost: concurrency * 2,
 			MaxConnsPerHost:     concurrency * 2,
 		},
+		CheckRedirect: redirectGuard(ctx, confirm),
 	}
 
 	// Stop condition.
