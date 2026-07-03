@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
+	"golang.org/x/net/publicsuffix"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
@@ -112,12 +114,44 @@ func parseSitemap(data []byte) (map[string]any, error) {
 	return nil, fmt.Errorf("sitemap: document is neither <urlset> nor <sitemapindex>")
 }
 
+// sameSite reports whether child is safe to fetch on behalf of a sitemapindex
+// served from parent: same scheme and same registrable domain (eTLD+1). This
+// constrains expansion of DATA-named targets (child <loc> URLs read from a
+// remote, attacker-controllable document) — it does not apply to
+// author-named fetch paths elsewhere in the codebase. eTLD+1 has no public
+// suffix for bare IPs / "localhost", so those fall back to an exact-host
+// compare, which correctly treats e.g. a cloud metadata IP as cross-site
+// relative to a normal domain parent.
+func sameSite(parent, child string) bool {
+	pu, err := url.Parse(parent)
+	if err != nil {
+		return false
+	}
+	cu, err := url.Parse(child)
+	if err != nil {
+		return false
+	}
+	if pu.Scheme != cu.Scheme {
+		return false
+	}
+	pd, err1 := publicsuffix.EffectiveTLDPlusOne(pu.Hostname())
+	cd, err2 := publicsuffix.EffectiveTLDPlusOne(cu.Hostname())
+	if err1 != nil || err2 != nil {
+		return pu.Hostname() == cu.Hostname()
+	}
+	return pd == cd
+}
+
 // loadSitemap parses data and, when expand is true and it's an index, fetches
 // each child sitemap (bounded by maxSitemapChildren), gunzips, and merges their
 // urls into the result. Per-child failures are captured in errors[], not thrown.
 // Children that are themselves sitemapindex documents yield 0 urls — expansion is
-// limited to one level (their child sitemaps are not recursed).
-func loadSitemap(ctx context.Context, data []byte, optsMap map[string]any, expand bool) (map[string]any, error) {
+// limited to one level (their child sitemaps are not recursed). Expansion is
+// further restricted to children that are same-site (see sameSite) as
+// parentURL — the sitemapindex's own source URL — since child <loc> values
+// are attacker-controllable data from the fetched document, not
+// maintainer-authored URLs, and following them cross-site is an SSRF vector.
+func loadSitemap(ctx context.Context, parentURL string, data []byte, optsMap map[string]any, expand bool) (map[string]any, error) {
 	sm, err := parseSitemap(data)
 	if err != nil {
 		return nil, err
@@ -132,6 +166,10 @@ func loadSitemap(ctx context.Context, data []byte, optsMap map[string]any, expan
 	for i, child := range children {
 		if i >= maxSitemapChildren {
 			errs = append(errs, map[string]any{"url": child, "error": fmt.Sprintf("skipped: exceeds child cap of %d", maxSitemapChildren)})
+			continue
+		}
+		if !sameSite(parentURL, child) {
+			errs = append(errs, map[string]any{"url": child, "error": "skipped: cross-site child (same-site only)"})
 			continue
 		}
 		body, _, status, ferr := webFetch(ctx, child, fo)
@@ -182,7 +220,7 @@ func sitemapLoadWork(ctx context.Context, call goja.FunctionCall) (map[string]an
 	if err != nil {
 		return nil, err
 	}
-	return loadSitemap(ctx, body, optsMap, expand)
+	return loadSitemap(ctx, url, body, optsMap, expand)
 }
 
 // sitemapNamespace builds the web.sitemap sub-namespace.
