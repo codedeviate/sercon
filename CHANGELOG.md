@@ -8,6 +8,23 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.84.2] — 2026-07-03
+
+### Documentation
+- Manual cookbook expansion (continued): Concepts primers + Recipes added
+  across the data & crypto reserved globals — `crypto` (§5.3), `text` (§5.4),
+  `codec` (§5.5), `db` (§5.8), `image` (§5.11) — and CLI & workflow patterns
+  (§4.6). Recipes are illustrative and derived from the runnable example
+  scripts; signatures cross-link the generated §17 reference.
+- New getting-started/orientation layer in §2 Quickstart: a §2.1 Concepts
+  primer (mental model + a map table of every reserved global → purpose →
+  deep-section link) and §2.2 Recipes (first script, arguments/environment, an
+  HTTP call, file I/O, and discovering the API surface).
+- Corrected the reserved-global count from "twelve" to "thirteen" (the `audio`
+  global, §5.13, was added after the count was written) in §2/§4.1/§5 and the
+  `registerSurface` comment, and completed the stale §4.3 declaration list
+  (added `image`, `web`, `audio`).
+
 ## [0.84.1] — 2026-07-03
 
 ### Documentation
