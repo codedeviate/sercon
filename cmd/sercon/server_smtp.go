@@ -180,20 +180,31 @@ func smtpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 
 	stoppedPromise, stoppedResolve, _ := vm.NewPromise()
 	closed := atomic.Bool{}
+	closeOnce := atomic.Bool{}
 
 	// gracefulClose performs the same teardown the JS close() does; shared
-	// so both the explicit close() and the shutdown hook drive it. Both
-	// server.Close() and ln.Close() are goroutine-safe, and release()
-	// (ClearTimeout via the loop's aux-job queue) is safe off-loop, so this
-	// can run from the serve signal handler's non-loop goroutine.
+	// so both the explicit close() and the shutdown hook drive it. Guarded
+	// by closeOnce (mirrors doClose in server_tcp.go) so the body runs at
+	// most once: GracefulShutdown snapshots the hook slice under a mutex and
+	// releases it before running hooks, so an explicit close()'s removeHook()
+	// can lose the race against a concurrent GracefulShutdown — both the JS
+	// close and the shutdown hook then reach here at the same time. Without
+	// the guard that's a real crash, not just wasted work: go-smtp's
+	// Server.Close() does a non-atomic check-then-close(s.done), so two
+	// concurrent calls can both pass the "not yet closed" check and both
+	// call close(s.done), panicking with "close of closed channel" and
+	// taking down the whole `sercon serve` process. ln.Close() and release()
+	// are individually safe to call more than once, but are gated by the
+	// same guard for symmetry and to keep this a true run-once teardown.
 	gracefulClose := func() {
+		if closeOnce.Swap(true) {
+			return
+		}
 		// server.Close() closes s.done so Serve returns cleanly, but it
 		// only closes listeners already registered in s.listeners. If it
 		// races ahead of the `go server.Serve(ln)` registration step, Serve
 		// would otherwise block in Accept forever. Closing ln directly
-		// guarantees Accept unblocks regardless of ordering. Double-close is
-		// harmless (ignored). release() is idempotent — the serve goroutine
-		// below also releases once Serve returns.
+		// guarantees Accept unblocks regardless of ordering.
 		_ = server.Close()
 		_ = ln.Close()
 		release()
