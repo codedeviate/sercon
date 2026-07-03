@@ -287,8 +287,9 @@ func classifyErr(err error) int {
 	}
 }
 
-// registerSurface wires sercon's twelve top-level script-facing globals:
-// runtime, crypto, text, codec, fs, net, db, server, services, tui, image, web.
+// registerSurface wires sercon's thirteen top-level script-facing globals:
+// runtime, crypto, text, codec, fs, net, db, server, services, tui, image,
+// web, audio.
 // Each is registered via RegisterNamespaceFactory so per-Run
 // constructions that need the loop (Promise-returning bindings, TUI
 // controller, server listeners) get fresh state every run. JSDoc lives
@@ -296,7 +297,7 @@ func classifyErr(err error) int {
 // namespace at Run time.
 func registerSurface(e *scriptengine.Engine) error {
 	// `console` is a browser/Node-compat shim (see console.go). Registered
-	// alongside the twelve reserved globals; the CLI disables the engine's
+	// alongside the thirteen reserved globals; the CLI disables the engine's
 	// built-in console (Options.DisableConsole) so this one is authoritative.
 	if err := e.RegisterNamespaceFactory("console", func(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 		return consoleNamespace(vm)

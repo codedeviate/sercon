@@ -65,6 +65,141 @@ eng.Register("upper", strings.ToUpper)
 val, err := eng.RunFile(ctx, "scripts/main.ts")
 ```
 
+### 2.1 Concepts
+
+sercon runs a `.ts` file as a program. It is a **pure-Go TypeScript runner**:
+[goja] executes the JavaScript, [esbuild] transpiles the TypeScript ahead of
+it, and there is no Node and no cgo. A few things are worth knowing before you
+write your first script:
+
+- **Async is built in.** Top-level `await`, Promises, and `setTimeout` all
+  work; a script that returns a pending Promise keeps running until it settles.
+- **Each run is isolated.** Every invocation (and every `--watch` re-run) gets
+  a fresh runtime — no global or module state leaks between runs.
+- **Batteries are top-level globals.** You don't `import` the built-ins; HTTP,
+  files, crypto, databases, and more are always-present globals (mapped below).
+- **Binding errors throw.** When a built-in fails it throws a normal JS
+  exception you can `try`/`catch` — see [§13](#13-error-semantics).
+
+**The reserved globals — what's in the box.** sercon scripts get **thirteen**
+reserved top-level globals plus a `console` shim. Use them directly; there is
+no enclosing namespace. This is the map — follow the link for the full
+treatment.
+
+| Global | What it's for | Reference |
+|---|---|---|
+| `runtime` | script-host scaffolding: `argv`, `env`, secrets, `log`, `sleep`, `exit` | [§5.2](#52-runtime) |
+| `crypto` | hashing, JWT, age encryption, random bytes | [§5.3](#53-crypto) |
+| `text` | charset decode, string utilities, base64, `jq` | [§5.4](#54-text) |
+| `codec` | encode/decode: barcode, check-digit, compression, docs, dotenv, perl, php, spreadsheets, TOML, XML | [§5.5](#55-codec) |
+| `fs` | file read/write, `mkdir`, `stat`, `exists`, `remove` | [§5.6](#56-fs) |
+| `net` | HTTP client, email send, DNS, TCP/UDP, ping | [§5.7](#57-net) |
+| `db` | SQL databases: query, exec, transactions | [§5.8](#58-db) |
+| `server` | inbound listeners: HTTP/HTTPS, SMTP, WebSocket | [§6](#6-servers) |
+| `services` | external-CLI wrappers: git, gh, ai, agentBrowser, webdriver | [§5.9](#59-services) |
+| `tui` | terminal-UI widgets | [§5.10](#510-tui) |
+| `image` | decode/encode/transform images | [§5.11](#511-image) |
+| `web` | fetch + parse: feeds, sitemaps, HTML | [§5.12](#512-web) |
+| `audio` | read/write/convert audio, steganography | [§5.13](#513-audio) |
+| `console` | browser/Node-compatible logging shim | [§5.1](#51-console-browsernode-compatibility) |
+
+The full per-binding signatures live in the generated
+[§17 binding reference](#17-binding-reference-generated) and in
+`examples/scripts/sercon.d.ts`.
+
+### 2.2 Recipes
+
+Five short tasks to get from an empty file to a working script. Each hands off
+to the section with the full detail.
+
+#### 2.2.1 Write and run your first script
+
+Save a `.ts` file and run it. `console.log` (or `runtime.log`) writes one clean
+line to stdout.
+
+```ts
+// first.ts
+const name = "world";
+console.log(`hello, ${name}`);
+```
+```bash
+sercon first.ts        # → hello, world
+```
+
+**Notes**
+- `console.log`/`runtime.log` print space-joined, prefix-free lines; objects
+  render as JSON (see [§5.1](#51-console-browsernode-compatibility)).
+
+#### 2.2.2 Read input: arguments and environment
+
+User arguments arrive on `runtime.argv` (everything after `--`); environment
+variables come from `runtime.env.get` (returns `undefined` when unset).
+
+```ts
+// greet.ts
+const who = runtime.argv[2] ?? "world";       // argv = [prog, script, ...userArgs]
+const shout = runtime.env.get("SHOUT") === "1";
+console.log(shout ? `HELLO, ${who.toUpperCase()}!` : `hello, ${who}`);
+```
+```bash
+sercon greet.ts -- Ada           # → hello, Ada          (see §4.1)
+SHOUT=1 sercon greet.ts -- Ada   # → HELLO, ADA!
+```
+
+**Notes**
+- Argument passing and `--` are covered in [§4.1](#41-passing-arguments----and-runtimeargv);
+  `runtime` in [§5.2](#52-runtime).
+
+#### 2.2.3 Call an HTTP API
+
+`net.http.request(method, url, opts?)` returns `{ status, ok, headers, body,
+bodyBytes, url }`. It does **not** throw on 4xx/5xx — check `ok`/`status`
+yourself.
+
+```ts
+// stars.ts
+const res = await net.http.request("GET", "https://api.github.com/repos/codedeviate/sercon");
+if (!res.ok) throw new Error(`HTTP ${res.status}`);
+const repo = JSON.parse(res.body);
+console.log(`${repo.full_name}: ${repo.stargazers_count} stars`);
+```
+
+**Notes**
+- Headers, retries, timeouts, auth, and multipart uploads: [§5.7](#57-net) /
+  [§17](#17-binding-reference-generated).
+
+#### 2.2.4 Read and write a file
+
+`fs.readText` / `fs.writeText` are Promise-returning; there is no sandbox, so
+paths are ordinary filesystem paths.
+
+```ts
+// count.ts
+const text = await fs.readText("input.txt");
+const lines = text.split("\n").length;
+await fs.writeText("report.txt", `lines: ${lines}\n`);
+console.log(`wrote report.txt (${lines} lines)`);
+```
+
+**Notes**
+- `writeText` fails if the parent directory is missing (Node-like) — `mkdir`
+  first. Bytes, `stat`, `exists`, `remove`: [§5.6](#56-fs).
+
+#### 2.2.5 Find the rest of the API
+
+Generate editor autocomplete and browse the full surface.
+
+```bash
+sercon init                    # writes sercon.d.ts + jsconfig.json for your editor (§4.3)
+sercon --emit-dts sercon.d.ts  # emit just the .d.ts to a path
+sercon --examples              # colorized, in-depth tour of every feature area
+```
+
+**Notes**
+- The complete signatures are the generated [§17 binding reference](#17-binding-reference-generated);
+  editor tooling is [§4.3](#43-editor-autocomplete-sercon-init) /
+  [§4.6.8](#468-emit-tooling-artifacts-for-your-editor).
+
 ## 3. Library API — `pkg/scriptengine`
 
 ### 3.1 `Engine`, `Options`, `New`
@@ -384,7 +519,7 @@ runs, after the ESM→CJS rewrite + async IIFE wrapper) and every
 module-resolution event, so debugging an unexpected resolve target or a
 mis-rewritten import is straightforward.
 
-The CLI registers twelve reserved top-level globals; see the next section.
+The CLI registers thirteen reserved top-level globals; see the next section.
 
 ### 4.2 `--watch`: re-run on file change
 
@@ -681,13 +816,13 @@ sercon -emit-dts sercon.d.ts     # emit just the reserved-global .d.ts directly
 
 ## 5. Reserved globals (script surface)
 
-sercon scripts get twelve reserved top-level globals. Use them directly —
+sercon scripts get thirteen reserved top-level globals. Use them directly —
 there is no enclosing namespace. The full per-binding reference is the
 generated `examples/scripts/sercon.d.ts`; this section is the at-a-glance
 prose.
 
 **Reserved names:** `runtime`, `crypto`, `text`, `codec`, `fs`, `net`,
-`db`, `server`, `services`, `tui`, `image`, `web`. User code can shadow these with a
+`db`, `server`, `services`, `tui`, `image`, `web`, `audio`. User code can shadow these with a
 local `let`/`const`/`var` per normal JavaScript scoping — sercon does
 not intervene at runtime. `server` (added in v0.10.0) covers inbound
 listeners — see [section 6](#6-servers) for the long-form treatment.
@@ -702,7 +837,7 @@ internally.
 
 ### 5.1 `console` (browser/Node compatibility)
 
-Beyond the twelve reserved globals, sercon provides a `console` global so
+Beyond the thirteen reserved globals, sercon provides a `console` global so
 scripts pasted from a browser or Node run unchanged:
 
 | Method | Stream |
