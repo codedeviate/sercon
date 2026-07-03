@@ -3053,7 +3053,7 @@ runtime.assert.ok(need.satisfied, "git must be installed");
 
 See §5.9.6 for the full `doctor` report shape.
 
-##### 5.9.8.2 Render markdown/typst to a PDF
+##### 5.9.8.2 Render a Typst document to a PDF
 
 ```ts
 if (!services.typst.available) {
