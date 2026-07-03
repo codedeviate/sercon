@@ -4855,6 +4855,185 @@ optional management fields merged into the signed
 `MarkItemsAsShipped`, refund → `ReturnItems`; no `amount`/`rows`), swedbankpay
 `{ transaction: { … } }`.
 
+#### 16.1.8 Recipes
+
+Task-oriented snippets. `kcov3` is used as the worked example unless a recipe
+is provider-specific; swap the create/get method per the §16.1.7 table for
+another provider. Signatures are in the §17 reference.
+
+##### 16.1.8.1 Create a checkout and read its status
+
+```ts
+import { kcov3 } from "paymentproviders";
+const kco = kcov3.client();                 // reads KCO_* from env; test by default
+
+const order = await kco.createCheckout({
+  purchase_country: "SE",
+  purchase_currency: "SEK",
+  locale: "sv-SE",
+  order_amount: 15000,                      // minor units → 150.00 SEK
+  order_lines: [{ name: "Widget", quantity: 1, unit_price: 15000, total_amount: 15000 }],
+});
+const status = await kco.getCheckout(order.order_id);
+```
+
+**Notes**
+- Other providers: `netsv1.createPayment`, `sveacheckout2`/`qlirov2.createOrder`,
+  `swedbankpayv3.createPaymentOrder` (see §16.1.7).
+
+##### 16.1.8.2 Capture — full, then partial
+
+Capture up to the authorised amount, in one or more calls. Amounts are minor
+units.
+
+```ts
+// full capture
+await kco.capturePayment(orderId, { amount: 15000 });
+
+// or capture in parts (e.g. per shipment)
+await kco.capturePayment(orderId, { amount: 5000, description: "First shipment" });
+await kco.capturePayment(orderId, { amount: 10000, description: "Second shipment" });
+```
+
+**Notes**
+- `capturePayment` is the method name on every provider; the input shape
+  varies — netsv1 `{ amount, orderItems? }`, sveacheckout2 `{ amount, rows? }`,
+  qlirov2 takes optional management fields merged into a signed
+  `{ RequestId, OrderId, MerchantApiKey }` envelope (not `{ amount, rows }`),
+  swedbankpay `{ transaction: { amount, vatAmount, … } }`.
+
+##### 16.1.8.3 Refund a captured payment
+
+```ts
+await kco.refundPayment(orderId, { amount: 5000, description: "Returned item" });
+```
+
+**Notes**
+- Refund at most what was captured. Same method name across providers; input
+  shape as for capture.
+
+##### 16.1.8.4 Cancel an uncaptured payment
+
+```ts
+await kco.cancelPayment(orderId);
+```
+
+**Notes**
+- Cancel/void releases an authorisation that hasn't been captured; once
+  captured, refund instead.
+
+##### 16.1.8.5 SwedbankPay: follow HAL operations
+
+SwedbankPay is HAL-driven: capture/refund/cancel are wrappers over
+`operation(paymentOrder, rel, body)`, which follows the link with that `rel` on
+the fetched payment order. Use `operation()` directly for any other rel.
+
+```ts
+import { swedbankpayv3 } from "paymentproviders";
+const spp = swedbankpayv3.client();
+
+const po = await spp.getPaymentOrder("/psp/paymentorders/abc123");
+await spp.capturePayment(po, {
+  transaction: { amount: 15000, vatAmount: 3000, description: "Capture", payeeReference: "cap-1" },
+});
+
+// any other operation exposed on the payment order:
+await spp.operation(po, "abort", { paymentorder: { operation: "Abort", abortReason: "CancelledByConsumer" } });
+```
+
+**Notes**
+- Pass either the fetched payment-order object or its URL; the library resolves
+  the operation's href from the object's `operations`/links.
+
+##### 16.1.8.6 Signed-body providers (svea, qliro)
+
+sveacheckout2 and qlirov2 authenticate by signing the request body; the library
+computes the signature for you. You only control the body shape and amounts — a
+mismatch (wrong amount, malformed rows) comes back as a `PaymentError`, not a
+silent failure.
+
+```ts
+import { qlirov2 } from "paymentproviders";
+const qliro = qlirov2.client();            // QLIRO_API_KEY + QLIRO_APIPASSWORD
+
+const order = await qliro.createOrder({
+  Currency: "SEK",
+  MerchantReference: "order-1",
+  OrderItems: [{ MerchantReference: "sku-1", Type: "Product", Quantity: 1, PricePerItemIncVat: 15000 }],
+});
+```
+
+##### 16.1.8.7 Retry safely with idempotency (kcov3)
+
+kcov3 mutations send a unique `klarna-idempotency-key`, so re-issuing the same
+capture/refund after a transient failure won't apply it twice.
+
+```ts
+async function captureWithRetry(kco: any, orderId: string, amount: number) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await kco.capturePayment(orderId, { amount });   // idempotent server-side
+    } catch (e: any) {
+      if (e.status >= 500 && attempt < 2) continue;           // transient — safe to retry
+      throw e;
+    }
+  }
+}
+```
+
+##### 16.1.8.8 Configure auth and pick test vs prod
+
+Put credentials in a `.env` and run with `--env-file`. Mind the naming traps.
+
+```ts
+// sercon --env-file .env script.ts
+// .env:
+//   KCO_MERCHANT_ID=...      KCO_SHARED_SECRET=...     KCO_ENV=test
+//   SCO_MERCHANT_ID=...      SCO_SECRET_KEY=...          (svea uses SCO_, not SVEA_)
+//   QLIRO_API_KEY=...        QLIRO_APIPASSWORD=...       (no underscore in APIPASSWORD)
+//   SWEDBANKPAY_ACCESS_TOKEN=...  SWEDBANKPAY_MERCHANT_ID=...
+import { kcov3 } from "paymentproviders";
+const test = kcov3.client();                 // test by default
+const prod = kcov3.client({ env: "prod" });  // or set KCO_ENV=prod
+```
+
+##### 16.1.8.9 Handle a PaymentError
+
+```ts
+import { kcov3 } from "paymentproviders";
+try {
+  await kcov3.client().getPayment("no-such-order");
+} catch (e: any) {
+  // PaymentError { provider, status, body, requestId? }
+  if (e.status === 404) {
+    runtime.log("not found");
+  } else if (e.status >= 500) {
+    runtime.log(`${e.provider} server error — safe to retry (reqId ${e.requestId})`);
+  } else {
+    throw e;   // other 4xx are deterministic — fix the request, don't retry
+  }
+}
+```
+
+##### 16.1.8.10 Poll a payment to a terminal status
+
+```ts
+async function waitForTerminal(kco: any, orderId: string, timeoutMs = 30000): Promise<any> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const o = await kco.getPayment(orderId);
+    if (o.status === "CAPTURED" || o.status === "CANCELLED") return o;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${orderId}`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+```
+
+**Notes**
+- Terminal status strings and the `status` field name are provider-specific —
+  check each provider's `get*` response shape; the polling structure is the
+  reusable part.
+
 ### 16.2 `favro`
 
 A TypeScript client for the [Favro](https://favro.com) API, compiled into the
