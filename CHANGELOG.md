@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Security
+- `net.email.send` attachment `filename` and `contentType` are now RFC-encoded
+  via `mime.FormatMediaType` instead of being interpolated raw into the MIME
+  part headers. A filename containing a `"` can no longer break out of the
+  `Content-Disposition: filename="…"` parameter (parameter injection), non-ASCII
+  filenames are RFC 2231-encoded, and an invalid `contentType` falls back to
+  `application/octet-stream`. (CR/LF header injection was already fixed in
+  v0.86.0; this closes the remaining parameter-level gap.)
+
 ## [0.86.0] — 2026-07-04
 
 ### Security

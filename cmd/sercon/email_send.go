@@ -277,6 +277,50 @@ func sanitizeHeaderValue(s string) string {
 	}, s)
 }
 
+// attachmentContentDisposition builds an RFC-compliant
+// `Content-Disposition: attachment; filename=...` header value for an
+// attachment filename. mime.FormatMediaType quotes/escapes any embedded `"`
+// so a filename can't break out of the filename="..." parameter and inject
+// a second bogus parameter, and RFC-2231-encodes non-ASCII filenames
+// (filename*=utf-8''...). sanitizeHeaderValue runs first as a
+// belt-and-suspenders pass — FormatMediaType already refuses to encode
+// values containing CR/LF, but stripping them upfront keeps that guarantee
+// independent of the mime package's internals. If FormatMediaType can't
+// format the value at all (e.g. it still round-trips to something
+// pathological), fall back to a bare "attachment" with no filename rather
+// than emit a malformed or attacker-controlled header.
+func attachmentContentDisposition(filename string) string {
+	clean := sanitizeHeaderValue(filename)
+	if v := mime.FormatMediaType("attachment", map[string]string{"filename": clean}); v != "" {
+		return "Content-Disposition: " + v
+	}
+	return "Content-Disposition: attachment"
+}
+
+// attachmentContentType validates/normalizes a script-supplied attachment
+// content type via mime.ParseMediaType + mime.FormatMediaType so an
+// injected `;` or `"` can't smuggle in extra Content-Type parameters and so
+// a malformed value can't produce a broken header. A garbage or empty
+// content type (ParseMediaType error, or FormatMediaType refusing to
+// re-encode the parsed result) falls back to application/octet-stream.
+// Legitimate values like "application/pdf" or "text/plain; charset=utf-8"
+// round-trip unchanged (parameter quoting style aside).
+func attachmentContentType(contentType string) string {
+	const fallback = "application/octet-stream"
+	clean := sanitizeHeaderValue(strings.TrimSpace(contentType))
+	if clean == "" {
+		return fallback
+	}
+	mediatype, params, err := mime.ParseMediaType(clean)
+	if err != nil {
+		return fallback
+	}
+	if v := mime.FormatMediaType(mediatype, params); v != "" {
+		return v
+	}
+	return fallback
+}
+
 // composeMIME assembles the message bytes.
 //
 //	text only         → text/plain
@@ -356,8 +400,8 @@ func writeAltParts(msg *bytes.Buffer, boundary, text, html string) {
 func writeAttachmentParts(msg *bytes.Buffer, boundary string, atts []sendAttachment) {
 	for _, a := range atts {
 		fmt.Fprintf(msg, "--%s\r\n", boundary)
-		fmt.Fprintf(msg, "Content-Type: %s\r\n", sanitizeHeaderValue(a.ContentType))
-		fmt.Fprintf(msg, `Content-Disposition: attachment; filename="%s"`, sanitizeHeaderValue(a.Filename))
+		fmt.Fprintf(msg, "Content-Type: %s\r\n", attachmentContentType(a.ContentType))
+		fmt.Fprintf(msg, "%s", attachmentContentDisposition(a.Filename))
 		fmt.Fprintf(msg, "\r\nContent-Transfer-Encoding: base64\r\n\r\n")
 		b64 := base64.StdEncoding.EncodeToString(a.Bytes)
 		for i := 0; i < len(b64); i += 76 {
