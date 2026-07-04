@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.86.0] — 2026-07-04
+
 ### Security
 - `web.sitemap.load(url, { expand: true })` now only fetches same-site
   child sitemaps — same scheme and registrable domain as the index's own
