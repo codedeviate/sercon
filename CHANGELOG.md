@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.86.1] — 2026-07-04
+
 ### Security
 - `net.email.send` attachment `filename` and `contentType` are now RFC-encoded
   via `mime.FormatMediaType` instead of being interpolated raw into the MIME
