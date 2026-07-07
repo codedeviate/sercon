@@ -35,17 +35,24 @@ func (p pcmAudio) frames() int {
 	return len(p.samples) / p.channels
 }
 
-// down16 normalizes a source sample of srcBits depth to a 16-bit signed value.
-func down16(v, srcBits int) int16 {
+// down16 normalizes a source sample of srcBits depth to a 16-bit signed
+// value. unsigned8 must be set for 8-bit sources whose samples are unsigned
+// (WAV: 0..255, silence at 128); it is ignored for other bit depths.
+func down16(v, srcBits int, unsigned8 bool) int16 {
 	switch {
 	case srcBits == 16:
 		return int16(v)
 	case srcBits > 16:
 		return int16(v >> (srcBits - 16))
 	case srcBits == 8:
-		// go-audio yields 8-bit PCM as signed-centered ints already in -128..127
-		// for AIFF and 0..255 for unsigned WAV; verify against the lib and adjust
-		// if a constant 128 offset appears (the round-trip test is the oracle).
+		// WAV delivers 8-bit PCM as unsigned 0..255 (128 == silence), so
+		// recenter to signed before scaling. AIFF/FLAC 8-bit samples are
+		// already signed — go-audio hands AIFF back as an unsigned byte, but
+		// the int16(v<<8) wraparound reconstructs the correct signed value,
+		// so leave those untouched.
+		if unsigned8 {
+			return int16((v - 128) << 8)
+		}
 		return int16(v << 8)
 	default:
 		return int16(v << (16 - srcBits))
@@ -77,14 +84,16 @@ func sniffAudioFormat(data []byte) string {
 }
 
 // pcmFromIntBuffer converts a go-audio IntBuffer to canonical 16-bit PCM.
-func pcmFromIntBuffer(buf *goaudio.IntBuffer) pcmAudio {
+// unsigned8 must be true for WAV sources (8-bit WAV samples are unsigned);
+// false for AIFF, whose 8-bit samples are signed.
+func pcmFromIntBuffer(buf *goaudio.IntBuffer, unsigned8 bool) pcmAudio {
 	src := buf.SourceBitDepth
 	if src == 0 {
 		src = 16
 	}
 	out := make([]int16, len(buf.Data))
 	for i, v := range buf.Data {
-		out[i] = down16(v, src)
+		out[i] = down16(v, src, unsigned8)
 	}
 	return pcmAudio{
 		sampleRate: buf.Format.SampleRate,
@@ -154,7 +163,7 @@ func decodeWAV(data []byte) (pcmAudio, error) {
 	if err != nil {
 		return pcmAudio{}, err
 	}
-	return pcmFromIntBuffer(buf), nil
+	return pcmFromIntBuffer(buf, true), nil
 }
 
 func encodeWAV(p pcmAudio) ([]byte, error) {
@@ -178,7 +187,7 @@ func decodeAIFF(data []byte) (pcmAudio, error) {
 	if err != nil {
 		return pcmAudio{}, err
 	}
-	return pcmFromIntBuffer(buf), nil
+	return pcmFromIntBuffer(buf, false), nil
 }
 
 func encodeAIFF(p pcmAudio) ([]byte, error) {
@@ -258,7 +267,7 @@ func decodeFLAC(data []byte) (pcmAudio, error) {
 		n := fr.Subframes[0].NSamples
 		for i := 0; i < n; i++ {
 			for c := 0; c < ch; c++ {
-				samples = append(samples, down16(int(fr.Subframes[c].Samples[i]), bits))
+				samples = append(samples, down16(int(fr.Subframes[c].Samples[i]), bits, false))
 			}
 		}
 	}
