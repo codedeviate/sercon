@@ -529,6 +529,11 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 	)
 
 	done := make(chan struct{})
+	// started is closed by the loop callback once it has stored vmRef (which
+	// happens right after loop.Run's setRunning). The watcher waits on it
+	// before interrupting/terminating so Terminate never runs concurrently
+	// with an un-started loop.Run (see the watcher tail).
+	started := make(chan struct{})
 
 	// Watcher: interrupts the runtime on ctx cancellation or timeout. The
 	// deadline is resettable mid-run via SetRunTimeout (resetCh): a value > 0
@@ -572,6 +577,22 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 			}
 			break
 		}
+		// Wait until the loop callback has started (vmRef stored, right after
+		// loop.Run's setRunning) before interrupting/terminating. Without
+		// this, a watcher that trips before setRunning would (a) skip
+		// vm.Interrupt (vmRef still nil) and (b) call loop.Terminate()
+		// concurrently with an un-started loop.Run — Terminate's Stop() sees
+		// running==false, returns immediately, and its job/aux walk then
+		// races run()'s (a data race on loop.jobs/auxJobs), while setRunning
+		// resets terminated=false so the script runs on unkillable. Gating on
+		// `started` guarantees setRunning already ran, so Stop() waits for
+		// run() to exit and the interrupt is always delivered. If the Run
+		// finished on its own first, exit without terminating.
+		select {
+		case <-started:
+		case <-done:
+			return
+		}
 		if vm := vmRef.Load(); vm != nil {
 			if timedOut.Load() {
 				vm.Interrupt(ErrScriptTimeout)
@@ -584,6 +605,22 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 
 	loop.Run(func(vm *goja.Runtime) {
 		vmRef.Store(vm)
+		close(started)
+
+		// If the deadline/cancel already tripped before the script starts,
+		// skip running it. The watcher (gated on `started`) will also deliver
+		// an interrupt, but returning here avoids running registrations and
+		// the script body for an already-dead Run.
+		if timedOut.Load() {
+			scriptErr = ErrScriptTimeout
+			return
+		}
+		if err := runCtx.Err(); err != nil {
+			canceled.Store(true)
+			scriptErr = err
+			return
+		}
+
 		vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
 		installPolyfills(vm)
 
