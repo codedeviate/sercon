@@ -146,7 +146,20 @@ func runTypst(ctx context.Context, argv []string) (string, error) {
 	return string(out), nil
 }
 
-func typstVersionOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+// typstNoArgsExtract is the extract half for the argument-less typst ops.
+func typstNoArgsExtract(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil }
+
+// typstOptsExtract pulls the single opts-object argument out of the JS call
+// on the event loop (compile/query are both called as op(opts?)).
+func typstOptsExtract(call goja.FunctionCall) (map[string]any, error) {
+	opts, _ := firstArgMap(call)
+	if opts == nil {
+		opts = map[string]any{}
+	}
+	return opts, nil
+}
+
+func typstVersionOp(ctx context.Context, _ struct{}) (any, error) {
 	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	out, err := runTypst(runCtx, []string{"--version"})
@@ -156,7 +169,7 @@ func typstVersionOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
 	return strings.TrimSpace(out), nil
 }
 
-func typstFontsOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func typstFontsOp(ctx context.Context, _ struct{}) (any, error) {
 	runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	out, err := runTypst(runCtx, []string{"fonts"})
@@ -205,11 +218,7 @@ func resolveTypstInput(opts map[string]any, needTmpOut bool) (inputPath, tmpDir 
 	return inputPath, tmpDir, cleanup, nil
 }
 
-func typstCompileOp(ctx context.Context, call goja.FunctionCall) (any, error) {
-	opts, _ := firstArgMap(call)
-	if opts == nil {
-		opts = map[string]any{}
-	}
+func typstCompileOp(ctx context.Context, opts map[string]any) (any, error) {
 	format := strings.ToLower(optString(opts, "format", ""))
 	output := optString(opts, "output", "")
 	if format == "" {
@@ -262,11 +271,7 @@ func typstCompileOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 	return scriptengine.NewOrdered().Set("format", format).Set("path", output), nil
 }
 
-func typstQueryOp(ctx context.Context, call goja.FunctionCall) (any, error) {
-	opts, _ := firstArgMap(call)
-	if opts == nil {
-		opts = map[string]any{}
-	}
+func typstQueryOp(ctx context.Context, opts map[string]any) (any, error) {
 	selector := optString(opts, "selector", "")
 	if selector == "" {
 		return nil, errors.New("services.typst.query: `selector` is required (e.g. \"<label>\" or \"heading\")")
@@ -299,9 +304,9 @@ func typstQueryOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 func typstNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"available": toolAvailable("typst"),
-		"version":   scriptengine.PromisifyAsyncLegacy(vm, loop, typstVersionOp),
-		"fonts":     scriptengine.PromisifyAsyncLegacy(vm, loop, typstFontsOp),
-		"compile":   scriptengine.PromisifyAsyncLegacy(vm, loop, typstCompileOp),
-		"query":     scriptengine.PromisifyAsyncLegacy(vm, loop, typstQueryOp),
+		"version":   scriptengine.PromisifyAsync(vm, loop, typstNoArgsExtract, typstVersionOp),
+		"fonts":     scriptengine.PromisifyAsync(vm, loop, typstNoArgsExtract, typstFontsOp),
+		"compile":   scriptengine.PromisifyAsync(vm, loop, typstOptsExtract, typstCompileOp),
+		"query":     scriptengine.PromisifyAsync(vm, loop, typstOptsExtract, typstQueryOp),
 	}
 }

@@ -20,20 +20,26 @@ func skipNoPoppler(t *testing.T, bin string) {
 	}
 }
 
-// callArgs builds a FunctionCall from positional argument values (on a throwaway
-// runtime; the ops only Export() their args).
-func callArgs(vm *goja.Runtime, vs ...any) goja.FunctionCall {
+// callArgs builds a FunctionCall from positional argument values (on a
+// throwaway runtime) and runs it through the real on-loop extract half,
+// returning the plain-Go args the work half receives in production.
+func callArgs(t *testing.T, vm *goja.Runtime, vs ...any) pdfSrcArgs {
+	t.Helper()
 	args := make([]goja.Value, len(vs))
 	for i, v := range vs {
 		args[i] = vm.ToValue(v)
 	}
-	return goja.FunctionCall{Arguments: args}
+	a, err := pdfSrcExtract("test")(goja.FunctionCall{Arguments: args})
+	if err != nil {
+		t.Fatalf("pdf extract: %v", err)
+	}
+	return a
 }
 
 func TestPdfInfoOp(t *testing.T) {
 	skipNoPoppler(t, "pdfinfo")
 	vm := goja.New()
-	got, err := pdfInfoOp(context.Background(), callArgs(vm, samplePDF))
+	got, err := pdfInfoOp(context.Background(), callArgs(t, vm, samplePDF))
 	if err != nil {
 		t.Fatalf("pdfInfoOp: %v", err)
 	}
@@ -49,7 +55,7 @@ func TestPdfInfoOp(t *testing.T) {
 func TestPdfToImageOp_Bytes(t *testing.T) {
 	skipNoPoppler(t, "pdftoppm")
 	vm := goja.New()
-	got, err := pdfToImageOp(context.Background(), callArgs(vm, samplePDF, map[string]any{
+	got, err := pdfToImageOp(context.Background(), callArgs(t, vm, samplePDF, map[string]any{
 		"page": 1, "format": "png",
 	}))
 	if err != nil {
@@ -71,7 +77,7 @@ func TestPdfToImageOp_DestPaths(t *testing.T) {
 	skipNoPoppler(t, "pdftoppm")
 	vm := goja.New()
 	dir := t.TempDir()
-	got, err := pdfToImageOp(context.Background(), callArgs(vm, samplePDF, map[string]any{
+	got, err := pdfToImageOp(context.Background(), callArgs(t, vm, samplePDF, map[string]any{
 		"dest": dir + "/page", "format": "png",
 	}))
 	if err != nil {
@@ -91,7 +97,7 @@ func TestPdfToImageOp_DestPaths(t *testing.T) {
 func TestPdfToImageOp_MultiPageRequiresDest(t *testing.T) {
 	// Pure-validation path: no poppler needed (it throws before spawning).
 	vm := goja.New()
-	_, err := pdfToImageOp(context.Background(), callArgs(vm, samplePDF, map[string]any{
+	_, err := pdfToImageOp(context.Background(), callArgs(t, vm, samplePDF, map[string]any{
 		"firstPage": 1, "lastPage": 2, // a range with no dest must throw
 	}))
 	if err == nil {
@@ -102,7 +108,7 @@ func TestPdfToImageOp_MultiPageRequiresDest(t *testing.T) {
 func TestPdfToTextOp(t *testing.T) {
 	skipNoPoppler(t, "pdftotext")
 	vm := goja.New()
-	got, err := pdfToTextOp(context.Background(), callArgs(vm, samplePDF))
+	got, err := pdfToTextOp(context.Background(), callArgs(t, vm, samplePDF))
 	if err != nil {
 		t.Fatalf("pdfToTextOp: %v", err)
 	}
@@ -115,7 +121,7 @@ func TestPdfToTextOp(t *testing.T) {
 func TestPdfToHTMLOp(t *testing.T) {
 	skipNoPoppler(t, "pdftohtml")
 	vm := goja.New()
-	got, err := pdfToHTMLOp(context.Background(), callArgs(vm, samplePDF))
+	got, err := pdfToHTMLOp(context.Background(), callArgs(t, vm, samplePDF))
 	if err != nil {
 		t.Fatalf("pdfToHTMLOp: %v", err)
 	}
@@ -127,7 +133,7 @@ func TestPdfToHTMLOp(t *testing.T) {
 
 func TestPdfVersionOp(t *testing.T) {
 	skipNoPoppler(t, "pdftoppm")
-	got, err := pdfVersionOp(context.Background(), goja.FunctionCall{})
+	got, err := pdfVersionOp(context.Background(), struct{}{})
 	if err != nil {
 		t.Fatalf("pdfVersionOp: %v", err)
 	}

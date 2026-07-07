@@ -38,14 +38,28 @@ type wssProbeResult struct {
 	PingMs      float64 `json:"pingMs"`
 }
 
-func wssProbe(ctx context.Context, call goja.FunctionCall) (wssProbeResult, error) {
+// wssProbeArgs carries the on-loop-extracted arguments of net.probe.wss.
+type wssProbeArgs struct {
+	url     string
+	timeout time.Duration
+	doPing  bool
+}
+
+func wssProbeExtract(call goja.FunctionCall) (wssProbeArgs, error) {
 	url := call.Argument(0).String()
 	if url == "" {
-		return wssProbeResult{}, errors.New("net.wss: url required")
+		return wssProbeArgs{}, errors.New("net.wss: url required")
 	}
 	opts := optsAsMap(call)
-	timeout := optMillis(opts, "timeout", 10*time.Second)
-	doPing := optBool(opts, "ping", true)
+	return wssProbeArgs{
+		url:     url,
+		timeout: optMillis(opts, "timeout", 10*time.Second),
+		doPing:  optBool(opts, "ping", true),
+	}, nil
+}
+
+func wssProbe(ctx context.Context, args wssProbeArgs) (wssProbeResult, error) {
+	url, timeout, doPing := args.url, args.timeout, args.doPing
 
 	dialCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

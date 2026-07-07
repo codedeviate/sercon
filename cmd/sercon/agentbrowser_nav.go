@@ -46,36 +46,39 @@ func (h *abHandle) runNav(ctx context.Context, verb string, operands ...string) 
 	return parseJSON(out)
 }
 
-func (h *abHandle) open(ctx context.Context, call goja.FunctionCall) (any, error) {
-	url := strArg(call, 0)
+func (h *abHandle) open(ctx context.Context, url string) (any, error) {
 	if url == "" {
 		return nil, errors.New("agentBrowser.open: url is required")
 	}
 	return h.runNav(ctx, "open", url)
 }
 
-func (h *abHandle) back(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func (h *abHandle) back(ctx context.Context, _ struct{}) (any, error) {
 	return h.runNav(ctx, "back")
 }
-func (h *abHandle) forward(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func (h *abHandle) forward(ctx context.Context, _ struct{}) (any, error) {
 	return h.runNav(ctx, "forward")
 }
-func (h *abHandle) reload(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func (h *abHandle) reload(ctx context.Context, _ struct{}) (any, error) {
 	return h.runNav(ctx, "reload")
 }
 
-// wait accepts a selector string or a number of milliseconds.
-func (h *abHandle) wait(ctx context.Context, call goja.FunctionCall) (any, error) {
+// waitExtract accepts a selector string or a number of milliseconds and
+// stringifies it on the event loop.
+func waitExtract(call goja.FunctionCall) (string, error) {
 	arg := call.Argument(0)
 	if arg == nil || goja.IsUndefined(arg) || goja.IsNull(arg) {
-		return nil, errors.New("agentBrowser.wait: selector or ms required")
+		return "", errors.New("agentBrowser.wait: selector or ms required")
 	}
 	// goja numbers stringify cleanly (e.g. 500 -> "500").
-	return h.runNav(ctx, "wait", fmt.Sprintf("%v", arg.Export()))
+	return fmt.Sprintf("%v", arg.Export()), nil
 }
 
-func (h *abHandle) connect(ctx context.Context, call goja.FunctionCall) (any, error) {
-	target := strArg(call, 0)
+func (h *abHandle) wait(ctx context.Context, target string) (any, error) {
+	return h.runNav(ctx, "wait", target)
+}
+
+func (h *abHandle) connect(ctx context.Context, target string) (any, error) {
 	if target == "" {
 		return nil, errors.New("agentBrowser.connect: port or url required")
 	}
@@ -86,8 +89,7 @@ func (h *abHandle) connect(ctx context.Context, call goja.FunctionCall) (any, er
 // @ref) or back to the top document with "main". Subsequent click/fill/find/
 // snapshot operate inside that frame. Nest by calling sequentially; cross-origin
 // frames work (CDP frame switch). Backed by `agent-browser frame <target>`.
-func (h *abHandle) frame(ctx context.Context, call goja.FunctionCall) (any, error) {
-	target := strArg(call, 0)
+func (h *abHandle) frame(ctx context.Context, target string) (any, error) {
 	if target == "" {
 		return nil, errors.New("agentBrowser.frame: target required (a CSS selector, an @ref, or \"main\")")
 	}
@@ -96,11 +98,11 @@ func (h *abHandle) frame(ctx context.Context, call goja.FunctionCall) (any, erro
 
 // addNav wires the navigation methods into the handle object.
 func (h *abHandle) addNav(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["open"] = h.p(vm, loop, h.open)
-	obj["back"] = h.p(vm, loop, h.back)
-	obj["forward"] = h.p(vm, loop, h.forward)
-	obj["reload"] = h.p(vm, loop, h.reload)
-	obj["wait"] = h.p(vm, loop, h.wait)
-	obj["connect"] = h.p(vm, loop, h.connect)
-	obj["frame"] = h.p(vm, loop, h.frame)
+	obj["open"] = abAsync(vm, loop, abStrArg0, h.open)
+	obj["back"] = abAsync(vm, loop, abNoArgs, h.back)
+	obj["forward"] = abAsync(vm, loop, abNoArgs, h.forward)
+	obj["reload"] = abAsync(vm, loop, abNoArgs, h.reload)
+	obj["wait"] = abAsync(vm, loop, waitExtract, h.wait)
+	obj["connect"] = abAsync(vm, loop, abStrArg0, h.connect)
+	obj["frame"] = abAsync(vm, loop, abStrArg0, h.frame)
 }

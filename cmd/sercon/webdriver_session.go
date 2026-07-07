@@ -26,26 +26,28 @@ var wdNavMethods = map[string]bool{
 
 // addNav wires the navigation methods onto the session handle object.
 func (s *wdSession) addNav(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["get"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["get"] = wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
 		url := strArg(call, 0)
 		if url == "" {
-			return nil, errors.New("webdriver.get: url is required")
+			return "", errors.New("webdriver.get: url is required")
 		}
+		return url, nil
+	}, func(_ context.Context, url string) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.Get(url)) })
 	})
-	obj["url"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["url"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.wd.CurrentURL() })
 	})
-	obj["title"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["title"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.wd.Title() })
 	})
-	obj["back"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["back"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.Back()) })
 	})
-	obj["forward"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["forward"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.Forward()) })
 	})
-	obj["refresh"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["refresh"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.Refresh()) })
 	})
 }
@@ -64,11 +66,12 @@ func wdOK(err error) (any, error) {
 // --- page ---
 
 func (s *wdSession) addPage(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["source"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["source"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.wd.PageSource() })
 	})
-	obj["screenshot"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		path := strArg(call, 0)
+	obj["screenshot"] = wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
+		return strArg(call, 0), nil
+	}, func(_ context.Context, path string) (any, error) {
 		return s.do(func() (any, error) {
 			data, err := s.wd.Screenshot()
 			if err != nil {
@@ -81,16 +84,33 @@ func (s *wdSession) addPage(obj map[string]any, vm *goja.Runtime, loop *eventloo
 
 // --- executeScript ---
 
-func (s *wdSession) execScript(async bool, vm *goja.Runtime, loop *eventloop.EventLoop) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(_ context.Context, call goja.FunctionCall) (any, error) {
-		js := strArg(call, 0)
-		if js == "" {
-			return nil, errors.New("webdriver.executeScript: a script string is required")
-		}
-		var args []any
-		if arr, ok := call.Argument(1).Export().([]any); ok {
-			args = arr
-		}
+// execScriptArgs carries the on-loop-extracted executeScript arguments.
+type execScriptArgs struct {
+	js   string
+	args []any
+}
+
+// execScriptExtract reads the (script, args) pair from the call on the loop.
+func execScriptExtract(call goja.FunctionCall) (execScriptArgs, error) {
+	js := strArg(call, 0)
+	if js == "" {
+		return execScriptArgs{}, errors.New("webdriver.executeScript: a script string is required")
+	}
+	var args []any
+	if arr, ok := call.Argument(1).Export().([]any); ok {
+		args = arr
+	}
+	return execScriptArgs{js: js, args: args}, nil
+}
+
+func (s *wdSession) execScript(async bool, vm *goja.Runtime, loop *eventloop.EventLoop) func(context.Context, execScriptArgs) (any, error) {
+	// TODO(promisify-vm): wrapScriptResult constructs vm/loop-capturing element
+	// handle maps here, in the work goroutine. Construction executes no VM code
+	// (goja conversion happens at resolve time, on the loop), but it still hands
+	// vm/loop to work; being fully clean would need an on-loop post-work hook in
+	// PromisifyAsync to build the handles after the script call completes.
+	return func(_ context.Context, a execScriptArgs) (any, error) {
+		js, args := a.js, a.args
 		return s.do(func() (any, error) {
 			var (
 				res any
@@ -110,8 +130,8 @@ func (s *wdSession) execScript(async bool, vm *goja.Runtime, loop *eventloop.Eve
 }
 
 func (s *wdSession) addScript(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["executeScript"] = wdAsync(vm, loop, s.execScript(false, vm, loop))
-	obj["executeScriptAsync"] = wdAsync(vm, loop, s.execScript(true, vm, loop))
+	obj["executeScript"] = wdAsync(vm, loop, execScriptExtract, s.execScript(false, vm, loop))
+	obj["executeScriptAsync"] = wdAsync(vm, loop, execScriptExtract, s.execScript(true, vm, loop))
 }
 
 // --- cookies ---
@@ -133,41 +153,57 @@ func cookieFromMap(m map[string]any) *selenium.Cookie {
 }
 
 func (s *wdSession) addCookies(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["cookies"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["cookies"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.wd.GetCookies() })
 	})
-	obj["setCookie"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["setCookie"] = wdAsync(vm, loop, func(call goja.FunctionCall) (map[string]any, error) {
 		m, ok := call.Argument(0).Export().(map[string]any)
 		if !ok || m["name"] == nil {
 			return nil, errors.New("webdriver.setCookie: a { name, value, ... } object is required")
 		}
+		return m, nil
+	}, func(_ context.Context, m map[string]any) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.AddCookie(cookieFromMap(m))) })
 	})
-	obj["deleteCookie"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["deleteCookie"] = wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
 		name := strArg(call, 0)
 		if name == "" {
-			return nil, errors.New("webdriver.deleteCookie: name is required")
+			return "", errors.New("webdriver.deleteCookie: name is required")
 		}
+		return name, nil
+	}, func(_ context.Context, name string) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.DeleteCookie(name)) })
 	})
-	obj["deleteAllCookies"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["deleteAllCookies"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.DeleteAllCookies()) })
 	})
 }
 
 // --- waits ---
 
+// waitForArgs carries the on-loop-extracted arguments shared by waitFor and
+// clickWhenReady: a resolved locator plus readiness options (defaults differ
+// per binding and are applied in each extract).
+type waitForArgs struct {
+	by, value string
+	timeout   int
+	visible   bool
+	enabled   bool
+	poll      time.Duration
+}
+
 func (s *wdSession) addWaits(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["setImplicitWait"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		ms := numToInt(call.Argument(0).Export())
+	obj["setImplicitWait"] = wdAsync(vm, loop, func(call goja.FunctionCall) (int, error) {
+		return numToInt(call.Argument(0).Export()), nil
+	}, func(_ context.Context, ms int) (any, error) {
 		return s.do(func() (any, error) {
 			return wdOK(s.wd.SetImplicitWaitTimeout(time.Duration(ms) * time.Millisecond))
 		})
 	})
-	obj["waitFor"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["waitFor"] = wdAsync(vm, loop, func(call goja.FunctionCall) (waitForArgs, error) {
 		by, value, err := findArgsWD(call)
 		if err != nil {
-			return nil, err
+			return waitForArgs{}, err
 		}
 		opts := optsArgMap(call, 2)
 		timeout := 10000
@@ -176,16 +212,24 @@ func (s *wdSession) addWaits(obj map[string]any, vm *goja.Runtime, loop *eventlo
 		}
 		visible, _ := opts["visible"].(bool)
 		enabled, _ := opts["enabled"].(bool)
-		el, err := s.waitForElement(by, value, timeout, visible, enabled, 200*time.Millisecond)
+		return waitForArgs{by: by, value: value, timeout: timeout, visible: visible, enabled: enabled, poll: 200 * time.Millisecond}, nil
+	}, func(_ context.Context, a waitForArgs) (any, error) {
+		// TODO(promisify-vm): elementObject constructs a vm/loop-capturing
+		// handle map here, in the work goroutine. Construction executes no VM
+		// code (goja conversion happens at resolve time, on the loop), but it
+		// still hands vm/loop to work; being fully clean would need an on-loop
+		// post-work hook in PromisifyAsync to build the handle after the wait
+		// completes.
+		el, err := s.waitForElement(a.by, a.value, a.timeout, a.visible, a.enabled, a.poll)
 		if err != nil {
 			return nil, fmt.Errorf("webdriver.waitFor: %w", err)
 		}
 		return s.elementObject(el, vm, loop), nil
 	})
-	obj["clickWhenReady"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["clickWhenReady"] = wdAsync(vm, loop, func(call goja.FunctionCall) (waitForArgs, error) {
 		by, value, err := findArgsWD(call)
 		if err != nil {
-			return nil, err
+			return waitForArgs{}, err
 		}
 		opts := optsArgMap(call, 2)
 		timeout := 10000
@@ -204,7 +248,9 @@ func (s *wdSession) addWaits(obj map[string]any, vm *goja.Runtime, loop *eventlo
 		if p, ok := opts["poll"]; ok {
 			poll = numToInt(p)
 		}
-		el, err := s.waitForElement(by, value, timeout, visible, enabled, time.Duration(poll)*time.Millisecond)
+		return waitForArgs{by: by, value: value, timeout: timeout, visible: visible, enabled: enabled, poll: time.Duration(poll) * time.Millisecond}, nil
+	}, func(_ context.Context, a waitForArgs) (any, error) {
+		el, err := s.waitForElement(a.by, a.value, a.timeout, a.visible, a.enabled, a.poll)
 		if err != nil {
 			return nil, fmt.Errorf("webdriver.clickWhenReady: %w", err)
 		}
@@ -299,20 +345,24 @@ func wdFrameBody(target any) (map[string]any, error) {
 
 // addFrames wires frame switching onto the session handle (all via W3C /frame).
 func (s *wdSession) addFrames(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["switchToFrame"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		return s.do(func() (any, error) { return s.switchToFrameTarget(call.Argument(0).Export()) })
+	obj["switchToFrame"] = wdAsync(vm, loop, func(call goja.FunctionCall) (any, error) {
+		return call.Argument(0).Export(), nil
+	}, func(_ context.Context, target any) (any, error) {
+		return s.do(func() (any, error) { return s.switchToFrameTarget(target) })
 	})
-	obj["switchToParentFrame"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["switchToParentFrame"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { _, e := s.command("POST", "/frame/parent", map[string]any{}); return wdOK(e) })
 	})
-	obj["switchToDefaultContent"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["switchToDefaultContent"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { _, e := s.command("POST", "/frame", map[string]any{"id": nil}); return wdOK(e) })
 	})
-	obj["frameChain"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["frameChain"] = wdAsync(vm, loop, func(call goja.FunctionCall) ([]any, error) {
 		arr, ok := call.Argument(0).Export().([]any)
 		if !ok {
 			return nil, errors.New("webdriver.frameChain: argument must be an array of selectors / indices / element handles")
 		}
+		return arr, nil
+	}, func(_ context.Context, arr []any) (any, error) {
 		return s.frameChain(arr)
 	})
 }
@@ -383,32 +433,36 @@ var wdWindowMethods = map[string]bool{
 
 // addWindows wires window/tab management onto the session handle.
 func (s *wdSession) addWindows(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["windowHandles"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["windowHandles"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.wd.WindowHandles() })
 	})
-	obj["currentWindow"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["currentWindow"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.wd.CurrentWindowHandle() })
 	})
-	obj["switchToWindow"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["switchToWindow"] = wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
 		h := strArg(call, 0)
 		if h == "" {
-			return nil, errors.New("webdriver.switchToWindow: a window handle is required")
+			return "", errors.New("webdriver.switchToWindow: a window handle is required")
 		}
+		return h, nil
+	}, func(_ context.Context, h string) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.SwitchWindow(h)) })
 	})
 	// newWindow uses the W3C POST /window/new (tebeka has no equivalent). type
 	// is "tab" (default) or "window". Does not switch to the new window.
-	obj["newWindow"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["newWindow"] = wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
 		typ := strArg(call, 0)
 		if typ == "" {
 			typ = "tab"
 		}
+		return typ, nil
+	}, func(_ context.Context, typ string) (any, error) {
 		return s.do(func() (any, error) { return s.command("POST", "/window/new", map[string]any{"type": typ}) })
 	})
 	// closeWindow closes the current window via the W3C DELETE /window (which
 	// returns the remaining handles) then auto-switches to a survivor, since
 	// the browsing context is undefined after a close.
-	obj["closeWindow"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["closeWindow"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) {
 			v, err := s.command("DELETE", "/window", nil)
 			if err != nil {
@@ -433,17 +487,18 @@ var wdAlertMethods = map[string]bool{
 
 // addAlerts wires JS alert/confirm/prompt handling onto the session handle.
 func (s *wdSession) addAlerts(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["acceptAlert"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["acceptAlert"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.AcceptAlert()) })
 	})
-	obj["dismissAlert"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["dismissAlert"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.DismissAlert()) })
 	})
-	obj["alertText"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["alertText"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.wd.AlertText() })
 	})
-	obj["sendAlertText"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		text := strArg(call, 0)
+	obj["sendAlertText"] = wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
+		return strArg(call, 0), nil
+	}, func(_ context.Context, text string) (any, error) {
 		return s.do(func() (any, error) { return wdOK(s.wd.SetAlertText(text)) })
 	})
 }
@@ -470,20 +525,21 @@ var wdRectMethods = map[string]bool{
 // addWindowRect wires window sizing/positioning onto the session handle. All
 // five use W3C endpoints (via s.command) and return { x, y, width, height }.
 func (s *wdSession) addWindowRect(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["getWindowRect"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["getWindowRect"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.command("GET", "/window/rect", nil) })
 	})
-	obj["setWindowRect"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		body := wdRectBody(optsArgMap(call, 0))
+	obj["setWindowRect"] = wdAsync(vm, loop, func(call goja.FunctionCall) (map[string]any, error) {
+		return wdRectBody(optsArgMap(call, 0)), nil
+	}, func(_ context.Context, body map[string]any) (any, error) {
 		return s.do(func() (any, error) { return s.command("POST", "/window/rect", body) })
 	})
-	obj["maximize"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["maximize"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.command("POST", "/window/maximize", map[string]any{}) })
 	})
-	obj["minimize"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["minimize"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.command("POST", "/window/minimize", map[string]any{}) })
 	})
-	obj["fullscreen"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["fullscreen"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { return s.command("POST", "/window/fullscreen", map[string]any{}) })
 	})
 }

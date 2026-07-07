@@ -168,9 +168,11 @@ func loginOf(val any) (string, bool) {
 // to swap accounts or manage tokens.
 func ghNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"authStatus": scriptengine.PromisifyAsyncLegacy(vm, loop, ghAuthStatus),
-		"prList":     scriptengine.PromisifyAsyncLegacy(vm, loop, ghPrList),
-		"repoView":   scriptengine.PromisifyAsyncLegacy(vm, loop, ghRepoView),
+		"authStatus": scriptengine.PromisifyAsync(vm, loop,
+			func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
+			ghAuthStatus),
+		"prList":   scriptengine.PromisifyAsync(vm, loop, ghPrListExtract, ghPrList),
+		"repoView": scriptengine.PromisifyAsync(vm, loop, ghRepoViewExtract, ghRepoView),
 	}
 }
 
@@ -234,7 +236,7 @@ type ghAuthStatusResult struct {
 // unauthenticated session both resolve to `{ authenticated: false, …}`
 // so scripts can branch without try/catch. Context cancellation still
 // throws.
-func ghAuthStatus(ctx context.Context, call goja.FunctionCall) (ghAuthStatusResult, error) {
+func ghAuthStatus(ctx context.Context, _ struct{}) (ghAuthStatusResult, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return ghAuthStatusResult{
 			Authenticated: false,
@@ -272,30 +274,44 @@ func ghAuthStatus(ctx context.Context, call goja.FunctionCall) (ghAuthStatusResu
 // pin it.
 const prListFields = "number,title,state,author,headRefName,baseRefName,url,createdAt,updatedAt"
 
+// ghPrListArgs carries the on-loop-extracted options for services.gh.prList.
+type ghPrListArgs struct {
+	cwd    string
+	state  string
+	limit  int
+	author string
+}
+
+// ghPrListExtract is the on-loop extract for services.gh.prList.
+func ghPrListExtract(call goja.FunctionCall) (ghPrListArgs, error) {
+	opts := optAt(call, 0)
+	args := ghPrListArgs{
+		cwd:    optString(opts, "cwd", ""),
+		state:  optString(opts, "state", "open"),
+		limit:  optInt(opts, "limit", 30),
+		author: optString(opts, "author", ""),
+	}
+	if args.limit <= 0 {
+		return ghPrListArgs{}, errors.New("gh.prList: limit must be positive")
+	}
+	return args, nil
+}
+
 // ghPrList returns recent pull requests on the repo identified by the
 // process's working directory (or `opts.cwd`). `gh` does the auth and
 // repo-detection; we just shape the JSON.
-func ghPrList(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
-	opts := optAt(call, 0)
-	cwd := optString(opts, "cwd", "")
-	state := optString(opts, "state", "open")
-	limit := optInt(opts, "limit", 30)
-	author := optString(opts, "author", "")
-	if limit <= 0 {
-		return nil, errors.New("gh.prList: limit must be positive")
-	}
-
+func ghPrList(ctx context.Context, a ghPrListArgs) ([]*scriptengine.Ordered, error) {
 	args := []string{
 		"pr", "list",
-		"--state", state,
-		"--limit", strconv.Itoa(limit),
+		"--state", a.state,
+		"--limit", strconv.Itoa(a.limit),
 		"--json", prListFields,
 	}
-	if author != "" {
-		args = append(args, "--author", author)
+	if a.author != "" {
+		args = append(args, "--author", a.author)
 	}
 
-	stdout, stderr, code, err := ghRun(ctx, cwd, args...)
+	stdout, stderr, code, err := ghRun(ctx, a.cwd, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -353,10 +369,15 @@ func parsePRListJSON(raw []byte) ([]*scriptengine.Ordered, error) {
 // `Ref` suffix because that's the GraphQL field name `gh` uses.
 const repoViewFields = "name,owner,description,url,defaultBranchRef,visibility"
 
-// ghRepoView returns metadata about a repo. With no argument it asks
-// gh about the cwd's repo (so it works from inside a checkout); pass a
-// "owner/name" string to look up any repo `gh` has access to.
-func ghRepoView(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
+// ghRepoViewArgs carries the on-loop-extracted arguments for
+// services.gh.repoView.
+type ghRepoViewArgs struct {
+	repo string
+	cwd  string
+}
+
+// ghRepoViewExtract is the on-loop extract for services.gh.repoView.
+func ghRepoViewExtract(call goja.FunctionCall) (ghRepoViewArgs, error) {
 	var repo string
 	var opts map[string]any
 	if len(call.Arguments) > 0 {
@@ -372,15 +393,20 @@ func ghRepoView(ctx context.Context, call goja.FunctionCall) (*scriptengine.Orde
 			}
 		}
 	}
-	cwd := optString(opts, "cwd", "")
+	return ghRepoViewArgs{repo: repo, cwd: optString(opts, "cwd", "")}, nil
+}
 
+// ghRepoView returns metadata about a repo. With no argument it asks
+// gh about the cwd's repo (so it works from inside a checkout); pass a
+// "owner/name" string to look up any repo `gh` has access to.
+func ghRepoView(ctx context.Context, a ghRepoViewArgs) (*scriptengine.Ordered, error) {
 	args := []string{"repo", "view"}
-	if repo != "" {
-		args = append(args, repo)
+	if a.repo != "" {
+		args = append(args, a.repo)
 	}
 	args = append(args, "--json", repoViewFields)
 
-	stdout, stderr, code, err := ghRun(ctx, cwd, args...)
+	stdout, stderr, code, err := ghRun(ctx, a.cwd, args...)
 	if err != nil {
 		return nil, err
 	}

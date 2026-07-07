@@ -23,7 +23,7 @@ import (
 // directly and fans out with a WaitGroup.
 func netstatusNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"check": scriptengine.PromisifyAsyncLegacy(vm, loop, netstatusCheck),
+		"check": scriptengine.PromisifyAsync(vm, loop, netstatusCheckExtract, netstatusCheck),
 	}
 }
 
@@ -45,16 +45,31 @@ func netstatusNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]
 // rather than failing the whole call — the point is a status
 // snapshot, so individual failures are data. Only a missing host
 // argument throws.
-func netstatusCheck(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
+// netstatusCheckArgs carries the on-loop-extracted arguments of
+// net.netstatus.check.
+type netstatusCheckArgs struct {
+	host    string
+	port    string
+	timeout time.Duration
+}
+
+func netstatusCheckExtract(call goja.FunctionCall) (netstatusCheckArgs, error) {
 	host := call.Argument(0).String()
 	if host == "" {
-		return nil, errors.New("netstatus.check: host required")
+		return netstatusCheckArgs{}, errors.New("netstatus.check: host required")
 	}
 	opts := optsAsMap(call)
-	port := optString(opts, "port", "443")
-	timeout := optMillis(opts, "timeout", 10*time.Second)
+	return netstatusCheckArgs{
+		host:    host,
+		port:    optString(opts, "port", "443"),
+		timeout: optMillis(opts, "timeout", 10*time.Second),
+	}, nil
+}
 
-	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+func netstatusCheck(ctx context.Context, args netstatusCheckArgs) (*scriptengine.Ordered, error) {
+	host, port := args.host, args.port
+
+	probeCtx, cancel := context.WithTimeout(ctx, args.timeout)
 	defer cancel()
 
 	start := time.Now()

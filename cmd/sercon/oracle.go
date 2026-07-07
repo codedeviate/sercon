@@ -21,16 +21,10 @@ import (
 // listener port is 1521.
 func oracleNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			dsn, opts, err := dbConnArg(call, "oracle")
-			if err != nil {
-				return nil, err
-			}
-			if opts != nil {
-				dsn = oracleDSN(opts)
-			}
-			return sqlOpen(vm, loop, ctx, "oracle", dsn, "oracle")
-		}),
+		"open": scriptengine.PromisifyAsync(vm, loop, dbDSNExtract("oracle", oracleDSN),
+			func(ctx context.Context, dsn string) (map[string]any, error) {
+				return sqlOpen(vm, loop, ctx, "oracle", dsn, "oracle")
+			}),
 	}
 }
 

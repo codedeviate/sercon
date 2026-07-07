@@ -24,16 +24,22 @@ import (
 // engine can work across multiple checkouts.
 func gitNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"branch":   scriptengine.PromisifyAsyncLegacy(vm, loop, gitBranch),
-		"isClean":  scriptengine.PromisifyAsyncLegacy(vm, loop, gitIsClean),
-		"revParse": scriptengine.PromisifyAsyncLegacy(vm, loop, gitRevParse),
-		"status":   scriptengine.PromisifyAsyncLegacy(vm, loop, gitStatus),
-		"add":      scriptengine.PromisifyAsyncLegacy(vm, loop, gitAdd),
-		"commit":   scriptengine.PromisifyAsyncLegacy(vm, loop, gitCommit),
-		"log":      scriptengine.PromisifyAsyncLegacy(vm, loop, gitLog),
-		"diffStat": scriptengine.PromisifyAsyncLegacy(vm, loop, gitDiffStat),
-		"runText":  scriptengine.PromisifyAsyncLegacy(vm, loop, gitRunText),
+		"branch":   scriptengine.PromisifyAsync(vm, loop, gitCwdExtract, gitBranch),
+		"isClean":  scriptengine.PromisifyAsync(vm, loop, gitCwdExtract, gitIsClean),
+		"revParse": scriptengine.PromisifyAsync(vm, loop, gitRevParseExtract, gitRevParse),
+		"status":   scriptengine.PromisifyAsync(vm, loop, gitCwdExtract, gitStatus),
+		"add":      scriptengine.PromisifyAsync(vm, loop, gitAddExtract, gitAdd),
+		"commit":   scriptengine.PromisifyAsync(vm, loop, gitCommitExtract, gitCommit),
+		"log":      scriptengine.PromisifyAsync(vm, loop, gitLogExtract, gitLog),
+		"diffStat": scriptengine.PromisifyAsync(vm, loop, gitDiffStatExtract, gitDiffStat),
+		"runText":  scriptengine.PromisifyAsync(vm, loop, gitRunTextExtract, gitRunText),
 	}
+}
+
+// gitCwdExtract is the shared on-loop extract for bindings whose only
+// argument is an optional `{ cwd }` options object (branch, isClean, status).
+func gitCwdExtract(call goja.FunctionCall) (string, error) {
+	return readCwdOpt(call, 0), nil
 }
 
 // gitTimeout bounds every `git` subprocess invocation so a hung git
@@ -144,9 +150,7 @@ type gitBranchResult struct {
 
 // gitBranch reports the current branch (or "" when HEAD is detached)
 // plus every local branch name.
-func gitBranch(ctx context.Context, call goja.FunctionCall) (gitBranchResult, error) {
-	cwd := readCwdOpt(call, 0)
-
+func gitBranch(ctx context.Context, cwd string) (gitBranchResult, error) {
 	current := ""
 	detached := false
 	stdout, _, code, err := gitRun(ctx, cwd, "symbolic-ref", "--short", "HEAD")
@@ -179,8 +183,7 @@ func gitBranch(ctx context.Context, call goja.FunctionCall) (gitBranchResult, er
 
 // gitIsClean returns true when the working tree has no uncommitted or
 // untracked changes (i.e. `git status --porcelain` is empty).
-func gitIsClean(ctx context.Context, call goja.FunctionCall) (bool, error) {
-	cwd := readCwdOpt(call, 0)
+func gitIsClean(ctx context.Context, cwd string) (bool, error) {
 	out, err := gitRunChecked(ctx, cwd, "status", "--porcelain")
 	if err != nil {
 		return false, err
@@ -188,15 +191,25 @@ func gitIsClean(ctx context.Context, call goja.FunctionCall) (bool, error) {
 	return strings.TrimSpace(out) == "", nil
 }
 
-// gitRevParse returns the full 40-char SHA for the given rev. Invalid
-// revs throw (git's own error message is included).
-func gitRevParse(ctx context.Context, call goja.FunctionCall) (string, error) {
+// gitRevParseArgs carries the on-loop-extracted arguments for git.revParse.
+type gitRevParseArgs struct {
+	rev string
+	cwd string
+}
+
+// gitRevParseExtract is the on-loop extract for git.revParse.
+func gitRevParseExtract(call goja.FunctionCall) (gitRevParseArgs, error) {
 	rev := strings.TrimSpace(call.Argument(0).String())
 	if rev == "" {
-		return "", errors.New("git.revParse: rev argument required")
+		return gitRevParseArgs{}, errors.New("git.revParse: rev argument required")
 	}
-	cwd := readCwdOpt(call, 1)
-	out, err := gitRunChecked(ctx, cwd, "rev-parse", rev)
+	return gitRevParseArgs{rev: rev, cwd: readCwdOpt(call, 1)}, nil
+}
+
+// gitRevParse returns the full 40-char SHA for the given rev. Invalid
+// revs throw (git's own error message is included).
+func gitRevParse(ctx context.Context, a gitRevParseArgs) (string, error) {
+	out, err := gitRunChecked(ctx, a.cwd, "rev-parse", a.rev)
 	if err != nil {
 		return "", err
 	}
@@ -214,8 +227,7 @@ type gitStatusEntry struct {
 // gitStatus parses `git status --porcelain` v1 output into a structured
 // list: `XY <path>` where X is the index status and Y the working-tree
 // status. Returns an empty array on a clean tree.
-func gitStatus(ctx context.Context, call goja.FunctionCall) ([]gitStatusEntry, error) {
-	cwd := readCwdOpt(call, 0)
+func gitStatus(ctx context.Context, cwd string) ([]gitStatusEntry, error) {
 	out, err := gitRunChecked(ctx, cwd, "status", "--porcelain")
 	if err != nil {
 		return nil, err
@@ -240,19 +252,29 @@ type gitAddResult struct {
 	Paths []string `json:"paths"`
 }
 
-// gitAdd stages one path or a list of paths. The `--` separator is
-// inserted so paths that look like flags (`-foo`) work too.
-func gitAdd(ctx context.Context, call goja.FunctionCall) (gitAddResult, error) {
+// gitAddArgs carries the on-loop-extracted arguments for git.add.
+type gitAddArgs struct {
+	paths []string
+	cwd   string
+}
+
+// gitAddExtract is the on-loop extract for git.add.
+func gitAddExtract(call goja.FunctionCall) (gitAddArgs, error) {
 	paths, err := pathsArg(call.Argument(0), "git.add")
 	if err != nil {
+		return gitAddArgs{}, err
+	}
+	return gitAddArgs{paths: paths, cwd: readCwdOpt(call, 1)}, nil
+}
+
+// gitAdd stages one path or a list of paths. The `--` separator is
+// inserted so paths that look like flags (`-foo`) work too.
+func gitAdd(ctx context.Context, a gitAddArgs) (gitAddResult, error) {
+	args := append([]string{"add", "--"}, a.paths...)
+	if _, err := gitRunChecked(ctx, a.cwd, args...); err != nil {
 		return gitAddResult{}, err
 	}
-	cwd := readCwdOpt(call, 1)
-	args := append([]string{"add", "--"}, paths...)
-	if _, err := gitRunChecked(ctx, cwd, args...); err != nil {
-		return gitAddResult{}, err
-	}
-	return gitAddResult{Paths: paths}, nil
+	return gitAddResult{Paths: a.paths}, nil
 }
 
 // gitCommit creates a new commit with the given message. The current
@@ -265,23 +287,36 @@ type gitCommitResult struct {
 	SHA string `json:"sha"`
 }
 
-func gitCommit(ctx context.Context, call goja.FunctionCall) (gitCommitResult, error) {
+// gitCommitArgs carries the on-loop-extracted arguments for git.commit.
+type gitCommitArgs struct {
+	msg        string
+	cwd        string
+	allowEmpty bool
+}
+
+// gitCommitExtract is the on-loop extract for git.commit.
+func gitCommitExtract(call goja.FunctionCall) (gitCommitArgs, error) {
 	msg := call.Argument(0).String()
 	if strings.TrimSpace(msg) == "" {
-		return gitCommitResult{}, errors.New("git.commit: message required")
+		return gitCommitArgs{}, errors.New("git.commit: message required")
 	}
 	opts := optAt(call, 1)
-	cwd := optString(opts, "cwd", "")
-	allowEmpty := optBool(opts, "allowEmpty", false)
+	return gitCommitArgs{
+		msg:        msg,
+		cwd:        optString(opts, "cwd", ""),
+		allowEmpty: optBool(opts, "allowEmpty", false),
+	}, nil
+}
 
-	args := []string{"commit", "-m", msg}
-	if allowEmpty {
+func gitCommit(ctx context.Context, a gitCommitArgs) (gitCommitResult, error) {
+	args := []string{"commit", "-m", a.msg}
+	if a.allowEmpty {
 		args = append(args, "--allow-empty")
 	}
-	if _, err := gitRunChecked(ctx, cwd, args...); err != nil {
+	if _, err := gitRunChecked(ctx, a.cwd, args...); err != nil {
 		return gitCommitResult{}, err
 	}
-	out, err := gitRunChecked(ctx, cwd, "rev-parse", "HEAD")
+	out, err := gitRunChecked(ctx, a.cwd, "rev-parse", "HEAD")
 	if err != nil {
 		return gitCommitResult{}, err
 	}
@@ -304,22 +339,35 @@ type gitLogEntry struct {
 	Subject   string `json:"subject"`
 }
 
-func gitLog(ctx context.Context, call goja.FunctionCall) ([]gitLogEntry, error) {
-	opts := optAt(call, 0)
-	cwd := optString(opts, "cwd", "")
-	limit := optInt(opts, "limit", 50)
-	revRange := optString(opts, "revRange", "HEAD")
-	if limit <= 0 {
-		return nil, errors.New("git.log: limit must be positive")
-	}
+// gitLogArgs carries the on-loop-extracted options for git.log.
+type gitLogArgs struct {
+	cwd      string
+	limit    int
+	revRange string
+}
 
+// gitLogExtract is the on-loop extract for git.log.
+func gitLogExtract(call goja.FunctionCall) (gitLogArgs, error) {
+	opts := optAt(call, 0)
+	a := gitLogArgs{
+		cwd:      optString(opts, "cwd", ""),
+		limit:    optInt(opts, "limit", 50),
+		revRange: optString(opts, "revRange", "HEAD"),
+	}
+	if a.limit <= 0 {
+		return gitLogArgs{}, errors.New("git.log: limit must be positive")
+	}
+	return a, nil
+}
+
+func gitLog(ctx context.Context, a gitLogArgs) ([]gitLogEntry, error) {
 	args := []string{
 		"log",
-		"-n", strconv.Itoa(limit),
+		"-n", strconv.Itoa(a.limit),
 		"--format=%H%x09%h%x09%an%x09%ae%x09%at%x09%s",
-		revRange,
+		a.revRange,
 	}
-	out, err := gitRunChecked(ctx, cwd, args...)
+	out, err := gitRunChecked(ctx, a.cwd, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -363,12 +411,23 @@ type gitDiffStatResult struct {
 	Deletions  int `json:"deletions"`
 }
 
-func gitDiffStat(ctx context.Context, call goja.FunctionCall) (gitDiffStatResult, error) {
-	opts := optAt(call, 0)
-	cwd := optString(opts, "cwd", "")
-	revRange := optString(opts, "revRange", "HEAD~1..HEAD")
+// gitDiffStatArgs carries the on-loop-extracted options for git.diffStat.
+type gitDiffStatArgs struct {
+	cwd      string
+	revRange string
+}
 
-	out, err := gitRunChecked(ctx, cwd, "diff", "--shortstat", revRange)
+// gitDiffStatExtract is the on-loop extract for git.diffStat.
+func gitDiffStatExtract(call goja.FunctionCall) (gitDiffStatArgs, error) {
+	opts := optAt(call, 0)
+	return gitDiffStatArgs{
+		cwd:      optString(opts, "cwd", ""),
+		revRange: optString(opts, "revRange", "HEAD~1..HEAD"),
+	}, nil
+}
+
+func gitDiffStat(ctx context.Context, a gitDiffStatArgs) (gitDiffStatResult, error) {
+	out, err := gitRunChecked(ctx, a.cwd, "diff", "--shortstat", a.revRange)
 	if err != nil {
 		return gitDiffStatResult{}, err
 	}
@@ -405,16 +464,26 @@ type gitRunTextResult struct {
 	ExitCode int    `json:"exitCode"`
 }
 
-func gitRunText(ctx context.Context, call goja.FunctionCall) (gitRunTextResult, error) {
+// gitRunTextArgs carries the on-loop-extracted arguments for git.runText.
+type gitRunTextArgs struct {
+	args []string
+	cwd  string
+}
+
+// gitRunTextExtract is the on-loop extract for git.runText.
+func gitRunTextExtract(call goja.FunctionCall) (gitRunTextArgs, error) {
 	args, err := pathsArg(call.Argument(0), "git.runText")
 	if err != nil {
-		return gitRunTextResult{}, err
+		return gitRunTextArgs{}, err
 	}
 	if len(args) == 0 {
-		return gitRunTextResult{}, errors.New("git.runText: args array is empty")
+		return gitRunTextArgs{}, errors.New("git.runText: args array is empty")
 	}
-	cwd := readCwdOpt(call, 1)
-	stdout, stderr, exitCode, err := gitRun(ctx, cwd, args...)
+	return gitRunTextArgs{args: args, cwd: readCwdOpt(call, 1)}, nil
+}
+
+func gitRunText(ctx context.Context, a gitRunTextArgs) (gitRunTextResult, error) {
+	stdout, stderr, exitCode, err := gitRun(ctx, a.cwd, a.args...)
 	if err != nil {
 		return gitRunTextResult{}, err
 	}

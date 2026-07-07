@@ -60,41 +60,60 @@ func findArgsWD(call goja.FunctionCall) (by string, value string, err error) {
 	return by, value, err
 }
 
+// findArgs carries the on-loop-extracted (by, value) locator for the
+// find/findAll bindings.
+type findArgs struct {
+	by, value string
+}
+
+// findExtract is the extract half for find/findAll bindings: findArgsWD
+// packaged into a plain-Go struct.
+func findExtract(call goja.FunctionCall) (findArgs, error) {
+	by, value, err := findArgsWD(call)
+	if err != nil {
+		return findArgs{}, err
+	}
+	return findArgs{by: by, value: value}, nil
+}
+
 // elementObject builds the goja-facing element handle wrapping el. All calls
 // funnel through the session mutex (s.do) — element ops share the session.
 func (s *wdSession) elementObject(el selenium.WebElement, vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-	str := func(fn func() (string, error)) func(context.Context, goja.FunctionCall) (any, error) {
-		return func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	str := func(fn func() (string, error)) func(context.Context, struct{}) (any, error) {
+		return func(_ context.Context, _ struct{}) (any, error) {
 			return s.do(func() (any, error) { return fn() })
 		}
 	}
-	boolFn := func(fn func() (bool, error)) func(context.Context, goja.FunctionCall) (any, error) {
-		return func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	boolFn := func(fn func() (bool, error)) func(context.Context, struct{}) (any, error) {
+		return func(_ context.Context, _ struct{}) (any, error) {
 			return s.do(func() (any, error) { return fn() })
 		}
 	}
 	eid := wdElementID(el)
 	return map[string]any{
-		"click": wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		"click": wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 			return s.do(func() (any, error) { return wdOK(el.Click()) })
 		}),
-		"clear": wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		"clear": wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 			return s.do(func() (any, error) { return wdOK(el.Clear()) })
 		}),
-		"submit": wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		"submit": wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 			return s.do(func() (any, error) { return wdOK(el.Submit()) })
 		}),
-		"sendKeys": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-			text := strArg(call, 0)
+		"sendKeys": wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
+			return strArg(call, 0), nil
+		}, func(_ context.Context, text string) (any, error) {
 			return s.do(func() (any, error) { return wdOK(el.SendKeys(text)) })
 		}),
-		"text":    wdAsync(vm, loop, str(el.Text)),
-		"tagName": wdAsync(vm, loop, str(el.TagName)),
-		"getAttribute": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		"text":    wdAsync(vm, loop, wdNoArgs, str(el.Text)),
+		"tagName": wdAsync(vm, loop, wdNoArgs, str(el.TagName)),
+		"getAttribute": wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
 			name := strArg(call, 0)
 			if name == "" {
-				return nil, errors.New("webdriver.getAttribute: name is required")
+				return "", errors.New("webdriver.getAttribute: name is required")
 			}
+			return name, nil
+		}, func(_ context.Context, name string) (any, error) {
 			return s.do(func() (any, error) {
 				v, err := el.GetAttribute(name)
 				// W3C "Get Element Attribute" returns null for an absent
@@ -109,36 +128,37 @@ func (s *wdSession) elementObject(el selenium.WebElement, vm *goja.Runtime, loop
 				return v, err
 			})
 		}),
-		"cssValue": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		"cssValue": wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
 			name := strArg(call, 0)
 			if name == "" {
-				return nil, errors.New("webdriver.cssValue: name is required")
+				return "", errors.New("webdriver.cssValue: name is required")
 			}
+			return name, nil
+		}, func(_ context.Context, name string) (any, error) {
 			return s.do(func() (any, error) { return el.CSSProperty(name) })
 		}),
-		"isDisplayed": wdAsync(vm, loop, boolFn(el.IsDisplayed)),
-		"isEnabled":   wdAsync(vm, loop, boolFn(el.IsEnabled)),
-		"isSelected":  wdAsync(vm, loop, boolFn(el.IsSelected)),
-		"find": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-			by, value, err := findArgsWD(call)
-			if err != nil {
-				return nil, err
-			}
+		"isDisplayed": wdAsync(vm, loop, wdNoArgs, boolFn(el.IsDisplayed)),
+		"isEnabled":   wdAsync(vm, loop, wdNoArgs, boolFn(el.IsEnabled)),
+		"isSelected":  wdAsync(vm, loop, wdNoArgs, boolFn(el.IsSelected)),
+		"find": wdAsync(vm, loop, findExtract, func(_ context.Context, a findArgs) (any, error) {
+			// TODO(promisify-vm): elementObject constructs a vm/loop-capturing
+			// handle map here, in the work goroutine. Construction executes no
+			// VM code (goja conversion happens at resolve time, on the loop),
+			// but it still hands vm/loop to work; being fully clean would need
+			// an on-loop post-work hook in PromisifyAsync.
 			return s.do(func() (any, error) {
-				child, err := el.FindElement(by, value)
+				child, err := el.FindElement(a.by, a.value)
 				if err != nil {
 					return nil, err
 				}
 				return s.elementObject(child, vm, loop), nil
 			})
 		}),
-		"findAll": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-			by, value, err := findArgsWD(call)
-			if err != nil {
-				return nil, err
-			}
+		"findAll": wdAsync(vm, loop, findExtract, func(_ context.Context, a findArgs) (any, error) {
+			// TODO(promisify-vm): see "find" above — same handle construction
+			// in the work goroutine.
 			return s.do(func() (any, error) {
-				kids, err := el.FindElements(by, value)
+				kids, err := el.FindElements(a.by, a.value)
 				if err != nil {
 					return nil, err
 				}
@@ -149,8 +169,9 @@ func (s *wdSession) elementObject(el selenium.WebElement, vm *goja.Runtime, loop
 				return out, nil
 			})
 		}),
-		"screenshot": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-			path := strArg(call, 0)
+		"screenshot": wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
+			return strArg(call, 0), nil
+		}, func(_ context.Context, path string) (any, error) {
 			return s.do(func() (any, error) {
 				data, err := el.Screenshot(true)
 				if err != nil {
@@ -160,14 +181,12 @@ func (s *wdSession) elementObject(el selenium.WebElement, vm *goja.Runtime, loop
 			})
 		}),
 		"elementId": eid,
-		"hover": wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		"hover": wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 			return s.do(func() (any, error) { return s.hoverElement(eid) })
 		}),
-		"dragTo": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-			dst, err := wdElementIDArg(call, 0)
-			if err != nil {
-				return nil, err
-			}
+		"dragTo": wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
+			return wdElementIDArg(call, 0)
+		}, func(_ context.Context, dst string) (any, error) {
 			return s.do(func() (any, error) { return s.dragElement(eid, dst) })
 		}),
 	}
@@ -248,26 +267,25 @@ func (s *wdSession) wrapScriptResult(v any, vm *goja.Runtime, loop *eventloop.Ev
 
 // addFind wires session-level find/findAll (returning element handles).
 func (s *wdSession) addFind(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["find"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		by, value, err := findArgsWD(call)
-		if err != nil {
-			return nil, err
-		}
+	obj["find"] = wdAsync(vm, loop, findExtract, func(_ context.Context, a findArgs) (any, error) {
+		// TODO(promisify-vm): elementObject constructs a vm/loop-capturing
+		// handle map here, in the work goroutine. Construction executes no VM
+		// code (goja conversion happens at resolve time, on the loop), but it
+		// still hands vm/loop to work; being fully clean would need an on-loop
+		// post-work hook in PromisifyAsync.
 		return s.do(func() (any, error) {
-			el, err := s.wd.FindElement(by, value)
+			el, err := s.wd.FindElement(a.by, a.value)
 			if err != nil {
 				return nil, err
 			}
 			return s.elementObject(el, vm, loop), nil
 		})
 	})
-	obj["findAll"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		by, value, err := findArgsWD(call)
-		if err != nil {
-			return nil, err
-		}
+	obj["findAll"] = wdAsync(vm, loop, findExtract, func(_ context.Context, a findArgs) (any, error) {
+		// TODO(promisify-vm): see "find" above — same handle construction in
+		// the work goroutine.
 		return s.do(func() (any, error) {
-			els, err := s.wd.FindElements(by, value)
+			els, err := s.wd.FindElements(a.by, a.value)
 			if err != nil {
 				return nil, err
 			}

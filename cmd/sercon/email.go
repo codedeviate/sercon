@@ -22,14 +22,20 @@ import (
 // presence-check pattern across the email-auth probe family.
 func emailNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"spf":    scriptengine.PromisifyAsyncLegacy(vm, loop, emailSPF),
-		"dmarc":  scriptengine.PromisifyAsyncLegacy(vm, loop, emailDMARC),
-		"mtaSts": scriptengine.PromisifyAsyncLegacy(vm, loop, emailMTASTS),
-		"tlsRpt": scriptengine.PromisifyAsyncLegacy(vm, loop, emailTLSRPT),
-		"bimi":   scriptengine.PromisifyAsyncLegacy(vm, loop, emailBIMI),
-		"all":    scriptengine.PromisifyAsyncLegacy(vm, loop, emailAll),
+		"spf":    scriptengine.PromisifyAsync(vm, loop, emailDomainExtract, emailSPFCore),
+		"dmarc":  scriptengine.PromisifyAsync(vm, loop, emailDomainExtract, emailDMARCCore),
+		"mtaSts": scriptengine.PromisifyAsync(vm, loop, emailDomainExtract, emailMTASTSCore),
+		"tlsRpt": scriptengine.PromisifyAsync(vm, loop, emailDomainExtract, emailTLSRPTCore),
+		"bimi":   scriptengine.PromisifyAsync(vm, loop, emailBIMIExtract, emailBIMIOp),
+		"all":    scriptengine.PromisifyAsync(vm, loop, emailDomainExtract, emailAllOp),
 		"send":   emailSend(vm, loop),
 	}
+}
+
+// emailDomainExtract is the on-loop extract shared by the probes whose only
+// argument is the domain string (spf, dmarc, mtaSts, tlsRpt, all).
+func emailDomainExtract(call goja.FunctionCall) (string, error) {
+	return call.Argument(0).String(), nil
 }
 
 // findRecord scans TXT records for one starting with the given (case-
@@ -60,14 +66,10 @@ func dnsTXTOrAbsent(ctx context.Context, name string) ([]string, bool, error) {
 	return nil, false, err
 }
 
-// emailSPF queries TXT records at the apex of the given domain and looks for
-// an SPF record (one starting with `v=spf1`). The record is returned verbatim
-// plus a tokenised list of mechanisms; the trailing `all`-style mechanism is
-// summarised under `allPolicy`.
-func emailSPF(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	return emailSPFCore(ctx, call.Argument(0).String())
-}
-
+// emailSPFCore queries TXT records at the apex of the given domain and looks
+// for an SPF record (one starting with `v=spf1`). The record is returned
+// verbatim plus a tokenised list of mechanisms; the trailing `all`-style
+// mechanism is summarised under `allPolicy`.
 func emailSPFCore(ctx context.Context, domain string) (map[string]any, error) {
 	txts, found, err := dnsTXTOrAbsent(ctx, domain)
 	if err != nil {
@@ -117,14 +119,10 @@ func emailSPFCore(ctx context.Context, domain string) (map[string]any, error) {
 	}, nil
 }
 
-// emailDMARC queries TXT records at `_dmarc.<domain>` and parses the one
+// emailDMARCCore queries TXT records at `_dmarc.<domain>` and parses the one
 // starting with `v=DMARC1` into a tag map. The common policy / report-uri
 // tags are also surfaced on the result so scripts don't have to dig into
 // the raw tag map for the usual cases.
-func emailDMARC(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	return emailDMARCCore(ctx, call.Argument(0).String())
-}
-
 func emailDMARCCore(ctx context.Context, domain string) (map[string]any, error) {
 	txts, found, err := dnsTXTOrAbsent(ctx, "_dmarc."+domain)
 	if err != nil {
@@ -150,14 +148,10 @@ func emailDMARCCore(ctx context.Context, domain string) (map[string]any, error) 
 	}, nil
 }
 
-// emailMTASTS combines the `_mta-sts.<domain>` TXT record with the policy
+// emailMTASTSCore combines the `_mta-sts.<domain>` TXT record with the policy
 // file served at `https://mta-sts.<domain>/.well-known/mta-sts.txt`. The
 // TXT carries a versioned `id` for change detection; the policy file is
 // where the actual mode + mx list lives.
-func emailMTASTS(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	return emailMTASTSCore(ctx, call.Argument(0).String())
-}
-
 func emailMTASTSCore(ctx context.Context, domain string) (map[string]any, error) {
 	txts, found, err := dnsTXTOrAbsent(ctx, "_mta-sts."+domain)
 	if err != nil {
@@ -249,13 +243,9 @@ func parseMTASTSPolicy(body string) map[string]any {
 	return out
 }
 
-// emailTLSRPT looks up `_smtp._tls.<domain>` TXT and parses the
+// emailTLSRPTCore looks up `_smtp._tls.<domain>` TXT and parses the
 // `v=TLSRPTv1; rua=...` form into a tag map. `rua` is surfaced separately
 // because that's the actionable bit.
-func emailTLSRPT(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	return emailTLSRPTCore(ctx, call.Argument(0).String())
-}
-
 func emailTLSRPTCore(ctx context.Context, domain string) (map[string]any, error) {
 	txts, found, err := dnsTXTOrAbsent(ctx, "_smtp._tls."+domain)
 	if err != nil {
@@ -277,18 +267,31 @@ func emailTLSRPTCore(ctx context.Context, domain string) (map[string]any, error)
 	}, nil
 }
 
-// emailBIMI looks up `<selector>._bimi.<domain>` (selector defaults to
-// `default`). The optional opts.selector lets callers query a non-default
-// selector explicitly.
-func emailBIMI(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	domain := call.Argument(0).String()
-	selector := "default"
+// emailBIMIArgs carries the on-loop-extracted arguments for net.email.bimi.
+type emailBIMIArgs struct {
+	domain   string
+	selector string
+}
+
+// emailBIMIExtract is the on-loop extract for net.email.bimi: the domain plus
+// the optional opts.selector (defaults to `default`), which lets callers
+// query a non-default selector explicitly.
+func emailBIMIExtract(call goja.FunctionCall) (emailBIMIArgs, error) {
+	args := emailBIMIArgs{
+		domain:   call.Argument(0).String(),
+		selector: "default",
+	}
 	if opts := optsAsMap(call); opts != nil {
 		if s, ok := opts["selector"].(string); ok && s != "" {
-			selector = s
+			args.selector = s
 		}
 	}
-	return emailBIMICore(ctx, domain, selector)
+	return args, nil
+}
+
+// emailBIMIOp looks up `<selector>._bimi.<domain>`.
+func emailBIMIOp(ctx context.Context, args emailBIMIArgs) (map[string]any, error) {
+	return emailBIMICore(ctx, args.domain, args.selector)
 }
 
 func emailBIMICore(ctx context.Context, domain, selector string) (map[string]any, error) {
@@ -317,13 +320,11 @@ func emailBIMICore(ctx context.Context, domain, selector string) (map[string]any
 	}, nil
 }
 
-// emailAll runs every probe in parallel and returns a single aggregate
+// emailAllOp runs every probe in parallel and returns a single aggregate
 // object keyed by probe name. Per-probe failures don't fail the aggregate
 // — they surface under `<probe>.error` so a partial result is still
 // useful (e.g. SPF + DMARC found, MTA-STS policy fetch timed out).
-func emailAll(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	domain := call.Argument(0).String()
-
+func emailAllOp(ctx context.Context, domain string) (map[string]any, error) {
 	type result struct {
 		name string
 		val  map[string]any

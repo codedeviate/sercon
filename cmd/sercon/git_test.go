@@ -45,17 +45,28 @@ func writeFile(t *testing.T, dir, name, contents string) {
 	}
 }
 
-// runGit drives a goja-flavoured FunctionCall into one of the services.git
-// bindings. Positional args go through vm.ToValue so the receiver sees
-// the same JS-shaped types it would in production.
-func runGit[T any](t *testing.T, fn func(context.Context, goja.FunctionCall) (T, error), args ...any) (T, error) {
+// runGit drives a goja-flavoured FunctionCall through one of the
+// services.git bindings' extract/work pair. Positional args go through
+// vm.ToValue so the extract half sees the same JS-shaped types it would
+// in production; extract errors surface exactly like work errors (both
+// reject the Promise in production).
+func runGit[A, T any](t *testing.T,
+	extract func(goja.FunctionCall) (A, error),
+	work func(context.Context, A) (T, error),
+	args ...any,
+) (T, error) {
 	t.Helper()
 	vm := goja.New()
 	vals := make([]goja.Value, len(args))
 	for i, a := range args {
 		vals[i] = vm.ToValue(a)
 	}
-	return fn(context.Background(), goja.FunctionCall{Arguments: vals})
+	ext, err := extract(goja.FunctionCall{Arguments: vals})
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return work(context.Background(), ext)
 }
 
 // Initial repo state: a single commit on `main`, working tree clean,
@@ -66,7 +77,7 @@ func TestGitBranchAndIsClean_FreshRepo(t *testing.T) {
 	mustRun(t, dir, "add", "README.md")
 	mustRun(t, dir, "commit", "-m", "initial")
 
-	b, err := runGit(t, gitBranch, map[string]any{"cwd": dir})
+	b, err := runGit(t, gitCwdExtract, gitBranch, map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatalf("branch: %v", err)
 	}
@@ -80,7 +91,7 @@ func TestGitBranchAndIsClean_FreshRepo(t *testing.T) {
 		t.Errorf("all branches: %v", all)
 	}
 
-	clean, err := runGit(t, gitIsClean, map[string]any{"cwd": dir})
+	clean, err := runGit(t, gitCwdExtract, gitIsClean, map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatalf("isClean: %v", err)
 	}
@@ -97,7 +108,7 @@ func TestGitRevParse(t *testing.T) {
 	mustRun(t, dir, "add", "a.txt")
 	mustRun(t, dir, "commit", "-m", "a")
 
-	sha, err := runGit(t, gitRevParse, "HEAD", map[string]any{"cwd": dir})
+	sha, err := runGit(t, gitRevParseExtract, gitRevParse, "HEAD", map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatalf("revParse HEAD: %v", err)
 	}
@@ -105,7 +116,7 @@ func TestGitRevParse(t *testing.T) {
 		t.Errorf("HEAD sha: %q (want 40 hex chars)", sha)
 	}
 
-	if _, err := runGit(t, gitRevParse, "no-such-ref", map[string]any{"cwd": dir}); err == nil {
+	if _, err := runGit(t, gitRevParseExtract, gitRevParse, "no-such-ref", map[string]any{"cwd": dir}); err == nil {
 		t.Error("revParse no-such-ref should throw")
 	}
 }
@@ -120,12 +131,12 @@ func TestGitStatus_DirtyTree(t *testing.T) {
 	writeFile(t, dir, "tracked.txt", "v2\n")
 	writeFile(t, dir, "new.txt", "fresh\n")
 
-	clean, err := runGit(t, gitIsClean, map[string]any{"cwd": dir})
+	clean, err := runGit(t, gitCwdExtract, gitIsClean, map[string]any{"cwd": dir})
 	if err != nil || clean {
 		t.Errorf("isClean: %v / clean=%v", err, clean)
 	}
 
-	entries, err := runGit(t, gitStatus, map[string]any{"cwd": dir})
+	entries, err := runGit(t, gitCwdExtract, gitStatus, map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
@@ -147,10 +158,10 @@ func TestGitAddAndCommit(t *testing.T) {
 	dir := makeRepo(t)
 	writeFile(t, dir, "x.txt", "1\n")
 
-	if _, err := runGit(t, gitAdd, []any{"x.txt"}, map[string]any{"cwd": dir}); err != nil {
+	if _, err := runGit(t, gitAddExtract, gitAdd, []any{"x.txt"}, map[string]any{"cwd": dir}); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	out, err := runGit(t, gitCommit, "first commit", map[string]any{"cwd": dir})
+	out, err := runGit(t, gitCommitExtract, gitCommit, "first commit", map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
@@ -158,14 +169,14 @@ func TestGitAddAndCommit(t *testing.T) {
 	if len(sha) != 40 {
 		t.Errorf("returned sha: %q", sha)
 	}
-	headSha, err := runGit(t, gitRevParse, "HEAD", map[string]any{"cwd": dir})
+	headSha, err := runGit(t, gitRevParseExtract, gitRevParse, "HEAD", map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatalf("rev-parse: %v", err)
 	}
 	if sha != headSha {
 		t.Errorf("commit sha %s != HEAD %s", sha, headSha)
 	}
-	clean, _ := runGit(t, gitIsClean, map[string]any{"cwd": dir})
+	clean, _ := runGit(t, gitCwdExtract, gitIsClean, map[string]any{"cwd": dir})
 	if !clean {
 		t.Error("isClean false after commit")
 	}
@@ -174,7 +185,7 @@ func TestGitAddAndCommit(t *testing.T) {
 // commit with an empty message throws before spawning git.
 func TestGitCommit_EmptyMessageThrows(t *testing.T) {
 	dir := makeRepo(t)
-	if _, err := runGit(t, gitCommit, "", map[string]any{"cwd": dir}); err == nil {
+	if _, err := runGit(t, gitCommitExtract, gitCommit, "", map[string]any{"cwd": dir}); err == nil {
 		t.Fatal("expected error for empty commit message")
 	}
 }
@@ -190,7 +201,7 @@ func TestGitLog(t *testing.T) {
 		mustRun(t, dir, "commit", "-m", s)
 	}
 
-	out, err := runGit(t, gitLog, map[string]any{"cwd": dir, "limit": 2})
+	out, err := runGit(t, gitLogExtract, gitLog, map[string]any{"cwd": dir, "limit": 2})
 	if err != nil {
 		t.Fatalf("log: %v", err)
 	}
@@ -223,7 +234,7 @@ func TestGitDiffStat(t *testing.T) {
 	mustRun(t, dir, "add", "f.txt")
 	mustRun(t, dir, "commit", "-m", "extend")
 
-	out, err := runGit(t, gitDiffStat, map[string]any{"cwd": dir, "revRange": "HEAD~1..HEAD"})
+	out, err := runGit(t, gitDiffStatExtract, gitDiffStat, map[string]any{"cwd": dir, "revRange": "HEAD~1..HEAD"})
 	if err != nil {
 		t.Fatalf("diffStat: %v", err)
 	}
@@ -242,7 +253,7 @@ func TestGitDiffStat(t *testing.T) {
 // failures and context cancellation still throw.
 func TestGitRunText_NonZeroDoesNotThrow(t *testing.T) {
 	dir := makeRepo(t)
-	out, err := runGit(t, gitRunText, []any{"rev-parse", "no-such-ref"}, map[string]any{"cwd": dir})
+	out, err := runGit(t, gitRunTextExtract, gitRunText, []any{"rev-parse", "no-such-ref"}, map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatalf("runText: %v", err)
 	}
@@ -257,11 +268,11 @@ func TestGitRunText_NonZeroDoesNotThrow(t *testing.T) {
 // pathsArg / runText input validation. Empty array, wrong type.
 func TestGitRunText_InputValidation(t *testing.T) {
 	dir := makeRepo(t)
-	if _, err := runGit(t, gitRunText, []any{}, map[string]any{"cwd": dir}); err == nil {
+	if _, err := runGit(t, gitRunTextExtract, gitRunText, []any{}, map[string]any{"cwd": dir}); err == nil {
 		t.Error("empty argv should error")
 	}
 	// gojaRunGitTest helper: int isn't a valid argv element
-	if _, err := runGit(t, gitRunText, []any{42}, map[string]any{"cwd": dir}); err == nil {
+	if _, err := runGit(t, gitRunTextExtract, gitRunText, []any{42}, map[string]any{"cwd": dir}); err == nil {
 		t.Error("non-string argv element should error")
 	}
 }
@@ -276,13 +287,13 @@ func TestGitBranch_DetachedHEAD(t *testing.T) {
 	writeFile(t, dir, "x.txt", "1\n")
 	mustRun(t, dir, "add", "x.txt")
 	mustRun(t, dir, "commit", "-m", "one")
-	sha, err := runGit(t, gitRevParse, "HEAD", map[string]any{"cwd": dir})
+	sha, err := runGit(t, gitRevParseExtract, gitRevParse, "HEAD", map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mustRun(t, dir, "checkout", "--detach", sha)
 
-	b, err := runGit(t, gitBranch, map[string]any{"cwd": dir})
+	b, err := runGit(t, gitCwdExtract, gitBranch, map[string]any{"cwd": dir})
 	if err != nil {
 		t.Fatalf("branch: %v", err)
 	}

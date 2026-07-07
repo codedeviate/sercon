@@ -29,9 +29,17 @@ import (
 // cookies are scoped correctly across subdomains).
 func browserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return browserOpen(vm, loop)
-		}),
+		// browserOpen builds the handle map (which wires vm/loop-capturing
+		// bindings), so it runs in extract — on the loop — and there is no
+		// blocking work left; work just relays the finished handle without
+		// touching it.
+		"open": scriptengine.PromisifyAsync(vm, loop,
+			func(goja.FunctionCall) (map[string]any, error) {
+				return browserOpen(vm, loop)
+			},
+			func(_ context.Context, handle map[string]any) (map[string]any, error) {
+				return handle, nil
+			}),
 	}
 }
 
@@ -47,6 +55,13 @@ type browserSession struct {
 	headers map[string]string
 }
 
+// browserPostArgs carries the on-loop-extracted post arguments to the work
+// goroutine.
+type browserPostArgs struct {
+	url  string
+	body string
+}
+
 func browserOpen(vm *goja.Runtime, loop *eventloop.EventLoop) (map[string]any, error) {
 	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 	if err != nil {
@@ -60,20 +75,31 @@ func browserOpen(vm *goja.Runtime, loop *eventloop.EventLoop) (map[string]any, e
 	return map[string]any{
 		"setUserAgent": func(ua string) { sess.setHeader("User-Agent", ua) },
 		"setHeader":    func(name, value string) { sess.setHeader(name, value) },
-		"get": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return sess.do(ctx, http.MethodGet, call.Argument(0).String(), "")
-		}).Func,
-		"post": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			url := call.Argument(0).String()
-			body := ""
-			if len(call.Arguments) > 1 {
-				body = call.Argument(1).String()
-			}
-			return sess.do(ctx, http.MethodPost, url, body)
-		}).Func,
-		"cookies": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
-			return sess.cookiesFor(call.Argument(0).String())
-		}).Func,
+		"get": scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (string, error) {
+				return call.Argument(0).String(), nil
+			},
+			func(ctx context.Context, url string) (map[string]any, error) {
+				return sess.do(ctx, http.MethodGet, url, "")
+			}).Func,
+		"post": scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (browserPostArgs, error) {
+				a := browserPostArgs{url: call.Argument(0).String()}
+				if len(call.Arguments) > 1 {
+					a.body = call.Argument(1).String()
+				}
+				return a, nil
+			},
+			func(ctx context.Context, a browserPostArgs) (map[string]any, error) {
+				return sess.do(ctx, http.MethodPost, a.url, a.body)
+			}).Func,
+		"cookies": scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (string, error) {
+				return call.Argument(0).String(), nil
+			},
+			func(_ context.Context, url string) ([]map[string]any, error) {
+				return sess.cookiesFor(url)
+			}).Func,
 	}, nil
 }
 

@@ -115,15 +115,26 @@ func secretArgs(call goja.FunctionCall, op string) (name, account string, err er
 	return nameArg.String(), call.Argument(1).String(), nil
 }
 
+// secretsGetArgs carries the on-loop-extracted arguments of
+// runtime.secrets.get.
+type secretsGetArgs struct {
+	name    string
+	account string
+}
+
+func secretsGetExtract(call goja.FunctionCall) (secretsGetArgs, error) {
+	name, account, err := secretArgs(call, "get")
+	if err != nil {
+		return secretsGetArgs{}, err
+	}
+	return secretsGetArgs{name: name, account: account}, nil
+}
+
 // secretsGet returns a work func that reads PREFIX+name / account. Resolves to
 // the secret string, or nil (JS null) when the item is absent.
-func secretsGet(prefix string) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(_ context.Context, call goja.FunctionCall) (any, error) {
-		name, account, err := secretArgs(call, "get")
-		if err != nil {
-			return nil, err
-		}
-		s, err := runBounded(func() (string, error) { return keyring.Get(prefix+name, account) })
+func secretsGet(prefix string) func(context.Context, secretsGetArgs) (any, error) {
+	return func(_ context.Context, args secretsGetArgs) (any, error) {
+		s, err := runBounded(func() (string, error) { return keyring.Get(prefix+args.name, args.account) })
 		if errors.Is(err, keyring.ErrNotFound) {
 			return nil, nil
 		}
@@ -134,19 +145,30 @@ func secretsGet(prefix string) func(context.Context, goja.FunctionCall) (any, er
 	}
 }
 
+// secretsSetArgs carries the on-loop-extracted arguments of
+// runtime.secrets.set.
+type secretsSetArgs struct {
+	name    string
+	account string
+	secret  string
+}
+
+func secretsSetExtract(call goja.FunctionCall) (secretsSetArgs, error) {
+	name, account, err := secretArgs(call, "set")
+	if err != nil {
+		return secretsSetArgs{}, err
+	}
+	if len(call.Arguments) < 3 || goja.IsUndefined(call.Argument(2)) || goja.IsNull(call.Argument(2)) {
+		return secretsSetArgs{}, fmt.Errorf("runtime.secrets.set: secret is required (a string)")
+	}
+	return secretsSetArgs{name: name, account: account, secret: call.Argument(2).String()}, nil
+}
+
 // secretsSet returns a work func that stores/overwrites PREFIX+name / account.
-func secretsSet(prefix string) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(_ context.Context, call goja.FunctionCall) (any, error) {
-		name, account, err := secretArgs(call, "set")
-		if err != nil {
-			return nil, err
-		}
-		if len(call.Arguments) < 3 || goja.IsUndefined(call.Argument(2)) || goja.IsNull(call.Argument(2)) {
-			return nil, fmt.Errorf("runtime.secrets.set: secret is required (a string)")
-		}
-		secret := call.Argument(2).String()
-		_, err = runBounded(func() (struct{}, error) {
-			return struct{}{}, keyring.Set(prefix+name, account, secret)
+func secretsSet(prefix string) func(context.Context, secretsSetArgs) (any, error) {
+	return func(_ context.Context, args secretsSetArgs) (any, error) {
+		_, err := runBounded(func() (struct{}, error) {
+			return struct{}{}, keyring.Set(prefix+args.name, args.account, args.secret)
 		})
 		if err != nil {
 			return nil, fmt.Errorf("runtime.secrets.set: %w", err)
@@ -155,17 +177,28 @@ func secretsSet(prefix string) func(context.Context, goja.FunctionCall) (any, er
 	}
 }
 
+// secretsDeleteArgs carries the on-loop-extracted arguments of
+// runtime.secrets.delete.
+type secretsDeleteArgs struct {
+	name    string
+	account string
+}
+
+func secretsDeleteExtract(call goja.FunctionCall) (secretsDeleteArgs, error) {
+	name, account, err := secretArgs(call, "delete")
+	if err != nil {
+		return secretsDeleteArgs{}, err
+	}
+	return secretsDeleteArgs{name: name, account: account}, nil
+}
+
 // secretsDelete returns a work func that removes PREFIX+name / account.
 // Resolves true when an item was removed, false when there was nothing to
 // remove.
-func secretsDelete(prefix string) func(context.Context, goja.FunctionCall) (bool, error) {
-	return func(_ context.Context, call goja.FunctionCall) (bool, error) {
-		name, account, err := secretArgs(call, "delete")
-		if err != nil {
-			return false, err
-		}
-		_, err = runBounded(func() (struct{}, error) {
-			return struct{}{}, keyring.Delete(prefix+name, account)
+func secretsDelete(prefix string) func(context.Context, secretsDeleteArgs) (bool, error) {
+	return func(_ context.Context, args secretsDeleteArgs) (bool, error) {
+		_, err := runBounded(func() (struct{}, error) {
+			return struct{}{}, keyring.Delete(prefix+args.name, args.account)
 		})
 		if errors.Is(err, keyring.ErrNotFound) {
 			return false, nil
@@ -185,8 +218,8 @@ func secretsNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]an
 	prefix := resolveSecretsPrefix()
 	return map[string]any{
 		"available": secretsAvailable(),
-		"get":       scriptengine.PromisifyAsyncLegacy(vm, loop, secretsGet(prefix)),
-		"set":       scriptengine.PromisifyAsyncLegacy(vm, loop, secretsSet(prefix)),
-		"delete":    scriptengine.PromisifyAsyncLegacy(vm, loop, secretsDelete(prefix)),
+		"get":       scriptengine.PromisifyAsync(vm, loop, secretsGetExtract, secretsGet(prefix)),
+		"set":       scriptengine.PromisifyAsync(vm, loop, secretsSetExtract, secretsSet(prefix)),
+		"delete":    scriptengine.PromisifyAsync(vm, loop, secretsDeleteExtract, secretsDelete(prefix)),
 	}
 }

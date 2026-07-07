@@ -261,12 +261,18 @@ func TestArchiveExtract_OverwriteOptThroughBinding(t *testing.T) {
 
 	dest := filepath.Join(work, "out")
 	vm := goja.New()
-	mk := func(opts map[string]any) goja.FunctionCall {
+	// Route through the real on-loop extract so the opts still travel the
+	// JS-binding path (the regression this test pins down).
+	mk := func(opts map[string]any) archiveExtractArgs {
 		args := []goja.Value{vm.ToValue(zipPath), vm.ToValue(dest)}
 		if opts != nil {
 			args = append(args, vm.ToValue(opts))
 		}
-		return goja.FunctionCall{Arguments: args}
+		a, err := archiveExtractExtract(goja.FunctionCall{Arguments: args})
+		if err != nil {
+			t.Fatalf("extract args: %v", err)
+		}
+		return a
 	}
 
 	if _, err := archiveExtract(context.Background(), mk(nil)); err != nil {
@@ -473,9 +479,13 @@ func TestArchiveExtract_CapsThroughBinding(t *testing.T) {
 
 	dest := filepath.Join(work, "out")
 	vm := goja.New()
-	mk := func(opts map[string]any) goja.FunctionCall {
+	mk := func(opts map[string]any) archiveExtractArgs {
 		args := []goja.Value{vm.ToValue(zipPath), vm.ToValue(dest), vm.ToValue(opts)}
-		return goja.FunctionCall{Arguments: args}
+		a, err := archiveExtractExtract(goja.FunctionCall{Arguments: args})
+		if err != nil {
+			t.Fatalf("extract args: %v", err)
+		}
+		return a
 	}
 
 	_, err := archiveExtract(context.Background(), mk(map[string]any{"maxTotalBytes": 1024}))

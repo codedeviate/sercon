@@ -15,23 +15,35 @@ import (
 	"github.com/dop251/goja"
 )
 
-// runHTTP drives execHTTP through its real (method, url, opts) signature
-// without a goja runtime. Mirrors runShell in exec_test.go.
+// httpCall packages the JS-side (method, url, opts) for the test helpers
+// below. Mirrors shellCall in exec_test.go.
 type httpCall struct {
 	method string
 	url    string
 	opts   map[string]any
 }
 
-func runHTTP(t *testing.T, c httpCall) (map[string]any, error) {
-	t.Helper()
+// httpExtract packages the JS-shaped inputs into a goja call and runs the
+// real extract half (execHTTPExtract) over it. Validation tests assert on
+// its errors directly.
+func httpExtract(c httpCall) (execHTTPArgs, error) {
 	vm := goja.New()
 	args := []goja.Value{vm.ToValue(c.method), vm.ToValue(c.url)}
 	if c.opts != nil {
 		args = append(args, vm.ToValue(c.opts))
 	}
-	call := goja.FunctionCall{Arguments: args}
-	return execHTTP(context.Background(), call)
+	return execHTTPExtract(goja.FunctionCall{Arguments: args})
+}
+
+// runHTTP drives extract + work exactly like the binding does: the work
+// half (execHTTP) receives only the plain-Go execHTTPArgs bundle.
+func runHTTP(t *testing.T, c httpCall) (map[string]any, error) {
+	t.Helper()
+	args, err := httpExtract(c)
+	if err != nil {
+		return nil, err
+	}
+	return execHTTP(context.Background(), args)
 }
 
 // skipIfNoBackend skips the test when the named backend isn't on PATH.
@@ -219,12 +231,14 @@ func TestExecHTTP_BackendReconForced(t *testing.T) {
 	}
 }
 
-// Empty / missing method or URL must throw before we even spawn.
+// Empty / missing method or URL must throw before we even spawn. Those
+// checks live in the extract half; the unknown-backend check stays in the
+// work half (backend resolution), so it goes through runHTTP.
 func TestExecHTTP_InputValidation(t *testing.T) {
-	if _, err := runHTTP(t, httpCall{method: "", url: "http://x"}); err == nil {
+	if _, err := httpExtract(httpCall{method: "", url: "http://x"}); err == nil {
 		t.Errorf("empty method should error")
 	}
-	if _, err := runHTTP(t, httpCall{method: "GET", url: ""}); err == nil {
+	if _, err := httpExtract(httpCall{method: "GET", url: ""}); err == nil {
 		t.Errorf("empty url should error")
 	}
 	if _, err := runHTTP(t, httpCall{

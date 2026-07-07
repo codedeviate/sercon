@@ -8,8 +8,9 @@ import (
 	"github.com/dop251/goja_nodejs/eventloop"
 )
 
-// findArgs builds `find <locator> <value> <action> [text]`.
-func findArgs(locator, value, action, text string) []string {
+// abFindArgs builds `find <locator> <value> <action> [text]`. (ab-prefixed:
+// webdriver_element.go owns the bare findArgs/findExtract names.)
+func abFindArgs(locator, value, action, text string) []string {
 	args := []string{"find", locator, value, action}
 	if text != "" {
 		args = append(args, text)
@@ -22,27 +23,35 @@ func (h *abHandle) runFind(ctx context.Context, locator, value, action, text str
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, findArgs(locator, value, action, text)...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, abFindArgs(locator, value, action, text)...)
 	if err != nil {
 		return nil, err
 	}
 	return parseJSON(out)
 }
 
+// findParams carries the extracted find(locator, value, {action, text}) inputs.
+type findParams struct {
+	locator, value, action, text string
+}
+
+func abFindExtract(call goja.FunctionCall) (findParams, error) {
+	p := findParams{locator: strArg(call, 0), value: strArg(call, 1)}
+	opts := optsArgMap(call, 2)
+	p.action, _ = opts["action"].(string)
+	p.text, _ = opts["text"].(string)
+	return p, nil
+}
+
 // find is the one-shot form: find(locator, value, {action, text}).
-func (h *abHandle) find(ctx context.Context, call goja.FunctionCall) (any, error) {
-	locator := strArg(call, 0)
-	value := strArg(call, 1)
-	if locator == "" || value == "" {
+func (h *abHandle) find(ctx context.Context, p findParams) (any, error) {
+	if p.locator == "" || p.value == "" {
 		return nil, errors.New("agentBrowser.find: locator and value are required")
 	}
-	opts := optsArgMap(call, 2)
-	action, _ := opts["action"].(string)
-	if action == "" {
+	if p.action == "" {
 		return nil, errors.New("agentBrowser.find: opts.action is required (e.g. click/fill/hover); for read-only matching use snapshot()")
 	}
-	text, _ := opts["text"].(string)
-	return h.runFind(ctx, locator, value, action, text)
+	return h.runFind(ctx, p.locator, p.value, p.action, p.text)
 }
 
 // addLocator wires find() and locator() into the handle object. locator(spec)
@@ -56,7 +65,7 @@ func (h *abHandle) find(ctx context.Context, call goja.FunctionCall) (any, error
 // (click/fill/type/hover/focus/check/uncheck). Use the handle-level
 // isVisible/isEnabled/isChecked methods for state checks instead.
 func (h *abHandle) addLocator(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["find"] = h.p(vm, loop, h.find)
+	obj["find"] = abAsync(vm, loop, abFindExtract, h.find)
 
 	// locator(spec) -> object whose action methods re-resolve via find.
 	// Accepts either {locator, value} object OR positional (locator, value).
@@ -70,16 +79,19 @@ func (h *abHandle) addLocator(obj map[string]any, vm *goja.Runtime, loop *eventl
 			val = strArg(call, 1)
 		}
 		action := func(name string, withText bool) func(goja.FunctionCall) goja.Value {
-			return h.p(vm, loop, func(ctx context.Context, c goja.FunctionCall) (any, error) {
-				if loc == "" || val == "" {
-					return nil, errors.New("agentBrowser.locator: locator and value are required")
-				}
-				text := ""
-				if withText {
-					text = strArg(c, 0)
-				}
-				return h.runFind(ctx, loc, val, name, text)
-			})
+			return abAsync(vm, loop,
+				func(c goja.FunctionCall) (string, error) {
+					if withText {
+						return strArg(c, 0), nil
+					}
+					return "", nil
+				},
+				func(ctx context.Context, text string) (any, error) {
+					if loc == "" || val == "" {
+						return nil, errors.New("agentBrowser.locator: locator and value are required")
+					}
+					return h.runFind(ctx, loc, val, name, text)
+				})
 		}
 		return vm.ToValue(map[string]any{
 			"locator":  loc,

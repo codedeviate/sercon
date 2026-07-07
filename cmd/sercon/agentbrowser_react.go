@@ -17,26 +17,25 @@ func suspenseArgs(opts map[string]any) []string {
 	return args
 }
 
-func (h *abHandle) reactTree(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func (h *abHandle) reactTree(ctx context.Context, _ struct{}) (any, error) {
 	return h.runJSON(ctx, "react", "tree")
 }
 
-func (h *abHandle) reactInspect(ctx context.Context, call goja.FunctionCall) (any, error) {
-	id := strArg(call, 0)
+func (h *abHandle) reactInspect(ctx context.Context, id string) (any, error) {
 	if id == "" {
 		return nil, errors.New("agentBrowser.react.inspect: a fiber id is required")
 	}
 	return h.runJSON(ctx, "react", "inspect", id)
 }
 
-func (h *abHandle) reactRenders(op string) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func (h *abHandle) reactRenders(op string) func(context.Context, struct{}) (any, error) {
+	return func(ctx context.Context, _ struct{}) (any, error) {
 		return h.runJSON(ctx, "react", "renders", op)
 	}
 }
 
-func (h *abHandle) reactSuspense(ctx context.Context, call goja.FunctionCall) (any, error) {
-	return h.runJSON(ctx, suspenseArgs(optsArgMap(call, 0))...)
+func (h *abHandle) reactSuspense(ctx context.Context, opts map[string]any) (any, error) {
+	return h.runJSON(ctx, suspenseArgs(opts)...)
 }
 
 // addReact wires the React DevTools surface into the handle object. Requires
@@ -44,12 +43,12 @@ func (h *abHandle) reactSuspense(ctx context.Context, call goja.FunctionCall) (a
 // returns a clear error (surfaced as a throw) when it was not.
 func (h *abHandle) addReact(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["react"] = map[string]any{
-		"tree":    h.p(vm, loop, h.reactTree),
-		"inspect": h.p(vm, loop, h.reactInspect),
+		"tree":    abAsync(vm, loop, abNoArgs, h.reactTree),
+		"inspect": abAsync(vm, loop, abStrArg0, h.reactInspect),
 		"renders": map[string]any{
-			"start": h.p(vm, loop, h.reactRenders("start")),
-			"stop":  h.p(vm, loop, h.reactRenders("stop")),
+			"start": abAsync(vm, loop, abNoArgs, h.reactRenders("start")),
+			"stop":  abAsync(vm, loop, abNoArgs, h.reactRenders("stop")),
 		},
-		"suspense": h.p(vm, loop, h.reactSuspense),
+		"suspense": abAsync(vm, loop, abOptsArg0, h.reactSuspense),
 	}
 }

@@ -21,16 +21,10 @@ import (
 // through the same driver.
 func postgresNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			dsn, opts, err := dbConnArg(call, "postgres")
-			if err != nil {
-				return nil, err
-			}
-			if opts != nil {
-				dsn = postgresDSN(opts)
-			}
-			return sqlOpen(vm, loop, ctx, "pgx", dsn, "postgres")
-		}),
+		"open": scriptengine.PromisifyAsync(vm, loop, dbDSNExtract("postgres", postgresDSN),
+			func(ctx context.Context, dsn string) (map[string]any, error) {
+				return sqlOpen(vm, loop, ctx, "pgx", dsn, "postgres")
+			}),
 	}
 }
 

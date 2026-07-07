@@ -99,32 +99,44 @@ func envLoad(path string, override bool) (map[string]string, error) {
 	return out, nil
 }
 
-// envLoadBinding builds the runtime.env.load async handler. It reads arg 0
-// (path) and arg 1 ({ override? }), then calls envLoad. Args are read via
-// Export() only (no vm method calls) so it is safe in the PromisifyAsync
-// goroutine.
-func envLoadBinding(_ *goja.Runtime) func(context.Context, goja.FunctionCall) (map[string]any, error) {
-	return func(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
-		path, ok := call.Argument(0).Export().(string)
-		if !ok || path == "" {
-			return nil, fmt.Errorf("runtime.env.load: path is required")
-		}
-		override := false
-		if o, ok := call.Argument(1).Export().(map[string]any); ok {
-			if b, ok := o["override"].(bool); ok {
-				override = b
-			}
-		}
-		m, err := envLoad(path, override)
-		if err != nil {
-			return nil, fmt.Errorf("runtime.env.load: %w", err)
-		}
-		out := make(map[string]any, len(m))
-		for k, v := range m {
-			out[k] = v
-		}
-		return out, nil
+// envLoadArgs is the plain-Go argument bundle handed from envLoadExtract
+// (on the event loop) to envLoadOp (the work goroutine).
+type envLoadArgs struct {
+	path     string
+	override bool
+}
+
+// envLoadExtract parses runtime.env.load's arguments: arg 0 (path) and arg 1
+// ({ override? }). It runs synchronously on the event loop — the only place
+// the goja call may be touched; a validation error here rejects the Promise
+// exactly like a work error.
+func envLoadExtract(call goja.FunctionCall) (envLoadArgs, error) {
+	var args envLoadArgs
+	path, ok := call.Argument(0).Export().(string)
+	if !ok || path == "" {
+		return args, fmt.Errorf("runtime.env.load: path is required")
 	}
+	args.path = path
+	if o, ok := call.Argument(1).Export().(map[string]any); ok {
+		if b, ok := o["override"].(bool); ok {
+			args.override = b
+		}
+	}
+	return args, nil
+}
+
+// envLoadOp backs runtime.env.load: it calls envLoad with the extracted
+// path/override pair and shapes the result for JS.
+func envLoadOp(_ context.Context, args envLoadArgs) (map[string]any, error) {
+	m, err := envLoad(args.path, args.override)
+	if err != nil {
+		return nil, fmt.Errorf("runtime.env.load: %w", err)
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out, nil
 }
 
 // applyEnvFiles loads each path in order and sets its variables on the process

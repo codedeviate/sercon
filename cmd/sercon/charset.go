@@ -20,9 +20,9 @@ import (
 // ISO-8859-1, Windows-1252, Shift_JIS, GBK, …).
 func charsetNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"detect": scriptengine.PromisifyAsyncLegacy(vm, loop, charsetDetect),
-		"decode": scriptengine.PromisifyAsyncLegacy(vm, loop, charsetDecode),
-		"encode": scriptengine.PromisifyAsyncLegacy(vm, loop, charsetEncode),
+		"detect": scriptengine.PromisifyAsync(vm, loop, charsetDetectExtract, charsetDetect),
+		"decode": scriptengine.PromisifyAsync(vm, loop, charsetDecodeExtract, charsetDecode),
+		"encode": scriptengine.PromisifyAsync(vm, loop, charsetEncodeExtract, charsetEncode),
 	}
 }
 
@@ -30,7 +30,7 @@ func charsetNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]an
 // returns the most-confident match plus the full candidate list. chardet
 // reports an integer confidence on a 0–100 scale; we surface it verbatim
 // so scripts can compare against the publisher's docs.
-func charsetDetect(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+func charsetDetectExtract(call goja.FunctionCall) ([]byte, error) {
 	in, err := exportBytes(call.Argument(0))
 	if err != nil {
 		return nil, fmt.Errorf("text.detect: %w", err)
@@ -38,6 +38,10 @@ func charsetDetect(_ context.Context, call goja.FunctionCall) (map[string]any, e
 	if len(in) == 0 {
 		return nil, errors.New("text.detect: empty input")
 	}
+	return in, nil
+}
+
+func charsetDetect(_ context.Context, in []byte) (map[string]any, error) {
 	results, err := chardet.NewTextDetector().DetectAll(in)
 	if err != nil || len(results) == 0 {
 		if err == nil {
@@ -73,12 +77,22 @@ func charsetDetect(_ context.Context, call goja.FunctionCall) (map[string]any, e
 // Encoding Living Standard catalogues (`UTF-8`, `ISO-8859-1`,
 // `Windows-1252`, `Shift_JIS`, `GBK`, etc., plus all their documented
 // aliases) so callers don't have to memorise a sercon-specific list.
-func charsetDecode(_ context.Context, call goja.FunctionCall) (string, error) {
+// charsetDecodeArgs is the on-loop-extracted input of text.decode.
+type charsetDecodeArgs struct {
+	in      []byte
+	charset string
+}
+
+func charsetDecodeExtract(call goja.FunctionCall) (charsetDecodeArgs, error) {
 	in, err := exportBytes(call.Argument(0))
 	if err != nil {
-		return "", fmt.Errorf("text.decode: %w", err)
+		return charsetDecodeArgs{}, fmt.Errorf("text.decode: %w", err)
 	}
-	charset := call.Argument(1).String()
+	return charsetDecodeArgs{in: in, charset: call.Argument(1).String()}, nil
+}
+
+func charsetDecode(_ context.Context, args charsetDecodeArgs) (string, error) {
+	in, charset := args.in, args.charset
 	enc, err := htmlindex.Get(charset)
 	if err != nil {
 		return "", fmt.Errorf("text.decode: unknown charset %q", charset)
@@ -94,9 +108,21 @@ func charsetDecode(_ context.Context, call goja.FunctionCall) (string, error) {
 // Characters with no representation in the target encoding produce an
 // error from the encoder rather than being silently dropped — callers
 // who want lossy behaviour can pre-process the input themselves.
-func charsetEncode(_ context.Context, call goja.FunctionCall) ([]byte, error) {
-	text := call.Argument(0).String()
-	charset := call.Argument(1).String()
+// charsetEncodeArgs is the on-loop-extracted input of text.encode.
+type charsetEncodeArgs struct {
+	text    string
+	charset string
+}
+
+func charsetEncodeExtract(call goja.FunctionCall) (charsetEncodeArgs, error) {
+	return charsetEncodeArgs{
+		text:    call.Argument(0).String(),
+		charset: call.Argument(1).String(),
+	}, nil
+}
+
+func charsetEncode(_ context.Context, args charsetEncodeArgs) ([]byte, error) {
+	text, charset := args.text, args.charset
 	enc, err := htmlindex.Get(charset)
 	if err != nil {
 		return nil, fmt.Errorf("text.encode: unknown charset %q", charset)

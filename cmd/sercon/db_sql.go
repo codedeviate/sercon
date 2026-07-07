@@ -45,81 +45,150 @@ func sqlOpen(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, d
 	return sqlHandle(vm, loop, db, engine), nil
 }
 
+// sqlStmtArgs is the plain-Go carrier for a SQL statement plus its positional
+// bind parameters, extracted on the event loop from the JS call. Everything in
+// it is post-Export Go data (string / int64 / float64 / bool / []byte / nil),
+// which database/sql accepts directly.
+type sqlStmtArgs struct {
+	stmt  string
+	binds []any
+}
+
+// sqlStmtExtract builds the on-loop extract half for exec/query/queryValue:
+// arg 0 is the SQL string (required), the rest bind as positional parameters.
+// `label` prefixes the missing-argument error.
+func sqlStmtExtract(label string) func(goja.FunctionCall) (sqlStmtArgs, error) {
+	return func(call goja.FunctionCall) (sqlStmtArgs, error) {
+		if len(call.Arguments) < 1 {
+			return sqlStmtArgs{}, fmt.Errorf("%s: sql argument required", label)
+		}
+		return sqlStmtArgs{stmt: call.Argument(0).String(), binds: sqlPositionalArgs(call)}, nil
+	}
+}
+
+// sqlBindsExtract is the on-loop extract half for prepared-statement methods,
+// where the SQL is already bound: every argument is a bind parameter.
+func sqlBindsExtract(call goja.FunctionCall) ([]any, error) {
+	return sqlArgsFrom(call, 0), nil
+}
+
+// dbNoArgs is the extract half for zero-argument db bindings (close, commit,
+// rollback, ping, ...). Shared across the db.* binding files.
+func dbNoArgs(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil }
+
+// dbDSNExtract builds the on-loop extract half for a server-engine open():
+// it resolves the first JS argument (a DSN string or a connection-options
+// object) into the final driver DSN, using `assemble` to turn an options map
+// into a DSN. Shared by db.postgres / db.mysql / db.mssql / db.oracle /
+// db.clickhouse.
+func dbDSNExtract(engine string, assemble func(map[string]any) string) func(goja.FunctionCall) (string, error) {
+	return func(call goja.FunctionCall) (string, error) {
+		dsn, opts, err := dbConnArg(call, engine)
+		if err != nil {
+			return "", err
+		}
+		if opts != nil {
+			dsn = assemble(opts)
+		}
+		return dsn, nil
+	}
+}
+
 // sqlHandle builds the JS object open() returns: Promise-returning methods over
 // the *sql.DB. `engine` prefixes error labels (e.g. "postgres.exec"). The
 // `.Func` unwrap is required because this map is built at script-run time (past
 // the engine's registration-time AsyncBinding unwrap) — see the original note
 // in sqlite history.
+//
+// Threading note on begin/prepare: their work funcs run in a goroutine and
+// call sqlBegin/sqlPrepare, which *construct* new PromisifyAsync bindings
+// capturing vm/loop. Construction touches neither (it only builds Go closures
+// and reflects on Go types); every closure body runs on the event loop when JS
+// later calls the method, and the returned map is materialised into a JS
+// object on-loop at resolve time — so goja's threading contract holds.
 func sqlHandle(vm *goja.Runtime, loop *eventloop.EventLoop, db *sql.DB, engine string) map[string]any {
 	return map[string]any{
-		"exec": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return sqlExec(ctx, db, call, engine+".exec")
-		}).Func,
-		"query": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
-			return sqlQuery(ctx, db, call, engine+".query")
-		}).Func,
-		"queryValue": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			return sqlQueryValue(ctx, db, call, engine+".queryValue")
-		}).Func,
-		"begin": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return sqlBegin(vm, loop, ctx, db, engine)
-		}).Func,
-		"prepare": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return sqlPrepare(vm, loop, ctx, db, call, engine)
-		}).Func,
-		"close": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			if err := db.Close(); err != nil {
-				return nil, fmt.Errorf("%s.close: %w", engine, err)
-			}
-			return nil, nil
-		}).Func,
+		"exec": scriptengine.PromisifyAsync(vm, loop, sqlStmtExtract(engine+".exec"),
+			func(ctx context.Context, args sqlStmtArgs) (map[string]any, error) {
+				return sqlExec(ctx, db, args, engine+".exec")
+			}).Func,
+		"query": scriptengine.PromisifyAsync(vm, loop, sqlStmtExtract(engine+".query"),
+			func(ctx context.Context, args sqlStmtArgs) ([]*scriptengine.Ordered, error) {
+				return sqlQuery(ctx, db, args, engine+".query")
+			}).Func,
+		"queryValue": scriptengine.PromisifyAsync(vm, loop, sqlStmtExtract(engine+".queryValue"),
+			func(ctx context.Context, args sqlStmtArgs) (any, error) {
+				return sqlQueryValue(ctx, db, args, engine+".queryValue")
+			}).Func,
+		"begin": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(ctx context.Context, _ struct{}) (map[string]any, error) {
+				return sqlBegin(vm, loop, ctx, db, engine)
+			}).Func,
+		"prepare": scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (string, error) {
+				if len(call.Arguments) < 1 {
+					return "", fmt.Errorf("%s.prepare: sql argument required", engine)
+				}
+				return call.Argument(0).String(), nil
+			},
+			func(ctx context.Context, query string) (map[string]any, error) {
+				return sqlPrepare(vm, loop, ctx, db, query, engine)
+			}).Func,
+		"close": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(ctx context.Context, _ struct{}) (any, error) {
+				if err := db.Close(); err != nil {
+					return nil, fmt.Errorf("%s.close: %w", engine, err)
+				}
+				return nil, nil
+			}).Func,
 	}
 }
 
 // sqlPrepare compiles a SQL statement once and returns a handle whose
 // exec/query/queryValue execute it repeatedly with fresh bind params. The
 // statement holds driver resources until close(); scripts MUST close it.
-func sqlPrepare(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, db *sql.DB, call goja.FunctionCall, engine string) (map[string]any, error) {
-	if len(call.Arguments) < 1 {
-		return nil, fmt.Errorf("%s.prepare: sql argument required", engine)
-	}
-	query := call.Argument(0).String()
+// `query` is extracted on-loop by the prepare binding in sqlHandle.
+func sqlPrepare(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, db *sql.DB, query string, engine string) (map[string]any, error) {
 	stmt, err := db.PrepareContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("%s.prepare: %w", engine, err)
 	}
 	return map[string]any{
-		"exec": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			res, err := stmt.ExecContext(ctx, sqlArgsFrom(call, 0)...)
-			if err != nil {
-				return nil, fmt.Errorf("%s.stmt.exec: %w", engine, err)
-			}
-			rowsAffected, _ := res.RowsAffected()
-			lastInsertID, _ := res.LastInsertId()
-			return map[string]any{"rowsAffected": rowsAffected, "lastInsertId": lastInsertID}, nil
-		}).Func,
-		"query": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
-			rows, err := stmt.QueryContext(ctx, sqlArgsFrom(call, 0)...)
-			if err != nil {
-				return nil, fmt.Errorf("%s.stmt.query: %w", engine, err)
-			}
-			defer func() { _ = rows.Close() }()
-			return scanRows(rows, engine+".stmt.query")
-		}).Func,
-		"queryValue": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			rows, err := stmt.QueryContext(ctx, sqlArgsFrom(call, 0)...)
-			if err != nil {
-				return nil, fmt.Errorf("%s.stmt.queryValue: %w", engine, err)
-			}
-			defer func() { _ = rows.Close() }()
-			return scanFirstValue(rows, engine+".stmt.queryValue")
-		}).Func,
-		"close": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			if err := stmt.Close(); err != nil {
-				return nil, fmt.Errorf("%s.stmt.close: %w", engine, err)
-			}
-			return nil, nil
-		}).Func,
+		"exec": scriptengine.PromisifyAsync(vm, loop, sqlBindsExtract,
+			func(ctx context.Context, binds []any) (map[string]any, error) {
+				res, err := stmt.ExecContext(ctx, binds...)
+				if err != nil {
+					return nil, fmt.Errorf("%s.stmt.exec: %w", engine, err)
+				}
+				rowsAffected, _ := res.RowsAffected()
+				lastInsertID, _ := res.LastInsertId()
+				return map[string]any{"rowsAffected": rowsAffected, "lastInsertId": lastInsertID}, nil
+			}).Func,
+		"query": scriptengine.PromisifyAsync(vm, loop, sqlBindsExtract,
+			func(ctx context.Context, binds []any) ([]*scriptengine.Ordered, error) {
+				rows, err := stmt.QueryContext(ctx, binds...)
+				if err != nil {
+					return nil, fmt.Errorf("%s.stmt.query: %w", engine, err)
+				}
+				defer func() { _ = rows.Close() }()
+				return scanRows(rows, engine+".stmt.query")
+			}).Func,
+		"queryValue": scriptengine.PromisifyAsync(vm, loop, sqlBindsExtract,
+			func(ctx context.Context, binds []any) (any, error) {
+				rows, err := stmt.QueryContext(ctx, binds...)
+				if err != nil {
+					return nil, fmt.Errorf("%s.stmt.queryValue: %w", engine, err)
+				}
+				defer func() { _ = rows.Close() }()
+				return scanFirstValue(rows, engine+".stmt.queryValue")
+			}).Func,
+		"close": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(ctx context.Context, _ struct{}) (any, error) {
+				if err := stmt.Close(); err != nil {
+					return nil, fmt.Errorf("%s.stmt.close: %w", engine, err)
+				}
+				return nil, nil
+			}).Func,
 	}, nil
 }
 
@@ -132,40 +201,41 @@ func sqlBegin(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, 
 		return nil, fmt.Errorf("%s.begin: %w", engine, err)
 	}
 	return map[string]any{
-		"exec": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return sqlExec(ctx, tx, call, engine+".tx.exec")
-		}).Func,
-		"query": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
-			return sqlQuery(ctx, tx, call, engine+".tx.query")
-		}).Func,
-		"queryValue": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			return sqlQueryValue(ctx, tx, call, engine+".tx.queryValue")
-		}).Func,
-		"commit": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			if err := tx.Commit(); err != nil {
-				return nil, fmt.Errorf("%s.tx.commit: %w", engine, err)
-			}
-			return nil, nil
-		}).Func,
-		"rollback": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			if err := tx.Rollback(); err != nil {
-				return nil, fmt.Errorf("%s.tx.rollback: %w", engine, err)
-			}
-			return nil, nil
-		}).Func,
+		"exec": scriptengine.PromisifyAsync(vm, loop, sqlStmtExtract(engine+".tx.exec"),
+			func(ctx context.Context, args sqlStmtArgs) (map[string]any, error) {
+				return sqlExec(ctx, tx, args, engine+".tx.exec")
+			}).Func,
+		"query": scriptengine.PromisifyAsync(vm, loop, sqlStmtExtract(engine+".tx.query"),
+			func(ctx context.Context, args sqlStmtArgs) ([]*scriptengine.Ordered, error) {
+				return sqlQuery(ctx, tx, args, engine+".tx.query")
+			}).Func,
+		"queryValue": scriptengine.PromisifyAsync(vm, loop, sqlStmtExtract(engine+".tx.queryValue"),
+			func(ctx context.Context, args sqlStmtArgs) (any, error) {
+				return sqlQueryValue(ctx, tx, args, engine+".tx.queryValue")
+			}).Func,
+		"commit": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(ctx context.Context, _ struct{}) (any, error) {
+				if err := tx.Commit(); err != nil {
+					return nil, fmt.Errorf("%s.tx.commit: %w", engine, err)
+				}
+				return nil, nil
+			}).Func,
+		"rollback": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(ctx context.Context, _ struct{}) (any, error) {
+				if err := tx.Rollback(); err != nil {
+					return nil, fmt.Errorf("%s.tx.rollback: %w", engine, err)
+				}
+				return nil, nil
+			}).Func,
 	}, nil
 }
 
-// sqlExec runs a non-query statement and reports row counters. SQL string is
-// arg 0; remaining args bind as positional placeholders (the script writes the
-// engine's placeholder syntax — `?` for sqlite/mysql, `$1` for postgres,
-// `@p1` for mssql). `label` prefixes errors.
-func sqlExec(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label string) (map[string]any, error) {
-	if len(call.Arguments) < 1 {
-		return nil, fmt.Errorf("%s: sql argument required", label)
-	}
-	stmt := call.Argument(0).String()
-	res, err := ex.ExecContext(ctx, stmt, sqlPositionalArgs(call)...)
+// sqlExec runs a non-query statement and reports row counters. The SQL string
+// and bind parameters (the script writes the engine's placeholder syntax —
+// `?` for sqlite/mysql, `$1` for postgres, `@p1` for mssql) arrive pre-
+// extracted in `args` (see sqlStmtExtract). `label` prefixes errors.
+func sqlExec(ctx context.Context, ex sqlExecutor, args sqlStmtArgs, label string) (map[string]any, error) {
+	res, err := ex.ExecContext(ctx, args.stmt, args.binds...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", label, err)
 	}
@@ -179,12 +249,8 @@ func sqlExec(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label 
 
 // sqlQuery runs a SELECT-style statement and returns one ordered object per
 // row, keyed by column name in column order.
-func sqlQuery(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label string) ([]*scriptengine.Ordered, error) {
-	if len(call.Arguments) < 1 {
-		return nil, fmt.Errorf("%s: sql argument required", label)
-	}
-	stmt := call.Argument(0).String()
-	rows, err := ex.QueryContext(ctx, stmt, sqlPositionalArgs(call)...)
+func sqlQuery(ctx context.Context, ex sqlExecutor, args sqlStmtArgs, label string) ([]*scriptengine.Ordered, error) {
+	rows, err := ex.QueryContext(ctx, args.stmt, args.binds...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", label, err)
 	}
@@ -223,12 +289,8 @@ func scanRows(rows *sql.Rows, label string) ([]*scriptengine.Ordered, error) {
 
 // sqlQueryValue runs a statement expected to produce a scalar and returns the
 // first column of the first row, or nil (JS null) when no rows match.
-func sqlQueryValue(ctx context.Context, ex sqlExecutor, call goja.FunctionCall, label string) (any, error) {
-	if len(call.Arguments) < 1 {
-		return nil, fmt.Errorf("%s: sql argument required", label)
-	}
-	stmt := call.Argument(0).String()
-	rows, err := ex.QueryContext(ctx, stmt, sqlPositionalArgs(call)...)
+func sqlQueryValue(ctx context.Context, ex sqlExecutor, args sqlStmtArgs, label string) (any, error) {
+	rows, err := ex.QueryContext(ctx, args.stmt, args.binds...)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", label, err)
 	}
@@ -253,7 +315,7 @@ func scanFirstValue(rows *sql.Rows, label string) (any, error) {
 }
 
 // sqlPositionalArgs reads the SQL bind parameters from the JS call (everything
-// after the SQL string at index 0).
+// after the SQL string at index 0). Touches goja values — extract-half only.
 func sqlPositionalArgs(call goja.FunctionCall) []any {
 	return sqlArgsFrom(call, 1)
 }
@@ -261,6 +323,7 @@ func sqlPositionalArgs(call goja.FunctionCall) []any {
 // sqlArgsFrom reads bind parameters starting at `start`. goja exports JS
 // numbers as int64/float64, strings as string, bools as bool, null as nil, and
 // Uint8Array as []byte — all of which the SQL drivers accept directly.
+// Touches goja values — extract-half only.
 func sqlArgsFrom(call goja.FunctionCall, start int) []any {
 	if len(call.Arguments) <= start {
 		return nil

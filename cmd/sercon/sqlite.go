@@ -20,23 +20,24 @@ import (
 // cgo-free rule holds. The blank import registers it as the "sqlite" driver.
 func sqliteNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return sqliteOpen(vm, loop, ctx, call)
-		}),
+		"open": scriptengine.PromisifyAsync(vm, loop, sqliteOpenExtract,
+			func(ctx context.Context, path string) (map[string]any, error) {
+				return sqlOpen(vm, loop, ctx, "sqlite", path, "sqlite")
+			}),
 	}
 }
 
-// sqliteOpen connects to a SQLite database and returns the handle. `path` is
-// ":memory:" for an in-RAM database or a filesystem path (missing files are
-// created by the driver). The shared sqlOpen pings immediately so a bad path
-// surfaces at open() rather than the first query.
-func sqliteOpen(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// sqliteOpenExtract reads the open() path argument on the event loop. `path`
+// is ":memory:" for an in-RAM database or a filesystem path (missing files are
+// created by the driver). The shared sqlOpen (the work half) pings immediately
+// so a bad path surfaces at open() rather than the first query.
+func sqliteOpenExtract(call goja.FunctionCall) (string, error) {
 	if len(call.Arguments) < 1 {
-		return nil, errors.New("sqlite.open: path argument required (use \":memory:\" for in-RAM)")
+		return "", errors.New("sqlite.open: path argument required (use \":memory:\" for in-RAM)")
 	}
 	path := call.Argument(0).String()
 	if path == "" {
-		return nil, errors.New("sqlite.open: path is empty (use \":memory:\" for in-RAM)")
+		return "", errors.New("sqlite.open: path is empty (use \":memory:\" for in-RAM)")
 	}
-	return sqlOpen(vm, loop, ctx, "sqlite", path, "sqlite")
+	return path, nil
 }

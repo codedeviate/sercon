@@ -26,46 +26,52 @@ func clipboardArgs(op, text string) []string {
 	return args
 }
 
-// startStop returns a method running `<verb> <op> [path]` for a save-on-stop
-// recorder (trace, profiler). op is "start" or "stop".
-func (h *abHandle) startStop(verb, op string) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(ctx context.Context, call goja.FunctionCall) (any, error) {
+// startStop returns a work half running `<verb> <op> [path]` for a
+// save-on-stop recorder (trace, profiler). op is "start" or "stop"; the
+// extracted path is only used on "stop".
+func (h *abHandle) startStop(verb, op string) func(context.Context, string) (any, error) {
+	return func(ctx context.Context, p string) (any, error) {
 		args := []string{verb, op}
-		if op == "stop" {
-			if p := strArg(call, 0); p != "" {
-				args = append(args, p)
-			}
+		if op == "stop" && p != "" {
+			args = append(args, p)
 		}
 		return h.runJSON(ctx, args...)
 	}
 }
 
-func (h *abHandle) profilerStart(ctx context.Context, call goja.FunctionCall) (any, error) {
-	return h.runJSON(ctx, profilerStartArgs(optsArgMap(call, 0))...)
+func (h *abHandle) profilerStart(ctx context.Context, opts map[string]any) (any, error) {
+	return h.runJSON(ctx, profilerStartArgs(opts)...)
 }
 
-func (h *abHandle) inspect(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func (h *abHandle) inspect(ctx context.Context, _ struct{}) (any, error) {
 	return h.runJSON(ctx, "inspect")
 }
 
-func (h *abHandle) clipboard(ctx context.Context, call goja.FunctionCall) (any, error) {
-	op := strArg(call, 0)
-	if op == "" {
-		return nil, errors.New("agentBrowser.clipboard: operation is required (read/write/copy/paste)")
-	}
-	return h.runJSON(ctx, clipboardArgs(op, strArg(call, 1))...)
+// clipboardParams carries the clipboard operation plus its optional text.
+type clipboardParams struct {
+	op, text string
 }
 
-func (h *abHandle) vitals(ctx context.Context, call goja.FunctionCall) (any, error) {
+func clipboardExtract(call goja.FunctionCall) (clipboardParams, error) {
+	return clipboardParams{op: strArg(call, 0), text: strArg(call, 1)}, nil
+}
+
+func (h *abHandle) clipboard(ctx context.Context, p clipboardParams) (any, error) {
+	if p.op == "" {
+		return nil, errors.New("agentBrowser.clipboard: operation is required (read/write/copy/paste)")
+	}
+	return h.runJSON(ctx, clipboardArgs(p.op, p.text)...)
+}
+
+func (h *abHandle) vitals(ctx context.Context, url string) (any, error) {
 	args := []string{"vitals"}
-	if url := strArg(call, 0); url != "" {
+	if url != "" {
 		args = append(args, url)
 	}
 	return h.runJSON(ctx, args...)
 }
 
-func (h *abHandle) pushstate(ctx context.Context, call goja.FunctionCall) (any, error) {
-	url := strArg(call, 0)
+func (h *abHandle) pushstate(ctx context.Context, url string) (any, error) {
 	if url == "" {
 		return nil, errors.New("agentBrowser.pushstate: url is required")
 	}
@@ -75,15 +81,15 @@ func (h *abHandle) pushstate(ctx context.Context, call goja.FunctionCall) (any, 
 // addDebug wires the debug/perf surface into the handle object.
 func (h *abHandle) addDebug(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["trace"] = map[string]any{
-		"start": h.p(vm, loop, h.startStop("trace", "start")),
-		"stop":  h.p(vm, loop, h.startStop("trace", "stop")),
+		"start": abAsync(vm, loop, abStrArg0, h.startStop("trace", "start")),
+		"stop":  abAsync(vm, loop, abStrArg0, h.startStop("trace", "stop")),
 	}
 	obj["profiler"] = map[string]any{
-		"start": h.p(vm, loop, h.profilerStart),
-		"stop":  h.p(vm, loop, h.startStop("profiler", "stop")),
+		"start": abAsync(vm, loop, abOptsArg0, h.profilerStart),
+		"stop":  abAsync(vm, loop, abStrArg0, h.startStop("profiler", "stop")),
 	}
-	obj["inspect"] = h.p(vm, loop, h.inspect)
-	obj["clipboard"] = h.p(vm, loop, h.clipboard)
-	obj["vitals"] = h.p(vm, loop, h.vitals)
-	obj["pushstate"] = h.p(vm, loop, h.pushstate)
+	obj["inspect"] = abAsync(vm, loop, abNoArgs, h.inspect)
+	obj["clipboard"] = abAsync(vm, loop, clipboardExtract, h.clipboard)
+	obj["vitals"] = abAsync(vm, loop, abStrArg0, h.vitals)
+	obj["pushstate"] = abAsync(vm, loop, abStrArg0, h.pushstate)
 }

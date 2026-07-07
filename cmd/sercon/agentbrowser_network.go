@@ -51,43 +51,51 @@ func requestsArgs(opts map[string]any) []string {
 	return args
 }
 
-func (h *abHandle) netRoute(ctx context.Context, call goja.FunctionCall) (any, error) {
-	url := strArg(call, 0)
-	if url == "" {
+// netRouteArgs carries the url pattern plus the route options map.
+type netRouteArgs struct {
+	url  string
+	opts map[string]any
+}
+
+func netRouteExtract(call goja.FunctionCall) (netRouteArgs, error) {
+	return netRouteArgs{url: strArg(call, 0), opts: optsArgMap(call, 1)}, nil
+}
+
+func (h *abHandle) netRoute(ctx context.Context, a netRouteArgs) (any, error) {
+	if a.url == "" {
 		return nil, errors.New("agentBrowser.network.route: url pattern is required")
 	}
-	args, err := routeArgs(url, optsArgMap(call, 1))
+	args, err := routeArgs(a.url, a.opts)
 	if err != nil {
 		return nil, err
 	}
 	return h.runJSON(ctx, args...)
 }
 
-func (h *abHandle) netUnroute(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) netUnroute(ctx context.Context, url string) (any, error) {
 	args := []string{"network", "unroute"}
-	if url := strArg(call, 0); url != "" {
+	if url != "" {
 		args = append(args, url)
 	}
 	return h.runJSON(ctx, args...)
 }
 
-func (h *abHandle) netRequests(ctx context.Context, call goja.FunctionCall) (any, error) {
-	return h.runJSON(ctx, requestsArgs(optsArgMap(call, 0))...)
+func (h *abHandle) netRequests(ctx context.Context, opts map[string]any) (any, error) {
+	return h.runJSON(ctx, requestsArgs(opts)...)
 }
 
-func (h *abHandle) netRequest(ctx context.Context, call goja.FunctionCall) (any, error) {
-	id := strArg(call, 0)
+func (h *abHandle) netRequest(ctx context.Context, id string) (any, error) {
 	if id == "" {
 		return nil, errors.New("agentBrowser.network.request: requestId is required")
 	}
 	return h.runJSON(ctx, "network", "request", id)
 }
 
-// harOp returns a method running `network har <op> [path]`.
-func (h *abHandle) harOp(op string) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(ctx context.Context, call goja.FunctionCall) (any, error) {
+// harOp returns a work half running `network har <op> [path]`.
+func (h *abHandle) harOp(op string) func(context.Context, string) (any, error) {
+	return func(ctx context.Context, p string) (any, error) {
 		args := []string{"network", "har", op}
-		if p := strArg(call, 0); p != "" {
+		if p != "" {
 			args = append(args, p)
 		}
 		return h.runJSON(ctx, args...)
@@ -97,13 +105,13 @@ func (h *abHandle) harOp(op string) func(context.Context, goja.FunctionCall) (an
 // addNetwork wires the network surface into the handle object.
 func (h *abHandle) addNetwork(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["network"] = map[string]any{
-		"route":    h.p(vm, loop, h.netRoute),
-		"unroute":  h.p(vm, loop, h.netUnroute),
-		"requests": h.p(vm, loop, h.netRequests),
-		"request":  h.p(vm, loop, h.netRequest),
+		"route":    abAsync(vm, loop, netRouteExtract, h.netRoute),
+		"unroute":  abAsync(vm, loop, abStrArg0, h.netUnroute),
+		"requests": abAsync(vm, loop, abOptsArg0, h.netRequests),
+		"request":  abAsync(vm, loop, abStrArg0, h.netRequest),
 		"har": map[string]any{
-			"start": h.p(vm, loop, h.harOp("start")),
-			"stop":  h.p(vm, loop, h.harOp("stop")),
+			"start": abAsync(vm, loop, abStrArg0, h.harOp("start")),
+			"stop":  abAsync(vm, loop, abStrArg0, h.harOp("stop")),
 		},
 	}
 }

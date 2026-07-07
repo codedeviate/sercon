@@ -12,23 +12,33 @@ import (
 	"github.com/dop251/goja"
 )
 
-// shellArg packages a JS-side cmd into a goja.Value so we can drive
-// execShell through its real signature without spinning up a runtime
-// per test. We hand it the export-shaped value directly.
+// shellCall packages a JS-side cmd + opts for the test helpers below.
 type shellCall struct {
 	cmd  any
 	opts map[string]any
 }
 
-func runShell(t *testing.T, c shellCall) (map[string]any, error) {
-	t.Helper()
+// shellExtract packages the JS-shaped inputs into a goja call and runs the
+// real extract half (execShellExtract) over it. Validation tests assert on
+// its errors directly.
+func shellExtract(c shellCall) (execShellArgs, error) {
 	vm := goja.New()
 	args := []goja.Value{vm.ToValue(c.cmd)}
 	if c.opts != nil {
 		args = append(args, vm.ToValue(c.opts))
 	}
-	call := goja.FunctionCall{Arguments: args}
-	return execShell(context.Background(), call)
+	return execShellExtract(goja.FunctionCall{Arguments: args})
+}
+
+// runShell drives extract + work exactly like the binding does: the work
+// half (execShell) receives only the plain-Go execShellArgs bundle.
+func runShell(t *testing.T, c shellCall) (map[string]any, error) {
+	t.Helper()
+	args, err := shellExtract(c)
+	if err != nil {
+		return nil, err
+	}
+	return execShell(context.Background(), args)
 }
 
 // String cmd routes through the host shell so shell metacharacters work.
@@ -162,12 +172,13 @@ func TestExecShell_TimeoutKills(t *testing.T) {
 	}
 }
 
-// Empty / undefined cmd is a clear caller error.
+// Empty / undefined cmd is a clear caller error. The validation lives in
+// the extract half, so drive execShellExtract directly.
 func TestExecShell_InputValidation(t *testing.T) {
-	if _, err := runShell(t, shellCall{cmd: ""}); err == nil {
+	if _, err := shellExtract(shellCall{cmd: ""}); err == nil {
 		t.Error("empty string cmd should error")
 	}
-	if _, err := runShell(t, shellCall{cmd: []any{}}); err == nil {
+	if _, err := shellExtract(shellCall{cmd: []any{}}); err == nil {
 		t.Error("empty argv should error")
 	}
 }

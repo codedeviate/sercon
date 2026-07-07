@@ -56,20 +56,22 @@ type sendAttachment struct {
 	Bytes       []byte
 }
 
-// emailSend returns the AsyncBinding wired into emailNamespace.
+// emailSend returns the AsyncBinding wired into emailNamespace. The whole
+// options object is parsed on-loop in extract (parseSendOpts touches goja
+// values); the work goroutine only sees the plain sendOpts struct.
 func emailSend(vm *goja.Runtime, loop *eventloop.EventLoop) scriptengine.AsyncBinding {
-	return scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (sendResult, error) {
-		opts, err := parseSendOpts(vm, call)
-		if err != nil {
-			return sendResult{}, err
-		}
-		if opts.timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, opts.timeout)
-			defer cancel()
-		}
-		return sendMail(ctx, opts)
-	})
+	return scriptengine.PromisifyAsync(vm, loop,
+		func(call goja.FunctionCall) (sendOpts, error) {
+			return parseSendOpts(vm, call)
+		},
+		func(ctx context.Context, opts sendOpts) (sendResult, error) {
+			if opts.timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, opts.timeout)
+				defer cancel()
+			}
+			return sendMail(ctx, opts)
+		})
 }
 
 // parseSendOpts extracts the JS opts into sendOpts.
@@ -133,12 +135,15 @@ func parseSendOpts(vm *goja.Runtime, call goja.FunctionCall) (sendOpts, error) {
 				}
 				// Uint8Array exports as []byte; ArrayBuffer as goja.ArrayBuffer.
 				// Accept both so callers aren't surprised by a silently-empty
-				// attachment (matches jsArgToBytes's accepted types).
+				// attachment (matches jsArgToBytes's accepted types). Copy the
+				// bytes: both forms alias the JS buffer's backing store, and
+				// sendOpts crosses to the work goroutine while the script can
+				// still mutate that buffer on the loop.
 				switch b := m["bytes"].(type) {
 				case []byte:
-					att.Bytes = b
+					att.Bytes = append([]byte(nil), b...)
 				case goja.ArrayBuffer:
-					att.Bytes = b.Bytes()
+					att.Bytes = append([]byte(nil), b.Bytes()...)
 				}
 				if att.ContentType == "" {
 					att.ContentType = "application/octet-stream"
@@ -282,7 +287,7 @@ func sanitizeHeaderValue(s string) string {
 // attachment filename. mime.FormatMediaType quotes/escapes any embedded `"`
 // so a filename can't break out of the filename="..." parameter and inject
 // a second bogus parameter, and RFC-2231-encodes non-ASCII filenames
-// (filename*=utf-8''...). sanitizeHeaderValue runs first as a
+// (filename*=utf-8”...). sanitizeHeaderValue runs first as a
 // belt-and-suspenders pass — FormatMediaType already refuses to encode
 // values containing CR/LF, but stripping them upfront keeps that guarantee
 // independent of the mime package's internals. If FormatMediaType can't

@@ -50,44 +50,72 @@ func (h *abHandle) runSet(ctx context.Context, setting string, operands ...strin
 	return parseJSON(out)
 }
 
-func (h *abHandle) setViewport(ctx context.Context, call goja.FunctionCall) (any, error) {
-	w, hh := numStr(call, 0), numStr(call, 1)
-	if w == "" || hh == "" {
+// viewportArgs carries width/height plus the optional scale.
+type viewportArgs struct {
+	w, h     string
+	scale    string
+	hasScale bool
+}
+
+func viewportExtract(call goja.FunctionCall) (viewportArgs, error) {
+	a := viewportArgs{w: numStr(call, 0), h: numStr(call, 1)}
+	if s := call.Argument(2); s != nil && !goja.IsUndefined(s) {
+		a.scale, a.hasScale = fmt.Sprintf("%v", s.Export()), true // optional scale
+	}
+	return a, nil
+}
+
+func (h *abHandle) setViewport(ctx context.Context, a viewportArgs) (any, error) {
+	if a.w == "" || a.h == "" {
 		return nil, errors.New("agentBrowser.set.viewport: width and height are required")
 	}
-	ops := []string{w, hh}
-	if s := call.Argument(2); s != nil && !goja.IsUndefined(s) {
-		ops = append(ops, fmt.Sprintf("%v", s.Export())) // optional scale
+	ops := []string{a.w, a.h}
+	if a.hasScale {
+		ops = append(ops, a.scale)
 	}
 	return h.runSet(ctx, "viewport", ops...)
 }
 
-func (h *abHandle) setDevice(ctx context.Context, call goja.FunctionCall) (any, error) {
-	name := strArg(call, 0)
+func (h *abHandle) setDevice(ctx context.Context, name string) (any, error) {
 	if name == "" {
 		return nil, errors.New("agentBrowser.set.device: name is required")
 	}
 	return h.runSet(ctx, "device", name)
 }
 
-func (h *abHandle) setGeo(ctx context.Context, call goja.FunctionCall) (any, error) {
-	lat, lng := numStr(call, 0), numStr(call, 1)
-	if lat == "" || lng == "" {
-		return nil, errors.New("agentBrowser.set.geo: latitude and longitude are required")
-	}
-	return h.runSet(ctx, "geo", lat, lng)
+// geoArgs carries latitude/longitude as stringified numbers.
+type geoArgs struct {
+	lat, lng string
 }
 
-func (h *abHandle) setOffline(ctx context.Context, call goja.FunctionCall) (any, error) {
+func geoExtract(call goja.FunctionCall) (geoArgs, error) {
+	return geoArgs{lat: numStr(call, 0), lng: numStr(call, 1)}, nil
+}
+
+func (h *abHandle) setGeo(ctx context.Context, a geoArgs) (any, error) {
+	if a.lat == "" || a.lng == "" {
+		return nil, errors.New("agentBrowser.set.geo: latitude and longitude are required")
+	}
+	return h.runSet(ctx, "geo", a.lat, a.lng)
+}
+
+func offlineExtract(call goja.FunctionCall) (bool, error) {
 	on := true // default: enable offline
 	if a := call.Argument(0); a != nil && !goja.IsUndefined(a) && !goja.IsNull(a) {
 		on = a.ToBoolean()
 	}
+	return on, nil
+}
+
+func (h *abHandle) setOffline(ctx context.Context, on bool) (any, error) {
 	return h.runSet(ctx, "offline", offlineArg(on))
 }
 
-func (h *abHandle) setHeaders(ctx context.Context, call goja.FunctionCall) (any, error) {
-	obj := call.Argument(0).Export()
+func headersExtract(call goja.FunctionCall) (any, error) {
+	return call.Argument(0).Export(), nil
+}
+
+func (h *abHandle) setHeaders(ctx context.Context, obj any) (any, error) {
 	if obj == nil {
 		return nil, errors.New("agentBrowser.set.headers: an object of header name/value pairs is required")
 	}
@@ -98,21 +126,43 @@ func (h *abHandle) setHeaders(ctx context.Context, call goja.FunctionCall) (any,
 	return h.runSet(ctx, "headers", string(b))
 }
 
-func (h *abHandle) setCredentials(ctx context.Context, call goja.FunctionCall) (any, error) {
-	user, pass := strArg(call, 0), strArg(call, 1)
-	if user == "" {
+// credentialsArgs carries the basic-auth username/password pair.
+type credentialsArgs struct {
+	user, pass string
+}
+
+func credentialsExtract(call goja.FunctionCall) (credentialsArgs, error) {
+	return credentialsArgs{user: strArg(call, 0), pass: strArg(call, 1)}, nil
+}
+
+func (h *abHandle) setCredentials(ctx context.Context, a credentialsArgs) (any, error) {
+	if a.user == "" {
 		return nil, errors.New("agentBrowser.set.credentials: username is required")
 	}
-	return h.runSet(ctx, "credentials", user, pass)
+	return h.runSet(ctx, "credentials", a.user, a.pass)
+}
+
+// mediaArgs carries the optional colour scheme + reduced-motion flag.
+type mediaArgs struct {
+	scheme        string
+	reducedMotion bool
+}
+
+func mediaExtract(call goja.FunctionCall) (mediaArgs, error) {
+	a := mediaArgs{scheme: strArg(call, 0)} // "dark" | "light"
+	if rm := call.Argument(1); rm != nil && !goja.IsUndefined(rm) && rm.ToBoolean() {
+		a.reducedMotion = true
+	}
+	return a, nil
 }
 
 // setMedia maps media(scheme?, reducedMotion?) -> `set media [dark|light] [reduced-motion]`.
-func (h *abHandle) setMedia(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) setMedia(ctx context.Context, a mediaArgs) (any, error) {
 	var ops []string
-	if s := strArg(call, 0); s != "" {
-		ops = append(ops, s) // "dark" | "light"
+	if a.scheme != "" {
+		ops = append(ops, a.scheme)
 	}
-	if rm := call.Argument(1); rm != nil && !goja.IsUndefined(rm) && rm.ToBoolean() {
+	if a.reducedMotion {
 		ops = append(ops, "reduced-motion")
 	}
 	if len(ops) == 0 {
@@ -121,18 +171,26 @@ func (h *abHandle) setMedia(ctx context.Context, call goja.FunctionCall) (any, e
 	return h.runSet(ctx, "media", ops...)
 }
 
+// recordStartArgs carries the output path plus the optional url.
+type recordStartArgs struct {
+	path, url string
+}
+
+func recordStartExtract(call goja.FunctionCall) (recordStartArgs, error) {
+	return recordStartArgs{path: strArg(call, 0), url: strArg(call, 1)}, nil
+}
+
 // recordStart runs `record start <path.webm> [url]`.
-func (h *abHandle) recordStart(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) recordStart(ctx context.Context, a recordStartArgs) (any, error) {
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	path := strArg(call, 0)
-	if path == "" {
+	if a.path == "" {
 		return nil, errors.New("agentBrowser.record.start: a .webm output path is required")
 	}
-	ops := []string{path}
-	if url := strArg(call, 1); url != "" {
-		ops = append(ops, url)
+	ops := []string{a.path}
+	if a.url != "" {
+		ops = append(ops, a.url)
 	}
 	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, recordArgs("start", ops...)...)
 	if err != nil {
@@ -141,7 +199,7 @@ func (h *abHandle) recordStart(ctx context.Context, call goja.FunctionCall) (any
 	return parseJSON(out)
 }
 
-func (h *abHandle) recordStop(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func (h *abHandle) recordStop(ctx context.Context, _ struct{}) (any, error) {
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
@@ -155,16 +213,16 @@ func (h *abHandle) recordStop(ctx context.Context, _ goja.FunctionCall) (any, er
 // addSettings wires the settings + record surface into the handle object.
 func (h *abHandle) addSettings(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["set"] = map[string]any{
-		"viewport":    h.p(vm, loop, h.setViewport),
-		"device":      h.p(vm, loop, h.setDevice),
-		"geo":         h.p(vm, loop, h.setGeo),
-		"offline":     h.p(vm, loop, h.setOffline),
-		"headers":     h.p(vm, loop, h.setHeaders),
-		"credentials": h.p(vm, loop, h.setCredentials),
-		"media":       h.p(vm, loop, h.setMedia),
+		"viewport":    abAsync(vm, loop, viewportExtract, h.setViewport),
+		"device":      abAsync(vm, loop, abStrArg0, h.setDevice),
+		"geo":         abAsync(vm, loop, geoExtract, h.setGeo),
+		"offline":     abAsync(vm, loop, offlineExtract, h.setOffline),
+		"headers":     abAsync(vm, loop, headersExtract, h.setHeaders),
+		"credentials": abAsync(vm, loop, credentialsExtract, h.setCredentials),
+		"media":       abAsync(vm, loop, mediaExtract, h.setMedia),
 	}
 	obj["record"] = map[string]any{
-		"start": h.p(vm, loop, h.recordStart),
-		"stop":  h.p(vm, loop, h.recordStop),
+		"start": abAsync(vm, loop, recordStartExtract, h.recordStart),
+		"stop":  abAsync(vm, loop, abNoArgs, h.recordStop),
 	}
 }

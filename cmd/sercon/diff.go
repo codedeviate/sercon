@@ -18,8 +18,37 @@ import (
 // diffs, patch application) land in a stable location.
 func diffNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"compare": scriptengine.PromisifyAsyncLegacy(vm, loop, diffCompare),
+		"compare": scriptengine.PromisifyAsync(vm, loop, diffCompareExtract, diffCompare),
 	}
+}
+
+// diffCompareArgs is the on-loop-extracted input of text.diff.compare.
+type diffCompareArgs struct {
+	a, b []byte
+	opts map[string]any
+}
+
+// diffCompareExtract pulls (a, b, opts?) out of the JS call on the event loop.
+func diffCompareExtract(call goja.FunctionCall) (diffCompareArgs, error) {
+	aBytes, err := exportBytes(call.Argument(0))
+	if err != nil {
+		return diffCompareArgs{}, fmt.Errorf("diff.compare: argument 0: %w", err)
+	}
+	bBytes, err := exportBytes(call.Argument(1))
+	if err != nil {
+		return diffCompareArgs{}, fmt.Errorf("diff.compare: argument 1: %w", err)
+	}
+
+	// optsAsMap is hardcoded to position 1 (the typical
+	// `func(target, opts)` shape); diff.compare's opts sit at position 2
+	// instead.
+	var opts map[string]any
+	if optsArg := call.Argument(2); optsArg != nil && !goja.IsUndefined(optsArg) && !goja.IsNull(optsArg) {
+		if m, ok := optsArg.Export().(map[string]any); ok {
+			opts = m
+		}
+	}
+	return diffCompareArgs{a: aBytes, b: bBytes, opts: opts}, nil
 }
 
 // diffCompare produces a unified diff between two inputs. Inputs are
@@ -38,25 +67,8 @@ func diffNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 //	  diff:      string,    // unified diff text; empty when identical / binary
 //	  format:    "unified",
 //	}
-func diffCompare(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
-	aBytes, err := exportBytes(call.Argument(0))
-	if err != nil {
-		return nil, fmt.Errorf("diff.compare: argument 0: %w", err)
-	}
-	bBytes, err := exportBytes(call.Argument(1))
-	if err != nil {
-		return nil, fmt.Errorf("diff.compare: argument 1: %w", err)
-	}
-
-	// optsAsMap is hardcoded to position 1 (the typical
-	// `func(target, opts)` shape); diff.compare's opts sit at position 2
-	// instead.
-	var opts map[string]any
-	if optsArg := call.Argument(2); optsArg != nil && !goja.IsUndefined(optsArg) && !goja.IsNull(optsArg) {
-		if m, ok := optsArg.Export().(map[string]any); ok {
-			opts = m
-		}
-	}
+func diffCompare(_ context.Context, args diffCompareArgs) (map[string]any, error) {
+	aBytes, bBytes, opts := args.a, args.b, args.opts
 	contextLines := optInt(opts, "context", 3)
 	fromFile := optString(opts, "fromFile", "a")
 	toFile := optString(opts, "toFile", "b")

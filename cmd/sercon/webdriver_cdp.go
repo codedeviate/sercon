@@ -537,19 +537,28 @@ func projectTargets(infos []any) []map[string]any {
 	return out
 }
 
+// cdpCallArgs carries the on-loop-extracted (method, params) pair for the
+// raw CDP bindings (session-level cdp and target-session cdp).
+type cdpCallArgs struct {
+	method string
+	params map[string]any
+}
+
 // targetSessionObject builds the goja handle for an attached target session.
 func (s *wdSession) targetSessionObject(c *cdpConn, targetID, sessionID string, vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"targetId":  targetID,
 		"sessionId": sessionID,
-		"cdp": wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		"cdp": wdAsync(vm, loop, func(call goja.FunctionCall) (cdpCallArgs, error) {
 			method := strArg(call, 0)
 			if method == "" {
-				return nil, errors.New("webdriver: cdp method must be a non-empty string")
+				return cdpCallArgs{}, errors.New("webdriver: cdp method must be a non-empty string")
 			}
-			return c.callMap(sessionID, method, optsArgMap(call, 1))
+			return cdpCallArgs{method: method, params: optsArgMap(call, 1)}, nil
+		}, func(_ context.Context, a cdpCallArgs) (any, error) {
+			return c.callMap(sessionID, a.method, a.params)
 		}),
-		"detach": wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+		"detach": wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 			if _, err := c.callMap("", "Target.detachFromTarget", map[string]any{"sessionId": sessionID}); err != nil {
 				return nil, err
 			}
@@ -560,25 +569,34 @@ func (s *wdSession) targetSessionObject(c *cdpConn, targetID, sessionID string, 
 	}
 }
 
+// cdpClickArgs carries the on-loop-extracted locator and options for cdpClick.
+type cdpClickArgs struct {
+	by, value string
+	opts      map[string]any
+}
+
 // addCDP wires the Chrome-only CDP methods onto the session handle object.
 func (s *wdSession) addCDP(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["cdp"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["cdp"] = wdAsync(vm, loop, func(call goja.FunctionCall) (cdpCallArgs, error) {
 		cmd := strArg(call, 0)
 		if cmd == "" {
-			return nil, errors.New("webdriver.cdp: command must be a non-empty string")
+			return cdpCallArgs{}, errors.New("webdriver.cdp: command must be a non-empty string")
 		}
-		params := optsArgMap(call, 1)
-		return s.do(func() (any, error) { return s.cdpExec(cmd, params) })
+		return cdpCallArgs{method: cmd, params: optsArgMap(call, 1)}, nil
+	}, func(_ context.Context, a cdpCallArgs) (any, error) {
+		return s.do(func() (any, error) { return s.cdpExec(a.method, a.params) })
 	})
-	obj["cdpClick"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["cdpClick"] = wdAsync(vm, loop, func(call goja.FunctionCall) (cdpClickArgs, error) {
 		by := strArg(call, 0)
 		value := strArg(call, 1)
 		if by == "" || value == "" {
-			return nil, errors.New("webdriver.cdpClick: (by, value) are required")
+			return cdpClickArgs{}, errors.New("webdriver.cdpClick: (by, value) are required")
 		}
-		return s.cdpClickImpl(by, value, optsArgMap(call, 2))
+		return cdpClickArgs{by: by, value: value, opts: optsArgMap(call, 2)}, nil
+	}, func(_ context.Context, a cdpClickArgs) (any, error) {
+		return s.cdpClickImpl(a.by, a.value, a.opts)
 	})
-	obj["targets"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["targets"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		c, err := s.cdpConnect()
 		if err != nil {
 			return nil, err
@@ -592,11 +610,19 @@ func (s *wdSession) addCDP(obj map[string]any, vm *goja.Runtime, loop *eventloop
 		infos, _ := res["targetInfos"].([]any)
 		return projectTargets(infos), nil
 	})
-	obj["attach"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["attach"] = wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
 		targetID := targetIDFromExport(call.Argument(0).Export())
 		if targetID == "" {
-			return nil, errors.New("webdriver.attach: a target id or target object is required")
+			return "", errors.New("webdriver.attach: a target id or target object is required")
 		}
+		return targetID, nil
+	}, func(_ context.Context, targetID string) (any, error) {
+		// TODO(promisify-vm): targetSessionObject constructs a vm/loop-capturing
+		// handle map here, in the work goroutine. Construction executes no VM
+		// code (goja conversion happens at resolve time, on the loop), but it
+		// still hands vm/loop to work; being fully clean would need an on-loop
+		// post-work hook in PromisifyAsync to build the handle after the attach
+		// completes.
 		c, err := s.cdpConnect()
 		if err != nil {
 			return nil, err

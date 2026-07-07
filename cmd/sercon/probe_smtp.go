@@ -49,15 +49,30 @@ type smtpProbeResult struct {
 	SizeLimit      int64    `json:"sizeLimit"`
 }
 
-func smtpProbe(ctx context.Context, call goja.FunctionCall) (smtpProbeResult, error) {
+// smtpProbeArgs carries the on-loop-extracted arguments of net.probe.smtp.
+type smtpProbeArgs struct {
+	host     string
+	port     string
+	timeout  time.Duration
+	ehloName string
+}
+
+func smtpProbeExtract(call goja.FunctionCall) (smtpProbeArgs, error) {
 	host := call.Argument(0).String()
 	if host == "" {
-		return smtpProbeResult{}, errors.New("net.smtp: host required")
+		return smtpProbeArgs{}, errors.New("net.smtp: host required")
 	}
 	opts := optsAsMap(call)
-	port := optString(opts, "port", "25")
-	timeout := optMillis(opts, "timeout", 10*time.Second)
-	ehloName := optString(opts, "ehloName", "localhost")
+	return smtpProbeArgs{
+		host:     host,
+		port:     optString(opts, "port", "25"),
+		timeout:  optMillis(opts, "timeout", 10*time.Second),
+		ehloName: optString(opts, "ehloName", "localhost"),
+	}, nil
+}
+
+func smtpProbe(ctx context.Context, args smtpProbeArgs) (smtpProbeResult, error) {
+	host, port, timeout, ehloName := args.host, args.port, args.timeout, args.ehloName
 
 	addr := net.JoinHostPort(host, port)
 	dialer := net.Dialer{Timeout: timeout}

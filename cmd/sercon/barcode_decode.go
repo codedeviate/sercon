@@ -134,6 +134,41 @@ func decodeImageBytes(data []byte) (image.Image, string, error) {
 	return img, format, nil
 }
 
+// barcodeDecodeArgs is the on-loop-extracted input of codec.barcode.decode.
+type barcodeDecodeArgs struct {
+	data       []byte
+	formatHint string
+}
+
+// barcodeDecodeExtract pulls (data, format?) out of the JS call on the event
+// loop. The data bytes are copied: jsArgToBytes can return a typed array's
+// live backing store, and the work goroutine must not share memory that JS
+// could mutate mid-decode (same pattern as exportBytes in compression.go).
+func barcodeDecodeExtract(call goja.FunctionCall) (barcodeDecodeArgs, error) {
+	if len(call.Arguments) < 1 {
+		return barcodeDecodeArgs{}, errors.New("barcode.decode: image data argument required")
+	}
+	data, err := jsArgToBytes(call.Argument(0))
+	if err != nil {
+		return barcodeDecodeArgs{}, fmt.Errorf("barcode.decode: %w", err)
+	}
+	if len(data) == 0 {
+		return barcodeDecodeArgs{}, errors.New("barcode.decode: image data is empty")
+	}
+
+	formatHint := ""
+	if len(call.Arguments) >= 2 {
+		hint := call.Argument(1)
+		if hint != nil && !goja.IsUndefined(hint) && !goja.IsNull(hint) {
+			formatHint = strings.ToLower(strings.TrimSpace(hint.String()))
+		}
+	}
+	return barcodeDecodeArgs{
+		data:       append([]byte(nil), data...),
+		formatHint: formatHint,
+	}, nil
+}
+
 // barcodeDecodeCall is the PromisifyAsync workhorse. Signature:
 //
 //	decode(data, format?)
@@ -144,27 +179,10 @@ func decodeImageBytes(data []byte) (image.Image, string, error) {
 // autoDecodeOrder is tried in priority order; the first successful
 // decode wins. Returns `{ format, text }`. Throws on transport
 // errors (bad image bytes, no barcode found).
-func barcodeDecodeCall(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
-	if len(call.Arguments) < 1 {
-		return nil, errors.New("barcode.decode: image data argument required")
-	}
-	data, err := jsArgToBytes(call.Argument(0))
-	if err != nil {
-		return nil, fmt.Errorf("barcode.decode: %w", err)
-	}
-	if len(data) == 0 {
-		return nil, errors.New("barcode.decode: image data is empty")
-	}
+func barcodeDecodeCall(_ context.Context, args barcodeDecodeArgs) (map[string]any, error) {
+	formatHint := args.formatHint
 
-	formatHint := ""
-	if len(call.Arguments) >= 2 {
-		hint := call.Argument(1)
-		if hint != nil && !goja.IsUndefined(hint) && !goja.IsNull(hint) {
-			formatHint = strings.ToLower(strings.TrimSpace(hint.String()))
-		}
-	}
-
-	img, _, err := decodeImageBytes(data)
+	img, _, err := decodeImageBytes(args.data)
 	if err != nil {
 		return nil, fmt.Errorf("barcode.decode: %w", err)
 	}

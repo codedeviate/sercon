@@ -19,16 +19,10 @@ import (
 // handle (see db_sql.go). MySQL uses ? placeholders.
 func mysqlNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			dsn, opts, err := dbConnArg(call, "mysql")
-			if err != nil {
-				return nil, err
-			}
-			if opts != nil {
-				dsn = mysqlDSN(opts)
-			}
-			return sqlOpen(vm, loop, ctx, "mysql", dsn, "mysql")
-		}),
+		"open": scriptengine.PromisifyAsync(vm, loop, dbDSNExtract("mysql", mysqlDSN),
+			func(ctx context.Context, dsn string) (map[string]any, error) {
+				return sqlOpen(vm, loop, ctx, "mysql", dsn, "mysql")
+			}),
 	}
 }
 

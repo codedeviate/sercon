@@ -164,7 +164,11 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 			return goja.Undefined()
 		})
 	}
-	waitKey := scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+	// waitKey takes no arguments, so extract is a no-op; the work body is
+	// pure Go (controller handle + blocking WaitKey), never the VM.
+	waitKey := scriptengine.PromisifyAsync(vm, loop, func(goja.FunctionCall) (struct{}, error) {
+		return struct{}{}, nil
+	}, func(_ context.Context, _ struct{}) (map[string]any, error) {
 		ctrlMu.Lock()
 		c := ctrl
 		ctrlMu.Unlock()

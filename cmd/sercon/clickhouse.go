@@ -21,16 +21,10 @@ import (
 // port is 9000 (9440 when secure).
 func clickhouseNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			dsn, opts, err := dbConnArg(call, "clickhouse")
-			if err != nil {
-				return nil, err
-			}
-			if opts != nil {
-				dsn = clickhouseDSN(opts)
-			}
-			return sqlOpen(vm, loop, ctx, "clickhouse", dsn, "clickhouse")
-		}),
+		"open": scriptengine.PromisifyAsync(vm, loop, dbDSNExtract("clickhouse", clickhouseDSN),
+			func(ctx context.Context, dsn string) (map[string]any, error) {
+				return sqlOpen(vm, loop, ctx, "clickhouse", dsn, "clickhouse")
+			}),
 	}
 }
 

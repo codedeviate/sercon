@@ -126,27 +126,33 @@ func (s *wdSession) dragElement(srcID, dstID string) (any, error) {
 	return wdOK(e)
 }
 
+// dragAndDropArgs carries the on-loop-extracted (src, dst) element ids for
+// the dragAndDrop binding.
+type dragAndDropArgs struct {
+	src, dst string
+}
+
 // addActions wires the W3C action-chain methods onto the session handle.
 func (s *wdSession) addActions(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["hover"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-		id, err := wdElementIDArg(call, 0)
-		if err != nil {
-			return nil, err
-		}
+	obj["hover"] = wdAsync(vm, loop, func(call goja.FunctionCall) (string, error) {
+		return wdElementIDArg(call, 0)
+	}, func(_ context.Context, id string) (any, error) {
 		return s.do(func() (any, error) { return s.hoverElement(id) })
 	})
-	obj["dragAndDrop"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["dragAndDrop"] = wdAsync(vm, loop, func(call goja.FunctionCall) (dragAndDropArgs, error) {
 		src, err := wdElementIDArg(call, 0)
 		if err != nil {
-			return nil, err
+			return dragAndDropArgs{}, err
 		}
 		dst, err := wdElementIDArg(call, 1)
 		if err != nil {
-			return nil, err
+			return dragAndDropArgs{}, err
 		}
-		return s.do(func() (any, error) { return s.dragElement(src, dst) })
+		return dragAndDropArgs{src: src, dst: dst}, nil
+	}, func(_ context.Context, a dragAndDropArgs) (any, error) {
+		return s.do(func() (any, error) { return s.dragElement(a.src, a.dst) })
 	})
-	obj["keyChord"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["keyChord"] = wdAsync(vm, loop, func(call goja.FunctionCall) ([]string, error) {
 		keys := make([]string, 0, len(call.Arguments))
 		for i := range call.Arguments {
 			keys = append(keys, strArg(call, i))
@@ -154,16 +160,23 @@ func (s *wdSession) addActions(obj map[string]any, vm *goja.Runtime, loop *event
 		if len(keys) == 0 {
 			return nil, errors.New("webdriver.keyChord: at least one key is required")
 		}
+		return keys, nil
+	}, func(_ context.Context, keys []string) (any, error) {
 		return s.do(func() (any, error) { _, e := s.command("POST", "/actions", wdKeyChordActions(keys)); return wdOK(e) })
 	})
-	obj["performActions"] = wdAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+	obj["performActions"] = wdAsync(vm, loop, func(call goja.FunctionCall) ([]any, error) {
 		seq, ok := call.Argument(0).Export().([]any)
 		if !ok {
 			return nil, errors.New("webdriver.performActions: argument must be an array of W3C action sequences")
 		}
-		return s.do(func() (any, error) { _, e := s.command("POST", "/actions", map[string]any{"actions": seq}); return wdOK(e) })
+		return seq, nil
+	}, func(_ context.Context, seq []any) (any, error) {
+		return s.do(func() (any, error) {
+			_, e := s.command("POST", "/actions", map[string]any{"actions": seq})
+			return wdOK(e)
+		})
 	})
-	obj["releaseActions"] = wdAsync(vm, loop, func(_ context.Context, _ goja.FunctionCall) (any, error) {
+	obj["releaseActions"] = wdAsync(vm, loop, wdNoArgs, func(_ context.Context, _ struct{}) (any, error) {
 		return s.do(func() (any, error) { _, e := s.command("DELETE", "/actions", nil); return wdOK(e) })
 	})
 }

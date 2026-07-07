@@ -39,15 +39,19 @@ func compressionNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[strin
 	algos := make([]string, len(compressionAlgos))
 	copy(algos, compressionAlgos)
 	return map[string]any{
-		"compress":   scriptengine.PromisifyAsyncLegacy(vm, loop, compressCall),
-		"decompress": scriptengine.PromisifyAsyncLegacy(vm, loop, decompressCall),
+		"compress":   scriptengine.PromisifyAsync(vm, loop, compressExtract, compressCall),
+		"decompress": scriptengine.PromisifyAsync(vm, loop, decompressExtract, decompressCall),
 		"algos":      func() []string { return algos },
 	}
 }
 
 // exportBytes pulls a binary input out of a JS argument. Strings become
 // their UTF-8 byte sequence; Uint8Array and ArrayBuffer round-trip through
-// goja as `[]byte` and `goja.ArrayBuffer` respectively.
+// goja as `[]byte` and `goja.ArrayBuffer` respectively. The returned slice
+// is always a copy: goja hands back the typed array's live backing store,
+// and every caller is a PromisifyAsync extract whose bytes are consumed in
+// the work goroutine after extract returns — a shared backing array would
+// race with JS-side mutation.
 func exportBytes(v goja.Value) ([]byte, error) {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return nil, errors.New("input is undefined or null")
@@ -56,35 +60,56 @@ func exportBytes(v goja.Value) ([]byte, error) {
 	case string:
 		return []byte(e), nil
 	case []byte:
-		return e, nil
+		return append([]byte(nil), e...), nil
 	case goja.ArrayBuffer:
-		return e.Bytes(), nil
+		return append([]byte(nil), e.Bytes()...), nil
 	default:
 		return nil, fmt.Errorf("unsupported input type %T (want string, Uint8Array, or ArrayBuffer)", e)
 	}
 }
 
-func compressCall(_ context.Context, call goja.FunctionCall) ([]byte, error) {
-	algo := strings.ToLower(call.Argument(0).String())
-	in, err := exportBytes(call.Argument(1))
-	if err != nil {
-		return nil, fmt.Errorf("compress: %w", err)
-	}
-	return compressBytes(algo, in)
+// compressArgs is the on-loop-extracted input of codec.compression.compress.
+type compressArgs struct {
+	algo string
+	in   []byte
 }
 
-func decompressCall(_ context.Context, call goja.FunctionCall) ([]byte, error) {
+func compressExtract(call goja.FunctionCall) (compressArgs, error) {
 	algo := strings.ToLower(call.Argument(0).String())
 	in, err := exportBytes(call.Argument(1))
 	if err != nil {
-		return nil, fmt.Errorf("decompress: %w", err)
+		return compressArgs{}, fmt.Errorf("compress: %w", err)
+	}
+	return compressArgs{algo: algo, in: in}, nil
+}
+
+func compressCall(_ context.Context, args compressArgs) ([]byte, error) {
+	return compressBytes(args.algo, args.in)
+}
+
+// decompressArgs is the on-loop-extracted input of codec.compression.decompress.
+type decompressArgs struct {
+	algo     string
+	in       []byte
+	maxBytes int64
+}
+
+func decompressExtract(call goja.FunctionCall) (decompressArgs, error) {
+	algo := strings.ToLower(call.Argument(0).String())
+	in, err := exportBytes(call.Argument(1))
+	if err != nil {
+		return decompressArgs{}, fmt.Errorf("decompress: %w", err)
 	}
 	opts := thirdArgAsMap(call)
 	maxBytes := int64(optInt(opts, "maxBytes", DefaultMaxDecompressBytes))
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxDecompressBytes
 	}
-	return decompressBytes(algo, in, maxBytes)
+	return decompressArgs{algo: algo, in: in, maxBytes: maxBytes}, nil
+}
+
+func decompressCall(_ context.Context, args decompressArgs) ([]byte, error) {
+	return decompressBytes(args.algo, args.in, args.maxBytes)
 }
 
 // compressBytes routes by algorithm name. Each branch handles writer

@@ -24,7 +24,7 @@ func runHTTPReqScript(t *testing.T, body string) any {
 	var captured any
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 10 * time.Second})
 	if err := eng.RegisterNamespaceFactory("http", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return map[string]any{"request": scriptengine.PromisifyAsyncLegacy(vm, loop, httpRequestCall)}
+		return map[string]any{"request": scriptengine.PromisifyAsync(vm, loop, httpRequestExtract, httpRequestCall)}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestHTTPRequest_MaxBytesUnderCapSucceeds(t *testing.T) {
 func TestHTTPRequest_TransportErrorThrows(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
 	if err := eng.RegisterNamespaceFactory("http", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return map[string]any{"request": scriptengine.PromisifyAsyncLegacy(vm, loop, httpRequestCall)}
+		return map[string]any{"request": scriptengine.PromisifyAsync(vm, loop, httpRequestExtract, httpRequestCall)}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func mustErr(t *testing.T, src string) string {
 	t.Helper()
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 2 * time.Second})
 	if err := eng.RegisterNamespaceFactory("http", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return map[string]any{"request": scriptengine.PromisifyAsyncLegacy(vm, loop, httpRequestCall)}
+		return map[string]any{"request": scriptengine.PromisifyAsync(vm, loop, httpRequestExtract, httpRequestCall)}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,8 @@ func TestHTTPRequest_BodyAndMultipartConflict(t *testing.T) {
 	call := goja.FunctionCall{Arguments: []goja.Value{
 		vm.ToValue("POST"), vm.ToValue("http://127.0.0.1:0/"), vm.ToValue(opts),
 	}}
-	_, err := httpRequestCall(context.Background(), call)
+	// The conflict is detected during on-loop argument extraction.
+	_, err := httpRequestExtract(call)
 	if err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Fatalf("expected conflict error, got %v", err)
 	}

@@ -85,23 +85,33 @@ func deliverCapture(tempPath, userPath, format string) (any, error) {
 	return o, nil
 }
 
+// screenshotParams carries the extracted screenshot(path?, opts?) inputs.
+type screenshotParams struct {
+	userPath string
+	opts     map[string]any
+}
+
+// screenshotExtract disambiguates arg0, which may be a path string OR the
+// opts object.
+func screenshotExtract(call goja.FunctionCall) (screenshotParams, error) {
+	p := screenshotParams{opts: map[string]any{}}
+	if m, ok := call.Argument(0).Export().(map[string]any); ok {
+		p.opts = m
+	} else {
+		p.userPath = strArg(call, 0)
+		if m, ok := call.Argument(1).Export().(map[string]any); ok {
+			p.opts = m
+		}
+	}
+	return p, nil
+}
+
 // screenshot captures the page. Signature: screenshot(path?, opts?).
-func (h *abHandle) screenshot(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) screenshot(ctx context.Context, p screenshotParams) (any, error) {
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	// Disambiguate: arg0 may be a path string OR the opts object.
-	userPath := ""
-	opts := map[string]any{}
-	if m, ok := call.Argument(0).Export().(map[string]any); ok {
-		opts = m
-	} else {
-		userPath = strArg(call, 0)
-		if m, ok := call.Argument(1).Export().(map[string]any); ok {
-			opts = m
-		}
-	}
-	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, screenshotArgs(opts)...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, screenshotArgs(p.opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -109,16 +119,15 @@ func (h *abHandle) screenshot(ctx context.Context, call goja.FunctionCall) (any,
 	if err != nil {
 		return nil, err
 	}
-	return deliverCapture(tempPath, userPath, captureFormat(opts, "png"))
+	return deliverCapture(tempPath, p.userPath, captureFormat(p.opts, "png"))
 }
 
 // pdf saves the page as PDF. Signature: pdf(path?, opts?). The CLI requires a
 // path, so when the caller wants bytes we use a temp .pdf.
-func (h *abHandle) pdf(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) pdf(ctx context.Context, userPath string) (any, error) {
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	userPath := strArg(call, 0)
 	target := userPath
 	cleanup := ""
 	if target == "" {
@@ -153,6 +162,6 @@ func (h *abHandle) pdf(ctx context.Context, call goja.FunctionCall) (any, error)
 
 // addCapture wires screenshot/pdf into the handle object.
 func (h *abHandle) addCapture(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["screenshot"] = h.p(vm, loop, h.screenshot)
-	obj["pdf"] = h.p(vm, loop, h.pdf)
+	obj["screenshot"] = abAsync(vm, loop, screenshotExtract, h.screenshot)
+	obj["pdf"] = abAsync(vm, loop, abStrArg0, h.pdf)
 }

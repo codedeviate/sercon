@@ -41,7 +41,7 @@ var aiProviders = []string{"claude", "codex", "copilot", "gemini"}
 func aiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"providers": func() []string { return detectAIProviders() },
-		"send":      scriptengine.PromisifyAsyncLegacy(vm, loop, aiSend),
+		"send":      scriptengine.PromisifyAsync(vm, loop, aiSendExtract, aiSend),
 	}
 }
 
@@ -60,6 +60,38 @@ func detectAIProviders() []string {
 	return found
 }
 
+// aiSendArgs carries the on-loop-extracted options for services.ai.send.
+// provider stays "" here when the caller didn't name one — auto-detection
+// (a PATH walk) happens in the work goroutine, off the event loop.
+type aiSendArgs struct {
+	prompt   string
+	provider string
+	system   string
+	context  string
+	timeout  time.Duration
+}
+
+// aiSendExtract is the on-loop extract for services.ai.send(opts).
+func aiSendExtract(call goja.FunctionCall) (aiSendArgs, error) {
+	opts := optsAsMap(call) // opts is the 2nd positional? No — see below.
+	// aiSend is called as send(opts), so opts is the FIRST argument.
+	// optsAsMap reads index 1; read index 0 directly instead.
+	if m, ok := firstArgMap(call); ok {
+		opts = m
+	}
+	a := aiSendArgs{
+		prompt:   optString(opts, "prompt", ""),
+		provider: optString(opts, "provider", ""),
+		system:   optString(opts, "system", ""),
+		context:  optString(opts, "context", ""),
+		timeout:  optMillis(opts, "timeout", 120*time.Second),
+	}
+	if a.prompt == "" {
+		return aiSendArgs{}, errors.New("ai.send: opts.prompt required")
+	}
+	return a, nil
+}
+
 // aiSend runs a one-shot prompt. opts:
 //
 //	{ prompt: string (required), provider?: string, system?: string,
@@ -69,18 +101,8 @@ func detectAIProviders() []string {
 // throw (the model CLI may exit non-zero with a useful message on
 // stdout/stderr); spawn failure (no provider on PATH) and context
 // deadline throw.
-func aiSend(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	opts := optsAsMap(call) // opts is the 2nd positional? No — see below.
-	// aiSend is called as send(opts), so opts is the FIRST argument.
-	// optsAsMap reads index 1; read index 0 directly instead.
-	if m, ok := firstArgMap(call); ok {
-		opts = m
-	}
-	prompt := optString(opts, "prompt", "")
-	if prompt == "" {
-		return nil, errors.New("ai.send: opts.prompt required")
-	}
-	provider := optString(opts, "provider", "")
+func aiSend(ctx context.Context, a aiSendArgs) (map[string]any, error) {
+	provider := a.provider
 	if provider == "" {
 		avail := detectAIProviders()
 		if len(avail) == 0 {
@@ -88,15 +110,14 @@ func aiSend(ctx context.Context, call goja.FunctionCall) (map[string]any, error)
 		}
 		provider = avail[0]
 	}
-	timeout := optMillis(opts, "timeout", 120*time.Second)
 
-	full := buildAIPrompt(optString(opts, "system", ""), optString(opts, "context", ""), prompt)
+	full := buildAIPrompt(a.system, a.context, a.prompt)
 	argv, err := buildAIArgv(provider, full)
 	if err != nil {
 		return nil, fmt.Errorf("ai.send: %w", err)
 	}
 
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	runCtx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...) //nolint:gosec // provider + prompt are intentional
 	var stdout, stderr bytes.Buffer

@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/dop251/goja"
 )
 
 // parsePRListJSON must flatten the author wrapper. The synthetic
@@ -155,10 +153,7 @@ func TestGhRun_TimeoutBounded(t *testing.T) {
 
 func authStatusViaGoja(t *testing.T) (ghAuthStatusResult, error) {
 	t.Helper()
-	vm := goja.New()
-	return ghAuthStatus(context.Background(), goja.FunctionCall{
-		Arguments: []goja.Value{vm.ToValue(nil)},
-	})
+	return ghAuthStatus(context.Background(), struct{}{})
 }
 
 // Integration probe: when gh IS on PATH, authStatus's `authenticated`

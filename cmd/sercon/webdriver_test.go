@@ -182,7 +182,7 @@ func TestConnectQuitIntegration(t *testing.T) {
 	work := r.connect(nil, nil)
 	// NOTE: jsObject(nil, nil) builds the handle map without deref; we only
 	// exercise connect/track/shutdown here, not the goja methods.
-	_, err := work(context.Background(), goja.FunctionCall{})
+	_, err := work(context.Background(), map[string]any{})
 	if err != nil {
 		t.Skipf("driver present but connect failed (browser not installed?): %v", err)
 	}

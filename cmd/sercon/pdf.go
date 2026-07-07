@@ -185,7 +185,29 @@ func requirePDFSrc(call goja.FunctionCall) (string, map[string]any, error) {
 	return src, opts, nil
 }
 
-func pdfVersionOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+// pdfSrcArgs is the on-loop-extracted input shared by the op(src, opts?)
+// pdf bindings.
+type pdfSrcArgs struct {
+	src  string
+	opts map[string]any
+}
+
+// pdfSrcExtract returns the extract half for an op(src, opts?) pdf binding,
+// wrapping argument errors with the binding name (e.g. "services.pdf.info").
+func pdfSrcExtract(name string) func(goja.FunctionCall) (pdfSrcArgs, error) {
+	return func(call goja.FunctionCall) (pdfSrcArgs, error) {
+		src, opts, err := requirePDFSrc(call)
+		if err != nil {
+			return pdfSrcArgs{}, fmt.Errorf("%s: %w", name, err)
+		}
+		return pdfSrcArgs{src: src, opts: opts}, nil
+	}
+}
+
+// pdfNoArgsExtract is the extract half for the argument-less pdf ops.
+func pdfNoArgsExtract(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil }
+
+func pdfVersionOp(ctx context.Context, _ struct{}) (any, error) {
 	// poppler prints -v to stderr and exits 0; capture combined output so the
 	// version line is read regardless of which stream it lands on.
 	out, err := runTool(ctx, toolSpec{bin: "pdftoppm", argv: []string{"-v"}, timeout: 15 * time.Second, combinedOutput: true, installHint: popplerInstallHint})
@@ -202,23 +224,16 @@ func pdfVersionOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
 	return line, nil
 }
 
-func pdfInfoOp(ctx context.Context, call goja.FunctionCall) (any, error) {
-	src, _, err := requirePDFSrc(call)
-	if err != nil {
-		return nil, fmt.Errorf("services.pdf.info: %w", err)
-	}
-	out, err := runTool(ctx, toolSpec{bin: "pdfinfo", argv: safePathArgs(nil, src), timeout: pdfTimeout, installHint: popplerInstallHint})
+func pdfInfoOp(ctx context.Context, args pdfSrcArgs) (any, error) {
+	out, err := runTool(ctx, toolSpec{bin: "pdfinfo", argv: safePathArgs(nil, args.src), timeout: pdfTimeout, installHint: popplerInstallHint})
 	if err != nil {
 		return nil, fmt.Errorf("services.pdf.info: %w", err)
 	}
 	return parsePdfInfo(string(out)), nil
 }
 
-func pdfToImageOp(ctx context.Context, call goja.FunctionCall) (any, error) {
-	src, opts, err := requirePDFSrc(call)
-	if err != nil {
-		return nil, fmt.Errorf("services.pdf.toImage: %w", err)
-	}
+func pdfToImageOp(ctx context.Context, args pdfSrcArgs) (any, error) {
+	src, opts := args.src, args.opts
 	formatFlag, err := validatePDFFormat(optString(opts, "format", ""))
 	if err != nil {
 		return nil, fmt.Errorf("services.pdf.toImage: %w", err)
@@ -335,11 +350,8 @@ func isDigits(s string) bool {
 	return true
 }
 
-func pdfToTextOp(ctx context.Context, call goja.FunctionCall) (any, error) {
-	src, opts, err := requirePDFSrc(call)
-	if err != nil {
-		return nil, fmt.Errorf("services.pdf.toText: %w", err)
-	}
+func pdfToTextOp(ctx context.Context, args pdfSrcArgs) (any, error) {
+	src, opts := args.src, args.opts
 	first, last, perr := parsePDFPages(optPages(opts))
 	if perr != nil {
 		return nil, fmt.Errorf("services.pdf.toText: %w", perr)
@@ -356,11 +368,8 @@ func pdfToTextOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 	return string(out), nil
 }
 
-func pdfToHTMLOp(ctx context.Context, call goja.FunctionCall) (any, error) {
-	src, opts, err := requirePDFSrc(call)
-	if err != nil {
-		return nil, fmt.Errorf("services.pdf.toHtml: %w", err)
-	}
+func pdfToHTMLOp(ctx context.Context, args pdfSrcArgs) (any, error) {
+	src, opts := args.src, args.opts
 	first, last, perr := parsePDFPages(optPages(opts))
 	if perr != nil {
 		return nil, fmt.Errorf("services.pdf.toHtml: %w", perr)
@@ -406,10 +415,10 @@ func pdfNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 			"pdftohtml": toolAvailable("pdftohtml"),
 			"pdfinfo":   toolAvailable("pdfinfo"),
 		},
-		"version": scriptengine.PromisifyAsyncLegacy(vm, loop, pdfVersionOp),
-		"info":    scriptengine.PromisifyAsyncLegacy(vm, loop, pdfInfoOp),
-		"toImage": scriptengine.PromisifyAsyncLegacy(vm, loop, pdfToImageOp),
-		"toText":  scriptengine.PromisifyAsyncLegacy(vm, loop, pdfToTextOp),
-		"toHtml":  scriptengine.PromisifyAsyncLegacy(vm, loop, pdfToHTMLOp),
+		"version": scriptengine.PromisifyAsync(vm, loop, pdfNoArgsExtract, pdfVersionOp),
+		"info":    scriptengine.PromisifyAsync(vm, loop, pdfSrcExtract("services.pdf.info"), pdfInfoOp),
+		"toImage": scriptengine.PromisifyAsync(vm, loop, pdfSrcExtract("services.pdf.toImage"), pdfToImageOp),
+		"toText":  scriptengine.PromisifyAsync(vm, loop, pdfSrcExtract("services.pdf.toText"), pdfToTextOp),
+		"toHtml":  scriptengine.PromisifyAsync(vm, loop, pdfSrcExtract("services.pdf.toHtml"), pdfToHTMLOp),
 	}
 }

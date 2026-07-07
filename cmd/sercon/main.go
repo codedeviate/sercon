@@ -351,17 +351,20 @@ func registerSurface(e *scriptengine.Engine) error {
 			},
 			"time": map[string]any{
 				"nowMs": func() int64 { return time.Now().UnixMilli() },
-				"sleep": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-					ms := call.Argument(0).ToInteger()
-					timer := time.NewTimer(time.Duration(ms) * time.Millisecond)
-					defer timer.Stop()
-					select {
-					case <-ctx.Done():
-						return nil, ctx.Err()
-					case <-timer.C:
-						return nil, nil
-					}
-				}),
+				"sleep": scriptengine.PromisifyAsync(vm, loop,
+					func(call goja.FunctionCall) (int64, error) {
+						return call.Argument(0).ToInteger(), nil
+					},
+					func(ctx context.Context, ms int64) (any, error) {
+						timer := time.NewTimer(time.Duration(ms) * time.Millisecond)
+						defer timer.Stop()
+						select {
+						case <-ctx.Done():
+							return nil, ctx.Err()
+						case <-timer.C:
+							return nil, nil
+						}
+					}),
 				"format": func(call goja.FunctionCall) goja.Value {
 					ms := call.Argument(0).ToInteger()
 					layout := call.Argument(1).String()
@@ -384,7 +387,7 @@ func registerSurface(e *scriptengine.Engine) error {
 					}
 					return goja.Undefined()
 				},
-				"load": scriptengine.PromisifyAsyncLegacy(vm, loop, envLoadBinding(vm)),
+				"load": scriptengine.PromisifyAsync(vm, loop, envLoadExtract, envLoadOp),
 			},
 			// argv is a placeholder: the engine patches the real per-Run argv
 			// onto this object after registrations are applied. Registering
@@ -450,19 +453,25 @@ func registerSurface(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("net", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
 			"http": map[string]any{
-				"get": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-					url := call.Argument(0).String()
-					return httpDo(ctx, http.MethodGet, url, "")
-				}),
-				"post": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-					url := call.Argument(0).String()
-					body := ""
-					if len(call.Arguments) > 1 {
-						body = call.Argument(1).String()
-					}
-					return httpDo(ctx, http.MethodPost, url, body)
-				}),
-				"request": scriptengine.PromisifyAsyncLegacy(vm, loop, httpRequestCall),
+				"get": scriptengine.PromisifyAsync(vm, loop,
+					func(call goja.FunctionCall) (string, error) {
+						return call.Argument(0).String(), nil
+					},
+					func(ctx context.Context, url string) (map[string]any, error) {
+						return httpDo(ctx, http.MethodGet, url, "")
+					}),
+				"post": scriptengine.PromisifyAsync(vm, loop,
+					func(call goja.FunctionCall) (httpPostArgs, error) {
+						args := httpPostArgs{url: call.Argument(0).String()}
+						if len(call.Arguments) > 1 {
+							args.body = call.Argument(1).String()
+						}
+						return args, nil
+					},
+					func(ctx context.Context, args httpPostArgs) (map[string]any, error) {
+						return httpDo(ctx, http.MethodPost, args.url, args.body)
+					}),
+				"request": scriptengine.PromisifyAsync(vm, loop, httpRequestExtract, httpRequestCall),
 			},
 			"probe":     probeNamespace(vm, loop),
 			"netstatus": netstatusNamespace(vm, loop),
@@ -498,8 +507,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("services", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
 			"exec": map[string]any{
-				"shell":  scriptengine.PromisifyAsyncLegacy(vm, loop, execShell),
-				"http":   scriptengine.PromisifyAsyncLegacy(vm, loop, execHTTP),
+				"shell":  scriptengine.PromisifyAsync(vm, loop, execShellExtract, execShell),
+				"http":   scriptengine.PromisifyAsync(vm, loop, execHTTPExtract, execHTTP),
 				"stream": execStreamFn(vm, loop, e),
 			},
 			"git":          gitNamespace(vm, loop),
@@ -509,7 +518,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"webdriver":    webdriverNamespace(vm, loop, e),
 			"typst":        typstNamespace(vm, loop),
 			"pdf":          pdfNamespace(vm, loop),
-			"doctor":       scriptengine.PromisifyAsyncLegacy(vm, loop, doctorOp),
+			"doctor":       scriptengine.PromisifyAsync(vm, loop, doctorExtract, doctorOp),
 		}
 	}); err != nil {
 		return err
@@ -573,6 +582,13 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetDocs("console", "Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.")
 	e.SetMemberDocsStructured("console", consoleDocs())
 	return nil
+}
+
+// httpPostArgs carries net.http.post's extracted (url, body) pair from the
+// on-loop extract to the work goroutine.
+type httpPostArgs struct {
+	url  string
+	body string
 }
 
 func httpDo(ctx context.Context, method, url, body string) (map[string]any, error) {

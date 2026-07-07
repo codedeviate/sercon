@@ -52,28 +52,48 @@ type pingProbeResult struct {
 	MaxMs       float64 `json:"maxMs"`
 }
 
-func pingProbe(ctx context.Context, call goja.FunctionCall) (pingProbeResult, error) {
+// pingProbeArgs carries the on-loop-extracted arguments of net.probe.ping.
+// The "port" opt is read in both of its per-mode shapes (string for tcp,
+// int for udp) so the work half never touches the opts map.
+type pingProbeArgs struct {
+	host    string
+	mode    string
+	count   int
+	timeout time.Duration
+	tcpPort string
+	udpPort int
+}
+
+func pingProbeExtract(call goja.FunctionCall) (pingProbeArgs, error) {
 	host := call.Argument(0).String()
 	if host == "" {
-		return pingProbeResult{}, errors.New("net.ping: host required")
+		return pingProbeArgs{}, errors.New("net.ping: host required")
 	}
 	opts := optsAsMap(call)
 	count := optInt(opts, "count", 4)
 	if count <= 0 {
 		count = 4
 	}
-	timeout := optMillis(opts, "timeout", 5*time.Second)
-	mode := optString(opts, "mode", "tcp")
+	return pingProbeArgs{
+		host:    host,
+		mode:    optString(opts, "mode", "tcp"),
+		count:   count,
+		timeout: optMillis(opts, "timeout", 5*time.Second),
+		tcpPort: optString(opts, "port", "80"),
+		udpPort: optInt(opts, "port", 33434),
+	}, nil
+}
 
-	switch mode {
+func pingProbe(ctx context.Context, args pingProbeArgs) (pingProbeResult, error) {
+	switch args.mode {
 	case "tcp":
-		return tcpPing(ctx, host, optString(opts, "port", "80"), count, timeout)
+		return tcpPing(ctx, args.host, args.tcpPort, args.count, args.timeout)
 	case "icmp":
-		return icmpPing(ctx, host, count, timeout)
+		return icmpPing(ctx, args.host, args.count, args.timeout)
 	case "udp":
-		return udpPing(ctx, host, optInt(opts, "port", 33434), count, timeout)
+		return udpPing(ctx, args.host, args.udpPort, args.count, args.timeout)
 	default:
-		return pingProbeResult{}, fmt.Errorf("net.ping: mode must be 'tcp', 'icmp', or 'udp', got %q", mode)
+		return pingProbeResult{}, fmt.Errorf("net.ping: mode must be 'tcp', 'icmp', or 'udp', got %q", args.mode)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// execHTTP runs an HTTP request by shelling out to `recon` (preferred) or
+// execHTTPExtract + execHTTP run an HTTP request by shelling out to `recon` (preferred) or
 // `curl` (fallback). Both tools share enough of curl's CLI surface that
 // a single argv builder targets both — with one wrinkle: recon's `-i`
 // output is verbose-debug style (`< Header: value`), incompatible with
@@ -52,33 +52,56 @@ import (
 // (DNS, connect refused, TLS handshake) throw. HTTP 4xx / 5xx do **not**
 // throw — they're a normal HTTP outcome reported via `status`. Context
 // deadline / cancel throws.
-func execHTTP(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// execHTTPArgs is the plain-Go argument bundle handed from execHTTPExtract
+// (on the event loop) to execHTTP (the work goroutine).
+type execHTTPArgs struct {
+	method      string
+	url         string
+	timeout     time.Duration
+	backendPref string
+	follow      bool
+	insecure    bool
+	body        string
+	headers     map[string]string
+}
+
+// execHTTPExtract parses the (method, url, opts?) goja arguments into
+// execHTTPArgs. It runs synchronously on the event loop — the only place the
+// goja call may be touched; a validation error here rejects the Promise
+// exactly like a work error.
+func execHTTPExtract(call goja.FunctionCall) (execHTTPArgs, error) {
+	var args execHTTPArgs
 	methodArg := call.Argument(0)
 	if methodArg == nil || goja.IsUndefined(methodArg) || goja.IsNull(methodArg) {
-		return nil, errors.New("http: method argument required")
+		return args, errors.New("http: method argument required")
 	}
 	urlArg := call.Argument(1)
 	if urlArg == nil || goja.IsUndefined(urlArg) || goja.IsNull(urlArg) {
-		return nil, errors.New("http: url argument required")
+		return args, errors.New("http: url argument required")
 	}
-	method := strings.ToUpper(strings.TrimSpace(methodArg.String()))
-	if method == "" {
-		return nil, errors.New("http: method is empty")
+	args.method = strings.ToUpper(strings.TrimSpace(methodArg.String()))
+	if args.method == "" {
+		return args, errors.New("http: method is empty")
 	}
-	url := urlArg.String()
-	if url == "" {
-		return nil, errors.New("http: url is empty")
+	args.url = urlArg.String()
+	if args.url == "" {
+		return args, errors.New("http: url is empty")
 	}
 
 	opts := thirdArgAsMap(call)
-	timeout := optMillis(opts, "timeout", 30*time.Second)
-	backendPref := strings.ToLower(optString(opts, "backend", "auto"))
-	follow := optBool(opts, "follow", false)
-	insecure := optBool(opts, "insecure", false)
-	body := optString(opts, "body", "")
-	headers := optStringMap(opts, "headers")
+	args.timeout = optMillis(opts, "timeout", 30*time.Second)
+	args.backendPref = strings.ToLower(optString(opts, "backend", "auto"))
+	args.follow = optBool(opts, "follow", false)
+	args.insecure = optBool(opts, "insecure", false)
+	args.body = optString(opts, "body", "")
+	args.headers = optStringMap(opts, "headers")
+	return args, nil
+}
 
-	binPath, backend, err := resolveHTTPBackend(backendPref)
+func execHTTP(ctx context.Context, args execHTTPArgs) (map[string]any, error) {
+	method, url, body := args.method, args.url, args.body
+
+	binPath, backend, err := resolveHTTPBackend(args.backendPref)
 	if err != nil {
 		return nil, err
 	}
@@ -111,9 +134,9 @@ func execHTTP(ctx context.Context, call goja.FunctionCall) (map[string]any, erro
 		defer func() { _ = os.Remove(bodyPath) }()
 	}
 
-	argv := buildHTTPArgv(method, url, headers, bodyPath, headerPath, follow, insecure)
+	argv := buildHTTPArgv(method, url, args.headers, bodyPath, headerPath, args.follow, args.insecure)
 
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	runCtx, cancel := context.WithTimeout(ctx, args.timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, binPath, argv...) //nolint:gosec // user-supplied url + headers are intentional

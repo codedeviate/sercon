@@ -22,27 +22,65 @@ import (
 // client).
 func ldapNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return ldapOpen(vm, loop, call)
-		}),
+		"open": scriptengine.PromisifyAsync(vm, loop, ldapOpenExtract,
+			func(ctx context.Context, args ldapOpenArgs) (map[string]any, error) {
+				return ldapOpen(vm, loop, args)
+			}),
 	}
 }
 
-func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCall) (map[string]any, error) {
+// ldapOpenArgs carries the on-loop-extracted arguments of db.ldap.open.
+type ldapOpenArgs struct {
+	url      string
+	bindDN   string
+	password string
+}
+
+func ldapOpenExtract(call goja.FunctionCall) (ldapOpenArgs, error) {
 	url := call.Argument(0).String()
 	if url == "" {
-		return nil, errors.New("ldap.open: url required (e.g. ldap://localhost:389)")
-	}
-	conn, err := ldap.DialURL(url)
-	if err != nil {
-		return nil, fmt.Errorf("ldap.open: dial: %w", err)
+		return ldapOpenArgs{}, errors.New("ldap.open: url required (e.g. ldap://localhost:389)")
 	}
 	// Anonymous bind — optional bindDN / password via opts.
 	opts := optAt(call, 1)
-	bindDN := optString(opts, "bindDN", "")
-	password := optString(opts, "password", "")
-	if bindDN != "" {
-		if err := conn.Bind(bindDN, password); err != nil {
+	return ldapOpenArgs{
+		url:      url,
+		bindDN:   optString(opts, "bindDN", ""),
+		password: optString(opts, "password", ""),
+	}, nil
+}
+
+// ldapSearchArgs carries the on-loop-extracted arguments of the handle's
+// search(baseDN, filter, attrs?) member.
+type ldapSearchArgs struct {
+	baseDN string
+	filter string
+	attrs  []string
+}
+
+func ldapSearchExtract(call goja.FunctionCall) (ldapSearchArgs, error) {
+	filter := call.Argument(1).String()
+	if filter == "" {
+		filter = "(objectClass=*)"
+	}
+	attrs := []string{}
+	if pa, err := pathsArg(call.Argument(2), "ldap.search.attrs"); err == nil {
+		attrs = pa
+	}
+	return ldapSearchArgs{
+		baseDN: call.Argument(0).String(),
+		filter: filter,
+		attrs:  attrs,
+	}, nil
+}
+
+func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, args ldapOpenArgs) (map[string]any, error) {
+	conn, err := ldap.DialURL(args.url)
+	if err != nil {
+		return nil, fmt.Errorf("ldap.open: dial: %w", err)
+	}
+	if args.bindDN != "" {
+		if err := conn.Bind(args.bindDN, args.password); err != nil {
 			_ = conn.Close()
 			return nil, fmt.Errorf("ldap.open: bind: %w", err)
 		}
@@ -52,47 +90,41 @@ func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCal
 		// rootDSE() reads the server's Root DSE — the anonymous
 		// metadata entry that advertises naming contexts, supported
 		// controls, vendor, etc.
-		"rootDSE": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
-			req := ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases,
-				0, 0, false, "(objectClass=*)", []string{"*", "+"}, nil)
-			res, err := conn.Search(req)
-			if err != nil {
-				return nil, fmt.Errorf("ldap.rootDSE: %w", err)
-			}
-			if len(res.Entries) == 0 {
-				return scriptengine.NewOrdered(), nil
-			}
-			return ldapEntryToMap(res.Entries[0]), nil
-		}).Func,
+		"rootDSE": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(_ context.Context, _ struct{}) (*scriptengine.Ordered, error) {
+				req := ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases,
+					0, 0, false, "(objectClass=*)", []string{"*", "+"}, nil)
+				res, err := conn.Search(req)
+				if err != nil {
+					return nil, fmt.Errorf("ldap.rootDSE: %w", err)
+				}
+				if len(res.Entries) == 0 {
+					return scriptengine.NewOrdered(), nil
+				}
+				return ldapEntryToMap(res.Entries[0]), nil
+			}).Func,
 		// search(baseDN, filter, attrs?) — a generic subtree search.
-		"search": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
-			baseDN := call.Argument(0).String()
-			filter := call.Argument(1).String()
-			if filter == "" {
-				filter = "(objectClass=*)"
-			}
-			attrs := []string{}
-			if pa, err := pathsArg(call.Argument(2), "ldap.search.attrs"); err == nil {
-				attrs = pa
-			}
-			req := ldap.NewSearchRequest(baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
-				0, 0, false, filter, attrs, nil)
-			res, err := conn.Search(req)
-			if err != nil {
-				return nil, fmt.Errorf("ldap.search: %w", err)
-			}
-			out := make([]*scriptengine.Ordered, 0, len(res.Entries))
-			for _, e := range res.Entries {
-				out = append(out, ldapEntryToMap(e))
-			}
-			return out, nil
-		}).Func,
-		"close": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
-			if err := conn.Close(); err != nil {
-				return nil, fmt.Errorf("ldap.close: %w", err)
-			}
-			return nil, nil
-		}).Func,
+		"search": scriptengine.PromisifyAsync(vm, loop, ldapSearchExtract,
+			func(_ context.Context, args ldapSearchArgs) ([]*scriptengine.Ordered, error) {
+				req := ldap.NewSearchRequest(args.baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
+					0, 0, false, args.filter, args.attrs, nil)
+				res, err := conn.Search(req)
+				if err != nil {
+					return nil, fmt.Errorf("ldap.search: %w", err)
+				}
+				out := make([]*scriptengine.Ordered, 0, len(res.Entries))
+				for _, e := range res.Entries {
+					out = append(out, ldapEntryToMap(e))
+				}
+				return out, nil
+			}).Func,
+		"close": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(_ context.Context, _ struct{}) (any, error) {
+				if err := conn.Close(); err != nil {
+					return nil, fmt.Errorf("ldap.close: %w", err)
+				}
+				return nil, nil
+			}).Func,
 	}, nil
 }
 

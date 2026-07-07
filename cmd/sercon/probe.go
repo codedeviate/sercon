@@ -27,15 +27,15 @@ import (
 // milliseconds; defaults vary per binding.
 func probeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"tcp":        scriptengine.PromisifyAsyncLegacy(vm, loop, tcpProbe),
-		"dns":        scriptengine.PromisifyAsyncLegacy(vm, loop, dnsLookup),
-		"tls":        scriptengine.PromisifyAsyncLegacy(vm, loop, tlsProbe),
-		"ntp":        scriptengine.PromisifyAsyncLegacy(vm, loop, ntpQuery),
-		"whois":      scriptengine.PromisifyAsyncLegacy(vm, loop, whoisLookup),
-		"ping":       scriptengine.PromisifyAsyncLegacy(vm, loop, pingProbe),
-		"smtp":       scriptengine.PromisifyAsyncLegacy(vm, loop, smtpProbe),
-		"wss":        scriptengine.PromisifyAsyncLegacy(vm, loop, wssProbe),
-		"traceroute": scriptengine.PromisifyAsyncLegacy(vm, loop, traceroute),
+		"tcp":        scriptengine.PromisifyAsync(vm, loop, tcpProbeExtract, tcpProbe),
+		"dns":        scriptengine.PromisifyAsync(vm, loop, dnsLookupExtract, dnsLookup),
+		"tls":        scriptengine.PromisifyAsync(vm, loop, tlsProbeExtract, tlsProbe),
+		"ntp":        scriptengine.PromisifyAsync(vm, loop, ntpQueryExtract, ntpQuery),
+		"whois":      scriptengine.PromisifyAsync(vm, loop, whoisLookupExtract, whoisLookup),
+		"ping":       scriptengine.PromisifyAsync(vm, loop, pingProbeExtract, pingProbe),
+		"smtp":       scriptengine.PromisifyAsync(vm, loop, smtpProbeExtract, smtpProbe),
+		"wss":        scriptengine.PromisifyAsync(vm, loop, wssProbeExtract, wssProbe),
+		"traceroute": scriptengine.PromisifyAsync(vm, loop, tracerouteExtract, traceroute),
 	}
 }
 
@@ -90,19 +90,30 @@ type tcpProbeResult struct {
 	LatencyMs float64 `json:"latencyMs"`
 }
 
-func tcpProbe(ctx context.Context, call goja.FunctionCall) (tcpProbeResult, error) {
-	target := call.Argument(0).String()
-	opts := optsAsMap(call)
-	timeout := optMillis(opts, "timeout", 5*time.Second)
-	defaultPort := optString(opts, "port", "80")
+// tcpProbeArgs carries the on-loop-extracted arguments of net.probe.tcp.
+type tcpProbeArgs struct {
+	target      string
+	timeout     time.Duration
+	defaultPort string
+}
 
-	host, port, err := net.SplitHostPort(target)
+func tcpProbeExtract(call goja.FunctionCall) (tcpProbeArgs, error) {
+	opts := optsAsMap(call)
+	return tcpProbeArgs{
+		target:      call.Argument(0).String(),
+		timeout:     optMillis(opts, "timeout", 5*time.Second),
+		defaultPort: optString(opts, "port", "80"),
+	}, nil
+}
+
+func tcpProbe(ctx context.Context, args tcpProbeArgs) (tcpProbeResult, error) {
+	host, port, err := net.SplitHostPort(args.target)
 	if err != nil {
-		host = target
-		port = defaultPort
+		host = args.target
+		port = args.defaultPort
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, timeout)
+	dialCtx, cancel := context.WithTimeout(ctx, args.timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -132,8 +143,13 @@ func tcpProbe(ctx context.Context, call goja.FunctionCall) (tcpProbeResult, erro
 // here — the surface is small and each lookup is fast. Empty result sets are
 // omitted from the returned object so scripts can check membership with
 // `if ("mx" in result)`.
-func dnsLookup(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
-	host := call.Argument(0).String()
+// dnsLookupArgs carries the on-loop-extracted arguments of net.probe.dns.
+type dnsLookupArgs struct {
+	host        string
+	typesFilter map[string]bool // nil = all types
+}
+
+func dnsLookupExtract(call goja.FunctionCall) (dnsLookupArgs, error) {
 	opts := optsAsMap(call)
 
 	var typesFilter map[string]bool
@@ -147,11 +163,19 @@ func dnsLookup(ctx context.Context, call goja.FunctionCall) (*scriptengine.Order
 			}
 		}
 	}
+	return dnsLookupArgs{
+		host:        call.Argument(0).String(),
+		typesFilter: typesFilter,
+	}, nil
+}
+
+func dnsLookup(ctx context.Context, args dnsLookupArgs) (*scriptengine.Ordered, error) {
+	host := args.host
 	want := func(t string) bool {
-		if typesFilter == nil {
+		if args.typesFilter == nil {
 			return true
 		}
-		return typesFilter[t]
+		return args.typesFilter[t]
 	}
 
 	r := &net.Resolver{}
@@ -219,18 +243,28 @@ func dnsLookup(ctx context.Context, call goja.FunctionCall) (*scriptengine.Order
 // the certificate, not for proving it's valid. Hosts that care about that
 // should re-validate themselves with crypto/x509.Verify or
 // scripts can call net.probe.tls and decide based on the returned fields.
-func tlsProbe(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
-	target := call.Argument(0).String()
-	opts := optsAsMap(call)
-	timeout := optMillis(opts, "timeout", 5*time.Second)
+// tlsProbeArgs carries the on-loop-extracted arguments of net.probe.tls.
+type tlsProbeArgs struct {
+	target  string
+	timeout time.Duration
+}
 
-	host, port, err := net.SplitHostPort(target)
+func tlsProbeExtract(call goja.FunctionCall) (tlsProbeArgs, error) {
+	opts := optsAsMap(call)
+	return tlsProbeArgs{
+		target:  call.Argument(0).String(),
+		timeout: optMillis(opts, "timeout", 5*time.Second),
+	}, nil
+}
+
+func tlsProbe(ctx context.Context, args tlsProbeArgs) (*scriptengine.Ordered, error) {
+	host, port, err := net.SplitHostPort(args.target)
 	if err != nil {
-		host = target
+		host = args.target
 		port = "443"
 	}
 
-	dialCtx, cancel := context.WithTimeout(ctx, timeout)
+	dialCtx, cancel := context.WithTimeout(ctx, args.timeout)
 	defer cancel()
 
 	d := tls.Dialer{
@@ -275,10 +309,15 @@ func tlsProbe(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordere
 // data. Uses beevik/ntp which speaks NTPv4 and packages the response into
 // a struct we flatten for JS. Durations are reported in milliseconds with
 // sub-millisecond precision so the values are easy to compare.
-func ntpQuery(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
-	host := call.Argument(0).String()
+// ntpQueryArgs carries the on-loop-extracted arguments of net.probe.ntp.
+type ntpQueryArgs struct {
+	host    string
+	timeout time.Duration
+	port    int
+}
+
+func ntpQueryExtract(call goja.FunctionCall) (ntpQueryArgs, error) {
 	opts := optsAsMap(call)
-	timeout := optMillis(opts, "timeout", 5*time.Second)
 	port := 123
 	if v, ok := opts["port"]; ok {
 		switch t := v.(type) {
@@ -292,10 +331,17 @@ func ntpQuery(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered,
 			}
 		}
 	}
+	return ntpQueryArgs{
+		host:    call.Argument(0).String(),
+		timeout: optMillis(opts, "timeout", 5*time.Second),
+		port:    port,
+	}, nil
+}
 
-	resp, err := ntp.QueryWithOptions(host, ntp.QueryOptions{
-		Timeout: timeout,
-		Port:    port,
+func ntpQuery(_ context.Context, args ntpQueryArgs) (*scriptengine.Ordered, error) {
+	resp, err := ntp.QueryWithOptions(args.host, ntp.QueryOptions{
+		Timeout: args.timeout,
+		Port:    args.port,
 	})
 	if err != nil {
 		return nil, err
@@ -320,13 +366,23 @@ func ntpQuery(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered,
 // likexian/whois doesn't accept a context — its timeout is a per-Client
 // setting (time.Duration). The host engine's outer timeout still kicks in
 // via vm.Interrupt; this just shapes the wire-level wait.
-func whoisLookup(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
-	domain := call.Argument(0).String()
-	opts := optsAsMap(call)
-	timeout := optMillis(opts, "timeout", 10*time.Second)
+// whoisLookupArgs carries the on-loop-extracted arguments of net.probe.whois.
+type whoisLookupArgs struct {
+	domain  string
+	timeout time.Duration
+}
 
-	client := whois.NewClient().SetTimeout(timeout)
-	raw, err := client.Whois(domain)
+func whoisLookupExtract(call goja.FunctionCall) (whoisLookupArgs, error) {
+	opts := optsAsMap(call)
+	return whoisLookupArgs{
+		domain:  call.Argument(0).String(),
+		timeout: optMillis(opts, "timeout", 10*time.Second),
+	}, nil
+}
+
+func whoisLookup(_ context.Context, args whoisLookupArgs) (*scriptengine.Ordered, error) {
+	client := whois.NewClient().SetTimeout(args.timeout)
+	raw, err := client.Whois(args.domain)
 	if err != nil {
 		return nil, err
 	}

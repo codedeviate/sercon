@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/dop251/goja"
 )
 
 func TestBuildGlobalArgs(t *testing.T) {
@@ -71,7 +69,7 @@ func TestLaunchCloseIntegration(t *testing.T) {
 	skipIfNoAgentBrowser(t)
 	reg := &abRegistry{sessions: map[string]struct{}{}}
 	h := &abHandle{session: reg.allocSession(""), reg: reg}
-	if _, err := h.close(context.Background(), goja.FunctionCall{}); err != nil {
+	if _, err := h.close(context.Background(), struct{}{}); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 	if !h.closed.Load() {
@@ -129,13 +127,13 @@ func TestSnapshotArgs(t *testing.T) {
 }
 
 func TestFindArgs(t *testing.T) {
-	got := findArgs("role", "button", "click", "")
+	got := abFindArgs("role", "button", "click", "")
 	if !reflect.DeepEqual(got, []string{"find", "role", "button", "click"}) {
-		t.Fatalf("findArgs = %v", got)
+		t.Fatalf("abFindArgs = %v", got)
 	}
-	got = findArgs("text", "Submit", "fill", "hello")
+	got = abFindArgs("text", "Submit", "fill", "hello")
 	if !reflect.DeepEqual(got, []string{"find", "text", "Submit", "fill", "hello"}) {
-		t.Fatalf("findArgs with text = %v", got)
+		t.Fatalf("abFindArgs with text = %v", got)
 	}
 }
 

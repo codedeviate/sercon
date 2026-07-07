@@ -24,8 +24,8 @@ import (
 // the event loop's goroutine keeps the JS side responsive.
 func archiveNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"create":  scriptengine.PromisifyAsyncLegacy(vm, loop, archiveCreate),
-		"extract": scriptengine.PromisifyAsyncLegacy(vm, loop, archiveExtract),
+		"create":  scriptengine.PromisifyAsync(vm, loop, archiveCreateExtract, archiveCreate),
+		"extract": scriptengine.PromisifyAsync(vm, loop, archiveExtractExtract, archiveExtract),
 	}
 }
 
@@ -37,23 +37,36 @@ type archiveSource struct {
 	name string // in-archive path
 }
 
+// archiveCreateArgs is the on-loop-extracted input of fs.archive.create.
+type archiveCreateArgs struct {
+	destPath string
+	sources  []archiveSource
+}
+
+// archiveCreateExtract pulls (destPath, sources) out of the JS call on the
+// event loop.
+func archiveCreateExtract(call goja.FunctionCall) (archiveCreateArgs, error) {
+	destPath := call.Argument(0).String()
+	if destPath == "" {
+		return archiveCreateArgs{}, errors.New("create: destination path required")
+	}
+	sources, err := parseSources(call.Argument(1))
+	if err != nil {
+		return archiveCreateArgs{}, fmt.Errorf("create: %w", err)
+	}
+	if len(sources) == 0 {
+		return archiveCreateArgs{}, errors.New("create: no sources")
+	}
+	return archiveCreateArgs{destPath: destPath, sources: sources}, nil
+}
+
 // archiveCreate writes a new archive at destPath. Format is inferred from
 // the destination's extension (.zip / .tar / .tar.gz / .tgz). Sources are
 // strings (use basename inside the archive) or `{path, name?}` objects.
 // Directory sources are recursed; the directory's basename is used as the
 // archive subdir, with the rest of the tree appearing relative to it.
-func archiveCreate(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
-	destPath := call.Argument(0).String()
-	if destPath == "" {
-		return nil, errors.New("create: destination path required")
-	}
-	sources, err := parseSources(call.Argument(1))
-	if err != nil {
-		return nil, fmt.Errorf("create: %w", err)
-	}
-	if len(sources) == 0 {
-		return nil, errors.New("create: no sources")
-	}
+func archiveCreate(_ context.Context, args archiveCreateArgs) (map[string]any, error) {
+	destPath, sources := args.destPath, args.sources
 
 	format := detectArchiveFormat(destPath)
 	if format == "" {
@@ -100,20 +113,22 @@ func archiveCreate(_ context.Context, call goja.FunctionCall) (map[string]any, e
 	return out, nil
 }
 
-// archiveExtract reads an archive at archivePath and writes its contents
-// under destDir. Format is inferred from the archive's extension. The
-// `overwrite` opt controls whether existing files at the destination are
-// clobbered (default false — extraction errors out on collisions). All
-// entry names are run through safeJoin so a malicious archive can't write
-// outside destDir (zip-slip / tar-slip protection). `maxTotalBytes` and
-// `maxEntries` (defaulting to DefaultMaxArchiveBytes / DefaultMaxArchiveEntries)
-// cap the cumulative decompressed size and member count so a small crafted
-// archive can't be a decompression bomb.
-func archiveExtract(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+// archiveExtractArgs is the on-loop-extracted input of fs.archive.extract.
+type archiveExtractArgs struct {
+	archivePath   string
+	destDir       string
+	overwrite     bool
+	maxTotalBytes int64
+	maxEntries    int
+}
+
+// archiveExtractExtract pulls (archivePath, destDir, opts?) out of the JS
+// call on the event loop.
+func archiveExtractExtract(call goja.FunctionCall) (archiveExtractArgs, error) {
 	archivePath := call.Argument(0).String()
 	destDir := call.Argument(1).String()
 	if archivePath == "" || destDir == "" {
-		return nil, errors.New("extract: archive path and destination required")
+		return archiveExtractArgs{}, errors.New("extract: archive path and destination required")
 	}
 	// archiveExtract takes 3 positional args (archivePath, destDir, opts),
 	// so the 2-arg optsAsMap helper would mistake destDir for opts.
@@ -137,6 +152,27 @@ func archiveExtract(_ context.Context, call goja.FunctionCall) (map[string]any, 
 			}
 		}
 	}
+	return archiveExtractArgs{
+		archivePath:   archivePath,
+		destDir:       destDir,
+		overwrite:     overwrite,
+		maxTotalBytes: maxTotalBytes,
+		maxEntries:    maxEntries,
+	}, nil
+}
+
+// archiveExtract reads an archive at archivePath and writes its contents
+// under destDir. Format is inferred from the archive's extension. The
+// `overwrite` opt controls whether existing files at the destination are
+// clobbered (default false — extraction errors out on collisions). All
+// entry names are run through safeJoin so a malicious archive can't write
+// outside destDir (zip-slip / tar-slip protection). `maxTotalBytes` and
+// `maxEntries` (defaulting to DefaultMaxArchiveBytes / DefaultMaxArchiveEntries)
+// cap the cumulative decompressed size and member count so a small crafted
+// archive can't be a decompression bomb.
+func archiveExtract(_ context.Context, args archiveExtractArgs) (map[string]any, error) {
+	archivePath, destDir := args.archivePath, args.destDir
+	overwrite, maxTotalBytes, maxEntries := args.overwrite, args.maxTotalBytes, args.maxEntries
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return nil, err
 	}

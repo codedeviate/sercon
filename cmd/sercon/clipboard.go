@@ -88,8 +88,11 @@ func trimWindowsClipboardNewline(s string) string {
 	return strings.TrimSuffix(s, "\n")
 }
 
+// clipNoArgsExtract is the extract half for the argument-less clipboard ops.
+func clipNoArgsExtract(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil }
+
 // clipReadOp runs the resolved read backend and returns the clipboard text.
-func clipReadOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func clipReadOp(ctx context.Context, _ struct{}) (any, error) {
 	readArgv, _, ok, reason := resolveClipboardBackend()
 	if !ok {
 		return nil, fmt.Errorf("%s", reason)
@@ -110,13 +113,17 @@ func clipReadOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
 	return text, nil
 }
 
+// clipWriteExtract coerces the text argument on the event loop.
+func clipWriteExtract(call goja.FunctionCall) (string, error) {
+	return call.Argument(0).String(), nil // JS String() coercion
+}
+
 // clipWriteOp runs the resolved write backend, feeding text via stdin.
-func clipWriteOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+func clipWriteOp(ctx context.Context, text string) (any, error) {
 	_, writeArgv, ok, reason := resolveClipboardBackend()
 	if !ok {
 		return nil, fmt.Errorf("%s", reason)
 	}
-	text := call.Argument(0).String() // JS String() coercion
 	runCtx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 	defer cancel()
 	if err := feedStdinWrite(runCtx, writeArgv, strings.NewReader(text)); err != nil {
@@ -324,7 +331,7 @@ func winWriteImagePNG(ctx context.Context, png []byte) error {
 
 // clipImageReadOp backs runtime.clipboard.readImage(). Resolves to PNG bytes
 // ([]byte → Uint8Array) or null when the clipboard holds no image.
-func clipImageReadOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func clipImageReadOp(ctx context.Context, _ struct{}) (any, error) {
 	strat, ok, reason := resolveClipboardImageBackend()
 	if !ok {
 		return nil, fmt.Errorf("%s", reason)
@@ -352,15 +359,22 @@ func clipImageReadOp(ctx context.Context, _ goja.FunctionCall) (any, error) {
 	return data, nil
 }
 
-// clipImageWriteOp backs runtime.clipboard.writeImage(png). Validates PNG magic.
-func clipImageWriteOp(ctx context.Context, call goja.FunctionCall) (any, error) {
-	strat, ok, reason := resolveClipboardImageBackend()
-	if !ok {
-		return nil, fmt.Errorf("%s", reason)
-	}
+// clipImageWriteExtract exports the PNG argument on the event loop. The
+// copy matters: goja's Export of a Uint8Array returns the typed array's
+// live backing store, and the work goroutine reads the bytes off-loop.
+func clipImageWriteExtract(call goja.FunctionCall) ([]byte, error) {
 	png, isBytes := call.Argument(0).Export().([]byte)
 	if !isBytes {
 		return nil, fmt.Errorf("runtime.clipboard.writeImage: expected a Uint8Array of PNG bytes")
+	}
+	return append([]byte(nil), png...), nil
+}
+
+// clipImageWriteOp backs runtime.clipboard.writeImage(png). Validates PNG magic.
+func clipImageWriteOp(ctx context.Context, png []byte) (any, error) {
+	strat, ok, reason := resolveClipboardImageBackend()
+	if !ok {
+		return nil, fmt.Errorf("%s", reason)
 	}
 	if !isPNG(png) {
 		return nil, fmt.Errorf("runtime.clipboard.writeImage: data is not a PNG (bad signature)")
@@ -391,9 +405,9 @@ func clipboardNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]
 	return map[string]any{
 		"available":      clipboardAvailable(),
 		"imageAvailable": clipboardImageAvailable(),
-		"read":           scriptengine.PromisifyAsyncLegacy(vm, loop, clipReadOp),
-		"write":          scriptengine.PromisifyAsyncLegacy(vm, loop, clipWriteOp),
-		"readImage":      scriptengine.PromisifyAsyncLegacy(vm, loop, clipImageReadOp),
-		"writeImage":     scriptengine.PromisifyAsyncLegacy(vm, loop, clipImageWriteOp),
+		"read":           scriptengine.PromisifyAsync(vm, loop, clipNoArgsExtract, clipReadOp),
+		"write":          scriptengine.PromisifyAsync(vm, loop, clipWriteExtract, clipWriteOp),
+		"readImage":      scriptengine.PromisifyAsync(vm, loop, clipNoArgsExtract, clipImageReadOp),
+		"writeImage":     scriptengine.PromisifyAsync(vm, loop, clipImageWriteExtract, clipImageWriteOp),
 	}
 }

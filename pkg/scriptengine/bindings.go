@@ -119,24 +119,6 @@ func PromisifyAsync[A, T any](vm *goja.Runtime, loop *eventloop.EventLoop,
 	return AsyncBinding{Func: fn, TSReturnType: tsRet}
 }
 
-// PromisifyAsyncLegacy is the pre-split form: work receives the raw
-// goja.FunctionCall in the work goroutine, which makes it trivially easy to
-// execute VM code off the event loop (a data race).
-//
-// Deprecated: migration shim only — every call site is being moved to
-// PromisifyAsync's extract/work split, after which this will be deleted.
-// Do not add new uses.
-func PromisifyAsyncLegacy[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work func(ctx context.Context, call goja.FunctionCall) (T, error)) AsyncBinding {
-	extract := func(call goja.FunctionCall) (goja.FunctionCall, error) {
-		// Snapshot the arguments: goja reuses the slice's backing array
-		// across calls, and legacy work funcs retain the call past return.
-		argsCopy := make([]goja.Value, len(call.Arguments))
-		copy(argsCopy, call.Arguments)
-		return goja.FunctionCall{This: call.This, Arguments: argsCopy}, nil
-	}
-	return PromisifyAsync(vm, loop, extract, work)
-}
-
 // runContextFromVM retrieves the current Run's context.Context, stashed on
 // vm by Engine.Run under runCtxGlobalName (see engine.go) — the same
 // "internal global on vm" mechanism used for __resolve/__reject. This lets

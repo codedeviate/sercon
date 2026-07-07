@@ -45,20 +45,26 @@ func barcodeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]an
 	decFormats := make([]string, len(barcodeDecodableFormats))
 	copy(decFormats, barcodeDecodableFormats)
 	return map[string]any{
-		"encode":           scriptengine.PromisifyAsyncLegacy(vm, loop, barcodeEncodeCall),
-		"decode":           scriptengine.PromisifyAsyncLegacy(vm, loop, barcodeDecodeCall),
+		"encode":           scriptengine.PromisifyAsync(vm, loop, barcodeEncodeExtract, barcodeEncodeCall),
+		"decode":           scriptengine.PromisifyAsync(vm, loop, barcodeDecodeExtract, barcodeDecodeCall),
 		"formats":          func() []string { return formats },
 		"decodableFormats": func() []string { return decFormats },
 	}
 }
 
-// barcodeEncodeCall reads (format, data, opts?) from a JS call, dispatches
-// to the right boombuler encoder, scales to the requested pixel dimensions
-// (with format-appropriate defaults), and PNG-encodes the result.
-func barcodeEncodeCall(_ context.Context, call goja.FunctionCall) ([]byte, error) {
+// barcodeEncodeArgs is the on-loop-extracted input of codec.barcode.encode.
+type barcodeEncodeArgs struct {
+	format string
+	data   string
+	opts   map[string]any
+}
+
+// barcodeEncodeExtract pulls (format, data, opts?) out of the JS call on
+// the event loop.
+func barcodeEncodeExtract(call goja.FunctionCall) (barcodeEncodeArgs, error) {
 	format := strings.ToLower(call.Argument(0).String())
 	data := call.Argument(1).String()
-	// barcodeEncodeCall takes 3 positional args (format, data, opts), so the
+	// The binding takes 3 positional args (format, data, opts), so the
 	// 2-arg optsAsMap helper would mistake `data` for opts. Pull the third
 	// arg out by hand. Same shape as the diff.compare / archive.extract fixes.
 	var opts map[string]any
@@ -70,6 +76,14 @@ func barcodeEncodeCall(_ context.Context, call goja.FunctionCall) ([]byte, error
 			}
 		}
 	}
+	return barcodeEncodeArgs{format: format, data: data, opts: opts}, nil
+}
+
+// barcodeEncodeCall takes the extracted (format, data, opts?), dispatches
+// to the right boombuler encoder, scales to the requested pixel dimensions
+// (with format-appropriate defaults), and PNG-encodes the result.
+func barcodeEncodeCall(_ context.Context, args barcodeEncodeArgs) ([]byte, error) {
+	format, data, opts := args.format, args.data, args.opts
 	width := optInt(opts, "width", 0)
 	height := optInt(opts, "height", 0)
 

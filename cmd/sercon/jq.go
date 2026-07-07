@@ -23,20 +23,16 @@ import (
 // literal JS object without any pre-conversion.
 func jqNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"query":    scriptengine.PromisifyAsyncLegacy(vm, loop, jqQueryFirst),
-		"queryAll": scriptengine.PromisifyAsyncLegacy(vm, loop, jqQueryAll),
+		"query":    scriptengine.PromisifyAsync(vm, loop, jqExtract, jqQueryFirst),
+		"queryAll": scriptengine.PromisifyAsync(vm, loop, jqExtract, jqQueryAll),
 	}
 }
 
 // jqQueryFirst runs the filter and returns the first emitted value. When the
 // filter yields nothing (e.g. `.does.not.exist?`), the result is `nil`,
 // which goja surfaces to JS as `null`.
-func jqQueryFirst(_ context.Context, call goja.FunctionCall) (any, error) {
-	data, filter, err := parseJqArgs(call)
-	if err != nil {
-		return nil, err
-	}
-	results, err := runJqQuery(data, filter, 1)
+func jqQueryFirst(_ context.Context, args jqArgs) (any, error) {
+	results, err := runJqQuery(args.data, args.filter, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -49,25 +45,28 @@ func jqQueryFirst(_ context.Context, call goja.FunctionCall) (any, error) {
 // jqQueryAll drains the iterator and returns every emitted value. Use this
 // when the filter explodes a list (`.[]`) or otherwise emits multiple
 // results.
-func jqQueryAll(_ context.Context, call goja.FunctionCall) ([]any, error) {
-	data, filter, err := parseJqArgs(call)
-	if err != nil {
-		return nil, err
-	}
-	return runJqQuery(data, filter, 0)
+func jqQueryAll(_ context.Context, args jqArgs) ([]any, error) {
+	return runJqQuery(args.data, args.filter, 0)
 }
 
-func parseJqArgs(call goja.FunctionCall) (any, string, error) {
+// jqArgs is the on-loop-extracted input shared by text.jq.query / queryAll.
+type jqArgs struct {
+	data   any
+	filter string
+}
+
+// jqExtract pulls (data, filter) out of the JS call on the event loop.
+func jqExtract(call goja.FunctionCall) (jqArgs, error) {
 	dataArg := call.Argument(0)
 	if dataArg == nil || goja.IsUndefined(dataArg) {
-		return nil, "", errors.New("jq: data is undefined")
+		return jqArgs{}, errors.New("jq: data is undefined")
 	}
 	data := dataArg.Export()
 	filter := call.Argument(1).String()
 	if filter == "" {
-		return nil, "", errors.New("jq: filter is empty")
+		return jqArgs{}, errors.New("jq: filter is empty")
 	}
-	return data, filter, nil
+	return jqArgs{data: data, filter: filter}, nil
 }
 
 // runJqQuery parses the filter, runs it against data, and returns up to

@@ -39,31 +39,38 @@ func diffScreenshotArgs(opts map[string]any) []string {
 	return args
 }
 
-func (h *abHandle) diffSnapshot(ctx context.Context, call goja.FunctionCall) (any, error) {
-	return h.runJSON(ctx, diffSnapshotArgs(optsArgMap(call, 0))...)
+func (h *abHandle) diffSnapshot(ctx context.Context, opts map[string]any) (any, error) {
+	return h.runJSON(ctx, diffSnapshotArgs(opts)...)
 }
 
-func (h *abHandle) diffScreenshot(ctx context.Context, call goja.FunctionCall) (any, error) {
-	opts := optsArgMap(call, 0)
+func (h *abHandle) diffScreenshot(ctx context.Context, opts map[string]any) (any, error) {
 	if s, _ := opts["baseline"].(string); s == "" {
 		return nil, errors.New("agentBrowser.diff.screenshot: opts.baseline (a baseline image path) is required")
 	}
 	return h.runJSON(ctx, diffScreenshotArgs(opts)...)
 }
 
-func (h *abHandle) diffURL(ctx context.Context, call goja.FunctionCall) (any, error) {
-	u1, u2 := strArg(call, 0), strArg(call, 1)
-	if u1 == "" || u2 == "" {
+// diffURLArgs carries the two URLs to compare.
+type diffURLArgs struct {
+	u1, u2 string
+}
+
+func diffURLExtract(call goja.FunctionCall) (diffURLArgs, error) {
+	return diffURLArgs{u1: strArg(call, 0), u2: strArg(call, 1)}, nil
+}
+
+func (h *abHandle) diffURL(ctx context.Context, a diffURLArgs) (any, error) {
+	if a.u1 == "" || a.u2 == "" {
 		return nil, errors.New("agentBrowser.diff.url: two URLs are required")
 	}
-	return h.runJSON(ctx, "diff", "url", u1, u2)
+	return h.runJSON(ctx, "diff", "url", a.u1, a.u2)
 }
 
 // addDiff wires page diffing into the handle object.
 func (h *abHandle) addDiff(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
 	obj["diff"] = map[string]any{
-		"snapshot":   h.p(vm, loop, h.diffSnapshot),
-		"screenshot": h.p(vm, loop, h.diffScreenshot),
-		"url":        h.p(vm, loop, h.diffURL),
+		"snapshot":   abAsync(vm, loop, abOptsArg0, h.diffSnapshot),
+		"screenshot": abAsync(vm, loop, abOptsArg0, h.diffScreenshot),
+		"url":        abAsync(vm, loop, diffURLExtract, h.diffURL),
 	}
 }

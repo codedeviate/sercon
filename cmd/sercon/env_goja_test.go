@@ -22,7 +22,7 @@ func envLoadVM(t *testing.T, vm *goja.Runtime, loop *eventloop.EventLoop) {
 		}
 		return goja.Undefined()
 	})
-	_ = env.Set("load", scriptengine.PromisifyAsyncLegacy(vm, loop, envLoadBinding(vm)).Func)
+	_ = env.Set("load", scriptengine.PromisifyAsync(vm, loop, envLoadExtract, envLoadOp).Func)
 	rt := vm.NewObject()
 	_ = rt.Set("env", env)
 	_ = vm.Set("runtime", rt)

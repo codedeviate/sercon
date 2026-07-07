@@ -259,10 +259,10 @@ func runDoctor(ctx context.Context) (tools []toolReport, anyConflict bool) {
 	return reports, anyConflict
 }
 
-// doctorOp backs services.doctor(requires?). Returns { ok, satisfied, unmet,
-// tools }. requires entries are feature/category names or specific tool names;
-// an unknown name throws.
-func doctorOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+// doctorExtract reads services.doctor's optional requires array from the
+// goja call. It runs synchronously on the event loop — the only place the
+// goja call may be touched.
+func doctorExtract(call goja.FunctionCall) ([]string, error) {
 	var requires []string
 	if arr, ok := call.Argument(0).Export().([]any); ok {
 		for _, e := range arr {
@@ -271,6 +271,13 @@ func doctorOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 			}
 		}
 	}
+	return requires, nil
+}
+
+// doctorOp backs services.doctor(requires?). Returns { ok, satisfied, unmet,
+// tools }. requires entries are feature/category names or specific tool names;
+// an unknown name throws.
+func doctorOp(ctx context.Context, requires []string) (any, error) {
 	tools, anyConflict := runDoctor(ctx)
 	unmet, err := resolveRequires(requires, tools)
 	if err != nil {

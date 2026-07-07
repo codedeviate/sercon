@@ -59,18 +59,26 @@ func optsArgMap(call goja.FunctionCall, i int) map[string]any {
 	return map[string]any{}
 }
 
+// getArgs carries the `get` subject plus the optional selector.
+type getArgs struct {
+	what, sel string
+}
+
+func getExtract(call goja.FunctionCall) (getArgs, error) {
+	return getArgs{what: strArg(call, 0), sel: strArg(call, 1)}, nil
+}
+
 // get runs `get <what> [selector]`.
-func (h *abHandle) get(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) get(ctx context.Context, a getArgs) (any, error) {
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	what := strArg(call, 0)
-	if what == "" {
+	if a.what == "" {
 		return nil, errors.New("agentBrowser.get: what is required (text/html/value/attr/title/url/count/box/styles/cdp-url)")
 	}
-	args := []string{"get", what}
-	if sel := strArg(call, 1); sel != "" {
-		args = append(args, sel)
+	args := []string{"get", a.what}
+	if a.sel != "" {
+		args = append(args, a.sel)
 	}
 	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, args...)
 	if err != nil {
@@ -79,14 +87,13 @@ func (h *abHandle) get(ctx context.Context, call goja.FunctionCall) (any, error)
 	return parseJSON(out)
 }
 
-// isState returns a method that runs `is <state> <selector>`.
+// isState returns a work half that runs `is <state> <selector>`.
 // Used for isVisible / isEnabled / isChecked.
-func (h *abHandle) isState(state string) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) isState(state string) func(context.Context, string) (any, error) {
+	return func(ctx context.Context, sel string) (any, error) {
 		if err := h.requireOpen(); err != nil {
 			return nil, err
 		}
-		sel := strArg(call, 0)
 		if sel == "" {
 			return nil, fmt.Errorf("agentBrowser.is%s: selector is required", titleState(state))
 		}
@@ -99,11 +106,10 @@ func (h *abHandle) isState(state string) func(context.Context, goja.FunctionCall
 }
 
 // evalJS runs `eval <code>` in the page context.
-func (h *abHandle) evalJS(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) evalJS(ctx context.Context, code string) (any, error) {
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	code := strArg(call, 0)
 	if code == "" {
 		return nil, errors.New("agentBrowser.eval: js code is required")
 	}
@@ -115,25 +121,25 @@ func (h *abHandle) evalJS(ctx context.Context, call goja.FunctionCall) (any, err
 }
 
 // snapshot captures the accessibility tree / DOM snapshot.
-func (h *abHandle) snapshot(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) snapshot(ctx context.Context, opts map[string]any) (any, error) {
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, snapshotArgs(optsArgMap(call, 0))...)
+	out, err := abRunChecked(ctx, h.session, h.global, h.timeout, snapshotArgs(opts)...)
 	if err != nil {
 		return nil, err
 	}
 	return parseJSON(out)
 }
 
-// logView returns a method that runs `console` or `errors`, honouring {clear:true}.
-func (h *abHandle) logView(verb string) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(ctx context.Context, call goja.FunctionCall) (any, error) {
+// logView returns a work half that runs `console` or `errors`, honouring {clear:true}.
+func (h *abHandle) logView(verb string) func(context.Context, map[string]any) (any, error) {
+	return func(ctx context.Context, opts map[string]any) (any, error) {
 		if err := h.requireOpen(); err != nil {
 			return nil, err
 		}
 		args := []string{verb}
-		if b, _ := optsArgMap(call, 0)["clear"].(bool); b {
+		if b, _ := opts["clear"].(bool); b {
 			args = append(args, "--clear")
 		}
 		out, err := abRunChecked(ctx, h.session, h.global, h.timeout, args...)
@@ -145,11 +151,10 @@ func (h *abHandle) logView(verb string) func(context.Context, goja.FunctionCall)
 }
 
 // highlight highlights the matched element(s) in the browser.
-func (h *abHandle) highlight(ctx context.Context, call goja.FunctionCall) (any, error) {
+func (h *abHandle) highlight(ctx context.Context, sel string) (any, error) {
 	if err := h.requireOpen(); err != nil {
 		return nil, err
 	}
-	sel := strArg(call, 0)
 	if sel == "" {
 		return nil, errors.New("agentBrowser.highlight: selector is required")
 	}
@@ -162,13 +167,13 @@ func (h *abHandle) highlight(ctx context.Context, call goja.FunctionCall) (any, 
 
 // addInspect wires the inspection surface into the handle object.
 func (h *abHandle) addInspect(obj map[string]any, vm *goja.Runtime, loop *eventloop.EventLoop) {
-	obj["get"] = h.p(vm, loop, h.get)
-	obj["isVisible"] = h.p(vm, loop, h.isState("visible"))
-	obj["isEnabled"] = h.p(vm, loop, h.isState("enabled"))
-	obj["isChecked"] = h.p(vm, loop, h.isState("checked"))
-	obj["eval"] = h.p(vm, loop, h.evalJS)
-	obj["snapshot"] = h.p(vm, loop, h.snapshot)
-	obj["console"] = h.p(vm, loop, h.logView("console"))
-	obj["errors"] = h.p(vm, loop, h.logView("errors"))
-	obj["highlight"] = h.p(vm, loop, h.highlight)
+	obj["get"] = abAsync(vm, loop, getExtract, h.get)
+	obj["isVisible"] = abAsync(vm, loop, abStrArg0, h.isState("visible"))
+	obj["isEnabled"] = abAsync(vm, loop, abStrArg0, h.isState("enabled"))
+	obj["isChecked"] = abAsync(vm, loop, abStrArg0, h.isState("checked"))
+	obj["eval"] = abAsync(vm, loop, abStrArg0, h.evalJS)
+	obj["snapshot"] = abAsync(vm, loop, abOptsArg0, h.snapshot)
+	obj["console"] = abAsync(vm, loop, abOptsArg0, h.logView("console"))
+	obj["errors"] = abAsync(vm, loop, abOptsArg0, h.logView("errors"))
+	obj["highlight"] = abAsync(vm, loop, abStrArg0, h.highlight)
 }

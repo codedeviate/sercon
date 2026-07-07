@@ -17,7 +17,8 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine/tui"
 )
 
-// execShell runs a subprocess and waits for it to exit. The contract:
+// execShellExtract + execShell run a subprocess and wait for it to exit.
+// The contract:
 //
 //   - `cmd: string` is passed verbatim to the host's command shell
 //     (`/bin/sh -c "<cmd>"` on Unix, `cmd /C "<cmd>"` on Windows) so
@@ -42,37 +43,63 @@ import (
 // surface as Go errors → JS throws. Non-zero exits do **not** throw —
 // they're a normal subprocess outcome, reported via `exitCode` /
 // `success` so scripts can react without try/catch.
-func execShell(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+// execShellArgs is the plain-Go argument bundle handed from execShellExtract
+// (on the event loop) to execShell (the work goroutine). pane is a Go-side
+// tui.Pane handle resolved on-loop; the worker only writes bytes to it.
+type execShellArgs struct {
+	argv    []string
+	timeout time.Duration
+	cwd     string
+	stdin   string
+	usePTY  bool
+	env     []string
+	pane    tui.Pane
+}
+
+// execShellExtract parses the (cmd, opts?) goja arguments into execShellArgs.
+// It runs synchronously on the event loop — the only place the goja call may
+// be touched; a validation error here rejects the Promise exactly like a
+// work error.
+func execShellExtract(call goja.FunctionCall) (execShellArgs, error) {
+	var args execShellArgs
 	cmdArg := call.Argument(0)
 	if cmdArg == nil || goja.IsUndefined(cmdArg) || goja.IsNull(cmdArg) {
-		return nil, errors.New("shell: cmd argument required")
+		return args, errors.New("shell: cmd argument required")
 	}
 
 	opts := optsAsMap(call)
-	timeout := optMillis(opts, "timeout", 30*time.Second)
-	cwd := optString(opts, "cwd", "")
-	stdin := optString(opts, "stdin", "")
-	usePTY := optBool(opts, "pty", false)
+	args.timeout = optMillis(opts, "timeout", 30*time.Second)
+	args.cwd = optString(opts, "cwd", "")
+	args.stdin = optString(opts, "stdin", "")
+	args.usePTY = optBool(opts, "pty", false)
+	args.env = buildEnv(opts)
 
 	argv, err := buildArgv(cmdArg)
 	if err != nil {
-		return nil, err
+		return args, err
 	}
-
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...) //nolint:gosec // user-supplied argv is intentional
-	if cwd != "" {
-		cmd.Dir = cwd
-	}
-	if env := buildEnv(opts); env != nil {
-		cmd.Env = env
-	}
+	args.argv = argv
 
 	pane, err := resolvePane(call.Argument(1))
 	if err != nil {
-		return nil, err
+		return args, err
+	}
+	args.pane = pane
+	return args, nil
+}
+
+func execShell(ctx context.Context, args execShellArgs) (map[string]any, error) {
+	stdin, usePTY, pane := args.stdin, args.usePTY, args.pane
+
+	runCtx, cancel := context.WithTimeout(ctx, args.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(runCtx, args.argv[0], args.argv[1:]...) //nolint:gosec // user-supplied argv is intentional
+	if args.cwd != "" {
+		cmd.Dir = args.cwd
+	}
+	if args.env != nil {
+		cmd.Env = args.env
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer

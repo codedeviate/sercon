@@ -131,8 +131,8 @@ type wdSession struct {
 	wd      selenium.WebDriver
 	svc     *selenium.Service
 	reg     *wdRegistry
-	baseURL string  // <scheme>://host:port[/wd/hub] — for raw s.command requests
-	browser string  // "chrome" | "firefox" — resolved in connect; gates CDP methods
+	baseURL string // <scheme>://host:port[/wd/hub] — for raw s.command requests
+	browser string // "chrome" | "firefox" — resolved in connect; gates CDP methods
 
 	cdpMu   sync.Mutex // guards cdpConn lazy init
 	cdpConn *cdpConn   // browser-level CDP connection (lazy; closed on shutdown)
@@ -166,10 +166,16 @@ func (s *wdSession) do(fn func() (any, error)) (any, error) {
 
 // wdAsync wraps an async session/element method as a bare goja callback. The
 // methods live on a runtime-built handle object so they need .Func, like
-// agentBrowser.
-func wdAsync(vm *goja.Runtime, loop *eventloop.EventLoop, work func(context.Context, goja.FunctionCall) (any, error)) func(goja.FunctionCall) goja.Value {
-	return scriptengine.PromisifyAsyncLegacy(vm, loop, work).Func
+// agentBrowser. extract runs on the event loop and is the only place goja
+// values may be touched; work runs in a goroutine on the extracted plain-Go
+// value.
+func wdAsync[A any](vm *goja.Runtime, loop *eventloop.EventLoop, extract func(goja.FunctionCall) (A, error), work func(context.Context, A) (any, error)) func(goja.FunctionCall) goja.Value {
+	return scriptengine.PromisifyAsync(vm, loop, extract, work).Func
 }
+
+// wdNoArgs is the extract half for zero-argument bindings: nothing to read
+// from the call.
+func wdNoArgs(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil }
 
 func (r *wdRegistry) track(s *wdSession) {
 	r.mu.Lock()
@@ -250,9 +256,11 @@ func (s *wdSession) shutdown() {
 
 // connect returns the connect work func: builds caps, dials a remote url or
 // starts an installed local driver, registers the session, returns its handle.
-func (r *wdRegistry) connect(vm *goja.Runtime, loop *eventloop.EventLoop) func(context.Context, goja.FunctionCall) (any, error) {
-	return func(_ context.Context, call goja.FunctionCall) (any, error) {
-		opts := optsArgMap(call, 0)
+// The connect options arrive pre-extracted on the event loop (see the
+// registration site in webdriverNamespace), so no goja value crosses into
+// this goroutine.
+func (r *wdRegistry) connect(vm *goja.Runtime, loop *eventloop.EventLoop) func(context.Context, map[string]any) (any, error) {
+	return func(_ context.Context, opts map[string]any) (any, error) {
 		caps := buildCaps(opts)
 		browser, _ := opts["browser"].(string)
 		if browser == "" {
@@ -306,6 +314,12 @@ func (r *wdRegistry) connect(vm *goja.Runtime, loop *eventloop.EventLoop) func(c
 			cmdTimeout: wdCommandTimeout(opts),
 		}
 		r.track(s)
+		// TODO(promisify-vm): s.jsObject constructs the vm/loop-capturing
+		// handle map here, in the work goroutine. Construction executes no VM
+		// code (goja conversion happens at resolve time, on the loop), but it
+		// still hands vm/loop to work; being fully clean would need an
+		// on-loop post-work hook in PromisifyAsync to build the handle after
+		// the blocking connect completes.
 		return s.jsObject(vm, loop), nil
 	}
 }
@@ -340,7 +354,7 @@ func wdCommandTimeout(opts map[string]any) time.Duration {
 }
 
 // quit closes the session explicitly (de-registers + shutdown).
-func (s *wdSession) quit(_ context.Context, _ goja.FunctionCall) (any, error) {
+func (s *wdSession) quit(_ context.Context, _ struct{}) (any, error) {
 	s.reg.forget(s)
 	s.shutdown()
 	o := scriptengine.NewOrdered()
@@ -353,17 +367,17 @@ func (s *wdSession) quit(_ context.Context, _ goja.FunctionCall) (any, error) {
 // wired; stub groups are no-ops that don't deref vm/loop at construction).
 func (s *wdSession) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	obj := map[string]any{
-		"quit": wdAsync(vm, loop, s.quit),
+		"quit": wdAsync(vm, loop, wdNoArgs, s.quit),
 	}
-	s.addNav(obj, vm, loop)     // Task 3
-	s.addFind(obj, vm, loop)    // Task 4
-	s.addPage(obj, vm, loop)    // Task 5
-	s.addScript(obj, vm, loop)  // Task 5
-	s.addCookies(obj, vm, loop) // Task 5
-	s.addWaits(obj, vm, loop)   // Task 5
-	s.addWindows(obj, vm, loop) // Phase 2
-	s.addFrames(obj, vm, loop)  // Phase 2
-	s.addAlerts(obj, vm, loop)      // Phase 2
+	s.addNav(obj, vm, loop)        // Task 3
+	s.addFind(obj, vm, loop)       // Task 4
+	s.addPage(obj, vm, loop)       // Task 5
+	s.addScript(obj, vm, loop)     // Task 5
+	s.addCookies(obj, vm, loop)    // Task 5
+	s.addWaits(obj, vm, loop)      // Task 5
+	s.addWindows(obj, vm, loop)    // Phase 2
+	s.addFrames(obj, vm, loop)     // Phase 2
+	s.addAlerts(obj, vm, loop)     // Phase 2
 	s.addWindowRect(obj, vm, loop) // Phase 2
 	s.addActions(obj, vm, loop)    // Phase 2
 	s.addCDP(obj, vm, loop)        // 0004: Chrome-only CDP trusted click
@@ -379,25 +393,30 @@ func webdriverNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scripten
 	}
 	return map[string]any{
 		"available": wdAvailable(),
-		"probe": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
-			u, _ := optsArgMap(call, 0)["url"].(string)
-			if u == "" {
-				return nil, errors.New("webdriver.probe: opts.url is required")
-			}
-			resp, err := http.Get(strings.TrimRight(u, "/") + "/status")
-			o := scriptengine.NewOrdered()
-			if err != nil {
-				o.Set("ready", false)
-				o.Set("error", err.Error())
+		"probe": scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (string, error) {
+				u, _ := optsArgMap(call, 0)["url"].(string)
+				if u == "" {
+					return "", errors.New("webdriver.probe: opts.url is required")
+				}
+				return u, nil
+			},
+			func(_ context.Context, u string) (*scriptengine.Ordered, error) {
+				resp, err := http.Get(strings.TrimRight(u, "/") + "/status")
+				o := scriptengine.NewOrdered()
+				if err != nil {
+					o.Set("ready", false)
+					o.Set("error", err.Error())
+					return o, nil
+				}
+				defer resp.Body.Close()
+				_, _ = io.Copy(io.Discard, resp.Body)
+				o.Set("ready", resp.StatusCode == http.StatusOK)
+				o.Set("status", resp.StatusCode)
 				return o, nil
-			}
-			defer resp.Body.Close()
-			_, _ = io.Copy(io.Discard, resp.Body)
-			o.Set("ready", resp.StatusCode == http.StatusOK)
-			o.Set("status", resp.StatusCode)
-			return o, nil
-		}),
-		"connect": scriptengine.PromisifyAsyncLegacy(vm, loop, reg.connect(vm, loop)),
+			}),
+		"connect": scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (map[string]any, error) { return optsArgMap(call, 0), nil },
+			reg.connect(vm, loop)),
 	}
 }
-

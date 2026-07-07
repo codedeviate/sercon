@@ -52,23 +52,31 @@ func parseQuotedProbe(quoted []byte, proto string) (uint16, bool) {
 
 const icmpRunID uint16 = 0x7e57 // tags our echo probes; seq is the real discriminator
 
-// traceroute implements net.probe.traceroute(host, opts?). Needs root /
-// CAP_NET_RAW. Sequential per TTL.
-func traceroute(ctx context.Context, call goja.FunctionCall) ([]tracerouteHop, error) {
+// tracerouteArgs carries the on-loop-extracted arguments of
+// net.probe.traceroute.
+type tracerouteArgs struct {
+	host     string
+	protocol string
+	maxHops  int
+	timeout  time.Duration
+	probes   int
+	port     int
+}
+
+func tracerouteExtract(call goja.FunctionCall) (tracerouteArgs, error) {
 	host := call.Argument(0).String()
 	if host == "" {
-		return nil, errors.New("net.probe.traceroute: host required")
+		return tracerouteArgs{}, errors.New("net.probe.traceroute: host required")
 	}
 	opts := optsAsMap(call)
 	protocol := optString(opts, "protocol", "icmp")
 	if protocol != "icmp" && protocol != "udp" && protocol != "tcp" {
-		return nil, fmt.Errorf("net.probe.traceroute: protocol must be 'icmp', 'udp', or 'tcp', got %q", protocol)
+		return tracerouteArgs{}, fmt.Errorf("net.probe.traceroute: protocol must be 'icmp', 'udp', or 'tcp', got %q", protocol)
 	}
 	maxHops := optInt(opts, "maxHops", 30)
 	if maxHops <= 0 {
 		maxHops = 30
 	}
-	timeout := optMillis(opts, "timeout", 2*time.Second)
 	probes := optInt(opts, "probes", 3)
 	if probes <= 0 {
 		probes = 3
@@ -77,11 +85,22 @@ func traceroute(ctx context.Context, call goja.FunctionCall) ([]tracerouteHop, e
 	if protocol == "udp" {
 		defaultPort = 33434
 	}
-	port := optInt(opts, "port", defaultPort)
+	return tracerouteArgs{
+		host:     host,
+		protocol: protocol,
+		maxHops:  maxHops,
+		timeout:  optMillis(opts, "timeout", 2*time.Second),
+		probes:   probes,
+		port:     optInt(opts, "port", defaultPort),
+	}, nil
+}
 
-	dst, err := net.ResolveIPAddr("ip4", host)
+// traceroute implements net.probe.traceroute(host, opts?). Needs root /
+// CAP_NET_RAW. Sequential per TTL.
+func traceroute(ctx context.Context, args tracerouteArgs) ([]tracerouteHop, error) {
+	dst, err := net.ResolveIPAddr("ip4", args.host)
 	if err != nil {
-		return nil, fmt.Errorf("net.probe.traceroute: resolve %q: %w", host, err)
+		return nil, fmt.Errorf("net.probe.traceroute: resolve %q: %w", args.host, err)
 	}
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
@@ -89,9 +108,9 @@ func traceroute(ctx context.Context, call goja.FunctionCall) ([]tracerouteHop, e
 	}
 	defer func() { _ = conn.Close() }()
 
-	tr := &tracer{conn: conn, v4: ipv4.NewPacketConn(conn), dst: dst, protocol: protocol, port: port, timeout: timeout, probes: probes}
-	hops := make([]tracerouteHop, 0, maxHops)
-	for ttl := 1; ttl <= maxHops; ttl++ {
+	tr := &tracer{conn: conn, v4: ipv4.NewPacketConn(conn), dst: dst, protocol: args.protocol, port: args.port, timeout: args.timeout, probes: args.probes}
+	hops := make([]tracerouteHop, 0, args.maxHops)
+	for ttl := 1; ttl <= args.maxHops; ttl++ {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("net.probe.traceroute: %w", err)
 		}

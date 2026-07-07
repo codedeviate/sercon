@@ -115,17 +115,27 @@ func feedParseBinding(vm *goja.Runtime) func(goja.FunctionCall) goja.Value {
 	}
 }
 
-// feedLoadWork is the off-loop worker for web.feed.load: fetch + parse, return
-// the plain map (PromisifyAsync vm.ToValue-converts it on the loop).
-func feedLoadWork(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	url := call.Argument(0).String()
-	var optsMap map[string]any
+// feedLoadArgs carries the on-loop-extracted arguments for web.feed.load.
+type feedLoadArgs struct {
+	url  string
+	opts map[string]any
+}
+
+// feedLoadExtract is the on-loop extract for web.feed.load(url, opts?).
+func feedLoadExtract(call goja.FunctionCall) (feedLoadArgs, error) {
+	a := feedLoadArgs{url: call.Argument(0).String()}
 	if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
 		if m, ok := o.Export().(map[string]any); ok {
-			optsMap = m
+			a.opts = m
 		}
 	}
-	body, _, err := loadBytes(ctx, url, optsMap)
+	return a, nil
+}
+
+// feedLoadWork is the off-loop worker for web.feed.load: fetch + parse, return
+// the plain map (PromisifyAsync vm.ToValue-converts it on the loop).
+func feedLoadWork(ctx context.Context, a feedLoadArgs) (map[string]any, error) {
+	body, _, err := loadBytes(ctx, a.url, a.opts)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +146,6 @@ func feedLoadWork(ctx context.Context, call goja.FunctionCall) (map[string]any, 
 func feedNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"parse": feedParseBinding(vm),
-		"load":  scriptengine.PromisifyAsyncLegacy(vm, loop, feedLoadWork),
+		"load":  scriptengine.PromisifyAsync(vm, loop, feedLoadExtract, feedLoadWork),
 	}
 }

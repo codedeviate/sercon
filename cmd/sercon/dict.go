@@ -23,8 +23,8 @@ import (
 // match under a strategy). Both are one-shot — connect, query, QUIT.
 func dictNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"define": scriptengine.PromisifyAsyncLegacy(vm, loop, dictDefine),
-		"match":  scriptengine.PromisifyAsyncLegacy(vm, loop, dictMatch),
+		"define": scriptengine.PromisifyAsync(vm, loop, dictDefineExtract, dictDefine),
+		"match":  scriptengine.PromisifyAsync(vm, loop, dictMatchExtract, dictMatch),
 	}
 }
 
@@ -45,6 +45,31 @@ type dictDefineResult struct {
 	Definitions []dictDefinition `json:"definitions"`
 }
 
+// dictDefineArgs carries the on-loop-extracted arguments of db.dict.define.
+type dictDefineArgs struct {
+	host    string
+	word    string
+	db      string
+	port    string
+	timeout time.Duration
+}
+
+func dictDefineExtract(call goja.FunctionCall) (dictDefineArgs, error) {
+	host := call.Argument(0).String()
+	word := call.Argument(1).String()
+	if host == "" || word == "" {
+		return dictDefineArgs{}, errors.New("dict.define: host and word required")
+	}
+	opts := optAt(call, 2)
+	return dictDefineArgs{
+		host:    host,
+		word:    word,
+		db:      optString(opts, "database", "*"),
+		port:    optString(opts, "port", "2628"),
+		timeout: optMillis(opts, "timeout", 10*time.Second),
+	}, nil
+}
+
 // dictDefine looks up `word` and returns its definitions:
 //
 //	{ word, found, definitions: [{ db, dbName, text }] }
@@ -52,24 +77,17 @@ type dictDefineResult struct {
 // `opts.database` selects a specific dictionary (default `*` = all).
 // A word with no definitions resolves with `found: false` and an
 // empty list — "not in the dictionary" is data, not an error.
-func dictDefine(ctx context.Context, call goja.FunctionCall) (dictDefineResult, error) {
-	host := call.Argument(0).String()
-	word := call.Argument(1).String()
-	if host == "" || word == "" {
-		return dictDefineResult{}, errors.New("dict.define: host and word required")
-	}
-	opts := optAt(call, 2)
-	db := optString(opts, "database", "*")
-	timeout := optMillis(opts, "timeout", 10*time.Second)
+func dictDefine(ctx context.Context, args dictDefineArgs) (dictDefineResult, error) {
+	word := args.word
 
-	tp, conn, err := dictConnect(ctx, host, opts, timeout)
+	tp, conn, err := dictConnect(ctx, args.host, args.port, args.timeout)
 	if err != nil {
 		return dictDefineResult{}, fmt.Errorf("dict.define: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
 	defer dictQuit(tp)
 
-	id, err := tp.Cmd("DEFINE %s %s", db, dictQuote(word))
+	id, err := tp.Cmd("DEFINE %s %s", args.db, dictQuote(word))
 	if err != nil {
 		return dictDefineResult{}, fmt.Errorf("dict.define: send: %w", err)
 	}
@@ -137,27 +155,46 @@ type dictMatchResult struct {
 	Matches []dictMatchEntry `json:"matches"`
 }
 
-// dictMatch returns the words that match `word` under a strategy
-// (default `prefix`). Result: { word, matches: [{ db, word }] }.
-func dictMatch(ctx context.Context, call goja.FunctionCall) (dictMatchResult, error) {
+// dictMatchArgs carries the on-loop-extracted arguments of db.dict.match.
+type dictMatchArgs struct {
+	host     string
+	word     string
+	db       string
+	strategy string
+	port     string
+	timeout  time.Duration
+}
+
+func dictMatchExtract(call goja.FunctionCall) (dictMatchArgs, error) {
 	host := call.Argument(0).String()
 	word := call.Argument(1).String()
 	if host == "" || word == "" {
-		return dictMatchResult{}, errors.New("dict.match: host and word required")
+		return dictMatchArgs{}, errors.New("dict.match: host and word required")
 	}
 	opts := optAt(call, 2)
-	db := optString(opts, "database", "*")
-	strategy := optString(opts, "strategy", "prefix")
-	timeout := optMillis(opts, "timeout", 10*time.Second)
+	return dictMatchArgs{
+		host:     host,
+		word:     word,
+		db:       optString(opts, "database", "*"),
+		strategy: optString(opts, "strategy", "prefix"),
+		port:     optString(opts, "port", "2628"),
+		timeout:  optMillis(opts, "timeout", 10*time.Second),
+	}, nil
+}
 
-	tp, conn, err := dictConnect(ctx, host, opts, timeout)
+// dictMatch returns the words that match `word` under a strategy
+// (default `prefix`). Result: { word, matches: [{ db, word }] }.
+func dictMatch(ctx context.Context, args dictMatchArgs) (dictMatchResult, error) {
+	word := args.word
+
+	tp, conn, err := dictConnect(ctx, args.host, args.port, args.timeout)
 	if err != nil {
 		return dictMatchResult{}, fmt.Errorf("dict.match: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
 	defer dictQuit(tp)
 
-	id, err := tp.Cmd("MATCH %s %s %s", db, strategy, dictQuote(word))
+	id, err := tp.Cmd("MATCH %s %s %s", args.db, args.strategy, dictQuote(word))
 	if err != nil {
 		return dictMatchResult{}, fmt.Errorf("dict.match: send: %w", err)
 	}
@@ -190,9 +227,9 @@ func dictMatch(ctx context.Context, call goja.FunctionCall) (dictMatchResult, er
 }
 
 // dictConnect dials the DICT server, reads the 220 banner, and sends
-// the CLIENT announcement (politeness per the RFC). Default port 2628.
-func dictConnect(ctx context.Context, host string, opts map[string]any, timeout time.Duration) (*textproto.Conn, net.Conn, error) {
-	port := optString(opts, "port", "2628")
+// the CLIENT announcement (politeness per the RFC). The port default
+// (2628) is applied by the extract halves via optString.
+func dictConnect(ctx context.Context, host, port string, timeout time.Duration) (*textproto.Conn, net.Conn, error) {
 	dialer := net.Dialer{Timeout: timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
 	if err != nil {

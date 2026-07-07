@@ -235,27 +235,40 @@ func sitemapParseBinding(vm *goja.Runtime) func(goja.FunctionCall) goja.Value {
 	}
 }
 
-// sitemapLoadWork is the off-loop worker for web.sitemap.load(url, opts?).
-func sitemapLoadWork(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-	url := call.Argument(0).String()
-	var optsMap map[string]any
+// sitemapLoadArgs carries the on-loop-extracted arguments for
+// web.sitemap.load. The raw opts map travels along because loadSitemap
+// re-reads fetch options (parseFetchOpts) for child-sitemap expansion.
+type sitemapLoadArgs struct {
+	url    string
+	opts   map[string]any
+	expand bool
+}
+
+// sitemapLoadExtract is the on-loop extract for web.sitemap.load(url, opts?).
+func sitemapLoadExtract(call goja.FunctionCall) (sitemapLoadArgs, error) {
+	a := sitemapLoadArgs{url: call.Argument(0).String()}
 	if o := call.Argument(1); o != nil && !goja.IsUndefined(o) && !goja.IsNull(o) {
 		if m, ok := o.Export().(map[string]any); ok {
-			optsMap = m
+			a.opts = m
 		}
 	}
-	expand := optBool(optsMap, "expand", false)
-	body, _, err := loadBytes(ctx, url, optsMap)
+	a.expand = optBool(a.opts, "expand", false)
+	return a, nil
+}
+
+// sitemapLoadWork is the off-loop worker for web.sitemap.load(url, opts?).
+func sitemapLoadWork(ctx context.Context, a sitemapLoadArgs) (map[string]any, error) {
+	body, _, err := loadBytes(ctx, a.url, a.opts)
 	if err != nil {
 		return nil, err
 	}
-	return loadSitemap(ctx, url, body, optsMap, expand)
+	return loadSitemap(ctx, a.url, body, a.opts, a.expand)
 }
 
 // sitemapNamespace builds the web.sitemap sub-namespace.
 func sitemapNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"parse": sitemapParseBinding(vm),
-		"load":  scriptengine.PromisifyAsyncLegacy(vm, loop, sitemapLoadWork),
+		"load":  scriptengine.PromisifyAsync(vm, loop, sitemapLoadExtract, sitemapLoadWork),
 	}
 }

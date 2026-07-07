@@ -137,43 +137,82 @@ func errKindOf(err error) string {
 	}
 }
 
-// loadHTTPOp backs net.load.http(opts). Runs off-loop (PromisifyAsync), so it
-// reads opts from a plain map snapshot, not live goja values.
-func loadHTTPOp(ctx context.Context, call goja.FunctionCall) (any, error) {
+// loadHTTPArgs carries the on-loop-extracted, fully-validated options for
+// net.load.http. hostname is pre-computed from the parsed URL so the work
+// goroutine's public-target guard needs no re-parse.
+type loadHTTPArgs struct {
+	target      string
+	hostname    string
+	method      string
+	headers     map[string]string
+	body        string
+	concurrency int
+	requests    int
+	duration    time.Duration
+	rps         int
+	timeout     time.Duration
+	confirm     bool
+}
+
+// loadHTTPExtract is the on-loop extract for net.load.http(opts): it snapshots
+// the options object into plain Go and runs all argument validation. The
+// public-target guardrail stays in loadHTTPOp — it resolves DNS and must not
+// block the event loop.
+func loadHTTPExtract(call goja.FunctionCall) (loadHTTPArgs, error) {
 	opts, ok := call.Argument(0).Export().(map[string]any)
 	if !ok {
-		return nil, errors.New("net.load.http: options object required")
+		return loadHTTPArgs{}, errors.New("net.load.http: options object required")
 	}
 	target := optString(opts, "url", "")
 	if target == "" {
-		return nil, errors.New("net.load.http: `url` is required")
+		return loadHTTPArgs{}, errors.New("net.load.http: `url` is required")
 	}
 	u, err := url.Parse(target)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, fmt.Errorf("net.load.http: invalid url %q (need http/https)", target)
+		return loadHTTPArgs{}, fmt.Errorf("net.load.http: invalid url %q (need http/https)", target)
 	}
-	method := strings.ToUpper(optString(opts, "method", "GET"))
-	headers := optStringMap(opts, "headers")
-	body := optString(opts, "body", "")
-	concurrency := optInt(opts, "concurrency", 10)
-	if concurrency < 1 {
-		concurrency = 1
+	a := loadHTTPArgs{
+		target:      target,
+		hostname:    u.Hostname(),
+		method:      strings.ToUpper(optString(opts, "method", "GET")),
+		headers:     optStringMap(opts, "headers"),
+		body:        optString(opts, "body", ""),
+		concurrency: optInt(opts, "concurrency", 10),
+		requests:    optInt(opts, "requests", 0),
+		duration:    optMillis(opts, "duration", 0),
+		rps:         optInt(opts, "rps", 0),
+		timeout:     optMillis(opts, "timeout", 10*time.Second),
+		confirm:     optBool(opts, "confirm", false),
 	}
-	if concurrency > loadMaxConcurrency {
-		return nil, fmt.Errorf("net.load.http: concurrency %d exceeds the %d cap", concurrency, loadMaxConcurrency)
+	if a.concurrency < 1 {
+		a.concurrency = 1
 	}
-	requests := optInt(opts, "requests", 0)
-	duration := optMillis(opts, "duration", 0)
-	if (requests <= 0) == (duration <= 0) {
-		return nil, errors.New("net.load.http: provide exactly one of `requests` (>0) or `duration` (>0 ms)")
+	if a.concurrency > loadMaxConcurrency {
+		return loadHTTPArgs{}, fmt.Errorf("net.load.http: concurrency %d exceeds the %d cap", a.concurrency, loadMaxConcurrency)
 	}
-	rps := optInt(opts, "rps", 0)
-	timeout := optMillis(opts, "timeout", 10*time.Second)
-	confirm := optBool(opts, "confirm", false)
+	if (a.requests <= 0) == (a.duration <= 0) {
+		return loadHTTPArgs{}, errors.New("net.load.http: provide exactly one of `requests` (>0) or `duration` (>0 ms)")
+	}
+	return a, nil
+}
+
+// loadHTTPOp backs net.load.http(opts). Runs off-loop (PromisifyAsync) on the
+// plain loadHTTPArgs snapshot; no goja values reach this goroutine.
+func loadHTTPOp(ctx context.Context, a loadHTTPArgs) (any, error) {
+	target := a.target
+	method := a.method
+	headers := a.headers
+	body := a.body
+	concurrency := a.concurrency
+	requests := a.requests
+	duration := a.duration
+	rps := a.rps
+	timeout := a.timeout
+	confirm := a.confirm
 
 	// Dual-use guardrail: refuse public targets without explicit confirm.
-	if targetIsPublic(ctx, u.Hostname()) && !confirm {
-		return nil, fmt.Errorf("net.load.http: refusing to load-test public host %q without confirm:true (authorized self-testing only)", u.Hostname())
+	if targetIsPublic(ctx, a.hostname) && !confirm {
+		return nil, fmt.Errorf("net.load.http: refusing to load-test public host %q without confirm:true (authorized self-testing only)", a.hostname)
 	}
 
 	client := &http.Client{
@@ -349,6 +388,6 @@ func buildLoadReport(target, method string, concurrency int, elapsed time.Durati
 // loadNamespace builds the net.load member map.
 func loadNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"http": scriptengine.PromisifyAsyncLegacy(vm, loop, loadHTTPOp),
+		"http": scriptengine.PromisifyAsync(vm, loop, loadHTTPExtract, loadHTTPOp),
 	}
 }

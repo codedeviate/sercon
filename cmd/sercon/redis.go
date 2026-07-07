@@ -28,24 +28,35 @@ import (
 // parameterised by a `label` used in error messages.
 func redisNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
-			return respOpen(vm, loop, ctx, call, "redis", nil)
-		}),
+		"open": scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (string, error) {
+				return respURLExtract(call, "redis", nil)
+			},
+			func(ctx context.Context, url string) (map[string]any, error) {
+				return respOpen(vm, loop, ctx, url, "redis")
+			}),
 	}
 }
 
-// respOpen connects a go-redis client from a connection URL and PINGs it. label
-// ("redis" / "valkey") prefixes the error messages; normalize, if non-nil,
-// rewrites the URL into a scheme go-redis understands before parsing (Valkey
-// uses this to accept valkey:// / valkeys://).
-func respOpen(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, call goja.FunctionCall, label string, normalize func(string) string) (map[string]any, error) {
+// respURLExtract reads the open() connection-URL argument on the event loop.
+// label ("redis" / "valkey") prefixes the error message; normalize, if
+// non-nil, rewrites the URL into a scheme go-redis understands (Valkey uses
+// this to accept valkey:// / valkeys://).
+func respURLExtract(call goja.FunctionCall, label string, normalize func(string) string) (string, error) {
 	url := call.Argument(0).String()
 	if url == "" {
-		return nil, fmt.Errorf("%s.open: url required (e.g. %s://localhost:6379/0)", label, label)
+		return "", fmt.Errorf("%s.open: url required (e.g. %s://localhost:6379/0)", label, label)
 	}
 	if normalize != nil {
 		url = normalize(url)
 	}
+	return url, nil
+}
+
+// respOpen connects a go-redis client from a connection URL (already
+// extracted and normalised — see respURLExtract) and PINGs it. label
+// ("redis" / "valkey") prefixes the error messages.
+func respOpen(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, url string, label string) (map[string]any, error) {
 	opt, err := redis.ParseURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("%s.open: parse url: %w", label, err)
@@ -62,33 +73,35 @@ func respOpen(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, 
 // client, with error messages prefixed by label.
 func respHandle(vm *goja.Runtime, loop *eventloop.EventLoop, client *redis.Client, label string) map[string]any {
 	return map[string]any{
-		"do": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			return respDo(ctx, client, call, label)
-		}).Func,
-		"ping": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			res, err := client.Ping(ctx).Result()
-			if err != nil {
-				return nil, fmt.Errorf("%s.ping: %w", label, err)
-			}
-			return res, nil
-		}).Func,
-		"close": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			if err := client.Close(); err != nil {
-				return nil, fmt.Errorf("%s.close: %w", label, err)
-			}
-			return nil, nil
-		}).Func,
+		"do": scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) ([]any, error) {
+				return respDoExtract(call, label)
+			},
+			func(ctx context.Context, args []any) (any, error) {
+				return respDo(ctx, client, args, label)
+			}).Func,
+		"ping": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(ctx context.Context, _ struct{}) (any, error) {
+				res, err := client.Ping(ctx).Result()
+				if err != nil {
+					return nil, fmt.Errorf("%s.ping: %w", label, err)
+				}
+				return res, nil
+			}).Func,
+		"close": scriptengine.PromisifyAsync(vm, loop, dbNoArgs,
+			func(ctx context.Context, _ struct{}) (any, error) {
+				if err := client.Close(); err != nil {
+					return nil, fmt.Errorf("%s.close: %w", label, err)
+				}
+				return nil, nil
+			}).Func,
 	}
 }
 
-// respDo runs an arbitrary command: `do("SET", "k", "v")`,
-// `do("GET", "k")`, `do("HGETALL", "h")`, etc. The first arg is the
-// command name; the rest are its arguments. go-redis returns the
-// RESP reply as `any` — strings, int64, []any, nil — which goja
-// exports to JS the obvious way. RESP-level errors (WRONGTYPE,
-// unknown command) surface as thrown JS errors; a nil reply (missing
-// key) is data, returned as JS null. label prefixes error messages.
-func respDo(ctx context.Context, client *redis.Client, call goja.FunctionCall, label string) (any, error) {
+// respDoExtract reads the do() arguments on the event loop: the command name
+// plus its arguments, exported to plain Go values (JS null/undefined become
+// nil). label prefixes the missing-command error.
+func respDoExtract(call goja.FunctionCall, label string) ([]any, error) {
 	if len(call.Arguments) < 1 {
 		return nil, fmt.Errorf("%s.do: command name required", label)
 	}
@@ -100,6 +113,18 @@ func respDo(ctx context.Context, client *redis.Client, call goja.FunctionCall, l
 		}
 		args = append(args, a.Export())
 	}
+	return args, nil
+}
+
+// respDo runs an arbitrary command: `do("SET", "k", "v")`,
+// `do("GET", "k")`, `do("HGETALL", "h")`, etc. args[0] is the
+// command name; the rest are its arguments (pre-extracted — see
+// respDoExtract). go-redis returns the RESP reply as `any` —
+// strings, int64, []any, nil — which goja exports to JS the obvious
+// way. RESP-level errors (WRONGTYPE, unknown command) surface as
+// thrown JS errors; a nil reply (missing key) is data, returned as
+// JS null. label prefixes error messages.
+func respDo(ctx context.Context, client *redis.Client, args []any, label string) (any, error) {
 	res, err := client.Do(ctx, args...).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {

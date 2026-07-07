@@ -17,7 +17,8 @@ import (
 	"github.com/dop251/goja"
 )
 
-// httpRequestCall implements `net.http.request(method, url, opts?)` —
+// httpRequestExtract + httpRequestCall implement
+// `net.http.request(method, url, opts?)` —
 // the full-featured HTTP client that goes beyond the two-line
 // `net.http.get` / `net.http.post`. It's pure `net/http`; the work is
 // shaping the option surface (headers, body, timeout, retry, basic
@@ -32,66 +33,89 @@ import (
 // `status` / `ok`. Transport errors (DNS, connection refused, TLS) and
 // context deadline throw. Retries (opts.retry) re-attempt only on
 // transport errors and 5xx — never on 4xx, which are deterministic.
-func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
-	method := strings.ToUpper(strings.TrimSpace(call.Argument(0).String()))
-	if method == "" {
-		return nil, errors.New("http.request: method required")
+// httpRequestArgs is the plain-Go argument bundle handed from
+// httpRequestExtract (on the event loop) to httpRequestCall (the work
+// goroutine).
+type httpRequestArgs struct {
+	method      string
+	url         string
+	timeout     time.Duration
+	retries     int
+	headers     map[string]string
+	maxBytes    int64
+	bodyBytes   []byte
+	contentType string
+	follow      bool
+	authUser    string
+	authPass    string
+}
+
+// httpRequestExtract parses the (method, url, opts?) goja arguments into
+// httpRequestArgs. It runs synchronously on the event loop — the only place
+// the goja call may be touched; a validation error here rejects the Promise
+// exactly like a work error.
+func httpRequestExtract(call goja.FunctionCall) (httpRequestArgs, error) {
+	var args httpRequestArgs
+	args.method = strings.ToUpper(strings.TrimSpace(call.Argument(0).String()))
+	if args.method == "" {
+		return args, errors.New("http.request: method required")
 	}
-	url := call.Argument(1).String()
-	if url == "" {
-		return nil, errors.New("http.request: url required")
+	args.url = call.Argument(1).String()
+	if args.url == "" {
+		return args, errors.New("http.request: url required")
 	}
 	opts := thirdArgAsMap(call)
 
-	timeout := optMillis(opts, "timeout", 30*time.Second)
-	retries := optInt(opts, "retry", 0)
-	if retries < 0 {
-		retries = 0
+	args.timeout = optMillis(opts, "timeout", 30*time.Second)
+	args.retries = optInt(opts, "retry", 0)
+	if args.retries < 0 {
+		args.retries = 0
 	}
-	headers := optStringMap(opts, "headers")
-	maxBytes := int64(optInt(opts, "maxBytes", DefaultMaxHTTPBodyBytes))
-	if maxBytes <= 0 {
-		maxBytes = DefaultMaxHTTPBodyBytes
+	args.headers = optStringMap(opts, "headers")
+	args.maxBytes = int64(optInt(opts, "maxBytes", DefaultMaxHTTPBodyBytes))
+	if args.maxBytes <= 0 {
+		args.maxBytes = DefaultMaxHTTPBodyBytes
 	}
 
 	// Body vs. multipart: mutually exclusive. body is string | Uint8Array |
 	// ArrayBuffer sent byte-for-byte; multipart is assembled in Go and sets
 	// the Content-Type header (overriding any caller content-type).
-	var bodyBytes []byte
-	var contentType string
 	bodyVal, hasBody := opts["body"]
 	hasBody = hasBody && bodyVal != nil
 	mpVal, hasMultipart := opts["multipart"]
 	hasMultipart = hasMultipart && mpVal != nil
 	if hasBody && hasMultipart {
-		return nil, errors.New("http.request: set either body or multipart, not both")
+		return args, errors.New("http.request: set either body or multipart, not both")
 	}
 	switch {
 	case hasMultipart:
 		parts, ok := mpVal.([]any)
 		if !ok {
-			return nil, errors.New("http.request: multipart must be an array of parts")
+			return args, errors.New("http.request: multipart must be an array of parts")
 		}
 		b, ct, err := buildMultipartBody(parts)
 		if err != nil {
-			return nil, fmt.Errorf("http.request: %w", err)
+			return args, fmt.Errorf("http.request: %w", err)
 		}
-		bodyBytes, contentType = b, ct
+		args.bodyBytes, args.contentType = b, ct
 	case hasBody:
 		b, err := bytesFromExported(bodyVal)
 		if err != nil {
-			return nil, fmt.Errorf("http.request: body: %w", err)
+			return args, fmt.Errorf("http.request: body: %w", err)
 		}
-		bodyBytes = b
+		args.bodyBytes = b
 	}
-	follow := optBool(opts, "follow", true)
-	authUser := optString(opts, "username", "")
-	authPass := optString(opts, "password", "")
+	args.follow = optBool(opts, "follow", true)
+	args.authUser = optString(opts, "username", "")
+	args.authPass = optString(opts, "password", "")
+	return args, nil
+}
 
+func httpRequestCall(ctx context.Context, args httpRequestArgs) (*scriptengine.Ordered, error) {
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout: args.timeout,
 	}
-	if !follow {
+	if !args.follow {
 		// Returning ErrUseLastResponse stops the client after the first
 		// response without following the Location header — the script
 		// sees the 3xx itself.
@@ -102,7 +126,7 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 
 	var lastErr error
 	// attempts = 1 initial + `retries` re-tries.
-	for attempt := 0; attempt <= retries; attempt++ {
+	for attempt := 0; attempt <= args.retries; attempt++ {
 		if attempt > 0 {
 			// Linear backoff capped at a second — enough to ride out a
 			// flapping upstream without stalling the event loop for long.
@@ -117,22 +141,22 @@ func httpRequestCall(ctx context.Context, call goja.FunctionCall) (*scriptengine
 			}
 		}
 
-		result, status, retryable, err := httpRequestOnce(ctx, client, method, url, bodyBytes, contentType, headers, authUser, authPass, maxBytes)
+		result, status, retryable, err := httpRequestOnce(ctx, client, args.method, args.url, args.bodyBytes, args.contentType, args.headers, args.authUser, args.authPass, args.maxBytes)
 		if err != nil {
 			lastErr = err
-			if retryable && attempt < retries {
+			if retryable && attempt < args.retries {
 				continue
 			}
 			return nil, fmt.Errorf("http.request: %w", err)
 		}
 		// A 5xx is retryable; 4xx and 2xx/3xx are final.
-		if status >= 500 && attempt < retries {
+		if status >= 500 && attempt < args.retries {
 			lastErr = fmt.Errorf("server returned %d", status)
 			continue
 		}
 		return result, nil
 	}
-	return nil, fmt.Errorf("http.request: exhausted %d retries: %w", retries, lastErr)
+	return nil, fmt.Errorf("http.request: exhausted %d retries: %w", args.retries, lastErr)
 }
 
 // httpRequestOnce performs a single attempt. The bool return is

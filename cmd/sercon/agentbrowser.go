@@ -190,7 +190,7 @@ func abAvailable() bool {
 }
 
 // abVersion returns the CLI version string.
-func abVersion(ctx context.Context, _ goja.FunctionCall) (string, error) {
+func abVersion(ctx context.Context, _ struct{}) (string, error) {
 	if !abAvailable() {
 		return "", errors.New("agent-browser CLI not found on PATH; install it to use services.agentBrowser")
 	}
@@ -234,7 +234,7 @@ func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scrip
 	return map[string]any{
 		"available": abAvailable(),
 		// Keep as AsyncBinding (not .Func) so the d.ts emitter renders Promise<string>.
-		"version": scriptengine.PromisifyAsyncLegacy(vm, loop, abVersion),
+		"version": scriptengine.PromisifyAsync(vm, loop, abNoArgs, abVersion),
 		"launch": func(call goja.FunctionCall) goja.Value {
 			h := reg.newHandle(call.Argument(0), vm)
 			return vm.ToValue(h.jsObject(vm, loop))
@@ -264,31 +264,11 @@ func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scrip
 			reg.mu.Unlock()
 			return goja.Undefined()
 		},
-		"auth": authNamespace(vm, loop),
-		"screenshot": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			url := strArg(call, 0)
-			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
-				return h.screenshot(ctx, shiftCall(call, 1))
-			})
-		}).Func,
-		"pdf": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			url := strArg(call, 0)
-			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
-				return h.pdf(ctx, shiftCall(call, 1))
-			})
-		}).Func,
-		"snapshot": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			url := strArg(call, 0)
-			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
-				return h.snapshot(ctx, shiftCall(call, 1))
-			})
-		}).Func,
-		"eval": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			url := strArg(call, 0)
-			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
-				return h.evalJS(ctx, shiftCall(call, 1))
-			})
-		}).Func,
+		"auth":       authNamespace(vm, loop),
+		"screenshot": abFlat(vm, loop, reg, screenshotExtract, (*abHandle).screenshot),
+		"pdf":        abFlat(vm, loop, reg, abStrArg0, (*abHandle).pdf),
+		"snapshot":   abFlat(vm, loop, reg, abOptsArg0, (*abHandle).snapshot),
+		"eval":       abFlat(vm, loop, reg, abStrArg0, (*abHandle).evalJS),
 	}
 }
 
@@ -375,7 +355,7 @@ func (r *abRegistry) withEphemeral(ctx context.Context, url string, fn func(h *a
 	merged := mergeLaunchOpts(r.defaults, map[string]any{})
 	r.mu.Unlock()
 	h := &abHandle{session: r.allocSession(""), global: buildGlobalArgs(merged), reg: r, timeout: callTimeout(r.defaults)}
-	defer func() { _, _ = h.close(ctx, goja.FunctionCall{}) }()
+	defer func() { _, _ = h.close(ctx, struct{}{}) }()
 	if _, err := abRunChecked(ctx, h.session, h.global, h.timeout, "open", url); err != nil {
 		return nil, err
 	}
@@ -393,12 +373,59 @@ type abHandle struct {
 	closed  atomic.Bool
 }
 
-// p wraps an async method as a bare goja callback for use inside jsObject.
-// Handle methods intentionally use .Func here: jsObject returns a raw map
-// handed to vm.ToValue (not a registered namespace), so AsyncBindings are
-// never unwrapped by unwrapAsyncBindings and must be the bare function value.
-func (h *abHandle) p(vm *goja.Runtime, loop *eventloop.EventLoop, work func(context.Context, goja.FunctionCall) (any, error)) func(goja.FunctionCall) goja.Value {
-	return scriptengine.PromisifyAsyncLegacy(vm, loop, work).Func
+// abAsync wraps an extract/work pair as a bare goja callback for use inside
+// jsObject. Handle methods intentionally use .Func here: jsObject returns a
+// raw map handed to vm.ToValue (not a registered namespace), so AsyncBindings
+// are never unwrapped by unwrapAsyncBindings and must be the bare function
+// value. extract runs on the event loop and is the only place goja values may
+// be touched; work runs in a goroutine and receives only plain Go values
+// (handles like *abHandle are plain Go and may be captured by work).
+func abAsync[A any](vm *goja.Runtime, loop *eventloop.EventLoop,
+	extract func(goja.FunctionCall) (A, error),
+	work func(context.Context, A) (any, error),
+) func(goja.FunctionCall) goja.Value {
+	return scriptengine.PromisifyAsync(vm, loop, extract, work).Func
+}
+
+// abNoArgs is the extract half for bindings that take no JS arguments.
+func abNoArgs(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil }
+
+// abStrArg0 is the extract half for bindings whose only JS input is a single
+// string at argument 0 ("" when absent); validation stays in the work half.
+func abStrArg0(call goja.FunctionCall) (string, error) { return strArg(call, 0), nil }
+
+// abOptsArg0 is the extract half for bindings whose only JS input is an
+// options object at argument 0 (empty map when absent).
+func abOptsArg0(call goja.FunctionCall) (map[string]any, error) { return optsArgMap(call, 0), nil }
+
+// abFlatArgs pairs the target url with the wrapped handle method's own
+// extracted params for the flat one-shot namespace shortcuts.
+type abFlatArgs[P any] struct {
+	url    string
+	params P
+}
+
+// abFlat wraps a handle method as a flat one-shot shortcut: extract reads the
+// url (argument 0) plus the method's own params (arguments shifted by one) on
+// the event loop; work opens an ephemeral session on url and runs the method
+// against it. Uses .Func for the same raw-map reason as abAsync.
+func abFlat[P any](vm *goja.Runtime, loop *eventloop.EventLoop, reg *abRegistry,
+	extract func(goja.FunctionCall) (P, error),
+	method func(*abHandle, context.Context, P) (any, error),
+) func(goja.FunctionCall) goja.Value {
+	return scriptengine.PromisifyAsync(vm, loop,
+		func(call goja.FunctionCall) (abFlatArgs[P], error) {
+			p, err := extract(shiftCall(call, 1))
+			if err != nil {
+				return abFlatArgs[P]{}, err
+			}
+			return abFlatArgs[P]{url: strArg(call, 0), params: p}, nil
+		},
+		func(ctx context.Context, a abFlatArgs[P]) (any, error) {
+			return reg.withEphemeral(ctx, a.url, func(h *abHandle) (any, error) {
+				return method(h, ctx, a.params)
+			})
+		}).Func
 }
 
 // jsObject returns the goja-facing handle object. Method groups are added
@@ -407,7 +434,7 @@ func (h *abHandle) p(vm *goja.Runtime, loop *eventloop.EventLoop, work func(cont
 func (h *abHandle) jsObject(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	obj := map[string]any{
 		"session": h.session,
-		"close":   h.p(vm, loop, h.close),
+		"close":   abAsync(vm, loop, abNoArgs, h.close),
 	}
 	h.addNav(obj, vm, loop)       // Task 3
 	h.addInteract(obj, vm, loop)  // Task 4
@@ -452,7 +479,7 @@ func (h *abHandle) requireOpen() error {
 // close ends the browser session. Idempotent: a second close is a no-op.
 // Always uses abCloseTimeout regardless of h.timeout so teardown is bounded
 // even when the handle disabled per-call timeouts.
-func (h *abHandle) close(ctx context.Context, _ goja.FunctionCall) (any, error) {
+func (h *abHandle) close(ctx context.Context, _ struct{}) (any, error) {
 	if h.closed.Swap(true) {
 		return scriptengine.NewOrdered(), nil
 	}
