@@ -18,10 +18,10 @@ func TestCDPExec_FirefoxRejected(t *testing.T) {
 
 func TestCDPQuery(t *testing.T) {
 	cases := []struct {
-		by, value   string
-		wantQuery   string
-		wantXPath   bool
-		wantErr     bool
+		by, value string
+		wantQuery string
+		wantXPath bool
+		wantErr   bool
 	}{
 		{"css", "button.pay", "button.pay", false, false},
 		{"id", "pay", `[id="pay"]`, false, false},

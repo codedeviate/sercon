@@ -330,4 +330,3 @@ func stegoNamespace(vm *goja.Runtime) map[string]any {
 		},
 	}
 }
-

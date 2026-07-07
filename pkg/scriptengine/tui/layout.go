@@ -276,4 +276,3 @@ func pathPrefix(p string) string {
 	}
 	return p + "."
 }
-

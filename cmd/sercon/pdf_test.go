@@ -85,7 +85,7 @@ func TestGlobGenerated_MetacharacterPrefix(t *testing.T) {
 		filepath.Join(dir, "re[po]rt-2.png"),
 	}
 	decoys := []string{
-		filepath.Join(dir, "re[po]rtX.png"), // no numeric suffix after "-"
+		filepath.Join(dir, "re[po]rtX.png"),   // no numeric suffix after "-"
 		filepath.Join(dir, "re[po]rt-1.jpeg"), // wrong extension
 		filepath.Join(dir, "other-1.png"),     // unrelated prefix
 	}

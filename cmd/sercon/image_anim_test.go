@@ -41,11 +41,11 @@ func makeGIF(t *testing.T) []byte {
 	f1 := image.NewPaletted(image.Rect(0, 0, 3, 2), pal)
 	f1.SetColorIndex(0, 0, 1)
 	g := &gif.GIF{
-		Image:    []*image.Paletted{f0, f1},
-		Delay:    []int{10, 20},
-		Disposal: []byte{gif.DisposalNone, gif.DisposalBackground},
+		Image:     []*image.Paletted{f0, f1},
+		Delay:     []int{10, 20},
+		Disposal:  []byte{gif.DisposalNone, gif.DisposalBackground},
 		LoopCount: 0,
-		Config:   image.Config{ColorModel: pal, Width: 3, Height: 2},
+		Config:    image.Config{ColorModel: pal, Width: 3, Height: 2},
 	}
 	var b bytes.Buffer
 	if err := gif.EncodeAll(&b, g); err != nil {
@@ -64,7 +64,7 @@ func makeAPNG(t *testing.T) []byte {
 	a := apng.APNG{
 		LoopCount: 0,
 		Frames: []apng.Frame{
-			{Image: mk(), DelayNumerator: 1, DelayDenominator: 100}, // 10ms
+			{Image: mk(), DelayNumerator: 1, DelayDenominator: 100},               // 10ms
 			{Image: mk(), DelayNumerator: 2, DelayDenominator: 100, DisposeOp: 1}, // 20ms, background
 		},
 	}
@@ -296,8 +296,8 @@ func apngFcTLBomb(t *testing.T, canvasW, canvasH, frameW, frameH uint32) []byte 
 	binary.BigEndian.PutUint32(fctl[16:20], 0)     // y_offset
 	binary.BigEndian.PutUint16(fctl[20:22], 1)     // delay_num
 	binary.BigEndian.PutUint16(fctl[22:24], 100)   // delay_den
-	fctl[24] = 0 // dispose_op
-	fctl[25] = 0 // blend_op
+	fctl[24] = 0                                   // dispose_op
+	fctl[25] = 0                                   // blend_op
 	writeChunk("fcTL", fctl)
 
 	// Placeholder IDAT: not valid zlib data. The guard must reject this

@@ -244,12 +244,12 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 		},
 
 		"decodeFrames": {
-			Summary: "Decode all frames of an animated image (GIF or APNG) into a raw, normalized frame model. Frames are returned as stored (sub-rectangles, not composited) with per-frame timing/placement metadata; the caller composites if needed. A non-animated image returns a single frame.",
-			Params:  []scriptengine.Param{{Name: "src", Type: "string | Uint8Array", Desc: "Image path or encoded bytes (GIF/APNG/PNG/JPEG/…)."}},
+			Summary:    "Decode all frames of an animated image (GIF or APNG) into a raw, normalized frame model. Frames are returned as stored (sub-rectangles, not composited) with per-frame timing/placement metadata; the caller composites if needed. A non-animated image returns a single frame.",
+			Params:     []scriptengine.Param{{Name: "src", Type: "string | Uint8Array", Desc: "Image path or encoded bytes (GIF/APNG/PNG/JPEG/…)."}},
 			ReturnType: "{ format: string; width: number; height: number; loopCount: number; frames: { image: " + imageHandleTS + "; delayMs: number; xOffset: number; yOffset: number; disposal: \"none\" | \"background\" | \"previous\"; blend?: \"source\" | \"over\" }[] }",
-			Returns: "An object with the container format/size/loopCount and a frames array; each frame's image is a chainable Image handle, delayMs the display time, xOffset/yOffset the placement, disposal the dispose method, and blend (APNG only) the blend op. loopCount 0 = loop forever.",
-			Errors:  "Throws if the path can't be read or the bytes can't be decoded.",
-			Example: "const a = image.decodeFrames(\"anim.gif\");\nruntime.log(a.format, a.frames.length, a.frames[0].delayMs);",
+			Returns:    "An object with the container format/size/loopCount and a frames array; each frame's image is a chainable Image handle, delayMs the display time, xOffset/yOffset the placement, disposal the dispose method, and blend (APNG only) the blend op. loopCount 0 = loop forever.",
+			Errors:     "Throws if the path can't be read or the bytes can't be decoded.",
+			Example:    "const a = image.decodeFrames(\"anim.gif\");\nruntime.log(a.format, a.frames.length, a.frames[0].delayMs);",
 		},
 		"encodeFrames": {
 			Summary: "Encode a frame set into an animated GIF or APNG. Pass a spec shaped like decodeFrames' result (frames[], optional width/height/loopCount); choose the format via opts.format. GIF frames are palettized to 256 colors with Floyd–Steinberg dithering; APNG is full-color. Without opts.dest the encoded bytes are returned; with dest they're written to that path.",
@@ -322,7 +322,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });`,
 		},
 		"stego.extract": {
-			Summary:    "Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check. The bit depth is read from the header, so no `bits` argument is needed.",
+			Summary: "Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, verifies the sercon stego header, and returns the payload as a string (if it was embedded as text) or a Uint8Array (if binary). If the payload was encrypted, the same password must be supplied; a wrong password fails the authentication check. The bit depth is read from the header, so no `bits` argument is needed.",
 			Params: []scriptengine.Param{
 				{Name: "carrier", Type: "string | Uint8Array", Desc: "The stego image (must be the lossless PNG produced by embed, or an identical copy): a file path or raw bytes."},
 				{Name: "opts", Type: "{ password?: string }", Optional: true, Desc: "The password used at embed time, required when the payload was encrypted."},
@@ -333,7 +333,7 @@ func imageDocs() map[string]scriptengine.MemberDoc {
 			Example:    `const msg = image.stego.extract("cover.png", { password: "s3cret" });`,
 		},
 		"stego.capacity": {
-			Summary:    "Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — at the requested bit depth (1..4, default 1; one bit per R/G/B channel at the default). Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.",
+			Summary: "Report the maximum payload size (in bytes) a carrier can hold, after the fixed 10-byte header — at the requested bit depth (1..4, default 1; one bit per R/G/B channel at the default). Encryption adds roughly 44 bytes of overhead (salt + nonce + auth tag), so the effective capacity for an encrypted payload is correspondingly lower.",
 			Params: []scriptengine.Param{
 				{Name: "carrier", Type: "string | Uint8Array", Desc: "The carrier image: a file path or raw image bytes."},
 				{Name: "opts", Type: "{ bits?: number }", Optional: true, Desc: "bits: report capacity at this depth (integer 1..4, default 1)."},

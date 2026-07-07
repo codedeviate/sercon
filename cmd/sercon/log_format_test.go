@@ -19,10 +19,10 @@ func TestFormatValue(t *testing.T) {
 		return v
 	}
 	cases := []struct{ src, want string }{
-		{`"hello"`, "hello"},     // strings print raw, not JSON-quoted
-		{`42`, "42"},             // number
-		{`true`, "true"},         // bool
-		{`null`, "null"},         // null
+		{`"hello"`, "hello"}, // strings print raw, not JSON-quoted
+		{`42`, "42"},         // number
+		{`true`, "true"},     // bool
+		{`null`, "null"},     // null
 		{`({a:1, b:[2,3]})`, `{"a":1,"b":[2,3]}`}, // object → JSON
 		{`[1,"x",true]`, `[1,"x",true]`},          // array → JSON
 	}

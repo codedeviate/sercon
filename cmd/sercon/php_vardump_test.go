@@ -141,7 +141,7 @@ func TestPHPVarDump_RejectsHugeStringLength(t *testing.T) {
 	opts := withDumpDefaults(dumpOpts{})
 	for _, in := range []string{
 		`string(9000000000000000000) "x"`, // would panic on makeslice
-		`string(2000000000) "x"`,           // would force a ~2GB alloc
+		`string(2000000000) "x"`,          // would force a ~2GB alloc
 	} {
 		_, err := phpVarDumpDecode(in, opts)
 		if err == nil {

@@ -115,9 +115,9 @@ func TestIsPNG(t *testing.T) {
 
 func TestTrimWindowsClipboardNewline(t *testing.T) {
 	cases := map[string]string{
-		"hello\r\n": "hello",
-		"hello\n":   "hello",
-		"hello":     "hello",
+		"hello\r\n":  "hello",
+		"hello\n":    "hello",
+		"hello":      "hello",
 		"a\r\nb\r\n": "a\r\nb", // only one trailing newline stripped
 	}
 	for in, want := range cases {

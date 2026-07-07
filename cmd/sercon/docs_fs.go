@@ -31,7 +31,7 @@ func fsDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "Promise<{ path: string; format: string; entries: string[]; bytes?: number }>",
 			Returns:    "Promise<{ path: string, format: string, entries: string[], bytes?: number }> — path is destPath, format is the inferred format (\"zip\" | \"tar\" | \"tar.gz\"), entries lists the file paths written (directories excluded), and bytes is the final archive size when stat succeeds.",
-			Errors:  "Rejects if destPath is empty, sources is not an array / is empty / contains a bad entry (object missing 'path', unsupported element type), the format cannot be inferred from the extension, or any disk read / write fails (e.g. a source path does not exist).",
+			Errors:     "Rejects if destPath is empty, sources is not an array / is empty / contains a bad entry (object missing 'path', unsupported element type), the format cannot be inferred from the extension, or any disk read / write fails (e.g. a source path does not exist).",
 			Example: `const r = await fs.archive.create("out.tar.gz", ["dist", { path: "README.md", name: "docs/README.md" }]);
 runtime.log(r.format, r.entries.length);`,
 		},
@@ -44,7 +44,7 @@ runtime.log(r.format, r.entries.length);`,
 			},
 			ReturnType: "Promise<{ path: string; format: string; dest: string; entries: string[] }>",
 			Returns:    "Promise<{ path: string, format: string, dest: string, entries: string[] }> — path is archivePath, format is the inferred format, dest is destDir, and entries lists the extracted entry names (regular files only).",
-			Errors:  "Rejects if archivePath or destDir is empty, the format cannot be inferred, destDir cannot be created, the archive cannot be opened / decoded, an entry escapes destDir (absolute path or '..' component), (with overwrite false) an entry collides with an existing file, the entry count exceeds maxEntries, or the cumulative decompressed size exceeds maxTotalBytes.",
+			Errors:     "Rejects if archivePath or destDir is empty, the format cannot be inferred, destDir cannot be created, the archive cannot be opened / decoded, an entry escapes destDir (absolute path or '..' component), (with overwrite false) an entry collides with an existing file, the entry count exceeds maxEntries, or the cumulative decompressed size exceeds maxTotalBytes.",
 			Example: `const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true, maxTotalBytes: 1 << 28, maxEntries: 5000 });
 runtime.log(r.entries.length, "files extracted");`,
 		},

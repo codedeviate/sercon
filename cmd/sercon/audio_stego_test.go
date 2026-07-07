@@ -31,9 +31,9 @@ func makeWAVFmt(t *testing.T, audioFormat uint16, bits, samples int) []byte {
 	b.WriteString("WAVE")
 	b.WriteString("fmt ")
 	w(le32(16)...)
-	w(le16(audioFormat)...)    // encoding (1 = PCM)
-	w(le16(1)...)              // mono
-	w(le32(8000)...)           // sample rate
+	w(le16(audioFormat)...) // encoding (1 = PCM)
+	w(le16(1)...)           // mono
+	w(le32(8000)...)        // sample rate
 	w(le32(uint32(8000 * bytesPerSample))...)
 	w(le16(uint16(bytesPerSample))...)
 	w(le16(uint16(bits))...)

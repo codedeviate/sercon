@@ -538,7 +538,7 @@ func TestDecodePacket_DNS(t *testing.T) {
 	// Response with an A answer.
 	r := &layers.DNS{ID: 0x1234, QR: true,
 		Questions: []layers.DNSQuestion{{Name: []byte("example.com"), Type: layers.DNSTypeA, Class: layers.DNSClassIN}},
-		Answers: []layers.DNSResourceRecord{{Name: []byte("example.com"), Type: layers.DNSTypeA, Class: layers.DNSClassIN, TTL: 300, IP: net.IPv4(93, 184, 216, 34)}}}
+		Answers:   []layers.DNSResourceRecord{{Name: []byte("example.com"), Type: layers.DNSTypeA, Class: layers.DNSClassIN, TTL: 300, IP: net.IPv4(93, 184, 216, 34)}}}
 	frame = buildDNSFrame(t, r)
 	m = decodePacket(frame, layers.LinkTypeEthernet, ethCI(frame)).ToMap()
 	d = m["dns"].(map[string]any)

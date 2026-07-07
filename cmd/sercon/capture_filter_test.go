@@ -97,7 +97,7 @@ func TestCaptureFilter(t *testing.T) {
 		{"portrange 50-60", tcp80, false},
 		{"dst portrange 79-81", tcp80, true}, {"src portrange 79-81", tcp80, false},
 		{"src portrange 1000-2000", tcp80, true}, // src port 1234
-		{"udp portrange 1-100", udp53, true},      // dst port 53
+		{"udp portrange 1-100", udp53, true},     // dst port 53
 	}
 	for _, c := range cases {
 		f, err := compileFilter(c.expr)

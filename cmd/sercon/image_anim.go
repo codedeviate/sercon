@@ -23,10 +23,10 @@ type animFrame struct {
 }
 
 type animDoc struct {
-	format             string // gif | apng | <single-frame source format>
-	width, height      int
-	loopCount          int
-	frames             []animFrame
+	format        string // gif | apng | <single-frame source format>
+	width, height int
+	loopCount     int
+	frames        []animFrame
 }
 
 func gifDisposalToStr(d byte) string {

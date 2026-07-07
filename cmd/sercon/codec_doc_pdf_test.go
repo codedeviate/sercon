@@ -9,11 +9,12 @@ import (
 
 // testdata/tiny.pdf was generated once at dev time with github.com/go-pdf/fpdf
 // (dev-tool only — NOT a runtime dependency):
-//   pdf := fpdf.New("P","mm","A4","")
-//   pdf.AddPage(); pdf.SetFont("Helvetica","",14)
-//   pdf.Cell(40,10,"sercon document codec fixture"); pdf.Ln(10)
-//   pdf.Cell(40,10,"Hello from tiny.pdf")
-//   pdf.OutputFileAndClose("cmd/sercon/testdata/tiny.pdf")
+//
+//	pdf := fpdf.New("P","mm","A4","")
+//	pdf.AddPage(); pdf.SetFont("Helvetica","",14)
+//	pdf.Cell(40,10,"sercon document codec fixture"); pdf.Ln(10)
+//	pdf.Cell(40,10,"Hello from tiny.pdf")
+//	pdf.OutputFileAndClose("cmd/sercon/testdata/tiny.pdf")
 func TestReadPDF(t *testing.T) {
 	data, err := os.ReadFile("testdata/tiny.pdf")
 	if err != nil {

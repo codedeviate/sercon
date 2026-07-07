@@ -18,13 +18,13 @@ func make8bitWAV(samples []byte) []byte {
 	le(36 + dataLen)
 	b.WriteString("WAVE")
 	b.WriteString("fmt ")
-	le(16)       // PCM fmt chunk size
-	le16(1)      // audioFormat = PCM
-	le16(1)      // channels = 1
-	le(8000)     // sample rate
-	le(8000)     // byte rate = rate * channels * bytesPerSample
-	le16(1)      // block align
-	le16(8)      // bits per sample
+	le(16)   // PCM fmt chunk size
+	le16(1)  // audioFormat = PCM
+	le16(1)  // channels = 1
+	le(8000) // sample rate
+	le(8000) // byte rate = rate * channels * bytesPerSample
+	le16(1)  // block align
+	le16(8)  // bits per sample
 	b.WriteString("data")
 	le(dataLen)
 	b.Write(samples)

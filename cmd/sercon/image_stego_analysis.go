@@ -508,4 +508,3 @@ func stegoDetect(carrier []byte) (map[string]any, error) {
 	}
 	return m, nil
 }
-

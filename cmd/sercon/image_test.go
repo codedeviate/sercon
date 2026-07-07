@@ -38,11 +38,11 @@ func oversizedHeaderPNG(t *testing.T, width, height uint32) []byte {
 	ihdr := make([]byte, 13)
 	binary.BigEndian.PutUint32(ihdr[0:4], width)
 	binary.BigEndian.PutUint32(ihdr[4:8], height)
-	ihdr[8] = 8    // bit depth
-	ihdr[9] = 6    // color type: RGBA
-	ihdr[10] = 0   // compression
-	ihdr[11] = 0   // filter
-	ihdr[12] = 0   // interlace
+	ihdr[8] = 8  // bit depth
+	ihdr[9] = 6  // color type: RGBA
+	ihdr[10] = 0 // compression
+	ihdr[11] = 0 // filter
+	ihdr[12] = 0 // interlace
 	writeChunk("IHDR", ihdr)
 	writeChunk("IEND", nil)
 

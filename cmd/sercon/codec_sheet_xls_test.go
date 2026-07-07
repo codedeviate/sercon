@@ -11,17 +11,18 @@ import (
 // use an explicit "general" number format because xlwt's DEFAULT integer XF
 // makes extrame/xls misread them as dates; "general" matches what real Excel
 // emits for plain numbers. Regenerate with:
-//   python3 -m venv /tmp/xlsvenv && /tmp/xlsvenv/bin/pip install xlwt
-//   /tmp/xlsvenv/bin/python - <<'PY'
-//   import xlwt
-//   wb = xlwt.Workbook(); g = xlwt.easyxf(num_format_str="general")
-//   s1 = wb.add_sheet("Data")
-//   for c,v in enumerate(["item","qty","active"]): s1.write(0,c,v)
-//   s1.write(1,0,"apples"); s1.write(1,1,3,g); s1.write(1,2,"yes")
-//   s1.write(2,0,"pears");  s1.write(2,1,5,g); s1.write(2,2,"no")
-//   s2 = wb.add_sheet("Notes"); s2.write(0,0,"note"); s2.write(1,0,"second sheet")
-//   wb.save("cmd/sercon/testdata/tiny.xls")
-//   PY
+//
+//	python3 -m venv /tmp/xlsvenv && /tmp/xlsvenv/bin/pip install xlwt
+//	/tmp/xlsvenv/bin/python - <<'PY'
+//	import xlwt
+//	wb = xlwt.Workbook(); g = xlwt.easyxf(num_format_str="general")
+//	s1 = wb.add_sheet("Data")
+//	for c,v in enumerate(["item","qty","active"]): s1.write(0,c,v)
+//	s1.write(1,0,"apples"); s1.write(1,1,3,g); s1.write(1,2,"yes")
+//	s1.write(2,0,"pears");  s1.write(2,1,5,g); s1.write(2,2,"no")
+//	s2 = wb.add_sheet("Notes"); s2.write(0,0,"note"); s2.write(1,0,"second sheet")
+//	wb.save("cmd/sercon/testdata/tiny.xls")
+//	PY
 func TestReadXLS(t *testing.T) {
 	data, err := os.ReadFile("testdata/tiny.xls")
 	if err != nil {

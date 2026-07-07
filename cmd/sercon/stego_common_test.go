@@ -131,10 +131,10 @@ func TestLSBCapacityBytes(t *testing.T) {
 	cases := []struct {
 		count, n, want int
 	}{
-		{80, 4, 0},  // header-only → no payload room
-		{40, 2, 0},  // below header → clamps to 0, never negative
-		{96, 1, 2},  // 16 spare units × 1 bit = 16 bits = 2 bytes
-		{96, 4, 8},  // 16 spare units × 4 bits = 64 bits = 8 bytes
+		{80, 4, 0}, // header-only → no payload room
+		{40, 2, 0}, // below header → clamps to 0, never negative
+		{96, 1, 2}, // 16 spare units × 1 bit = 16 bits = 2 bytes
+		{96, 4, 8}, // 16 spare units × 4 bits = 64 bits = 8 bytes
 	}
 	for _, c := range cases {
 		if got := lsbCapacityBytes(c.count, c.n); got != c.want {
