@@ -258,7 +258,10 @@ func udpSendToFn(vm *goja.Runtime, loop *eventloop.EventLoop, conn *net.UDPConn,
 // exports as []byte, anything else falls back to its UTF-8 string form.
 func snapshotPayload(arg goja.Value) []byte {
 	if bs, ok := arg.Export().([]byte); ok {
-		return bs
+		// Copy: goja's Uint8Array export aliases the live ArrayBuffer, and
+		// this payload is written off-loop, so a later script mutation would
+		// otherwise race the writer. String() already returns a fresh buffer.
+		return append([]byte(nil), bs...)
 	}
 	return []byte(arg.String())
 }

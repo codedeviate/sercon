@@ -218,7 +218,10 @@ func upgradeWebSocketImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scri
 		)
 		exported := arg.Export()
 		if bs, ok := exported.([]byte); ok {
-			bytes = bs
+			// Copy: goja's Uint8Array export aliases the live ArrayBuffer,
+			// and the write below runs off-loop, so a later script mutation
+			// would race the writer. String() already returns a fresh buffer.
+			bytes = append([]byte(nil), bs...)
 		} else {
 			text = arg.String()
 		}
