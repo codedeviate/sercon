@@ -114,7 +114,14 @@ func (w *jsWalker) walk(v goja.Value) (*irNode, error) {
 	case int64:
 		return nodeInt(x), nil
 	case float64:
-		if x == math.Trunc(x) && !math.IsInf(x, 0) && !math.IsNaN(x) {
+		// Only take the int path when x is integral AND fits int64. Go makes
+		// out-of-range float->int conversion implementation-defined (it
+		// saturates to MaxInt64 on arm64, MinInt64 on amd64), which would
+		// emit silent, platform-dependent garbage for |x| >= 2^63. The
+		// bounds use ±2^63 (both exactly representable as float64): the
+		// lower is inclusive, the upper exclusive.
+		if x == math.Trunc(x) && !math.IsInf(x, 0) && !math.IsNaN(x) &&
+			x >= math.MinInt64 && x < -math.MinInt64 {
 			return nodeInt(int64(x)), nil
 		}
 		return nodeFloat(x), nil
