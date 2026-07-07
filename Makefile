@@ -47,7 +47,7 @@ RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 MANUAL_VERSION    := $(shell sed -nE 's|^const Version = "([^"]+)".*|\1|p' pkg/scriptengine/version.go)
 MANUAL_DATE       := $(shell date +%F)
 
-.PHONY: build release manual reference test test-integration vet lint demo types release-prep release-verify version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean favro favro-check
+.PHONY: build release manual reference test test-integration vet lint fmt fmt-check demo types release-prep release-verify version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean favro favro-check
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -214,6 +214,19 @@ test:
 
 vet:
 	$(GO) vet ./...
+
+# Format the tree in place.
+fmt:
+	gofmt -w .
+
+# Fail if any file needs gofmt (the CI gofmt gate; run `make fmt` to fix).
+fmt-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "These files need gofmt (run 'make fmt'):"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
 
 lint:
 	@if command -v golangci-lint >/dev/null 2>&1; then \

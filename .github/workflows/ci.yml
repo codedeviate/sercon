@@ -78,6 +78,17 @@ jobs:
         with:
           go-version: stable
           cache: true
+      # Fail on any non-gofmt-formatted file (mirrors `make fmt-check`; fix
+      # with `make fmt`). Kept as an explicit step rather than a golangci-lint
+      # formatter so the signal is unambiguous and independent of linter config.
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt-formatted (run 'make fmt'):"
+            echo "$unformatted"
+            exit 1
+          fi
       - uses: golangci/golangci-lint-action@v7
         with:
           # Pinned to match `make lint`'s one-shot fallback so contributors
