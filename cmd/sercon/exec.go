@@ -134,8 +134,27 @@ func execShell(ctx context.Context, args execShellArgs) (map[string]any, error) 
 				close(done)
 			}()
 			runErr = cmd.Wait()
-			<-done
-			_ = master.Close()
+			select {
+			case <-done:
+				_ = master.Close()
+			case <-runCtx.Done():
+				// The direct child (e.g. /bin/sh) exited, but a descendant
+				// still holds the pty slave, so io.Copy(master) never sees
+				// EOF. os/exec's context watcher has already returned (Wait
+				// completed), so its deadline SIGKILL will never fire and the
+				// call would otherwise hang until the descendant exits on its
+				// own. Enforce the deadline here: kill the process group and
+				// close the master to unblock the copy, then reap it.
+				killProcessGroup(cmd)
+				_ = master.Close()
+				<-done
+				if runErr == nil {
+					// Wait succeeded before the deadline tripped; surface the
+					// timeout so the handler below throws instead of falsely
+					// reporting success.
+					runErr = runCtx.Err()
+				}
+			}
 		}
 	}
 

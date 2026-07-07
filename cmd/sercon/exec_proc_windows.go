@@ -16,3 +16,7 @@ import (
 func configureProcessTermination(cmd *exec.Cmd) {
 	cmd.WaitDelay = 2 * time.Second
 }
+
+// killProcessGroup is a no-op on Windows: the PTY path is unix-only
+// (startPTY returns errPTYUnsupported there), so this is never reached.
+func killProcessGroup(_ *exec.Cmd) {}

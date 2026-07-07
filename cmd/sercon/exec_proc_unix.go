@@ -35,3 +35,15 @@ func configureProcessTermination(cmd *exec.Cmd) {
 	}
 	cmd.WaitDelay = 2 * time.Second
 }
+
+// killProcessGroup SIGKILLs the whole process group led by cmd's process.
+// The PTY path needs this to enforce a deadline after cmd.Wait has already
+// returned: by then os/exec's own context watcher has exited, so cmd.Cancel
+// never fires, and a descendant still holding the pty slave would otherwise
+// block the output copy indefinitely. startPTY makes the child a session
+// leader (pgid == pid), so the negative-PID signal reaches the whole tree.
+func killProcessGroup(cmd *exec.Cmd) {
+	if cmd.Process != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+}
