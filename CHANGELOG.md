@@ -8,6 +8,81 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.87.0] — 2026-07-08
+
+This release resolves every finding from a multi-agent review of the engine
+and CLI binding surface: one breaking engine-API change, several concurrency
+data races, and a batch of correctness and API-consistency fixes. Each fix
+ships with a regression test; the full suite passes under `go test -race`.
+
+### Changed
+- **BREAKING (embedders):** `scriptengine.PromisifyAsync` is now
+  `PromisifyAsync[A, T](vm, loop, extract, work)`. `extract(call)` runs
+  synchronously on the event loop and converts the JS arguments into a
+  plain-Go value; `work(ctx, args)` runs on a worker goroutine and must not
+  touch the VM. This makes it impossible to read `goja.Value`s off the event
+  loop — the root cause of a class of data races across the binding surface.
+  The old single-function form (and its migration shim) have been removed;
+  all built-in bindings were migrated.
+
+### Security
+- `res.sse` no longer writes script-controlled `id`/`event` fields verbatim:
+  CR/LF are stripped, so a handler echoing untrusted input into those fields
+  can no longer inject additional SSE frames/fields (the `data` field was
+  already newline-split).
+
+### Fixed
+- **Concurrency:** closed a `Run` kill-path race where the deadline/cancel
+  watcher could run `loop.Terminate()` concurrently with an un-started
+  `loop.Run` (a data race on the loop's job/aux state) and skip the VM
+  interrupt entirely, leaving a non-terminating script (`while(true){}`,
+  an unresolved await) unkillable. The watcher now waits for the loop to
+  start before interrupting/terminating.
+- **Concurrency:** all async bindings now extract their goja arguments on the
+  event loop before the worker goroutine runs (see the PromisifyAsync change
+  above), and `ws.send` / `net.udp` / `res.bytes` now copy a `Uint8Array`'s
+  bytes on-loop instead of writing its live backing store off-loop.
+- **Concurrency:** per-pane TUI writes are serialized under a mutex; the
+  stateful ANSI translator / fallback writer were previously mutated from
+  multiple goroutines (e.g. two `exec.shell` streams targeting one pane).
+- **Concurrency:** a `HoldRun` release that fires after the engine has moved
+  to a later Run now clears its sentinel against the loop that owns it, not
+  the engine's current loop (which corrupted the new Run's job accounting).
+- `require`/`import` now resolve extension aliases to one shared module
+  instance — `./x`, `./x.ts`, and `./x/index.ts` no longer execute the module
+  twice with forked top-level state (MANUAL §8.3/§11).
+- `server.http.listen` throws a catchable error for an invalid or conflicting
+  route pattern instead of an unrecovered `ServeMux` panic that crashed the
+  whole process.
+- An HTTP handler that returns without calling a terminal now sends the
+  documented `204 No Content` instead of `200`.
+- Open SSE streams no longer stall graceful shutdown for the full
+  shutdown-timeout — the listener tears them down before `Server.Shutdown`.
+- `codec.sheet.read` tolerates a bare `"` in an unquoted CSV/TSV field
+  (`LazyQuotes`), so a stray quote (e.g. an inch mark in a MySQL tab dump)
+  no longer aborts the whole parse.
+- 8-bit WAV audio decodes as unsigned (silence no longer becomes full-scale
+  negative); `codec` dump range-gates `float64→int64` so `|x| ≥ 2^63` no
+  longer produces platform-dependent garbage in the php/perl/xml encoders.
+- The TUI ANSI translator escapes literal text via tview's real rule, so
+  bracketed tokens like `[INFO]` survive in color panes; the fallback writer
+  keeps CRLF-terminated line content instead of wiping it.
+- `--emit-dts` output is valid TypeScript: `*/` in doc text is escaped and
+  rest parameters render as `...args: unknown[]`.
+- `exec.shell` with `pty: true` now enforces its timeout when a descendant
+  keeps the PTY slave open (Linux).
+
+### API consistency
+- `--port-override` now applies to `server.tcp.listen` / `server.udp.listen`
+  as documented (previously http/smtp only).
+- `server.icmp.listen(handler)` is accepted with `opts` omitted, per the docs.
+- SMTP `close()` / SIGTERM now drain active sessions via `Server.Shutdown`
+  (bounded, ~30s) instead of severing them immediately.
+
+### Tooling
+- Added a CI `gofmt` gate (plus `make fmt` / `make fmt-check`) and formatted
+  the tree.
+
 ## [0.86.1] — 2026-07-04
 
 ### Security

@@ -7797,7 +7797,7 @@ Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr.
 #### 17.3.1 console.debug
 
 ```
-debug(args: ...unknown[]): void
+debug(...args: unknown[]): void
 ```
 
 Alias of console.log — stringified arguments, space-joined, to stdout.
@@ -7817,7 +7817,7 @@ console.debug("cache hit", key);
 #### 17.3.2 console.error
 
 ```
-error(args: ...unknown[]): void
+error(...args: unknown[]): void
 ```
 
 Like console.log but writes to stderr.
@@ -7837,7 +7837,7 @@ console.error("request failed", { status: 500 });
 #### 17.3.3 console.info
 
 ```
-info(args: ...unknown[]): void
+info(...args: unknown[]): void
 ```
 
 Alias of console.log — stringified arguments, space-joined, to stdout.
@@ -7857,7 +7857,7 @@ console.info("listening on", 8080);
 #### 17.3.4 console.log
 
 ```
-log(args: ...unknown[]): void
+log(...args: unknown[]): void
 ```
 
 Print a space-joined line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON. Browser/Node-compatible; same output as runtime.log.
@@ -7877,7 +7877,7 @@ console.log("user", { id: 1, name: "ada" }); // user {"id":1,"name":"ada"}
 #### 17.3.5 console.warn
 
 ```
-warn(args: ...unknown[]): void
+warn(...args: unknown[]): void
 ```
 
 Like console.log but writes to stderr.
@@ -11922,7 +11922,7 @@ text.str.pad("7", 3, "0", "left"); // "007"
 #### 17.12.26 text.str.printf
 
 ```
-printf(format: string, args?: ...unknown): void
+printf(format: string, ...args: unknown): void
 ```
 
 sprintf + write to stdout.
@@ -12006,7 +12006,7 @@ text.str.rtrim("x...", "."); // "x"
 #### 17.12.30 text.str.sprintf
 
 ```
-sprintf(format: string, args?: ...unknown): string
+sprintf(format: string, ...args: unknown): string
 ```
 
 Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
@@ -12321,7 +12321,7 @@ const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);
 
 ---
 
-*This manual covers sercon v0.86.1. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.87.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*

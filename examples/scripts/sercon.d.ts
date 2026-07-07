@@ -8,31 +8,31 @@ declare const console: {
    * @param args Values to print; identical formatting and stdout destination as console.log.
    * @returns void — output is written to stdout as a side effect.
    */
-  debug(args: ...unknown[]): void;
+  debug(...args: unknown[]): void;
   /**
    * Like console.log but writes to stderr.
    * @param args Values to print; same space-joined / JSON formatting as console.log but routed to stderr.
    * @returns void — output is written to stderr as a side effect.
    */
-  error(args: ...unknown[]): void;
+  error(...args: unknown[]): void;
   /**
    * Alias of console.log — stringified arguments, space-joined, to stdout.
    * @param args Values to print; identical formatting and stdout destination as console.log.
    * @returns void — output is written to stdout as a side effect.
    */
-  info(args: ...unknown[]): void;
+  info(...args: unknown[]): void;
   /**
    * Print a space-joined line of the arguments to stdout. Primitives print raw; objects/arrays render as JSON. Browser/Node-compatible; same output as runtime.log.
    * @param args Values to print, joined by single spaces and terminated with a newline. Primitives (string/number/boolean/null/undefined) print raw; objects and arrays render as JSON via JSON.stringify, falling back to String() for functions and circular references.
    * @returns void — output is written to stdout as a side effect.
    */
-  log(args: ...unknown[]): void;
+  log(...args: unknown[]): void;
   /**
    * Like console.log but writes to stderr.
    * @param args Values to print; same space-joined / JSON formatting as console.log but routed to stderr.
    * @returns void — output is written to stderr as a side effect.
    */
-  warn(args: ...unknown[]): void;
+  warn(...args: unknown[]): void;
 };
 
 /** Script-host scaffolding: logging, assertions, time, environment, runtime.argv. */
@@ -285,9 +285,9 @@ declare const crypto: {
   };
   jwt: {
     /**
-     * Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*/PS*/ES*/EdDSA; or a JWK JSON object (kty picks the key type) for any algorithm. opts.algorithm defaults to HS256.
+     * Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for RS*\/PS*\/ES*\/EdDSA; or a JWK JSON object (kty picks the key type) for any algorithm. opts.algorithm defaults to HS256.
      * @param claims Claims payload. Passed through to MapClaims; RFC 7519 reserved claims (exp/nbf/iat/iss/aud/sub) are honoured. Reserved claims are NOT synthesised — set iat/exp explicitly if you want them.
-     * @param secret Key material: raw HMAC bytes for HS256/384/512, a PEM-encoded private key (-----BEGIN ...) for RS*/PS*/ES*/EdDSA, or a JWK JSON object ({"kty":...}).
+     * @param secret Key material: raw HMAC bytes for HS256/384/512, a PEM-encoded private key (-----BEGIN ...) for RS*\/PS*\/ES*\/EdDSA, or a JWK JSON object ({"kty":...}).
      * @param opts algorithm names the RFC 7518 alg (HS256/HS384/HS512, RS256/384/512, PS256/384/512, ES256/384/512, EdDSA); case-insensitive. Defaults to HS256.
      * @returns string — the signed compact-serialisation JWT (header.payload.signature).
      */
@@ -505,7 +505,7 @@ declare const text: {
      * @param args Values substituted into the verbs.
      * @returns void — writes the formatted text directly to process stdout; returns nothing.
      */
-    printf(format: string, args?: ...unknown): void;
+    printf(format: string, ...args: unknown): void;
     /**
      * Rune-aware reversal — `reverse('café')` is `'éfac'`.
      * @param input The string to reverse. Reversed by Unicode code point, not byte, so multi-byte runes stay intact.
@@ -533,7 +533,7 @@ declare const text: {
      * @param args Values substituted into the verbs (passed through .Export(), so JS numbers arrive as Go int64/float64).
      * @returns string — the formatted result.
      */
-    sprintf(format: string, args?: ...unknown): string;
+    sprintf(format: string, ...args: unknown): string;
     /**
      * Remove HTML tags and decode common entities.
      * @param input HTML source. Anything matching <...> is removed.
@@ -1667,7 +1667,7 @@ declare const web: {
      */
     load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>;
     /**
-     * Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-detected; feedType reports it. RSS/Atom field differences are unified (pubDate/updated, description/summary). Each item carries a `raw` escape hatch with format-specific extras (enclosures, namespaced elements like media:*/dc:*).
+     * Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-detected; feedType reports it. RSS/Atom field differences are unified (pubDate/updated, description/summary). Each item carries a `raw` escape hatch with format-specific extras (enclosures, namespaced elements like media:*\/dc:*).
      * @param source The feed document text (RSS/Atom XML or JSON Feed).
      * @returns The normalized feed object.
      */
