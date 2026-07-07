@@ -116,6 +116,9 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 
 	// Compile routes into a ServeMux
 	mux := http.NewServeMux()
+	// Tracks live SSE streams so shutdown/close can tear them down (they
+	// never go idle, so http.Server.Shutdown would otherwise block on them).
+	sseReg := newSSERegistry()
 	for _, key := range routesObj.Keys() {
 		pattern := key
 		routeVal := routesObj.Get(key)
@@ -123,15 +126,17 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		if err != nil {
 			if sre, ok := err.(*staticRouteError); ok {
 				// Register the static handler directly on the mux.
-				mux.Handle(pattern, sre.handler)
+				registerMux(vm, pattern, func() { mux.Handle(pattern, sre.handler) })
 				continue
 			}
 			panic(vm.NewTypeError(fmt.Sprintf("server.http.listen: route %q: %v", pattern, err)))
 		}
 		chain := append([]*scriptengine.LoopCallable{}, globalMW...)
 		chain = append(chain, perRouteMW...)
-		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-			dispatchHandler(loop, eng, chain, handler, onError, w, r, maxBodyBytes)
+		registerMux(vm, pattern, func() {
+			mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+				dispatchHandler(loop, eng, sseReg, chain, handler, onError, w, r, maxBodyBytes)
+			})
 		})
 	}
 
@@ -200,6 +205,7 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	// srv.close() removes this hook first so the listener isn't torn down
 	// twice.
 	removeHook := eng.AddShutdownHook(func(ctx context.Context) error {
+		sseReg.teardownAll() // unblock never-idle SSE streams first
 		err := srv.Shutdown(ctx)
 		release()
 		return err
@@ -230,7 +236,8 @@ func httpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 		if closed.Swap(true) {
 			return vm.ToValue(stoppedPromise) // already closing
 		}
-		removeHook() // don't let GracefulShutdown close it a second time
+		removeHook()         // don't let GracefulShutdown close it a second time
+		sseReg.teardownAll() // unblock never-idle SSE streams first
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		go func() {
 			defer cancel()
@@ -285,6 +292,22 @@ type staticRouteError struct{ handler http.Handler }
 
 func (e *staticRouteError) Error() string { return "static-route marker" }
 
+// registerMux runs a single ServeMux registration, converting the panic
+// net/http raises for an invalid or conflicting route pattern (a bare Go
+// error, e.g. `"health"` with no leading slash or two overlapping
+// `{wildcard}` patterns) into a catchable goja TypeError. Route keys come
+// straight from the script, so without this a bad pattern re-panics out of
+// the event loop and crashes the whole process instead of throwing like
+// every other bad-option path in httpListen.
+func registerMux(vm *goja.Runtime, pattern string, register func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			panic(vm.NewTypeError(fmt.Sprintf("server.http.listen: route %q: %v", pattern, r)))
+		}
+	}()
+	register()
+}
+
 // compileRoute turns a route value (bare function OR {use, handler} object)
 // into a LoopCallable + per-route middleware slice.
 func compileRoute(vm *goja.Runtime, loop *eventloop.EventLoop, val goja.Value) (*scriptengine.LoopCallable, []*scriptengine.LoopCallable, error) {
@@ -328,9 +351,14 @@ type responseState struct {
 	body      []byte
 	contentTy string // content type to set if not already in headers
 	finalized bool
-	errored   bool
-	jsError   string // captured handler-thrown error
-	notify    chan struct{}
+	// terminal is set only when a response body/redirect was explicitly
+	// produced by a terminal (json/text/html/bytes/empty/redirect). It
+	// distinguishes that from the dispatch path finalizing a handler that
+	// returned WITHOUT responding — the latter must emit 204, not 200.
+	terminal bool
+	errored  bool
+	jsError  string // captured handler-thrown error
+	notify   chan struct{}
 
 	// upgrade is set by upgradeWebSocket; signals the writer goroutine
 	// to NOT write a regular response (the websocket library owns the
@@ -377,6 +405,15 @@ func (rs *responseState) markFinal() {
 	close(rs.notify)
 }
 
+// markTerminal records that a terminal explicitly produced the response
+// (so writeResponse must NOT downgrade a 200 to 204) and finalizes it.
+func (rs *responseState) markTerminal() {
+	rs.mu.Lock()
+	rs.terminal = true
+	rs.mu.Unlock()
+	rs.markFinal()
+}
+
 // isFinalized returns whether the response has been finalized. Takes the
 // lock so callers don't race against markFinal/markError. Cheaper than
 // holding the lock for a whole compound check.
@@ -402,7 +439,7 @@ func (rs *responseState) markError(msg string) {
 // schedules a loop callback that builds req/res, invokes the middleware
 // chain + handler, and waits on res.notify for finalization (either via
 // a terminal call or via the handler-Promise's settlement).
-func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, onError *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request, maxBodyBytes int) {
+func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, sseReg *sseRegistry, chain []*scriptengine.LoopCallable, handler *scriptengine.LoopCallable, onError *scriptengine.LoopCallable, w http.ResponseWriter, r *http.Request, maxBodyBytes int) {
 	startTime := time.Now()
 	// Read body up front; small price for the simpler script API. Cap it
 	// with MaxBytesReader so a large POST can't OOM the process before any
@@ -435,7 +472,7 @@ func dispatchHandler(loop *eventloop.EventLoop, eng *scriptengine.Engine, chain 
 	// invoking each middleware with a `next` function.
 	_, err = loopSchedule(loop, func(vm *goja.Runtime) (goja.Value, error) {
 		req := buildRequestObject(vm, r, bodyBytes)
-		res := buildResponseObject(vm, loop, eng, state, w, r)
+		res := buildResponseObject(vm, loop, eng, sseReg, state, w, r)
 
 		// Wire the error router now that req/res exist. With no onError
 		// configured it is exactly markError (stock 500); otherwise it
@@ -677,7 +714,10 @@ func writeResponse(w http.ResponseWriter, state *responseState) {
 		w.Header().Set("Content-Type", state.contentTy)
 	}
 	status := state.status
-	if !state.finalized && status == 200 {
+	// A handler that returned without invoking a terminal produces the
+	// documented 204 No Content, not the default 200. An explicit terminal
+	// (even res.empty) sets `terminal`, so its status stands.
+	if !state.terminal && status == 200 {
 		status = http.StatusNoContent
 	}
 	w.WriteHeader(status)
@@ -728,7 +768,7 @@ func buildRequestObject(vm *goja.Runtime, r *http.Request, bodyBytes []byte) goj
 // the responseState; terminals call markFinal. The loop/eng/w/r tuple
 // is threaded purely to feed res.upgradeWebSocket (Task 4); the rest
 // of the builder doesn't need them.
-func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, state *responseState, w http.ResponseWriter, r *http.Request) *goja.Object {
+func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, sseReg *sseRegistry, state *responseState, w http.ResponseWriter, r *http.Request) *goja.Object {
 	res := vm.NewObject()
 	// Re-add `res` to its own methods so chaining returns the same object.
 	self := vm.ToValue(res)
@@ -787,7 +827,7 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 		state.body = raw
 		state.contentTy = "application/json"
 		state.mu.Unlock()
-		state.markFinal()
+		state.markTerminal()
 		return self
 	})
 	_ = res.Set("text", func(call goja.FunctionCall) goja.Value {
@@ -800,7 +840,7 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 		state.body = []byte(s)
 		state.contentTy = "text/plain; charset=utf-8"
 		state.mu.Unlock()
-		state.markFinal()
+		state.markTerminal()
 		return self
 	})
 	_ = res.Set("html", func(call goja.FunctionCall) goja.Value {
@@ -813,7 +853,7 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 		state.body = []byte(s)
 		state.contentTy = "text/html; charset=utf-8"
 		state.mu.Unlock()
-		state.markFinal()
+		state.markTerminal()
 		return self
 	})
 	_ = res.Set("bytes", func(call goja.FunctionCall) goja.Value {
@@ -831,10 +871,13 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 			state.mu.Unlock()
 			panic(vm.NewTypeError("res.bytes: response already finalized"))
 		}
-		state.body = bs
+		// Copy: goja's Uint8Array export aliases the live ArrayBuffer, and
+		// writeResponse reads state.body on the request goroutine, so a later
+		// script mutation would otherwise race the write / corrupt the body.
+		state.body = append([]byte(nil), bs...)
 		state.contentTy = ct
 		state.mu.Unlock()
-		state.markFinal()
+		state.markTerminal()
 		return self
 	})
 	_ = res.Set("empty", func(call goja.FunctionCall) goja.Value {
@@ -845,7 +888,7 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 		}
 		state.body = nil
 		state.mu.Unlock()
-		state.markFinal()
+		state.markTerminal()
 		return self
 	})
 	// upgradeWebSocket — hijack the connection and return a JS object
@@ -867,7 +910,7 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 		if len(call.Arguments) > 0 {
 			opts = call.Argument(0)
 		}
-		return sseImpl(vm, loop, eng, state, w, r, opts)
+		return sseImpl(vm, loop, eng, sseReg, state, w, r, opts)
 	})
 
 	_ = res.Set("redirect", func(call goja.FunctionCall) goja.Value {
@@ -884,7 +927,7 @@ func buildResponseObject(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 		state.status = code
 		state.headers.Set("Location", loc)
 		state.mu.Unlock()
-		state.markFinal()
+		state.markTerminal()
 		return self
 	})
 	return res
