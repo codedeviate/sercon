@@ -77,17 +77,32 @@ func asyncReturnType(doc MemberDoc, a AsyncBinding) string {
 func sigFromParams(params []Param, ret string) string {
 	args := make([]string, 0, len(params))
 	for _, p := range params {
-		name := p.Name
-		if p.Optional {
-			name += "?"
-		}
 		typ := p.Type
 		if typ == "" {
 			typ = "unknown"
 		}
+		// A rest parameter is encoded with a leading "..." on the type. TS
+		// syntax places the "..." before the name (`...args: unknown[]`),
+		// and a rest parameter is never optional.
+		if rest, ok := strings.CutPrefix(typ, "..."); ok {
+			args = append(args, "..."+p.Name+": "+rest)
+			continue
+		}
+		name := p.Name
+		if p.Optional {
+			name += "?"
+		}
 		args = append(args, name+": "+typ)
 	}
 	return "(" + strings.Join(args, ", ") + "): " + ret
+}
+
+// escapeJSDoc neutralises embedded comment terminators so a doc string
+// containing "*/" (e.g. "RS*/PS*/ES*", "media:*/dc:*") does not close the
+// /** ... */ block early and turn the rest of the emitted .d.ts into
+// syntactically invalid TypeScript.
+func escapeJSDoc(s string) string {
+	return strings.ReplaceAll(s, "*/", "*\\/")
 }
 
 // writeMemberJSDoc renders the JSDoc block for a documented member. When the
@@ -109,17 +124,17 @@ func writeMemberJSDoc(w *errWriter, doc MemberDoc, indent int) {
 				w.WriteString(pad + " *\n")
 				continue
 			}
-			w.WriteString(pad + " * " + line + "\n")
+			w.WriteString(pad + " * " + escapeJSDoc(line) + "\n")
 		}
 	}
 	for _, p := range doc.Params {
 		if strings.TrimSpace(p.Desc) == "" {
 			continue
 		}
-		w.WriteString(pad + " * @param " + p.Name + " " + p.Desc + "\n")
+		w.WriteString(pad + " * @param " + p.Name + " " + escapeJSDoc(p.Desc) + "\n")
 	}
 	if doc.Returns != "" {
-		w.WriteString(pad + " * @returns " + doc.Returns + "\n")
+		w.WriteString(pad + " * @returns " + escapeJSDoc(doc.Returns) + "\n")
 	}
 	w.WriteString(pad + " */\n")
 }
@@ -135,7 +150,7 @@ func writeJSDoc(w *errWriter, doc string, indent int) {
 	}
 	pad := strings.Repeat("  ", indent)
 	if !strings.Contains(doc, "\n") {
-		w.WriteString(pad + "/** " + doc + " */\n")
+		w.WriteString(pad + "/** " + escapeJSDoc(doc) + " */\n")
 		return
 	}
 	w.WriteString(pad + "/**\n")
@@ -145,7 +160,7 @@ func writeJSDoc(w *errWriter, doc string, indent int) {
 			w.WriteString(pad + " *\n")
 			continue
 		}
-		w.WriteString(pad + " * " + line + "\n")
+		w.WriteString(pad + " * " + escapeJSDoc(line) + "\n")
 	}
 	w.WriteString(pad + " */\n")
 }
@@ -501,4 +516,3 @@ func lowerFirst(s string) string {
 	}
 	return strings.ToLower(s[:1]) + s[1:]
 }
-
