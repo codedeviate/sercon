@@ -72,6 +72,12 @@ func readDelimited(data []byte, comma rune, name string) (sheetBook, error) {
 	r := csv.NewReader(bytes.NewReader(data))
 	r.Comma = comma
 	r.FieldsPerRecord = -1 // allow ragged rows
+	// Tolerate bare quotes in unquoted fields. MySQL tab/CSV dumps are
+	// unquoted, so a stray double-quote (e.g. an inch mark like 2") is
+	// data, not a quoting error — without this a single such cell aborts
+	// the whole file. LazyQuotes only relaxes handling of unquoted/partly
+	// quoted fields; well-formed RFC 4180 quoting still parses identically.
+	r.LazyQuotes = true
 	recs, err := r.ReadAll()
 	if err != nil {
 		return sheetBook{}, fmt.Errorf("codec.sheet: parse: %w", err)
