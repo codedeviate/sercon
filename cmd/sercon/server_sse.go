@@ -31,11 +31,15 @@ func formatSSEEvent(ev sseEvent) []byte {
 	if ev.retry > 0 {
 		fmt.Fprintf(&b, "retry: %d\n", ev.retry)
 	}
+	// Strip CR/LF from id and event: the SSE spec forbids newlines in these
+	// fields, and leaving them in would let a script echoing untrusted input
+	// inject additional fields/frames into the stream. (data is safe — it is
+	// split into one `data:` line per input line below.)
 	if ev.id != "" {
-		fmt.Fprintf(&b, "id: %s\n", ev.id)
+		fmt.Fprintf(&b, "id: %s\n", sseFieldSanitize(ev.id))
 	}
 	if ev.event != "" {
-		fmt.Fprintf(&b, "event: %s\n", ev.event)
+		fmt.Fprintf(&b, "event: %s\n", sseFieldSanitize(ev.event))
 	}
 	data := strings.ReplaceAll(ev.data, "\r\n", "\n")
 	for _, line := range strings.Split(data, "\n") {
@@ -45,12 +49,55 @@ func formatSSEEvent(ev sseEvent) []byte {
 	return []byte(b.String())
 }
 
+// sseFieldSanitize removes CR and LF from a single-line SSE field (id,
+// event), which the spec does not permit to span lines.
+var sseFieldSanitize = strings.NewReplacer("\r", "", "\n", "").Replace
+
 // sseFrame is one formatted frame plus a buffered ack channel. The pump
 // writes data, flushes, and sends the write error (or nil) on ack so the
 // JS send() Promise resolves only after the bytes hit the socket.
 type sseFrame struct {
 	data []byte
 	ack  chan error // buffered(1): pump never blocks on a sender that gave up
+}
+
+// sseRegistry tracks the live SSE streams of one HTTP listener. A listener
+// shutdown (the SIGTERM hook or srv.close()) tears them down before calling
+// http.Server.Shutdown — a streaming SSE response is never "idle", so
+// without this Shutdown blocks for the whole shutdown-timeout waiting on it.
+type sseRegistry struct {
+	mu      sync.Mutex
+	streams map[*sseStream]struct{}
+}
+
+func newSSERegistry() *sseRegistry {
+	return &sseRegistry{streams: map[*sseStream]struct{}{}}
+}
+
+func (r *sseRegistry) add(st *sseStream) {
+	r.mu.Lock()
+	r.streams[st] = struct{}{}
+	r.mu.Unlock()
+}
+
+func (r *sseRegistry) remove(st *sseStream) {
+	r.mu.Lock()
+	delete(r.streams, st)
+	r.mu.Unlock()
+}
+
+// teardownAll asks every live stream's pump to exit (idempotent via each
+// stream's closeOnce). Safe to call from an off-loop goroutine.
+func (r *sseRegistry) teardownAll() {
+	r.mu.Lock()
+	sts := make([]*sseStream, 0, len(r.streams))
+	for st := range r.streams {
+		sts = append(sts, st)
+	}
+	r.mu.Unlock()
+	for _, st := range sts {
+		st.closeOnce.Do(func() { close(st.quit) })
+	}
 }
 
 // sseStream tracks one open SSE response.
@@ -109,7 +156,7 @@ func buildSSEEvent(vm *goja.Runtime, arg goja.Value) (sseEvent, error) {
 // the SSE headers and flushes, marks the response final (unblocking the
 // dispatcher, which then parks on streamDone), and starts the pump. Returns a
 // JS handle with send(data) / close() / closed.
-func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, state *responseState, w http.ResponseWriter, r *http.Request, opts goja.Value) goja.Value {
+func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, reg *sseRegistry, state *responseState, w http.ResponseWriter, r *http.Request, opts goja.Value) goja.Value {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		panic(vm.NewTypeError("res.sse: response writer does not support streaming"))
@@ -156,6 +203,11 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 		quit:    make(chan struct{}),
 		release: eng.HoldRun(fmt.Sprintf("sse %s", r.RemoteAddr)),
 	}
+	// Track the stream so a listener shutdown can tear it down; the pump's
+	// defer deregisters it on exit.
+	if reg != nil {
+		reg.add(st)
+	}
 
 	closedPromise, closedResolve, _ := vm.NewPromise()
 
@@ -177,6 +229,9 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 			defer ticker.Stop()
 		}
 		defer func() {
+			if reg != nil {
+				reg.remove(st)
+			}
 			st.release()
 			close(st.done)
 			loop.RunOnLoop(func(vm *goja.Runtime) { _ = closedResolve(goja.Undefined()) })
