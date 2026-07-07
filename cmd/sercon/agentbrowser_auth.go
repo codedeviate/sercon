@@ -95,10 +95,10 @@ func authSimple(sub string, needsName bool) func(context.Context, goja.FunctionC
 // independent). login is NOT here; it is a handle method (acts on a session).
 func authNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"save":   scriptengine.PromisifyAsync(vm, loop, authSave()).Func,
-		"list":   scriptengine.PromisifyAsync(vm, loop, authSimple("list", false)).Func,
-		"show":   scriptengine.PromisifyAsync(vm, loop, authSimple("show", true)).Func,
-		"delete": scriptengine.PromisifyAsync(vm, loop, authSimple("delete", true)).Func,
+		"save":   scriptengine.PromisifyAsyncLegacy(vm, loop, authSave()).Func,
+		"list":   scriptengine.PromisifyAsyncLegacy(vm, loop, authSimple("list", false)).Func,
+		"show":   scriptengine.PromisifyAsyncLegacy(vm, loop, authSimple("show", true)).Func,
+		"delete": scriptengine.PromisifyAsyncLegacy(vm, loop, authSimple("delete", true)).Func,
 	}
 }
 

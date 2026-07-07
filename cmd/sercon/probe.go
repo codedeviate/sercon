@@ -27,15 +27,15 @@ import (
 // milliseconds; defaults vary per binding.
 func probeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"tcp":        scriptengine.PromisifyAsync(vm, loop, tcpProbe),
-		"dns":        scriptengine.PromisifyAsync(vm, loop, dnsLookup),
-		"tls":        scriptengine.PromisifyAsync(vm, loop, tlsProbe),
-		"ntp":        scriptengine.PromisifyAsync(vm, loop, ntpQuery),
-		"whois":      scriptengine.PromisifyAsync(vm, loop, whoisLookup),
-		"ping":       scriptengine.PromisifyAsync(vm, loop, pingProbe),
-		"smtp":       scriptengine.PromisifyAsync(vm, loop, smtpProbe),
-		"wss":        scriptengine.PromisifyAsync(vm, loop, wssProbe),
-		"traceroute": scriptengine.PromisifyAsync(vm, loop, traceroute),
+		"tcp":        scriptengine.PromisifyAsyncLegacy(vm, loop, tcpProbe),
+		"dns":        scriptengine.PromisifyAsyncLegacy(vm, loop, dnsLookup),
+		"tls":        scriptengine.PromisifyAsyncLegacy(vm, loop, tlsProbe),
+		"ntp":        scriptengine.PromisifyAsyncLegacy(vm, loop, ntpQuery),
+		"whois":      scriptengine.PromisifyAsyncLegacy(vm, loop, whoisLookup),
+		"ping":       scriptengine.PromisifyAsyncLegacy(vm, loop, pingProbe),
+		"smtp":       scriptengine.PromisifyAsyncLegacy(vm, loop, smtpProbe),
+		"wss":        scriptengine.PromisifyAsyncLegacy(vm, loop, wssProbe),
+		"traceroute": scriptengine.PromisifyAsyncLegacy(vm, loop, traceroute),
 	}
 }
 

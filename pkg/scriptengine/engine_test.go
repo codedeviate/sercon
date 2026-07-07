@@ -145,9 +145,13 @@ func TestRun_ShebangInRequiredJSModule(t *testing.T) {
 func TestRun_PromiseResolveAwait(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := eng.RegisterFactory("asyncDouble", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
-		return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (int64, error) {
-			return call.Argument(0).ToInteger() * 2, nil
-		})
+		return scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (int64, error) {
+				return call.Argument(0).ToInteger(), nil
+			},
+			func(ctx context.Context, n int64) (int64, error) {
+				return n * 2, nil
+			})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -164,9 +168,11 @@ if (x !== 42) throw new Error("expected 42, got " + x);
 func TestRun_PromiseRejectCatchable(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := eng.RegisterFactory("asyncFail", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
-		return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			return nil, errors.New("nope")
-		})
+		return scriptengine.PromisifyAsync(vm, loop,
+			func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
+			func(ctx context.Context, _ struct{}) (any, error) {
+				return nil, errors.New("nope")
+			})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -274,12 +280,14 @@ func TestRun_PromisifyAsyncObservesRunContextCancellation(t *testing.T) {
 	})
 	observed := make(chan error, 1)
 	if err := eng.RegisterFactory("blockUntilCancel", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
-		return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
-			<-ctx.Done()
-			err := ctx.Err()
-			observed <- err
-			return nil, err
-		})
+		return scriptengine.PromisifyAsync(vm, loop,
+			func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
+			func(ctx context.Context, _ struct{}) (any, error) {
+				<-ctx.Done()
+				err := ctx.Err()
+				observed <- err
+				return nil, err
+			})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -548,17 +556,23 @@ if (v !== 1) throw new Error("nope");
 func TestWriteTypes_AsyncBindingPromise(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := eng.RegisterFactory("doubled", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
-		return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (int64, error) {
-			return call.Argument(0).ToInteger() * 2, nil
-		})
+		return scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (int64, error) {
+				return call.Argument(0).ToInteger(), nil
+			},
+			func(ctx context.Context, n int64) (int64, error) {
+				return n * 2, nil
+			})
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := eng.RegisterNamespaceFactory("net", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
-			"fetch": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (string, error) {
-				return "ok", nil
-			}),
+			"fetch": scriptengine.PromisifyAsync(vm, loop,
+				func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
+				func(ctx context.Context, _ struct{}) (string, error) {
+					return "ok", nil
+				}),
 		}
 	}); err != nil {
 		t.Fatal(err)
@@ -1172,21 +1186,27 @@ if (a + b + c !== 6) throw new Error("sum: " + (a + b + c));
 	}
 }
 
-// PromisifyAsync must snapshot FunctionCall.Arguments before launching
-// the work goroutine — goja reuses the slice's backing array across
-// calls, so under Promise.all (multiple async bindings outstanding
-// before any resolves) a later call's arguments would otherwise overwrite
-// an earlier call's view. Regression test for a real bug surfaced by
-// `api.exec.shell` with `await Promise.all([...])` (see api.tui demo).
+// Concurrent async bindings must each observe their own arguments. goja
+// reuses FunctionCall.Arguments' backing array across calls, so under
+// Promise.all (multiple async bindings outstanding before any resolves) a
+// later call could overwrite an earlier call's view if arguments leaked
+// into the work goroutine. With the extract/work split, extraction happens
+// synchronously on the loop before the next call can fire — this pins that
+// behaviour. Regression test for a real bug surfaced by `api.exec.shell`
+// with `await Promise.all([...])` (see api.tui demo).
 func TestRun_PromisifyAsyncSnapshotsArguments(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := eng.RegisterFactory("captureArg", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
-		return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (int64, error) {
-			// Give goja time to potentially reuse the FunctionCall slot for
-			// the second call before we touch ours.
-			time.Sleep(20 * time.Millisecond)
-			return call.Argument(0).ToInteger(), nil
-		})
+		return scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (int64, error) {
+				return call.Argument(0).ToInteger(), nil
+			},
+			func(ctx context.Context, n int64) (int64, error) {
+				// Give the second call time to fire (and, pre-split, to reuse
+				// the FunctionCall slot) before this one completes.
+				time.Sleep(20 * time.Millisecond)
+				return n, nil
+			})
 	}); err != nil {
 		t.Fatal(err)
 	}

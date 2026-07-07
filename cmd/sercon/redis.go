@@ -28,7 +28,7 @@ import (
 // parameterised by a `label` used in error messages.
 func redisNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return respOpen(vm, loop, ctx, call, "redis", nil)
 		}),
 	}
@@ -62,17 +62,17 @@ func respOpen(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, 
 // client, with error messages prefixed by label.
 func respHandle(vm *goja.Runtime, loop *eventloop.EventLoop, client *redis.Client, label string) map[string]any {
 	return map[string]any{
-		"do": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"do": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			return respDo(ctx, client, call, label)
 		}).Func,
-		"ping": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"ping": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			res, err := client.Ping(ctx).Result()
 			if err != nil {
 				return nil, fmt.Errorf("%s.ping: %w", label, err)
 			}
 			return res, nil
 		}).Func,
-		"close": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"close": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			if err := client.Close(); err != nil {
 				return nil, fmt.Errorf("%s.close: %w", label, err)
 			}

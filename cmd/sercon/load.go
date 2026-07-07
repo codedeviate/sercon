@@ -349,6 +349,6 @@ func buildLoadReport(target, method string, concurrency int, elapsed time.Durati
 // loadNamespace builds the net.load member map.
 func loadNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"http": scriptengine.PromisifyAsync(vm, loop, loadHTTPOp),
+		"http": scriptengine.PromisifyAsyncLegacy(vm, loop, loadHTTPOp),
 	}
 }

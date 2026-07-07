@@ -24,15 +24,15 @@ import (
 // engine can work across multiple checkouts.
 func gitNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"branch":   scriptengine.PromisifyAsync(vm, loop, gitBranch),
-		"isClean":  scriptengine.PromisifyAsync(vm, loop, gitIsClean),
-		"revParse": scriptengine.PromisifyAsync(vm, loop, gitRevParse),
-		"status":   scriptengine.PromisifyAsync(vm, loop, gitStatus),
-		"add":      scriptengine.PromisifyAsync(vm, loop, gitAdd),
-		"commit":   scriptengine.PromisifyAsync(vm, loop, gitCommit),
-		"log":      scriptengine.PromisifyAsync(vm, loop, gitLog),
-		"diffStat": scriptengine.PromisifyAsync(vm, loop, gitDiffStat),
-		"runText":  scriptengine.PromisifyAsync(vm, loop, gitRunText),
+		"branch":   scriptengine.PromisifyAsyncLegacy(vm, loop, gitBranch),
+		"isClean":  scriptengine.PromisifyAsyncLegacy(vm, loop, gitIsClean),
+		"revParse": scriptengine.PromisifyAsyncLegacy(vm, loop, gitRevParse),
+		"status":   scriptengine.PromisifyAsyncLegacy(vm, loop, gitStatus),
+		"add":      scriptengine.PromisifyAsyncLegacy(vm, loop, gitAdd),
+		"commit":   scriptengine.PromisifyAsyncLegacy(vm, loop, gitCommit),
+		"log":      scriptengine.PromisifyAsyncLegacy(vm, loop, gitLog),
+		"diffStat": scriptengine.PromisifyAsyncLegacy(vm, loop, gitDiffStat),
+		"runText":  scriptengine.PromisifyAsyncLegacy(vm, loop, gitRunText),
 	}
 }
 

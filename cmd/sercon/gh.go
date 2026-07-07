@@ -168,9 +168,9 @@ func loginOf(val any) (string, bool) {
 // to swap accounts or manage tokens.
 func ghNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"authStatus": scriptengine.PromisifyAsync(vm, loop, ghAuthStatus),
-		"prList":     scriptengine.PromisifyAsync(vm, loop, ghPrList),
-		"repoView":   scriptengine.PromisifyAsync(vm, loop, ghRepoView),
+		"authStatus": scriptengine.PromisifyAsyncLegacy(vm, loop, ghAuthStatus),
+		"prList":     scriptengine.PromisifyAsyncLegacy(vm, loop, ghPrList),
+		"repoView":   scriptengine.PromisifyAsyncLegacy(vm, loop, ghRepoView),
 	}
 }
 

@@ -185,8 +185,8 @@ func secretsNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]an
 	prefix := resolveSecretsPrefix()
 	return map[string]any{
 		"available": secretsAvailable(),
-		"get":       scriptengine.PromisifyAsync(vm, loop, secretsGet(prefix)),
-		"set":       scriptengine.PromisifyAsync(vm, loop, secretsSet(prefix)),
-		"delete":    scriptengine.PromisifyAsync(vm, loop, secretsDelete(prefix)),
+		"get":       scriptengine.PromisifyAsyncLegacy(vm, loop, secretsGet(prefix)),
+		"set":       scriptengine.PromisifyAsyncLegacy(vm, loop, secretsSet(prefix)),
+		"delete":    scriptengine.PromisifyAsyncLegacy(vm, loop, secretsDelete(prefix)),
 	}
 }

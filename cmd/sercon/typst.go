@@ -299,9 +299,9 @@ func typstQueryOp(ctx context.Context, call goja.FunctionCall) (any, error) {
 func typstNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"available": toolAvailable("typst"),
-		"version":   scriptengine.PromisifyAsync(vm, loop, typstVersionOp),
-		"fonts":     scriptengine.PromisifyAsync(vm, loop, typstFontsOp),
-		"compile":   scriptengine.PromisifyAsync(vm, loop, typstCompileOp),
-		"query":     scriptengine.PromisifyAsync(vm, loop, typstQueryOp),
+		"version":   scriptengine.PromisifyAsyncLegacy(vm, loop, typstVersionOp),
+		"fonts":     scriptengine.PromisifyAsyncLegacy(vm, loop, typstFontsOp),
+		"compile":   scriptengine.PromisifyAsyncLegacy(vm, loop, typstCompileOp),
+		"query":     scriptengine.PromisifyAsyncLegacy(vm, loop, typstQueryOp),
 	}
 }

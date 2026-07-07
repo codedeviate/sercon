@@ -256,6 +256,6 @@ func sitemapLoadWork(ctx context.Context, call goja.FunctionCall) (map[string]an
 func sitemapNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"parse": sitemapParseBinding(vm),
-		"load":  scriptengine.PromisifyAsync(vm, loop, sitemapLoadWork),
+		"load":  scriptengine.PromisifyAsyncLegacy(vm, loop, sitemapLoadWork),
 	}
 }

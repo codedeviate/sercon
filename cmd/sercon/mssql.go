@@ -19,7 +19,7 @@ import (
 // placeholders.
 func mssqlNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			dsn, opts, err := dbConnArg(call, "mssql")
 			if err != nil {
 				return nil, err

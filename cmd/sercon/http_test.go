@@ -24,7 +24,7 @@ func runHTTPReqScript(t *testing.T, body string) any {
 	var captured any
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 10 * time.Second})
 	if err := eng.RegisterNamespaceFactory("http", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return map[string]any{"request": scriptengine.PromisifyAsync(vm, loop, httpRequestCall)}
+		return map[string]any{"request": scriptengine.PromisifyAsyncLegacy(vm, loop, httpRequestCall)}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestHTTPRequest_MaxBytesUnderCapSucceeds(t *testing.T) {
 func TestHTTPRequest_TransportErrorThrows(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 3 * time.Second})
 	if err := eng.RegisterNamespaceFactory("http", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return map[string]any{"request": scriptengine.PromisifyAsync(vm, loop, httpRequestCall)}
+		return map[string]any{"request": scriptengine.PromisifyAsyncLegacy(vm, loop, httpRequestCall)}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func mustErr(t *testing.T, src string) string {
 	t.Helper()
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), Timeout: 2 * time.Second})
 	if err := eng.RegisterNamespaceFactory("http", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
-		return map[string]any{"request": scriptengine.PromisifyAsync(vm, loop, httpRequestCall)}
+		return map[string]any{"request": scriptengine.PromisifyAsyncLegacy(vm, loop, httpRequestCall)}
 	}); err != nil {
 		t.Fatal(err)
 	}

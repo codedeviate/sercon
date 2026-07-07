@@ -21,7 +21,7 @@ import (
 // ParseURL understands (the wire protocol is identical).
 func valkeyNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return respOpen(vm, loop, ctx, call, "valkey", normalizeValkeyURL)
 		}),
 	}

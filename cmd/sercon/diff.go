@@ -18,7 +18,7 @@ import (
 // diffs, patch application) land in a stable location.
 func diffNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"compare": scriptengine.PromisifyAsync(vm, loop, diffCompare),
+		"compare": scriptengine.PromisifyAsyncLegacy(vm, loop, diffCompare),
 	}
 }
 

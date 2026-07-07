@@ -24,8 +24,8 @@ import (
 // the event loop's goroutine keeps the JS side responsive.
 func archiveNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"create":  scriptengine.PromisifyAsync(vm, loop, archiveCreate),
-		"extract": scriptengine.PromisifyAsync(vm, loop, archiveExtract),
+		"create":  scriptengine.PromisifyAsyncLegacy(vm, loop, archiveCreate),
+		"extract": scriptengine.PromisifyAsyncLegacy(vm, loop, archiveExtract),
 	}
 }
 

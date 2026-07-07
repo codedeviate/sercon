@@ -39,8 +39,8 @@ func compressionNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[strin
 	algos := make([]string, len(compressionAlgos))
 	copy(algos, compressionAlgos)
 	return map[string]any{
-		"compress":   scriptengine.PromisifyAsync(vm, loop, compressCall),
-		"decompress": scriptengine.PromisifyAsync(vm, loop, decompressCall),
+		"compress":   scriptengine.PromisifyAsyncLegacy(vm, loop, compressCall),
+		"decompress": scriptengine.PromisifyAsyncLegacy(vm, loop, decompressCall),
 		"algos":      func() []string { return algos },
 	}
 }

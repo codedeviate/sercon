@@ -164,7 +164,7 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 			return goja.Undefined()
 		})
 	}
-	waitKey := scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+	waitKey := scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 		ctrlMu.Lock()
 		c := ctrl
 		ctrlMu.Unlock()

@@ -19,14 +19,14 @@ import (
 // Writes do NOT create parent directories — call fs.mkdir first (Node-like).
 func fileNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"writeText":  scriptengine.PromisifyAsync(vm, loop, fileWriteText),
-		"writeBytes": scriptengine.PromisifyAsync(vm, loop, fileWriteBytes),
-		"readText":   scriptengine.PromisifyAsync(vm, loop, fileReadText),
-		"readBytes":  scriptengine.PromisifyAsync(vm, loop, fileReadBytes),
-		"mkdir":      scriptengine.PromisifyAsync(vm, loop, fileMkdir),
-		"exists":     scriptengine.PromisifyAsync(vm, loop, fileExists),
-		"remove":     scriptengine.PromisifyAsync(vm, loop, fileRemove),
-		"stat":       scriptengine.PromisifyAsync(vm, loop, fileStat),
+		"writeText":  scriptengine.PromisifyAsyncLegacy(vm, loop, fileWriteText),
+		"writeBytes": scriptengine.PromisifyAsyncLegacy(vm, loop, fileWriteBytes),
+		"readText":   scriptengine.PromisifyAsyncLegacy(vm, loop, fileReadText),
+		"readBytes":  scriptengine.PromisifyAsyncLegacy(vm, loop, fileReadBytes),
+		"mkdir":      scriptengine.PromisifyAsyncLegacy(vm, loop, fileMkdir),
+		"exists":     scriptengine.PromisifyAsyncLegacy(vm, loop, fileExists),
+		"remove":     scriptengine.PromisifyAsyncLegacy(vm, loop, fileRemove),
+		"stat":       scriptengine.PromisifyAsyncLegacy(vm, loop, fileStat),
 	}
 }
 

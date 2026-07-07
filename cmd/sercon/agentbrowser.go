@@ -234,7 +234,7 @@ func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scrip
 	return map[string]any{
 		"available": abAvailable(),
 		// Keep as AsyncBinding (not .Func) so the d.ts emitter renders Promise<string>.
-		"version": scriptengine.PromisifyAsync(vm, loop, abVersion),
+		"version": scriptengine.PromisifyAsyncLegacy(vm, loop, abVersion),
 		"launch": func(call goja.FunctionCall) goja.Value {
 			h := reg.newHandle(call.Argument(0), vm)
 			return vm.ToValue(h.jsObject(vm, loop))
@@ -265,25 +265,25 @@ func agentBrowserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scrip
 			return goja.Undefined()
 		},
 		"auth": authNamespace(vm, loop),
-		"screenshot": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"screenshot": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			url := strArg(call, 0)
 			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
 				return h.screenshot(ctx, shiftCall(call, 1))
 			})
 		}).Func,
-		"pdf": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"pdf": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			url := strArg(call, 0)
 			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
 				return h.pdf(ctx, shiftCall(call, 1))
 			})
 		}).Func,
-		"snapshot": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"snapshot": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			url := strArg(call, 0)
 			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
 				return h.snapshot(ctx, shiftCall(call, 1))
 			})
 		}).Func,
-		"eval": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"eval": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			url := strArg(call, 0)
 			return reg.withEphemeral(ctx, url, func(h *abHandle) (any, error) {
 				return h.evalJS(ctx, shiftCall(call, 1))
@@ -398,7 +398,7 @@ type abHandle struct {
 // handed to vm.ToValue (not a registered namespace), so AsyncBindings are
 // never unwrapped by unwrapAsyncBindings and must be the bare function value.
 func (h *abHandle) p(vm *goja.Runtime, loop *eventloop.EventLoop, work func(context.Context, goja.FunctionCall) (any, error)) func(goja.FunctionCall) goja.Value {
-	return scriptengine.PromisifyAsync(vm, loop, work).Func
+	return scriptengine.PromisifyAsyncLegacy(vm, loop, work).Func
 }
 
 // jsObject returns the goja-facing handle object. Method groups are added

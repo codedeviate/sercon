@@ -22,7 +22,7 @@ import (
 // client).
 func ldapNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return ldapOpen(vm, loop, call)
 		}),
 	}
@@ -52,7 +52,7 @@ func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCal
 		// rootDSE() reads the server's Root DSE — the anonymous
 		// metadata entry that advertises naming contexts, supported
 		// controls, vendor, etc.
-		"rootDSE": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
+		"rootDSE": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 			req := ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases,
 				0, 0, false, "(objectClass=*)", []string{"*", "+"}, nil)
 			res, err := conn.Search(req)
@@ -65,7 +65,7 @@ func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCal
 			return ldapEntryToMap(res.Entries[0]), nil
 		}).Func,
 		// search(baseDN, filter, attrs?) — a generic subtree search.
-		"search": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
+		"search": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 			baseDN := call.Argument(0).String()
 			filter := call.Argument(1).String()
 			if filter == "" {
@@ -87,7 +87,7 @@ func ldapOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCal
 			}
 			return out, nil
 		}).Func,
-		"close": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		"close": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
 			if err := conn.Close(); err != nil {
 				return nil, fmt.Errorf("ldap.close: %w", err)
 			}

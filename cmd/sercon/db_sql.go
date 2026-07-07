@@ -52,22 +52,22 @@ func sqlOpen(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, d
 // in sqlite history.
 func sqlHandle(vm *goja.Runtime, loop *eventloop.EventLoop, db *sql.DB, engine string) map[string]any {
 	return map[string]any{
-		"exec": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"exec": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sqlExec(ctx, db, call, engine+".exec")
 		}).Func,
-		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
+		"query": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 			return sqlQuery(ctx, db, call, engine+".query")
 		}).Func,
-		"queryValue": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"queryValue": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			return sqlQueryValue(ctx, db, call, engine+".queryValue")
 		}).Func,
-		"begin": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"begin": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sqlBegin(vm, loop, ctx, db, engine)
 		}).Func,
-		"prepare": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"prepare": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sqlPrepare(vm, loop, ctx, db, call, engine)
 		}).Func,
-		"close": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"close": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			if err := db.Close(); err != nil {
 				return nil, fmt.Errorf("%s.close: %w", engine, err)
 			}
@@ -89,7 +89,7 @@ func sqlPrepare(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context
 		return nil, fmt.Errorf("%s.prepare: %w", engine, err)
 	}
 	return map[string]any{
-		"exec": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"exec": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			res, err := stmt.ExecContext(ctx, sqlArgsFrom(call, 0)...)
 			if err != nil {
 				return nil, fmt.Errorf("%s.stmt.exec: %w", engine, err)
@@ -98,7 +98,7 @@ func sqlPrepare(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context
 			lastInsertID, _ := res.LastInsertId()
 			return map[string]any{"rowsAffected": rowsAffected, "lastInsertId": lastInsertID}, nil
 		}).Func,
-		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
+		"query": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 			rows, err := stmt.QueryContext(ctx, sqlArgsFrom(call, 0)...)
 			if err != nil {
 				return nil, fmt.Errorf("%s.stmt.query: %w", engine, err)
@@ -106,7 +106,7 @@ func sqlPrepare(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context
 			defer func() { _ = rows.Close() }()
 			return scanRows(rows, engine+".stmt.query")
 		}).Func,
-		"queryValue": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"queryValue": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			rows, err := stmt.QueryContext(ctx, sqlArgsFrom(call, 0)...)
 			if err != nil {
 				return nil, fmt.Errorf("%s.stmt.queryValue: %w", engine, err)
@@ -114,7 +114,7 @@ func sqlPrepare(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context
 			defer func() { _ = rows.Close() }()
 			return scanFirstValue(rows, engine+".stmt.queryValue")
 		}).Func,
-		"close": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"close": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			if err := stmt.Close(); err != nil {
 				return nil, fmt.Errorf("%s.stmt.close: %w", engine, err)
 			}
@@ -132,22 +132,22 @@ func sqlBegin(vm *goja.Runtime, loop *eventloop.EventLoop, ctx context.Context, 
 		return nil, fmt.Errorf("%s.begin: %w", engine, err)
 	}
 	return map[string]any{
-		"exec": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"exec": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sqlExec(ctx, tx, call, engine+".tx.exec")
 		}).Func,
-		"query": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
+		"query": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]*scriptengine.Ordered, error) {
 			return sqlQuery(ctx, tx, call, engine+".tx.query")
 		}).Func,
-		"queryValue": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"queryValue": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			return sqlQueryValue(ctx, tx, call, engine+".tx.queryValue")
 		}).Func,
-		"commit": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"commit": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			if err := tx.Commit(); err != nil {
 				return nil, fmt.Errorf("%s.tx.commit: %w", engine, err)
 			}
 			return nil, nil
 		}).Func,
-		"rollback": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
+		"rollback": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (any, error) {
 			if err := tx.Rollback(); err != nil {
 				return nil, fmt.Errorf("%s.tx.rollback: %w", engine, err)
 			}

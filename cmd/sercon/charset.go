@@ -20,9 +20,9 @@ import (
 // ISO-8859-1, Windows-1252, Shift_JIS, GBK, …).
 func charsetNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"detect": scriptengine.PromisifyAsync(vm, loop, charsetDetect),
-		"decode": scriptengine.PromisifyAsync(vm, loop, charsetDecode),
-		"encode": scriptengine.PromisifyAsync(vm, loop, charsetEncode),
+		"detect": scriptengine.PromisifyAsyncLegacy(vm, loop, charsetDetect),
+		"decode": scriptengine.PromisifyAsyncLegacy(vm, loop, charsetDecode),
+		"encode": scriptengine.PromisifyAsyncLegacy(vm, loop, charsetEncode),
 	}
 }
 

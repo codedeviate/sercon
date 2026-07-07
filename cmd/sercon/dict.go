@@ -23,8 +23,8 @@ import (
 // match under a strategy). Both are one-shot — connect, query, QUIT.
 func dictNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"define": scriptengine.PromisifyAsync(vm, loop, dictDefine),
-		"match":  scriptengine.PromisifyAsync(vm, loop, dictMatch),
+		"define": scriptengine.PromisifyAsyncLegacy(vm, loop, dictDefine),
+		"match":  scriptengine.PromisifyAsyncLegacy(vm, loop, dictMatch),
 	}
 }
 

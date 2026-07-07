@@ -391,9 +391,9 @@ func clipboardNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]
 	return map[string]any{
 		"available":      clipboardAvailable(),
 		"imageAvailable": clipboardImageAvailable(),
-		"read":           scriptengine.PromisifyAsync(vm, loop, clipReadOp),
-		"write":          scriptengine.PromisifyAsync(vm, loop, clipWriteOp),
-		"readImage":      scriptengine.PromisifyAsync(vm, loop, clipImageReadOp),
-		"writeImage":     scriptengine.PromisifyAsync(vm, loop, clipImageWriteOp),
+		"read":           scriptengine.PromisifyAsyncLegacy(vm, loop, clipReadOp),
+		"write":          scriptengine.PromisifyAsyncLegacy(vm, loop, clipWriteOp),
+		"readImage":      scriptengine.PromisifyAsyncLegacy(vm, loop, clipImageReadOp),
+		"writeImage":     scriptengine.PromisifyAsyncLegacy(vm, loop, clipImageWriteOp),
 	}
 }

@@ -22,7 +22,7 @@ import (
 // standard pure-Go client).
 func memcachedNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return memcachedOpen(vm, loop, call)
 		}),
 	}
@@ -38,7 +38,7 @@ func memcachedOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.Functi
 	return map[string]any{
 		// set(key, value, expirySeconds?) — value is stored as bytes.
 		// expirySeconds 0 (default) means "never expire".
-		"set": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		"set": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
 			key := call.Argument(0).String()
 			if key == "" {
 				return nil, errors.New("memcached.set: key required")
@@ -57,7 +57,7 @@ func memcachedOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.Functi
 			return nil, nil
 		}).Func,
 		// get(key) — returns the stored string, or null on a cache miss.
-		"get": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		"get": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
 			key := call.Argument(0).String()
 			item, err := client.Get(key)
 			if err != nil {
@@ -69,7 +69,7 @@ func memcachedOpen(vm *goja.Runtime, loop *eventloop.EventLoop, call goja.Functi
 			return string(item.Value), nil
 		}).Func,
 		// delete(key) — returns true if the key existed, false on miss.
-		"delete": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
+		"delete": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (any, error) {
 			key := call.Argument(0).String()
 			err := client.Delete(key)
 			if err != nil {

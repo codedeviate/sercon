@@ -29,7 +29,7 @@ import (
 // cookies are scoped correctly across subdomains).
 func browserNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return browserOpen(vm, loop)
 		}),
 	}
@@ -60,10 +60,10 @@ func browserOpen(vm *goja.Runtime, loop *eventloop.EventLoop) (map[string]any, e
 	return map[string]any{
 		"setUserAgent": func(ua string) { sess.setHeader("User-Agent", ua) },
 		"setHeader":    func(name, value string) { sess.setHeader(name, value) },
-		"get": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"get": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sess.do(ctx, http.MethodGet, call.Argument(0).String(), "")
 		}).Func,
-		"post": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"post": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			url := call.Argument(0).String()
 			body := ""
 			if len(call.Arguments) > 1 {
@@ -71,7 +71,7 @@ func browserOpen(vm *goja.Runtime, loop *eventloop.EventLoop) (map[string]any, e
 			}
 			return sess.do(ctx, http.MethodPost, url, body)
 		}).Func,
-		"cookies": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
+		"cookies": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) ([]map[string]any, error) {
 			return sess.cookiesFor(call.Argument(0).String())
 		}).Func,
 	}, nil

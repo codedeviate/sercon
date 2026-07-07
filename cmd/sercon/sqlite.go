@@ -20,7 +20,7 @@ import (
 // cgo-free rule holds. The blank import registers it as the "sqlite" driver.
 func sqliteNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"open": scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
+		"open": scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (map[string]any, error) {
 			return sqliteOpen(vm, loop, ctx, call)
 		}),
 	}

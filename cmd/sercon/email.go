@@ -22,12 +22,12 @@ import (
 // presence-check pattern across the email-auth probe family.
 func emailNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"spf":    scriptengine.PromisifyAsync(vm, loop, emailSPF),
-		"dmarc":  scriptengine.PromisifyAsync(vm, loop, emailDMARC),
-		"mtaSts": scriptengine.PromisifyAsync(vm, loop, emailMTASTS),
-		"tlsRpt": scriptengine.PromisifyAsync(vm, loop, emailTLSRPT),
-		"bimi":   scriptengine.PromisifyAsync(vm, loop, emailBIMI),
-		"all":    scriptengine.PromisifyAsync(vm, loop, emailAll),
+		"spf":    scriptengine.PromisifyAsyncLegacy(vm, loop, emailSPF),
+		"dmarc":  scriptengine.PromisifyAsyncLegacy(vm, loop, emailDMARC),
+		"mtaSts": scriptengine.PromisifyAsyncLegacy(vm, loop, emailMTASTS),
+		"tlsRpt": scriptengine.PromisifyAsyncLegacy(vm, loop, emailTLSRPT),
+		"bimi":   scriptengine.PromisifyAsyncLegacy(vm, loop, emailBIMI),
+		"all":    scriptengine.PromisifyAsyncLegacy(vm, loop, emailAll),
 		"send":   emailSend(vm, loop),
 	}
 }

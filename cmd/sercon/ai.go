@@ -41,7 +41,7 @@ var aiProviders = []string{"claude", "codex", "copilot", "gemini"}
 func aiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"providers": func() []string { return detectAIProviders() },
-		"send":      scriptengine.PromisifyAsync(vm, loop, aiSend),
+		"send":      scriptengine.PromisifyAsyncLegacy(vm, loop, aiSend),
 	}
 }
 

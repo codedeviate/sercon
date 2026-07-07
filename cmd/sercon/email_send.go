@@ -58,7 +58,7 @@ type sendAttachment struct {
 
 // emailSend returns the AsyncBinding wired into emailNamespace.
 func emailSend(vm *goja.Runtime, loop *eventloop.EventLoop) scriptengine.AsyncBinding {
-	return scriptengine.PromisifyAsync(vm, loop, func(ctx context.Context, call goja.FunctionCall) (sendResult, error) {
+	return scriptengine.PromisifyAsyncLegacy(vm, loop, func(ctx context.Context, call goja.FunctionCall) (sendResult, error) {
 		opts, err := parseSendOpts(vm, call)
 		if err != nil {
 			return sendResult{}, err

@@ -406,10 +406,10 @@ func pdfNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 			"pdftohtml": toolAvailable("pdftohtml"),
 			"pdfinfo":   toolAvailable("pdfinfo"),
 		},
-		"version": scriptengine.PromisifyAsync(vm, loop, pdfVersionOp),
-		"info":    scriptengine.PromisifyAsync(vm, loop, pdfInfoOp),
-		"toImage": scriptengine.PromisifyAsync(vm, loop, pdfToImageOp),
-		"toText":  scriptengine.PromisifyAsync(vm, loop, pdfToTextOp),
-		"toHtml":  scriptengine.PromisifyAsync(vm, loop, pdfToHTMLOp),
+		"version": scriptengine.PromisifyAsyncLegacy(vm, loop, pdfVersionOp),
+		"info":    scriptengine.PromisifyAsyncLegacy(vm, loop, pdfInfoOp),
+		"toImage": scriptengine.PromisifyAsyncLegacy(vm, loop, pdfToImageOp),
+		"toText":  scriptengine.PromisifyAsyncLegacy(vm, loop, pdfToTextOp),
+		"toHtml":  scriptengine.PromisifyAsyncLegacy(vm, loop, pdfToHTMLOp),
 	}
 }

@@ -23,8 +23,8 @@ import (
 // literal JS object without any pre-conversion.
 func jqNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"query":    scriptengine.PromisifyAsync(vm, loop, jqQueryFirst),
-		"queryAll": scriptengine.PromisifyAsync(vm, loop, jqQueryAll),
+		"query":    scriptengine.PromisifyAsyncLegacy(vm, loop, jqQueryFirst),
+		"queryAll": scriptengine.PromisifyAsyncLegacy(vm, loop, jqQueryAll),
 	}
 }
 

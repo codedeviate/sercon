@@ -23,7 +23,7 @@ import (
 // directly and fans out with a WaitGroup.
 func netstatusNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
-		"check": scriptengine.PromisifyAsync(vm, loop, netstatusCheck),
+		"check": scriptengine.PromisifyAsyncLegacy(vm, loop, netstatusCheck),
 	}
 }
 

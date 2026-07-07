@@ -136,6 +136,6 @@ func feedLoadWork(ctx context.Context, call goja.FunctionCall) (map[string]any, 
 func feedNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"parse": feedParseBinding(vm),
-		"load":  scriptengine.PromisifyAsync(vm, loop, feedLoadWork),
+		"load":  scriptengine.PromisifyAsyncLegacy(vm, loop, feedLoadWork),
 	}
 }

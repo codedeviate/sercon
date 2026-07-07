@@ -168,7 +168,7 @@ func (s *wdSession) do(fn func() (any, error)) (any, error) {
 // methods live on a runtime-built handle object so they need .Func, like
 // agentBrowser.
 func wdAsync(vm *goja.Runtime, loop *eventloop.EventLoop, work func(context.Context, goja.FunctionCall) (any, error)) func(goja.FunctionCall) goja.Value {
-	return scriptengine.PromisifyAsync(vm, loop, work).Func
+	return scriptengine.PromisifyAsyncLegacy(vm, loop, work).Func
 }
 
 func (r *wdRegistry) track(s *wdSession) {
@@ -379,7 +379,7 @@ func webdriverNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scripten
 	}
 	return map[string]any{
 		"available": wdAvailable(),
-		"probe": scriptengine.PromisifyAsync(vm, loop, func(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
+		"probe": scriptengine.PromisifyAsyncLegacy(vm, loop, func(_ context.Context, call goja.FunctionCall) (*scriptengine.Ordered, error) {
 			u, _ := optsArgMap(call, 0)["url"].(string)
 			if u == "" {
 				return nil, errors.New("webdriver.probe: opts.url is required")
@@ -397,7 +397,7 @@ func webdriverNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, e *scripten
 			o.Set("status", resp.StatusCode)
 			return o, nil
 		}),
-		"connect": scriptengine.PromisifyAsync(vm, loop, reg.connect(vm, loop)),
+		"connect": scriptengine.PromisifyAsyncLegacy(vm, loop, reg.connect(vm, loop)),
 	}
 }
 

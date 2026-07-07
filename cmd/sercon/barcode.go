@@ -45,8 +45,8 @@ func barcodeNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]an
 	decFormats := make([]string, len(barcodeDecodableFormats))
 	copy(decFormats, barcodeDecodableFormats)
 	return map[string]any{
-		"encode":           scriptengine.PromisifyAsync(vm, loop, barcodeEncodeCall),
-		"decode":           scriptengine.PromisifyAsync(vm, loop, barcodeDecodeCall),
+		"encode":           scriptengine.PromisifyAsyncLegacy(vm, loop, barcodeEncodeCall),
+		"decode":           scriptengine.PromisifyAsyncLegacy(vm, loop, barcodeDecodeCall),
 		"formats":          func() []string { return formats },
 		"decodableFormats": func() []string { return decFormats },
 	}

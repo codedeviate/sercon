@@ -42,9 +42,23 @@ type AsyncBinding struct {
 }
 
 // PromisifyAsync wraps a Go function that performs blocking work and returns
-// it as a JS-callable that produces a Promise. The wrapped function runs in a
-// fresh goroutine; resolve/reject are scheduled back onto the event loop so
-// the JS callbacks observe a consistent runtime state.
+// it as a JS-callable that produces a Promise.
+//
+// The call is split in two to enforce goja's threading contract
+// (goja.Runtime is single-threaded — executing VM code off the event loop
+// is a data race):
+//
+//   - `extract` runs synchronously on the event loop thread, inside the JS
+//     call. It is the ONLY place the goja arguments may be touched
+//     (call.Argument, ToObject, Export, ToInteger, option helpers, ...).
+//     It converts them into a plain-Go value A. An extract error rejects
+//     the Promise immediately — same observable behaviour as a work error.
+//   - `work` runs in a fresh goroutine and receives only A. It MUST NOT
+//     touch the VM or any goja.Value: do not smuggle goja values (or
+//     closures over them) through A.
+//
+// resolve/reject are scheduled back onto the event loop so the JS callbacks
+// observe a consistent runtime state.
 //
 // `vm` and `loop` must belong to the same run — capture them inside a
 // RegisterFactory / RegisterNamespaceFactory callback so each Run gets its
@@ -54,10 +68,23 @@ type AsyncBinding struct {
 // runtime registration so goja can recognise the underlying callback signature
 // as a host-callback. The .d.ts emitter reads the same carrier to emit
 // `Promise<T>` instead of the previous `unknown`.
-func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work func(ctx context.Context, call goja.FunctionCall) (T, error)) AsyncBinding {
+func PromisifyAsync[A, T any](vm *goja.Runtime, loop *eventloop.EventLoop,
+	extract func(call goja.FunctionCall) (A, error),
+	work func(ctx context.Context, args A) (T, error),
+) AsyncBinding {
 	fn := func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := vm.NewPromise()
 		ctx := runContextFromVM(vm)
+
+		// On-loop argument extraction. Because this happens synchronously
+		// inside the host call, goja's FunctionCall.Arguments reuse across
+		// calls is not a hazard here — nothing goja-owned survives past
+		// this call's return.
+		args, err := extract(call)
+		if err != nil {
+			_ = reject(vm.NewGoError(err))
+			return vm.ToValue(promise)
+		}
 
 		// goja_nodejs/eventloop only counts setTimeout/setInterval/setImmediate
 		// as "live" tasks; RunOnLoop alone does not keep loop.Run from returning.
@@ -65,18 +92,8 @@ func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work fun
 		// it on resolution so the loop drains exactly when the work is done.
 		keepAlive := loop.SetTimeout(func(*goja.Runtime) {}, 24*time.Hour)
 
-		// goja documents that FunctionCall.Arguments must not be retained
-		// past the native function's return — goja reuses the slice's
-		// backing array across calls. With Promise.all (or any pattern
-		// where multiple async bindings fire before any resolves), a later
-		// call would mutate the earlier goroutine's view. Snapshot the
-		// arguments now so each work goroutine has a stable view.
-		argsCopy := make([]goja.Value, len(call.Arguments))
-		copy(argsCopy, call.Arguments)
-		snap := goja.FunctionCall{This: call.This, Arguments: argsCopy}
-
 		go func() {
-			val, err := work(ctx, snap)
+			val, err := work(ctx, args)
 			loop.RunOnLoop(func(vm *goja.Runtime) {
 				// reject/resolve only error if the promise has already
 				// settled — impossible here since we own both ends.
@@ -100,6 +117,24 @@ func PromisifyAsync[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work fun
 	tsRet := tsType(newTypeCtx(), reflect.TypeOf((*T)(nil)).Elem())
 
 	return AsyncBinding{Func: fn, TSReturnType: tsRet}
+}
+
+// PromisifyAsyncLegacy is the pre-split form: work receives the raw
+// goja.FunctionCall in the work goroutine, which makes it trivially easy to
+// execute VM code off the event loop (a data race).
+//
+// Deprecated: migration shim only — every call site is being moved to
+// PromisifyAsync's extract/work split, after which this will be deleted.
+// Do not add new uses.
+func PromisifyAsyncLegacy[T any](vm *goja.Runtime, loop *eventloop.EventLoop, work func(ctx context.Context, call goja.FunctionCall) (T, error)) AsyncBinding {
+	extract := func(call goja.FunctionCall) (goja.FunctionCall, error) {
+		// Snapshot the arguments: goja reuses the slice's backing array
+		// across calls, and legacy work funcs retain the call past return.
+		argsCopy := make([]goja.Value, len(call.Arguments))
+		copy(argsCopy, call.Arguments)
+		return goja.FunctionCall{This: call.This, Arguments: argsCopy}, nil
+	}
+	return PromisifyAsync(vm, loop, extract, work)
 }
 
 // runContextFromVM retrieves the current Run's context.Context, stashed on
