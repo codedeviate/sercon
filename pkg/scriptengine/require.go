@@ -117,6 +117,35 @@ func (e *Engine) newSourceLoader() require.SourceLoader {
 	}
 }
 
+// resolveModuleCachePath canonicalises a require/import specifier to the
+// absolute path of the file that will actually be loaded, and is installed
+// as goja_nodejs's require.PathResolver so its per-Run module cache keys on
+// the real file. Without this, goja_nodejs keys the cache on the
+// pre-extension-fallback path, so "./counter" and "./counter.ts" (and
+// "./mod" vs "./mod/index.ts") map to distinct cache keys and the module
+// executes twice with forked top-level state — violating MANUAL §8.3/§11,
+// which promise a single instance per Run for all specifier variants.
+//
+// base is the already-canonical directory of the requiring module (empty
+// for an absolute specifier), matching the PathResolver contract. Bare and
+// native specifiers ("fs", "lodash"), and anything not resolvable on disk,
+// fall back to require.DefaultPathResolver so native-module / node_modules
+// resolution — and virtual modules served by opts.ModuleLoader — behave
+// exactly as before.
+func (e *Engine) resolveModuleCachePath(base, path string) string {
+	joined := filepath.Join(base, filepath.FromSlash(path))
+	resolved, err := e.resolveRequirePath(joined)
+	if err != nil {
+		return require.DefaultPathResolver(base, path)
+	}
+	// Mirror DefaultPathResolver's symlink canonicalisation so two
+	// specifiers reaching the same file through a symlink still share a key.
+	if sym, serr := filepath.EvalSymlinks(resolved); serr == nil {
+		resolved = sym
+	}
+	return resolved
+}
+
 // resolveRequirePath maps a require/import specifier to an absolute file
 // path on disk. The order of preference is:
 //

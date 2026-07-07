@@ -417,7 +417,10 @@ func isEmptyMemberDoc(d MemberDoc) bool {
 
 func (e *Engine) registry() *require.Registry {
 	e.regOnce.Do(func() {
-		e.reg = require.NewRegistry(require.WithLoader(e.newSourceLoader()))
+		e.reg = require.NewRegistry(
+			require.WithLoader(e.newSourceLoader()),
+			require.WithPathResolver(e.resolveModuleCachePath),
+		)
 	})
 	return e.reg
 }
