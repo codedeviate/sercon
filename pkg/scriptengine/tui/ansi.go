@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/rivo/tview"
 )
 
 // ANSITranslator turns ANSI SGR escape sequences (the color/style subset
@@ -24,15 +26,16 @@ type ANSITranslator struct {
 func NewANSITranslator() *ANSITranslator { return &ANSITranslator{} }
 
 // Translate runs s through the translator and returns the tview-ready
-// text. Literal `[` in s is escaped to `[[` so tview does not interpret
-// script text as a color tag.
+// text. Literal text in s is escaped with tview.Escape so tokens like
+// "[INFO]" are not interpreted as tview color tags, while the color tags
+// the translator itself emits are written through unescaped.
 func (t *ANSITranslator) Translate(s string) string {
-	var out strings.Builder
+	var out styledOut
 	i := 0
 	for i < len(s) {
 		c := s[i]
 		if c != 0x1b {
-			t.emitChar(&out, c)
+			out.writeLiteral(c)
 			i++
 			continue
 		}
@@ -72,13 +75,35 @@ func (t *ANSITranslator) Translate(s string) string {
 	return out.String()
 }
 
-// emitChar writes a single byte to out, escaping `[` to `[[`.
-func (t *ANSITranslator) emitChar(out *strings.Builder, c byte) {
-	if c == '[' {
-		out.WriteString("[[")
-		return
+// styledOut accumulates a translated chunk, keeping literal input text
+// separate from the color tags the translator emits. Literal runs must be
+// escaped with tview.Escape (so "[INFO]" renders literally instead of
+// being parsed as a tag and swallowed), whereas the emitted tags must stay
+// live. Literal is flushed — escaped — whenever a tag is written or at the
+// end of the chunk.
+type styledOut struct {
+	out strings.Builder
+	lit strings.Builder
+}
+
+func (s *styledOut) writeLiteral(c byte) { s.lit.WriteByte(c) }
+
+func (s *styledOut) flushLiteral() {
+	if s.lit.Len() > 0 {
+		s.out.WriteString(tview.Escape(s.lit.String()))
+		s.lit.Reset()
 	}
-	out.WriteByte(c)
+}
+
+// writeTag flushes any buffered literal, then writes a live tview tag.
+func (s *styledOut) writeTag(tag string) {
+	s.flushLiteral()
+	s.out.WriteString(tag)
+}
+
+func (s *styledOut) String() string {
+	s.flushLiteral()
+	return s.out.String()
 }
 
 // indexCSIEnd returns the index of the final byte of a CSI sequence
@@ -111,7 +136,7 @@ func indexOSCEnd(s string, start int) int {
 
 // applySGR parses an SGR parameter list ("1;31", "38;5;202", etc.),
 // updates style state, and emits a tview tag if the style changed.
-func (t *ANSITranslator) applySGR(out *strings.Builder, params string) {
+func (t *ANSITranslator) applySGR(out *styledOut, params string) {
 	// Empty params = reset (CSI m == CSI 0 m).
 	if params == "" {
 		t.reset()
@@ -203,12 +228,12 @@ func (t *ANSITranslator) reset() {
 // emitTag writes the current style as a tview tag if it differs from the
 // last one emitted. Reduces redundant tags when consecutive SGR
 // sequences leave style unchanged (rare in real input but cheap to dedupe).
-func (t *ANSITranslator) emitTag(out *strings.Builder) {
+func (t *ANSITranslator) emitTag(out *styledOut) {
 	tag := t.tag()
 	if tag == t.lastEmittedTag {
 		return
 	}
-	out.WriteString(tag)
+	out.writeTag(tag)
 	t.lastEmittedTag = tag
 }
 

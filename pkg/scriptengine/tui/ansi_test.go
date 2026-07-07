@@ -19,9 +19,10 @@ func TestANSI_PlainTextPassthrough(t *testing.T) {
 }
 
 func TestANSI_EscapeLiteralBracket(t *testing.T) {
-	// tview parses [...] as a tag; literal "[" in script text must be
-	// doubled so it renders as a single "[".
-	if got := translate("foo [bar] baz"); got != "foo [[bar] baz" {
+	// tview parses [...] as a tag; literal bracketed text must be escaped
+	// with tview's real rule ("[bar[]") so it renders as "[bar]" instead of
+	// being consumed as a tag.
+	if got := translate("foo [bar] baz"); got != "foo [bar[] baz" {
 		t.Errorf("got %q", got)
 	}
 }

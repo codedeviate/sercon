@@ -75,6 +75,16 @@ type paneState struct {
 	name      string
 	titleInit string
 
+	// mu guards the whole write path for this pane: the stateful
+	// ANSITranslator (TUI color mode) and the FallbackPane (fallback mode),
+	// both of which are mutated by the caller's goroutine. Concurrent
+	// writers to one pane are idiomatic — Promise.all of two exec.shell
+	// calls targeting the same pane (each PromisifyAsync work goroutine
+	// wiring stdout+stderr) plus JS-loop pane.write — so this serialises
+	// what would otherwise be a data race. Also held by Controller.Stop's
+	// fallback Flush.
+	mu sync.Mutex
+
 	// TUI mode:
 	textView *tview.TextView
 
@@ -223,7 +233,9 @@ func (c *Controller) Stop() {
 		case modeFallback:
 			for _, ps := range c.panes {
 				if ps.fallback != nil {
+					ps.mu.Lock()
 					ps.fallback.Flush()
+					ps.mu.Unlock()
 				}
 			}
 		}
@@ -335,16 +347,23 @@ func (h paneHandle) write(b []byte) {
 		if h.c.stopped.Load() {
 			return
 		}
+		// Render under the pane lock (the ANSITranslator is stateful), then
+		// release before the blocking QueueUpdateDraw enqueue — the rendered
+		// string is already a self-contained snapshot.
+		h.ps.mu.Lock()
 		var rendered string
 		if h.ps.color {
 			rendered = h.ps.ansi.Translate(string(b))
 		} else {
 			rendered = StripANSI(string(b))
 		}
+		h.ps.mu.Unlock()
 		tv := h.ps.textView
 		h.c.app.QueueUpdateDraw(func() { _, _ = tv.Write([]byte(rendered)) })
 	case modeFallback:
+		h.ps.mu.Lock()
 		_, _ = h.ps.fallback.Write(b)
+		h.ps.mu.Unlock()
 	}
 }
 
@@ -375,25 +394,20 @@ func (h paneHandle) Title(s string) {
 }
 
 // AsWriter returns an io.Writer that streams into this pane. Used by
-// the api.exec.shell pane: option to wire cmd.Stdout / cmd.Stderr. Each
-// call to AsWriter returns a fresh adapter with its own mutex; exec.Cmd
-// spawns separate goroutines for stdout and stderr copies, so when the
-// same writer is wired to both, concurrent Write calls must be
-// serialised. TTY-mode writes go through QueueUpdateDraw (safe), but the
-// fallback path writes directly into FallbackPane's strings.Builder
-// and would race without this guard.
+// the api.exec.shell pane: option to wire cmd.Stdout / cmd.Stderr. exec.Cmd
+// spawns separate goroutines for stdout and stderr copies, and two
+// exec.shell calls can target the same pane concurrently; all writes
+// funnel through paneHandle.write, which serialises them under the pane
+// lock (paneState.mu), so this adapter needs no lock of its own.
 func (h paneHandle) AsWriter() io.Writer {
 	return &paneIOWriter{h: h}
 }
 
 type paneIOWriter struct {
-	h  paneHandle
-	mu sync.Mutex
+	h paneHandle
 }
 
 func (w *paneIOWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.h.write(p)
 	return len(p), nil
 }
@@ -490,8 +504,8 @@ func (c *Controller) onMouse(event *tcell.EventMouse, action tview.MouseAction) 
 			row += mouseScrollStep
 		}
 		ps.textView.ScrollTo(row, col) // ScrollTo clears trackEnd -> pauses autoscroll
-		c.app.ForceDraw()             // we're on the event-loop goroutine; ForceDraw is safe here
-		return nil, action            // consume: don't let tview scroll the focused pane
+		c.app.ForceDraw()              // we're on the event-loop goroutine; ForceDraw is safe here
+		return nil, action             // consume: don't let tview scroll the focused pane
 	case tview.MouseLeftClick:
 		ps := c.paneAt(x, y)
 		if ps == nil {
