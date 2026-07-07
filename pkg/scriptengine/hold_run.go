@@ -11,7 +11,11 @@ import (
 // holdRunEntry tracks one outstanding HoldRun sentinel for diagnostics
 // and idempotent release.
 type holdRunEntry struct {
-	reason   string
+	reason string
+	// loop is the event loop that owns timer, captured at HoldRun time.
+	// release must clear the timer against THIS loop, never the engine's
+	// current holdRunLoop, which may already belong to a later Run.
+	loop     *eventloop.EventLoop
 	timer    *eventloop.Timer
 	released atomic.Bool
 }
@@ -43,7 +47,7 @@ func (e *Engine) HoldRun(reason string) (release func()) {
 		return func() {}
 	}
 
-	entry := &holdRunEntry{reason: reason}
+	entry := &holdRunEntry{reason: reason, loop: loop}
 	// Park a 24h sentinel. goja_nodejs/eventloop counts SetTimeout as
 	// a live task, so the loop will not exit while this sits.
 	entry.timer = loop.SetTimeout(func(*goja.Runtime) { /* never fires unless 24h elapses */ }, 24*time.Hour)
@@ -61,15 +65,18 @@ func (e *Engine) HoldRun(reason string) (release func()) {
 		if entry.released.Swap(true) {
 			return // idempotent
 		}
-		// Snapshot loop reference because the engine may have moved on
-		// to a new Run by the time release fires.
 		e.holdRunMu.Lock()
-		l := e.holdRunLoop
 		delete(e.holdRunSentinels, entry)
 		e.holdRunMu.Unlock()
-		if l != nil {
-			l.ClearTimeout(entry.timer)
-		}
+		// Clear against the loop that OWNS this sentinel's timer (captured
+		// at HoldRun time), NOT the engine's current holdRunLoop — by the
+		// time a late release fires, holdRunLoop may already belong to a
+		// newer Run, and clearing there would decrement that loop's jobCount
+		// and index its jobs slice with a foreign index (premature exit or
+		// panic). Clearing against the old loop is safe: addAuxJob returns
+		// false once it is terminated, and Terminate already cancelled the
+		// sentinel's underlying timer.
+		entry.loop.ClearTimeout(entry.timer)
 		e.trace("hold-run release: %s", reason)
 	}
 }
@@ -108,7 +115,9 @@ func (e *Engine) holdRunEnd() {
 	}
 	for entry := range entries {
 		if !entry.released.Swap(true) {
-			loop.ClearTimeout(entry.timer)
+			// entry.loop == loop here (these are this Run's sentinels), but
+			// use entry.loop for consistency with release().
+			entry.loop.ClearTimeout(entry.timer)
 			e.trace("hold-run drain (leftover): %s", entry.reason)
 		}
 	}
