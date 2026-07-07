@@ -196,24 +196,27 @@ func smtpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 	// taking down the whole `sercon serve` process. ln.Close() and release()
 	// are individually safe to call more than once, but are gated by the
 	// same guard for symmetry and to keep this a true run-once teardown.
-	gracefulClose := func() {
+	gracefulClose := func(ctx context.Context) {
 		if closeOnce.Swap(true) {
 			return
 		}
-		// server.Close() closes s.done so Serve returns cleanly, but it
-		// only closes listeners already registered in s.listeners. If it
-		// races ahead of the `go server.Serve(ln)` registration step, Serve
-		// would otherwise block in Accept forever. Closing ln directly
-		// guarantees Accept unblocks regardless of ordering.
-		_ = server.Close()
+		// Graceful drain (documented "30s drain"): Shutdown stops accepting
+		// and lets active sessions finish, up to ctx's deadline; on timeout
+		// fall back to the hard Close() that severs everything. server.Close
+		// closes s.done so Serve returns cleanly, but it only closes
+		// listeners already registered; closing ln directly guarantees
+		// Accept unblocks regardless of the Serve-registration ordering.
+		if err := server.Shutdown(ctx); err != nil {
+			_ = server.Close()
+		}
 		_ = ln.Close()
 		release()
 	}
 
 	// Register a graceful-shutdown hook so `sercon serve` can stop this
 	// listener on SIGTERM/SIGINT. An explicit close() removes it first.
-	removeHook := eng.AddShutdownHook(func(context.Context) error {
-		gracefulClose()
+	removeHook := eng.AddShutdownHook(func(ctx context.Context) error {
+		gracefulClose(ctx) // bounded by --shutdown-timeout
 		return nil
 	})
 
@@ -237,7 +240,11 @@ func smtpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.E
 			return vm.ToValue(stoppedPromise)
 		}
 		removeHook() // don't let GracefulShutdown close it a second time
-		go gracefulClose()
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			gracefulClose(ctx)
+		}()
 		return vm.ToValue(stoppedPromise)
 	})
 	return handle

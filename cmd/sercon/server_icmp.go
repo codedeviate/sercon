@@ -36,16 +36,24 @@ func icmpServerMembers(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scripte
 // msg { bytes, text, address, type, code } and a reply(opts?) that sends an
 // ICMP message back to the sender (or opts.to). Returns { address, close() }.
 func icmpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine, call goja.FunctionCall) goja.Value {
+	// opts is documented optional, so support both listen(opts, handler) and
+	// listen(handler). If arg0 is the function and arg1 is absent, shift.
+	optsArg := call.Argument(0)
+	handlerArg := call.Argument(1)
+	if _, isFn := goja.AssertFunction(optsArg); isFn && goja.IsUndefined(handlerArg) {
+		optsArg, handlerArg = goja.Undefined(), optsArg
+	}
+
 	network := "ip4"
-	if opts := call.Argument(0); opts != nil && !goja.IsUndefined(opts) && !goja.IsNull(opts) {
-		if m, ok := opts.Export().(map[string]any); ok {
+	if optsArg != nil && !goja.IsUndefined(optsArg) && !goja.IsNull(optsArg) {
+		if m, ok := optsArg.Export().(map[string]any); ok {
 			if optString(m, "network", "ip4") == "ip6" {
 				network = "ip6"
 			}
 		}
 	}
 
-	fn, ok := goja.AssertFunction(call.Argument(1))
+	fn, ok := goja.AssertFunction(handlerArg)
 	if !ok {
 		panic(vm.NewTypeError("server.icmp.listen: handler function required"))
 	}

@@ -50,6 +50,10 @@ func udpListen(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.En
 		host = optString(m, "host", "")
 		port = optInt(m, "port", 0)
 	}
+	// `sercon serve --port-override N` replaces every server.*.listen port.
+	if servePortOverride != 0 {
+		port = servePortOverride
+	}
 
 	fn, ok := goja.AssertFunction(call.Argument(1))
 	if !ok {
