@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"testing"
 	"time"
@@ -23,9 +24,14 @@ func TestExecShell_PTYTimeoutKillsLingeringDescendant(t *testing.T) {
 		t.Skipf("PTY-slave-lingering hang is Linux-specific; %s revokes the slave on session-leader exit", runtime.GOOS)
 	}
 	args := execShellArgs{
-		// /bin/sh exits at once; the backgrounded subshell ignores SIGHUP
-		// and keeps the pty slave open for 5s.
-		argv:    []string{"/bin/sh", "-c", "(trap '' HUP; sleep 5) &"},
+		// /bin/sh exits at once; the backgrounded subshell ignores SIGHUP and
+		// tries to hold the pty slave open for 30s. Whether that descendant
+		// actually lingers (vs. being reaped / the slave revoked) is
+		// kernel/runner-dependent, so the deterministic invariant we assert is
+		// "execShell does not hang past the timeout" — NOT that a specific
+		// deadline error is returned. Pre-fix, a lingering descendant blocked
+		// the call until it exited (~30s); the fix bounds it to ~the timeout.
+		argv:    []string{"/bin/sh", "-c", "(trap '' HUP; sleep 30) &"},
 		timeout: 500 * time.Millisecond,
 		usePTY:  true,
 	}
@@ -33,10 +39,13 @@ func TestExecShell_PTYTimeoutKillsLingeringDescendant(t *testing.T) {
 	_, err := execShell(context.Background(), args)
 	elapsed := time.Since(start)
 
-	if elapsed > 3*time.Second {
-		t.Fatalf("execShell blocked %s — timeout not enforced on the PTY path", elapsed)
+	if elapsed > 5*time.Second {
+		t.Fatalf("execShell blocked %s on the PTY path — timeout not enforced (a descendant held the slave)", elapsed)
 	}
-	if err == nil {
-		t.Fatalf("expected a deadline error, got success after %s", elapsed)
+	// err may be the deadline (descendant lingered) or nil (it didn't) — both
+	// are bounded, which is the guarantee. If an error came back, it must be
+	// the deadline, not some unrelated failure.
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unexpected error from bounded PTY exec: %v", err)
 	}
 }

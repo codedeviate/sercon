@@ -198,6 +198,12 @@ func ghRun(ctx context.Context, cwd string, args ...string) (string, string, int
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
+	// Kill the whole process group on timeout, not just the direct child.
+	// gh can fork helpers (git credential, a pager, an editor) that inherit
+	// the stdout/stderr pipes; SIGKILLing only gh would leave those holding
+	// the pipe open, so cmd.Wait blocks until they exit — the timeout would
+	// bound gh but not the call. Mirrors exec.shell / exec.stream.
+	configureProcessTermination(cmd)
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf

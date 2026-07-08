@@ -62,6 +62,12 @@ func gitRun(ctx context.Context, cwd string, args ...string) (string, string, in
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
+	// Kill the whole process group on timeout, not just the direct child.
+	// git spawns helpers (pager, credential helper, hooks, ssh) that inherit
+	// the stdout/stderr pipes; SIGKILLing only git would leave those holding
+	// the pipe open, so cmd.Wait blocks until they exit — the timeout would
+	// bound git but not the call. Mirrors exec.shell / exec.stream.
+	configureProcessTermination(cmd)
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
