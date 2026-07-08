@@ -8,6 +8,22 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.87.1] — 2026-07-08
+
+### Fixed
+- **SMTP `close()` is immediate again (drops a data race).** v0.87.0 switched
+  `server.smtp` shutdown from `Server.Close()` to `Server.Shutdown(ctx)` to
+  match the documented "graceful drain", but in the pinned go-smtp v0.24.0
+  `Shutdown` races `Serve` (caught by `go test -race`). Reverted to
+  `Close()` (race-free) and corrected the MANUAL to document `close()` as
+  immediate — active sessions are severed — rather than a 30s drain.
+- CI is green again: `gh`/`git` subprocess timeouts now kill the whole
+  process group (a grandchild holding the stdout pipe no longer defeats the
+  timeout), the `gh`/`git` timeout tests keep `sleep` resolvable, `server.sse`
+  registers a stream before flushing headers (so a shutdown right after the
+  client connects can't miss it), and the never-hangs / PTY-timeout tests
+  assert their bounded-time invariant rather than runner-dependent timing.
+
 ## [0.87.0] — 2026-07-08
 
 This release resolves every finding from a multi-agent review of the engine
