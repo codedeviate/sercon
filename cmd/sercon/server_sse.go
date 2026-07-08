@@ -186,6 +186,21 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 	streamDone := state.streamDone
 	state.mu.Unlock()
 
+	st := &sseStream{
+		events:  make(chan sseFrame, 64),
+		done:    streamDone,
+		quit:    make(chan struct{}),
+		release: eng.HoldRun(fmt.Sprintf("sse %s", r.RemoteAddr)),
+	}
+	// Register the stream BEFORE flushing headers to the client. A listener
+	// shutdown triggered the moment the client observes the response would
+	// otherwise race the registration and miss this (never-idle) stream,
+	// stalling Server.Shutdown for the whole timeout. The pump's defer
+	// deregisters it on exit.
+	if reg != nil {
+		reg.add(st)
+	}
+
 	// Write SSE headers + flush before unblocking the dispatcher. We are on
 	// the loop goroutine here; dispatchHandler is still parked inside
 	// loopSchedule, so this is the only goroutine touching w.
@@ -196,18 +211,6 @@ func sseImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engi
 	h.Set("X-Accel-Buffering", "no") // defeat nginx proxy buffering
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
-	st := &sseStream{
-		events:  make(chan sseFrame, 64),
-		done:    streamDone,
-		quit:    make(chan struct{}),
-		release: eng.HoldRun(fmt.Sprintf("sse %s", r.RemoteAddr)),
-	}
-	// Track the stream so a listener shutdown can tear it down; the pump's
-	// defer deregisters it on exit.
-	if reg != nil {
-		reg.add(st)
-	}
 
 	closedPromise, closedResolve, _ := vm.NewPromise()
 
