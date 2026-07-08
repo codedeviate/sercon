@@ -169,7 +169,7 @@ func textDocs() map[string]scriptengine.MemberDoc {
 			Summary: "Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.",
 			Params: []scriptengine.Param{
 				{Name: "format", Type: "string", Desc: "A Go fmt format string. Uses Go verbs: %s string, %d integer, %f / %.2f float, %x hex, %v default, %t bool, %q quoted, %%  literal percent."},
-				{Name: "args", Type: "...unknown", Optional: true, Desc: "Values substituted into the verbs (passed through .Export(), so JS numbers arrive as Go int64/float64)."},
+				{Name: "args", Type: "...unknown[]", Optional: true, Desc: "Values substituted into the verbs (passed through .Export(), so JS numbers arrive as Go int64/float64)."},
 			},
 			ReturnType: "string",
 			Returns:    "string — the formatted result.",
@@ -180,7 +180,7 @@ func textDocs() map[string]scriptengine.MemberDoc {
 			Summary: "sprintf + write to stdout.",
 			Params: []scriptengine.Param{
 				{Name: "format", Type: "string", Desc: "A Go fmt format string (same verbs as sprintf)."},
-				{Name: "args", Type: "...unknown", Optional: true, Desc: "Values substituted into the verbs."},
+				{Name: "args", Type: "...unknown[]", Optional: true, Desc: "Values substituted into the verbs."},
 			},
 			ReturnType: "void",
 			Returns:    "void — writes the formatted text directly to process stdout; returns nothing.",

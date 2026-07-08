@@ -95,3 +95,27 @@ jobs:
           # see the same rule set locally and in CI. golangci-lint v2 needs
           # action v7+ (v6 rejects v2 version strings).
           version: v2.12.2
+
+  dts:
+    name: emit-dts is valid TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: build
+        env:
+          CGO_ENABLED: '0'
+        run: go build -o sercon ./cmd/sercon
+      # The whole point of --emit-dts is editor/tsc consumption (MANUAL §14),
+      # so type-check the emitted declaration file. sercon scripts run on goja,
+      # not a browser, so es2020 (no DOM) is the right lib.
+      - name: emit + typecheck sercon.d.ts
+        run: |
+          ./sercon --emit-dts /tmp/sercon.d.ts
+          npx -y -p typescript@5 tsc --noEmit --lib es2020 /tmp/sercon.d.ts
