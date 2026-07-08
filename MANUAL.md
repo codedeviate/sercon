@@ -5329,7 +5329,7 @@ const srv = await server.smtp.listen({
 });
 
 // srv.address  → "tcp/0.0.0.0:2525"
-// srv.close()  → Promise<void>  (graceful, 30s drain)
+// srv.close()  → Promise<void>  (immediate — active sessions are severed)
 // srv.stopped  → Promise<void>  (resolves when the listener exits)
 ```
 
