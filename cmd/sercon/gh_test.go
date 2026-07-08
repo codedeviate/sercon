@@ -134,7 +134,12 @@ func TestGhRun_TimeoutBounded(t *testing.T) {
 	if err := os.WriteFile(script, []byte("#!/bin/sh\nsleep 5\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", dir)
+	// PREPEND dir so the fake `gh` shadows any real one, but keep the rest of
+	// PATH so the shim's `sleep` still resolves. Replacing PATH entirely
+	// breaks the shim on runners where `sleep` isn't in dir: it exits fast
+	// with "command not found" instead of hanging, ghRun sees a normal
+	// non-zero exit (not a timeout) and returns nil, and the test fails.
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	orig := ghTimeout
 	ghTimeout = 50 * time.Millisecond
