@@ -77,9 +77,9 @@ func parseGoogleConfig(vm *goja.Runtime, call goja.FunctionCall) (googleConfig, 
 
 // googleHandle builds the object returned by cloud.google(...): one accessor
 // per service namespace, plus the generic path-based REST escape hatch
-// `call`. storage/compute/iam/secrets are real per Tasks 5-8; until each
-// lands, googleStorage/googleCompute/googleIAM/googleSecrets are temporary
-// stubs (see cloud_google.go) returning an empty object.
+// `call`. storage/compute/iam are real per Tasks 5-7; secrets is real per
+// Task 8. Until secrets lands, googleSecrets is a temporary stub (see
+// cloud_google.go) returning an empty object.
 //
 // This map is built at script-run time (inside the cloud.google(...) call),
 // past the engine's registration-time AsyncBinding unwrap — so `call`'s

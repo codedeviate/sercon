@@ -191,11 +191,9 @@ func googleCallWork(ctx context.Context, cfg googleConfig, a googleCallArgs) (an
 	return out, nil
 }
 
-// temporary stubs — replaced by Tasks 7-8 (googleStorage and googleCompute
-// are real, see cloud_google_storage.go and cloud_google_compute.go)
-func googleIAM(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig) map[string]any {
-	return map[string]any{}
-}
+// temporary stub — replaced by Task 8 (googleStorage, googleCompute, and
+// googleIAM are real, see cloud_google_storage.go, cloud_google_compute.go,
+// and cloud_google_iam.go)
 func googleSecrets(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig) map[string]any {
 	return map[string]any{}
 }
