@@ -8,6 +8,21 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.87.2] — 2026-07-09
+
+### Fixed
+- **Emitted `.d.ts` is now valid TypeScript.** `sercon --emit-dts` (and the
+  copy written by `sercon init`) previously failed `tsc --noEmit` with 32
+  errors: six doc-referenced types (`Request`, `Response`, `Pane`, `Envelope`,
+  `Message`, `Image`) were never declared, `text.printf`/`text.sprintf` typed
+  their rest parameter `...args: unknown` (must be an array), and
+  `server.icmp.listen` placed a required `handler` after an optional `opts`.
+  The emitter now prepends a prelude declaring those types (shapes from MANUAL
+  §5.6/5.10/5.11), gives the rest parameter `unknown[]`, and marks the icmp
+  handler optional; the output type-checks clean under `tsc --noEmit --lib
+  es2020`. A new CI `dts` job emits and `tsc`-checks the file so it cannot
+  regress.
+
 ## [0.87.1] — 2026-07-08
 
 ### Fixed

@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.87.1 (2026-07-08).
+covered is v0.1.0 (2026-05-25) through v0.87.2 (2026-07-09).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -97,6 +97,15 @@ extended the same fix to the §16 reference generator, so async bindings with a
 documented return type (e.g. `services.webdriver.connect`,
 `net.probe.traceroute`, `runtime.secrets.get`) render their rich `Promise<…>`
 type in both the d.ts and MANUAL.md.
+
+v0.87.2 made the emitted declaration file itself valid TypeScript. Doc
+signatures had accumulated references to six named types (`Request`,
+`Response`, `Pane`, `Envelope`, `Message`, `Image`) that were never declared,
+`text.printf`/`text.sprintf` emitted a non-array rest parameter, and
+`server.icmp.listen` ordered a required parameter after an optional one — 32
+`tsc --noEmit` errors in all. The emitter now prepends a type prelude (shapes
+lifted from MANUAL §5.6/5.10/5.11) and corrects those signatures, and a CI
+`dts` job emits and `tsc`-checks the file on every push so it stays clean.
 
 ### Module resolution improvements (v0.4.2, v0.5.28, v0.5.29, v0.5.30)
 

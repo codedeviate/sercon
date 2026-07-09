@@ -10336,7 +10336,7 @@ server.https.listen({
 #### 17.10.5 server.icmp.listen
 
 ```
-listen(opts?: { network?: "ip4" | "ip6" }, handler: (msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void): { address: string; close(): Promise<void> }
+listen(opts?: { network?: "ip4" | "ip6" }, handler?: (msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void): { address: string; close(): Promise<void> }
 ```
 
 Bind a raw ICMP listener: server.icmp.listen(opts?, (msg, reply) => {…}) → handle { address: 'icmp/<addr>', close() }. Raw ICMP has no ports — the socket receives ALL host ICMP traffic — and needs root / CAP_NET_RAW (synchronous bind throws otherwise). opts { network?: 'ip4'|'ip6' (default 'ip4') }. The handler runs once per received packet; msg is { bytes, text, address, type, code } (the sender + parsed ICMP header) and reply(opts?) sends an ICMP message back to the sender (Echo by default, or a raw body), returning a Promise. Emits a READY line under `sercon serve` and joins graceful shutdown.
@@ -10344,7 +10344,7 @@ Bind a raw ICMP listener: server.icmp.listen(opts?, (msg, reply) => {…}) → h
 **Parameters**
 
 - `opts` *({ network?: "ip4" | "ip6" }, optional)* — network selects the IP version (default 'ip4'). There is no host/port — raw ICMP binds to all addresses.
-- `handler` *((msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void)* — Invoked once per received ICMP packet. msg carries the marshalled body (bytes/text), the sender address, and the parsed type/code. reply(opts?) sends an ICMP message back to the sender (or opts.to): Echo mode { type?, code?, id?, seq?, payload? } or raw mode { type, code?, body } (body marshalled verbatim); it returns a Promise that resolves once written.
+- `handler` *((msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void, optional)* — Invoked once per received ICMP packet. msg carries the marshalled body (bytes/text), the sender address, and the parsed type/code. reply(opts?) sends an ICMP message back to the sender (or opts.to): Echo mode { type?, code?, id?, seq?, payload? } or raw mode { type, code?, body } (body marshalled verbatim); it returns a Promise that resolves once written.
 
 **Returns:** A server handle (returned synchronously): address is 'icmp/<local-addr>'; close() closes the socket and resolves. There is no per-connection handle (ICMP is connectionless) — reply is bound to the received packet's sender.
 
@@ -11922,7 +11922,7 @@ text.str.pad("7", 3, "0", "left"); // "007"
 #### 17.12.26 text.str.printf
 
 ```
-printf(format: string, ...args: unknown): void
+printf(format: string, ...args: unknown[]): void
 ```
 
 sprintf + write to stdout.
@@ -11930,7 +11930,7 @@ sprintf + write to stdout.
 **Parameters**
 
 - `format` *(string)* — A Go fmt format string (same verbs as sprintf).
-- `args` *(...unknown, optional)* — Values substituted into the verbs.
+- `args` *(...unknown[], optional)* — Values substituted into the verbs.
 
 **Returns:** void — writes the formatted text directly to process stdout; returns nothing.
 
@@ -12006,7 +12006,7 @@ text.str.rtrim("x...", "."); // "x"
 #### 17.12.30 text.str.sprintf
 
 ```
-sprintf(format: string, ...args: unknown): string
+sprintf(format: string, ...args: unknown[]): string
 ```
 
 Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
@@ -12014,7 +12014,7 @@ Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 **Parameters**
 
 - `format` *(string)* — A Go fmt format string. Uses Go verbs: %s string, %d integer, %f / %.2f float, %x hex, %v default, %t bool, %q quoted, %%  literal percent.
-- `args` *(...unknown, optional)* — Values substituted into the verbs (passed through .Export(), so JS numbers arrive as Go int64/float64).
+- `args` *(...unknown[], optional)* — Values substituted into the verbs (passed through .Export(), so JS numbers arrive as Go int64/float64).
 
 **Returns:** string — the formatted result.
 
@@ -12321,7 +12321,7 @@ const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);
 
 ---
 
-*This manual covers sercon v0.87.1. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.87.2. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
