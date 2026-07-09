@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -181,6 +182,47 @@ func TestIAM_SetIamPolicy(t *testing.T) {
 	if !ok || len(bindings) != 1 {
 		t.Fatalf("expected uploaded policy.bindings to have 1 entry, got %#v", policyBody["bindings"])
 	}
+}
+
+// TestIAM_SetIamPolicy_RejectsMissingPolicy proves the Finding-2 fix:
+// setIamPolicy REPLACES the entire resource policy, so an omitted/empty
+// `policy` must fail fast rather than silently sending an empty policy
+// (which would wipe every existing binding). The mock server here must never
+// be hit — if it were, len(gotHits) below would be nonzero and the test
+// fails, which is exactly how this test caught the pre-fix behavior (an empty
+// policy reaching, and succeeding against, the API).
+func TestIAM_SetIamPolicy_RejectsMissingPolicy(t *testing.T) {
+	var hits int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"bindings":[],"etag":"wiped"}`))
+	}))
+	defer ts.Close()
+	withMockGoogle(t, ts)
+
+	_, err := iamSetIamPolicy(context.Background(), googleConfig{}, iamArgs{
+		resource: "projects/p/serviceAccounts/a@p.iam.gserviceaccount.com",
+		// policy intentionally omitted (nil)
+	})
+	if err == nil {
+		t.Fatal("expected setIamPolicy with no policy to reject, got nil error")
+	}
+	if got := err.Error(); !containsAll(got, "setIamPolicy", "policy is required") {
+		t.Fatalf("expected a 'policy is required' error, got %q", got)
+	}
+	if hits != 0 {
+		t.Fatalf("expected the API to never be called, got %d hits", hits)
+	}
+}
+
+func containsAll(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if !strings.Contains(s, sub) {
+			return false
+		}
+	}
+	return true
 }
 
 // TestIAM_ListServiceAccounts_ViaJS exercises the full script path (cloud

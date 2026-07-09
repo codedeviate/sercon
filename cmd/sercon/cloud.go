@@ -16,7 +16,6 @@ import (
 // Credentials fields are NEVER logged. Empty fields mean "use ADC / defaults".
 type googleConfig struct {
 	project         string
-	location        string
 	credentialsFile string
 	credentialsJSON []byte
 	quotaProject    string
@@ -54,7 +53,6 @@ func parseGoogleConfig(vm *goja.Runtime, call goja.FunctionCall) (googleConfig, 
 		return cfg, errors.New("cloud.google: options must be an object")
 	}
 	cfg.project = optString(opts, "project", "")
-	cfg.location = optString(opts, "location", "")
 	cfg.quotaProject = optString(opts, "quotaProject", "")
 	cfg.scopes = optStringSlice(opts, "scopes")
 	// credentials: a string is a path; an object is inline SA JSON.

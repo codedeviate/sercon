@@ -7167,7 +7167,7 @@ Cloud provider clients: cloud.google(opts?) returns a handle with typed services
 #### 17.2.1 cloud.google
 
 ```
-google(opts?: { project?: string; location?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): {
+google(opts?: { project?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): {
   storage(): {
     listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
     getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
@@ -7215,7 +7215,7 @@ Google Cloud provider handle. Pure-Go, CGO-free (google.golang.org/api); reuses 
 
 **Parameters**
 
-- `opts` *({ project?: string; location?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }, optional)* — project/location: default GCP project id / region-or-zone threaded into the service calls that accept them. credentials: a file path (string) to a service-account JSON key, or an inline service-account JSON object; omitted ⇒ Application Default Credentials (gcloud auth application-default login, GOOGLE_APPLICATION_CREDENTIALS, or attached-metadata identity). scopes: OAuth scopes to request; omitted ⇒ each service's default scope. quotaProject: billing/quota project override (X-Goog-User-Project).
+- `opts` *({ project?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }, optional)* — project: the default GCP project id used by any service call that omits its own `project`. credentials: a file path (string) to a service-account JSON key, or an inline service-account JSON object; omitted ⇒ Application Default Credentials (gcloud auth application-default login, GOOGLE_APPLICATION_CREDENTIALS, or attached-metadata identity). scopes: OAuth scopes to request; omitted ⇒ each service's default scope. quotaProject: billing/quota project override (X-Goog-User-Project).
 
 **Returns:** The provider handle: { storage(), compute(), iam(), secrets(), call(opts) }. Each of storage()/compute()/iam()/secrets() returns a fresh service handle bound to this call's config; call() is the generic path-based REST escape hatch for APIs without a typed service above.
 

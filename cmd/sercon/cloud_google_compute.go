@@ -166,7 +166,12 @@ func computeExtract(call goja.FunctionCall) (computeArgs, error) {
 func googleCompute(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig) map[string]any {
 	bind := func(fn func(context.Context, googleConfig, computeArgs) (any, error)) func(goja.FunctionCall) goja.Value {
 		return scriptengine.PromisifyAsync(vm, loop, computeExtract,
-			func(ctx context.Context, a computeArgs) (any, error) { return fn(ctx, cfg, a) }).Func
+			func(ctx context.Context, a computeArgs) (any, error) {
+				if a.project == "" {
+					a.project = cfg.project
+				}
+				return fn(ctx, cfg, a)
+			}).Func
 	}
 	return map[string]any{
 		"listInstances":  bind(computeListInstances),

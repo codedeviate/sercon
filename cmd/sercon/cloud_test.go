@@ -40,7 +40,7 @@ func runCloudScript(t *testing.T, body string) any {
 
 func TestCloudGoogle_HandleShape(t *testing.T) {
 	got := runCloudScript(t, `
-		const g = cloud.google({ project: "p", location: "europe-west1" });
+		const g = cloud.google({ project: "p" });
 		const __result = {
 			isFn: typeof cloud.google === "function",
 			storage: typeof g.storage,

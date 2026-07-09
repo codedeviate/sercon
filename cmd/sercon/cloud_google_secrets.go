@@ -154,7 +154,12 @@ func secretsExtract(call goja.FunctionCall) (secretsArgs, error) {
 func googleSecrets(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig) map[string]any {
 	bind := func(fn func(context.Context, googleConfig, secretsArgs) (any, error)) func(goja.FunctionCall) goja.Value {
 		return scriptengine.PromisifyAsync(vm, loop, secretsExtract,
-			func(ctx context.Context, a secretsArgs) (any, error) { return fn(ctx, cfg, a) }).Func
+			func(ctx context.Context, a secretsArgs) (any, error) {
+				if a.project == "" {
+					a.project = cfg.project
+				}
+				return fn(ctx, cfg, a)
+			}).Func
 	}
 	return map[string]any{
 		"listSecrets":         bind(secretsListSecrets),

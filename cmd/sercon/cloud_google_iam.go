@@ -121,6 +121,9 @@ func iamGetIamPolicy(ctx context.Context, cfg googleConfig, a iamArgs) (any, err
 }
 
 func iamSetIamPolicy(ctx context.Context, cfg googleConfig, a iamArgs) (any, error) {
+	if len(a.policy) == 0 {
+		return nil, googleError{code: 0, status: "INVALID_ARGUMENT", message: "cloud.google.iam.setIamPolicy: policy is required (setIamPolicy replaces the entire policy — pass the full policy, typically read-modify-write from getIamPolicy)"}
+	}
 	svc, err := newIAMService(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -175,7 +178,12 @@ func iamExtract(call goja.FunctionCall) (iamArgs, error) {
 func googleIAM(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig) map[string]any {
 	bind := func(fn func(context.Context, googleConfig, iamArgs) (any, error)) func(goja.FunctionCall) goja.Value {
 		return scriptengine.PromisifyAsync(vm, loop, iamExtract,
-			func(ctx context.Context, a iamArgs) (any, error) { return fn(ctx, cfg, a) }).Func
+			func(ctx context.Context, a iamArgs) (any, error) {
+				if a.project == "" {
+					a.project = cfg.project
+				}
+				return fn(ctx, cfg, a)
+			}).Func
 	}
 	return map[string]any{
 		"listServiceAccounts":  bind(iamListServiceAccounts),

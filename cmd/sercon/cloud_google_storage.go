@@ -196,7 +196,12 @@ func storageExtract(call goja.FunctionCall) (gcsArgs, error) {
 func googleStorage(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig) map[string]any {
 	bind := func(fn func(context.Context, googleConfig, gcsArgs) (any, error)) func(goja.FunctionCall) goja.Value {
 		return scriptengine.PromisifyAsync(vm, loop, storageExtract,
-			func(ctx context.Context, a gcsArgs) (any, error) { return fn(ctx, cfg, a) }).Func
+			func(ctx context.Context, a gcsArgs) (any, error) {
+				if a.project == "" {
+					a.project = cfg.project
+				}
+				return fn(ctx, cfg, a)
+			}).Func
 	}
 	return map[string]any{
 		"listBuckets":  bind(storageListBuckets),

@@ -236,6 +236,37 @@ func TestStorage_ListBuckets_ViaJS(t *testing.T) {
 	}
 }
 
+// TestStorage_ListBuckets_DefaultProjectFromHandle proves the Finding-1 fix:
+// when a call omits `project`, the handle's cloud.google({project}) default
+// fills it in (via the bind wrapper in googleStorage), instead of sending an
+// empty project to the API.
+func TestStorage_ListBuckets_DefaultProjectFromHandle(t *testing.T) {
+	var gotProject string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProject = r.URL.Query().Get("project")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[{"name":"bucket-a"}]}`))
+	}))
+	defer ts.Close()
+	withMockGoogle(t, ts)
+
+	got := runCloudScript(t, `
+		const b = await cloud.google({ project: "handle-default-p" }).storage().listBuckets({});
+		const __result = b;
+	`)
+	m, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object, got %T (%#v)", got, got)
+	}
+	items, ok := m["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected 1 bucket, got %#v", m["items"])
+	}
+	if gotProject != "handle-default-p" {
+		t.Fatalf("expected the handle's default project %q to be threaded onto the call, got %q", "handle-default-p", gotProject)
+	}
+}
+
 func TestStorage_DeleteObject(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

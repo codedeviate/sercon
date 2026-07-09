@@ -1331,10 +1331,10 @@ declare const db: {
 declare const cloud: {
   /**
    * Google Cloud provider handle. Pure-Go, CGO-free (google.golang.org/api); reuses Application Default Credentials unless credentials is given. Returns an object exposing storage(), compute(), iam(), secrets(), and the generic call() REST escape hatch.
-   * @param opts project/location: default GCP project id / region-or-zone threaded into the service calls that accept them. credentials: a file path (string) to a service-account JSON key, or an inline service-account JSON object; omitted ⇒ Application Default Credentials (gcloud auth application-default login, GOOGLE_APPLICATION_CREDENTIALS, or attached-metadata identity). scopes: OAuth scopes to request; omitted ⇒ each service's default scope. quotaProject: billing/quota project override (X-Goog-User-Project).
+   * @param opts project: the default GCP project id used by any service call that omits its own `project`. credentials: a file path (string) to a service-account JSON key, or an inline service-account JSON object; omitted ⇒ Application Default Credentials (gcloud auth application-default login, GOOGLE_APPLICATION_CREDENTIALS, or attached-metadata identity). scopes: OAuth scopes to request; omitted ⇒ each service's default scope. quotaProject: billing/quota project override (X-Goog-User-Project).
    * @returns The provider handle: { storage(), compute(), iam(), secrets(), call(opts) }. Each of storage()/compute()/iam()/secrets() returns a fresh service handle bound to this call's config; call() is the generic path-based REST escape hatch for APIs without a typed service above.
    */
-  google(opts?: { project?: string; location?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): {
+  google(opts?: { project?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): {
   storage(): {
     listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
     getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;

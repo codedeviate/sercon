@@ -48,8 +48,8 @@ func (c googleConfig) String() string {
 	if c.credentialsFile != "" || len(c.credentialsJSON) > 0 {
 		creds = "explicit(redacted)"
 	}
-	return fmt.Sprintf("googleConfig{project:%q location:%q quotaProject:%q scopes:%d creds:%s}",
-		c.project, c.location, c.quotaProject, len(c.scopes), creds)
+	return fmt.Sprintf("googleConfig{project:%q quotaProject:%q scopes:%d creds:%s}",
+		c.project, c.quotaProject, len(c.scopes), creds)
 }
 
 type googleError struct {
