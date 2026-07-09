@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,5 +61,17 @@ func TestCloudGoogle_HandleShape(t *testing.T) {
 	}
 	if m["isFn"] != true {
 		t.Fatal("cloud.google must be callable")
+	}
+}
+
+func TestCloudGoogle_RejectsNonObjectConfig(t *testing.T) {
+	got := runCloudScript(t, `
+		let msg = "";
+		try { cloud.google([1,2,3]); } catch (e) { msg = e.message; }
+		const __result = { msg };
+	`)
+	m := got.(map[string]any)
+	if s, _ := m["msg"].(string); s == "" || !strings.Contains(s, "options must be an object") {
+		t.Fatalf("expected a catchable 'options must be an object' error, got %q", s)
 	}
 }

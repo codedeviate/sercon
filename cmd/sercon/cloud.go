@@ -46,7 +46,10 @@ func parseGoogleConfig(vm *goja.Runtime, call goja.FunctionCall) (googleConfig, 
 	if !ok {
 		return cfg, errors.New("cloud.google: options must be an object")
 	}
-	opts := obj.Export().(map[string]any)
+	opts, ok := obj.Export().(map[string]any)
+	if !ok {
+		return cfg, errors.New("cloud.google: options must be an object")
+	}
 	cfg.project = optString(opts, "project", "")
 	cfg.location = optString(opts, "location", "")
 	cfg.quotaProject = optString(opts, "quotaProject", "")
