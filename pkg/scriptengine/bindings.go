@@ -2,6 +2,7 @@ package scriptengine
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"time"
 
@@ -68,6 +69,22 @@ type AsyncBinding struct {
 // runtime registration so goja can recognise the underlying callback signature
 // as a host-callback. The .d.ts emitter reads the same carrier to emit
 // `Promise<T>` instead of the previous `unknown`.
+// rejectionValue builds the value a rejected async binding throws. It is a
+// normal goja Error (message == err.Error()); if err (or anything it wraps)
+// implements ErrorFields(), those keys are attached as own-properties so
+// scripts can branch on structured fields (e.g. e.code). Plain errors are
+// unchanged — this is purely additive.
+func rejectionValue(vm *goja.Runtime, err error) goja.Value {
+	obj := vm.NewGoError(err)
+	var f interface{ ErrorFields() map[string]any }
+	if errors.As(err, &f) {
+		for k, v := range f.ErrorFields() {
+			_ = obj.Set(k, vm.ToValue(v))
+		}
+	}
+	return obj
+}
+
 func PromisifyAsync[A, T any](vm *goja.Runtime, loop *eventloop.EventLoop,
 	extract func(call goja.FunctionCall) (A, error),
 	work func(ctx context.Context, args A) (T, error),
@@ -82,7 +99,7 @@ func PromisifyAsync[A, T any](vm *goja.Runtime, loop *eventloop.EventLoop,
 		// this call's return.
 		args, err := extract(call)
 		if err != nil {
-			_ = reject(vm.NewGoError(err))
+			_ = reject(rejectionValue(vm, err))
 			return vm.ToValue(promise)
 		}
 
@@ -98,7 +115,7 @@ func PromisifyAsync[A, T any](vm *goja.Runtime, loop *eventloop.EventLoop,
 				// reject/resolve only error if the promise has already
 				// settled — impossible here since we own both ends.
 				if err != nil {
-					_ = reject(vm.NewGoError(err))
+					_ = reject(rejectionValue(vm, err))
 				} else {
 					// OrderedToValue builds any *Ordered result into a goja
 					// object with deterministic key order, on the loop; other
