@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"google.golang.org/api/option"
@@ -152,12 +157,27 @@ func TestStorage_ReadObject(t *testing.T) {
 }
 
 func TestStorage_PutObject(t *testing.T) {
+	// storagePutObject supplies both JSON metadata (&storage.Object{Name}) and
+	// a media reader, so the SDK sends a multipart/related body (metadata part
+	// + media part), not a bare "media" upload. Parse the multipart body and
+	// pull out the media part to assert the exact bytes we uploaded.
 	var gotBody []byte
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("uploadType") == "media" || r.URL.Query().Get("uploadType") == "" {
-			b := make([]byte, r.ContentLength)
-			_, _ = r.Body.Read(b)
-			gotBody = b
+		body, _ := io.ReadAll(r.Body)
+		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err == nil && strings.HasPrefix(mediaType, "multipart/") {
+			mr := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+			var last []byte
+			for {
+				part, err := mr.NextPart()
+				if err != nil {
+					break
+				}
+				last, _ = io.ReadAll(part)
+			}
+			gotBody = last
+		} else {
+			gotBody = body
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"name":"key.txt","size":"11"}`))
@@ -173,7 +193,47 @@ func TestStorage_PutObject(t *testing.T) {
 	if m["name"] != "key.txt" {
 		t.Fatalf("expected name key.txt, got %#v", m["name"])
 	}
-	_ = gotBody // best-effort; server framework may buffer differently across multipart/media upload
+	if string(gotBody) != "hello world" {
+		t.Fatalf("expected uploaded body %q, got %q", "hello world", gotBody)
+	}
+}
+
+// TestStorage_ListBuckets_ViaJS exercises the full script path (not the Go
+// work function directly): cloud namespace registration, the storage()
+// accessor's .Func unwrap, storageExtract's goja .Export of the options
+// object, and Promise resolution via await. This is the pattern Tasks 6-8
+// (compute/iam/secrets) inherit.
+func TestStorage_ListBuckets_ViaJS(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[{"name":"bucket-a"},{"name":"bucket-b"}]}`))
+	}))
+	defer ts.Close()
+	withMockGoogle(t, ts)
+
+	got := runCloudScript(t, `
+		const b = await cloud.google({ project: "p" }).storage().listBuckets({ project: "p" });
+		const __result = b;
+	`)
+	m, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object, got %T (%#v)", got, got)
+	}
+	items, ok := m["items"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("expected 2 buckets, got %#v", m["items"])
+	}
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		if entry, ok := it.(map[string]any); ok {
+			if name, ok := entry["name"].(string); ok {
+				names = append(names, name)
+			}
+		}
+	}
+	if len(names) != 2 || names[0] != "bucket-a" || names[1] != "bucket-b" {
+		t.Fatalf("expected bucket-a and bucket-b, got %#v", names)
+	}
 }
 
 func TestStorage_DeleteObject(t *testing.T) {
