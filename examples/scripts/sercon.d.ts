@@ -1334,7 +1334,48 @@ declare const cloud: {
    * @param opts project/location: default GCP project id / region-or-zone threaded into the service calls that accept them. credentials: a file path (string) to a service-account JSON key, or an inline service-account JSON object; omitted ⇒ Application Default Credentials (gcloud auth application-default login, GOOGLE_APPLICATION_CREDENTIALS, or attached-metadata identity). scopes: OAuth scopes to request; omitted ⇒ each service's default scope. quotaProject: billing/quota project override (X-Goog-User-Project).
    * @returns The provider handle: { storage(), compute(), iam(), secrets(), call(opts) }. Each of storage()/compute()/iam()/secrets() returns a fresh service handle bound to this call's config; call() is the generic path-based REST escape hatch for APIs without a typed service above.
    */
-  google(opts?: { project?: string; location?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): { storage(): { listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>; getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>; createBucket(opts: { project: string; bucket: string }): Promise<Record<string, unknown>>; deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>; listObjects(opts: { bucket: string; prefix?: string }): Promise<{ items?: Array<Record<string, unknown>> }>; statObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>; readObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>; putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>; deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>> }; compute(): { listInstances(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>; getInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; createInstance(opts: { project: string; zone: string; instance: Record<string, unknown> }): Promise<Record<string, unknown>>; deleteInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; startInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; stopInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; listZones(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>; listDisks(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }> }; iam(): { listServiceAccounts(opts: { project: string }): Promise<{ accounts?: Array<Record<string, unknown>> }>; getServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>; createServiceAccount(opts: { project: string; accountId: string; displayName?: string }): Promise<Record<string, unknown>>; deleteServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>; listKeys(opts: { project: string; email: string }): Promise<{ keys?: Array<Record<string, unknown>> }>; createKey(opts: { project: string; email: string }): Promise<Record<string, unknown>>; getIamPolicy(opts: { resource: string }): Promise<Record<string, unknown>>; setIamPolicy(opts: { resource: string; policy: Record<string, unknown> }): Promise<Record<string, unknown>> }; secrets(): { listSecrets(opts: { project: string }): Promise<{ secrets?: Array<Record<string, unknown>> }>; getSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>; createSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>; addSecretVersion(opts: { project: string; name: string; payload: string }): Promise<Record<string, unknown>>; accessSecretVersion(opts: { project: string; name: string; version?: string }): Promise<{ value: string }>; deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>> }; call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown> };
+  google(opts?: { project?: string; location?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): {
+  storage(): {
+    listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+    getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
+    createBucket(opts: { project: string; bucket: string }): Promise<Record<string, unknown>>;
+    deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
+    listObjects(opts: { bucket: string; prefix?: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+    statObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>;
+    readObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>;
+    putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>;
+    deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>;
+  };
+  compute(): {
+    listInstances(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+    getInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>;
+    createInstance(opts: { project: string; zone: string; instance: Record<string, unknown> }): Promise<Record<string, unknown>>;
+    deleteInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>;
+    startInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>;
+    stopInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>;
+    listZones(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+    listDisks(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+  };
+  iam(): {
+    listServiceAccounts(opts: { project: string }): Promise<{ accounts?: Array<Record<string, unknown>> }>;
+    getServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>;
+    createServiceAccount(opts: { project: string; accountId: string; displayName?: string }): Promise<Record<string, unknown>>;
+    deleteServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>;
+    listKeys(opts: { project: string; email: string }): Promise<{ keys?: Array<Record<string, unknown>> }>;
+    createKey(opts: { project: string; email: string }): Promise<Record<string, unknown>>;
+    getIamPolicy(opts: { resource: string }): Promise<Record<string, unknown>>;
+    setIamPolicy(opts: { resource: string; policy: Record<string, unknown> }): Promise<Record<string, unknown>>;
+  };
+  secrets(): {
+    listSecrets(opts: { project: string }): Promise<{ secrets?: Array<Record<string, unknown>> }>;
+    getSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
+    createSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
+    addSecretVersion(opts: { project: string; name: string; payload: string }): Promise<Record<string, unknown>>;
+    accessSecretVersion(opts: { project: string; name: string; version?: string }): Promise<{ value: string }>;
+    deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
+  };
+  call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>;
+};
 };
 
 /** Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, poppler-backed PDF render/extract, external-requirement diagnostics (doctor). */

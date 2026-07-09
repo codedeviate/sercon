@@ -2,31 +2,64 @@ package main
 
 import "github.com/codedeviate/sercon/pkg/scriptengine"
 
-// Inline handle-type strings, mirroring sqlHandleType/respHandleType in
+// Inline handle-type string, mirroring sqlHandleType/respHandleType in
 // docs_db.go. cloud.google(...)'s per-service handles (storage()/compute()/
 // iam()/secrets()) and the call() escape hatch are all built at script-run
 // time — see googleHandle in cloud.go and googleStorage/googleCompute/
 // googleIAM/googleSecrets in cloud_google_*.go — so the d.ts emitter's
 // reflection has no static shape to recover for them (a Go
-// `func(goja.FunctionCall) goja.Value` carries no type information). These
-// constants hand the emitter the real shape via the "google" MemberDoc's
+// `func(goja.FunctionCall) goja.Value` carries no type information). This
+// constant hands the emitter the real shape via the "google" MemberDoc's
 // ReturnType, which is spliced in verbatim (see asyncReturnType/
 // writeMemberObject in pkg/scriptengine/dts.go) and therefore must be valid
 // TypeScript on its own.
 const (
-	googleStorageHandleType = "{ listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>; getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>; createBucket(opts: { project: string; bucket: string }): Promise<Record<string, unknown>>; deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>; listObjects(opts: { bucket: string; prefix?: string }): Promise<{ items?: Array<Record<string, unknown>> }>; statObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>; readObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>; putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>; deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>> }"
-
-	googleComputeHandleType = "{ listInstances(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>; getInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; createInstance(opts: { project: string; zone: string; instance: Record<string, unknown> }): Promise<Record<string, unknown>>; deleteInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; startInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; stopInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; listZones(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>; listDisks(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }> }"
-
-	googleIAMHandleType = "{ listServiceAccounts(opts: { project: string }): Promise<{ accounts?: Array<Record<string, unknown>> }>; getServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>; createServiceAccount(opts: { project: string; accountId: string; displayName?: string }): Promise<Record<string, unknown>>; deleteServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>; listKeys(opts: { project: string; email: string }): Promise<{ keys?: Array<Record<string, unknown>> }>; createKey(opts: { project: string; email: string }): Promise<Record<string, unknown>>; getIamPolicy(opts: { resource: string }): Promise<Record<string, unknown>>; setIamPolicy(opts: { resource: string; policy: Record<string, unknown> }): Promise<Record<string, unknown>> }"
-
-	googleSecretsHandleType = "{ listSecrets(opts: { project: string }): Promise<{ secrets?: Array<Record<string, unknown>> }>; getSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>; createSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>; addSecretVersion(opts: { project: string; name: string; payload: string }): Promise<Record<string, unknown>>; accessSecretVersion(opts: { project: string; name: string; version?: string }): Promise<{ value: string }>; deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>> }"
-
-	googleCallSig = "call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>"
-
-	// googleHandleType is the object cloud.google(...) itself resolves to —
-	// spliced verbatim into the "google" MemberDoc's ReturnType.
-	googleHandleType = "{ storage(): " + googleStorageHandleType + "; compute(): " + googleComputeHandleType + "; iam(): " + googleIAMHandleType + "; secrets(): " + googleSecretsHandleType + "; " + googleCallSig + " }"
+	// googleHandleType is the object cloud.google(...) resolves to — spliced
+	// verbatim into the "google" MemberDoc's ReturnType, so it must be valid
+	// TypeScript on its own. Formatted multi-line for readable rendering in the
+	// d.ts and MANUAL §17 reference; a single-line form is unreadable.
+	googleHandleType = `{
+  storage(): {
+    listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+    getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
+    createBucket(opts: { project: string; bucket: string }): Promise<Record<string, unknown>>;
+    deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
+    listObjects(opts: { bucket: string; prefix?: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+    statObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>;
+    readObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>;
+    putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>;
+    deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>;
+  };
+  compute(): {
+    listInstances(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+    getInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>;
+    createInstance(opts: { project: string; zone: string; instance: Record<string, unknown> }): Promise<Record<string, unknown>>;
+    deleteInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>;
+    startInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>;
+    stopInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>;
+    listZones(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+    listDisks(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>;
+  };
+  iam(): {
+    listServiceAccounts(opts: { project: string }): Promise<{ accounts?: Array<Record<string, unknown>> }>;
+    getServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>;
+    createServiceAccount(opts: { project: string; accountId: string; displayName?: string }): Promise<Record<string, unknown>>;
+    deleteServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>;
+    listKeys(opts: { project: string; email: string }): Promise<{ keys?: Array<Record<string, unknown>> }>;
+    createKey(opts: { project: string; email: string }): Promise<Record<string, unknown>>;
+    getIamPolicy(opts: { resource: string }): Promise<Record<string, unknown>>;
+    setIamPolicy(opts: { resource: string; policy: Record<string, unknown> }): Promise<Record<string, unknown>>;
+  };
+  secrets(): {
+    listSecrets(opts: { project: string }): Promise<{ secrets?: Array<Record<string, unknown>> }>;
+    getSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
+    createSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
+    addSecretVersion(opts: { project: string; name: string; payload: string }): Promise<Record<string, unknown>>;
+    accessSecretVersion(opts: { project: string; name: string; version?: string }): Promise<{ value: string }>;
+    deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
+  };
+  call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>;
+}`
 
 	googleErrors = "Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/\"TRANSPORT\" for non-API errors (DNS, TLS, timeout, connection refused)."
 )
