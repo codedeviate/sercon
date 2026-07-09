@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	htransport "google.golang.org/api/transport/http"
@@ -189,11 +188,4 @@ func googleCallWork(ctx context.Context, cfg googleConfig, a googleCallArgs) (an
 		return nil, googleError{code: resp.StatusCode, status: "DECODE", message: "cloud.google.call: response was not JSON"}
 	}
 	return out, nil
-}
-
-// temporary stub — replaced by Task 8 (googleStorage, googleCompute, and
-// googleIAM are real, see cloud_google_storage.go, cloud_google_compute.go,
-// and cloud_google_iam.go)
-func googleSecrets(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig) map[string]any {
-	return map[string]any{}
 }
