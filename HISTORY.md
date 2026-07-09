@@ -862,6 +862,59 @@ per-provider reference. `cmd/sercon/docs_completeness_test.go` makes this perman
 `TestDocsComplete` fails if any swept member is missing a field, and
 `TestDocsComplete_CoversAllNamespaces` fails if a namespace is left unswept.
 
+## 9. Cloud
+
+### `cloud` namespace + Google provider
+
+A new reserved global, `cloud`, joined the surface as a container for
+provider callables — one per cloud vendor, Google first. `cloud.google(opts?)`
+resolves ADC (`gcloud auth application-default login`,
+`GOOGLE_APPLICATION_CREDENTIALS`, or attached-metadata identity) unless
+`opts.credentials` supplies a service-account key (file path or inline JSON),
+and returns a handle exposing four typed services plus a generic escape hatch:
+`storage()` (Cloud Storage: bucket/object CRUD + `readObject`/`putObject`),
+`compute()` (Compute Engine: instance list/get/create/delete/start/stop, plus
+zone/disk listing), `iam()` (service-account CRUD, keys, `getIamPolicy`/
+`setIamPolicy`), and `secrets()` (Secret Manager: secret CRUD, add/access
+version — `accessSecretVersion` base64-decodes the payload so scripts never
+see the raw wire format). `call({api, version?, httpMethod?, path, params?,
+body?})` is the generic path-based REST fallback for any `*.googleapis.com`
+endpoint without a typed service above, sharing the same auth as the parent
+handle. Built on `google.golang.org/api` (pure Go, no cgo); every SDK
+response round-trips through JSON into a plain map/slice so goja emits clean
+objects instead of leaking SDK-internal fields.
+
+Errors are normalised through a shared `mapGoogleError`: a `*googleapi.Error`
+becomes `{ code, status, message, details }` (the API's HTTP status and body);
+anything else (DNS, TLS, timeout, connection refused) becomes `{ code: 0,
+status: "TRANSPORT", message }`. This rides on an additive, backward-compatible
+`ErrorFields() map[string]any` hook added to the async-rejection path
+(`scriptengine.PromisifyAsync`'s `rejectionValue`): any rejected error
+implementing it gets its fields copied onto the JS `Error` object, so scripts
+read `e.code`/`e.status`/`e.message` directly in a `catch` without a
+provider-specific unwrap step — a pattern future providers (AWS, Azure) reuse
+rather than each inventing their own error shape.
+
+Documentation follows the same structured `MemberDoc` model as every other
+namespace (`docs_cloud.go`), with one twist: `storage()`/`compute()`/`iam()`/
+`secrets()` and `call()` are all built at script-run time inside the
+`google()` accessor (not as static namespace members), so the automatic
+`.d.ts`/reference-generator reflection can't recover their shape on its own.
+The `google` entry's `ReturnType` hands the emitter a hand-written but
+accurate composite type covering every method's signature, so
+`cloud.google(...)`'s return still type-checks with real per-method shapes in
+the emitted `sercon.d.ts` — not just an opaque `unknown`. A maintainer-run
+live smoke test (`examples/scripts/cloud-google-smoke.ts`, ADC-gated,
+self-skips without `PROJECT` set) exercises all four services plus `call()`
+against a real project; it is intentionally excluded from `make demo`/CI,
+which stays fully offline via the `httptest`-mocked Go unit tests in
+`cloud_google_*_test.go`.
+
+AWS and Azure are planned follow-up providers under the same `cloud.<vendor>`
+shape — Azure is expected to ship mock-only + PROVISIONAL (no maintainer-run
+live smoke test) given the team's live-account access, while AWS is expected
+to get the same live-smoke treatment as Google once implemented.
+
 ## Bundled libraries
 
 ### `paymentproviders` (v0.63.0)

@@ -7160,11 +7160,38 @@ Recover a payload hidden by audio.stego.embed. Reads the PCM sample LSBs, verifi
 const msg = audio.stego.extract("song.wav", { password: "p" });
 ```
 
-### 17.2 codec
+### 17.2 cloud
+
+Cloud provider clients: cloud.google(opts?) returns a handle with typed services (storage, compute, iam, secrets) plus a generic path-based REST escape hatch (call). Pure-Go, CGO-free; reuses Application Default Credentials.
+
+#### 17.2.1 cloud.google
+
+```
+google(opts?: { project?: string; location?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): { storage(): { listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>; getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>; createBucket(opts: { project: string; bucket: string }): Promise<Record<string, unknown>>; deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>; listObjects(opts: { bucket: string; prefix?: string }): Promise<{ items?: Array<Record<string, unknown>> }>; statObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>; readObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>; putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>; deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>> }; compute(): { listInstances(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>; getInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; createInstance(opts: { project: string; zone: string; instance: Record<string, unknown> }): Promise<Record<string, unknown>>; deleteInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; startInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; stopInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>; listZones(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>; listDisks(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }> }; iam(): { listServiceAccounts(opts: { project: string }): Promise<{ accounts?: Array<Record<string, unknown>> }>; getServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>; createServiceAccount(opts: { project: string; accountId: string; displayName?: string }): Promise<Record<string, unknown>>; deleteServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>; listKeys(opts: { project: string; email: string }): Promise<{ keys?: Array<Record<string, unknown>> }>; createKey(opts: { project: string; email: string }): Promise<Record<string, unknown>>; getIamPolicy(opts: { resource: string }): Promise<Record<string, unknown>>; setIamPolicy(opts: { resource: string; policy: Record<string, unknown> }): Promise<Record<string, unknown>> }; secrets(): { listSecrets(opts: { project: string }): Promise<{ secrets?: Array<Record<string, unknown>> }>; getSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>; createSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>; addSecretVersion(opts: { project: string; name: string; payload: string }): Promise<Record<string, unknown>>; accessSecretVersion(opts: { project: string; name: string; version?: string }): Promise<{ value: string }>; deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>> }; call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown> }
+```
+
+Google Cloud provider handle. Pure-Go, CGO-free (google.golang.org/api); reuses Application Default Credentials unless credentials is given. Returns an object exposing storage(), compute(), iam(), secrets(), and the generic call() REST escape hatch.
+
+**Parameters**
+
+- `opts` *({ project?: string; location?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }, optional)* — project/location: default GCP project id / region-or-zone threaded into the service calls that accept them. credentials: a file path (string) to a service-account JSON key, or an inline service-account JSON object; omitted ⇒ Application Default Credentials (gcloud auth application-default login, GOOGLE_APPLICATION_CREDENTIALS, or attached-metadata identity). scopes: OAuth scopes to request; omitted ⇒ each service's default scope. quotaProject: billing/quota project override (X-Goog-User-Project).
+
+**Returns:** The provider handle: { storage(), compute(), iam(), secrets(), call(opts) }. Each of storage()/compute()/iam()/secrets() returns a fresh service handle bound to this call's config; call() is the generic path-based REST escape hatch for APIs without a typed service above.
+
+**Throws:** Throws synchronously (not a rejected promise) if opts is provided but is not an object, or credentials is neither a string path nor a plain object.
+
+```ts
+const g = cloud.google({ project: "my-proj" });
+const gcs = g.storage();
+const r = await gcs.listBuckets({ project: "my-proj" });
+runtime.log(r.items?.length ?? 0);
+```
+
+### 17.3 codec
 
 Binary-format codecs: compression, barcodes, check digits.
 
-#### 17.2.1 codec.barcode.decodableFormats
+#### 17.3.1 codec.barcode.decodableFormats
 
 ```
 decodableFormats(): string[]
@@ -7180,7 +7207,7 @@ Available decode formats (qr / datamatrix / aztec / code128 / code39 / code93 / 
 const fmts = codec.barcode.decodableFormats();
 ```
 
-#### 17.2.2 codec.barcode.decode
+#### 17.3.2 codec.barcode.decode
 
 ```
 decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<{ format: string, text: string }>
@@ -7201,7 +7228,7 @@ Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hi
 const { format, text } = await codec.barcode.decode(png);
 ```
 
-#### 17.2.3 codec.barcode.encode
+#### 17.3.3 codec.barcode.encode
 
 ```
 encode(format: string, data: string, opts?: { width?: number, height?: number, quietZone?: boolean | number }): Promise<Uint8Array>
@@ -7223,7 +7250,7 @@ Render data into a PNG of the chosen format. opts.width / opts.height default to
 const png = await codec.barcode.encode("qr", "https://example.com", { width: 320, height: 320 });
 ```
 
-#### 17.2.4 codec.barcode.formats
+#### 17.3.4 codec.barcode.formats
 
 ```
 formats(): string[]
@@ -7239,7 +7266,7 @@ Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / 
 const fmts = codec.barcode.formats(); // ["qr", "datamatrix", ...]
 ```
 
-#### 17.2.5 codec.checkdigit.algos
+#### 17.3.5 codec.checkdigit.algos
 
 ```
 algos(): string[]
@@ -7255,7 +7282,7 @@ Supported algorithms (luhn / isbn10 / isbn13 / ean13 / ean8 / upca).
 const algos = codec.checkdigit.algos();
 ```
 
-#### 17.2.6 codec.checkdigit.compute
+#### 17.3.6 codec.checkdigit.compute
 
 ```
 compute(algo: string, partial: string): string
@@ -7276,7 +7303,7 @@ Compute the missing trailing check digit for a partial input.
 const cd = codec.checkdigit.compute("ean13", "123456789012"); // "8"
 ```
 
-#### 17.2.7 codec.checkdigit.inspect
+#### 17.3.7 codec.checkdigit.inspect
 
 ```
 inspect(algo: string, input: string): { algo: string, input: string, valid: boolean, given: string, computed: string }
@@ -7298,7 +7325,7 @@ const r = codec.checkdigit.inspect("ean13", "1234567890128");
 // { algo: "ean13", input: "...", valid: true, given: "8", computed: "8" }
 ```
 
-#### 17.2.8 codec.checkdigit.validate
+#### 17.3.8 codec.checkdigit.validate
 
 ```
 validate(algo: string, input: string): boolean
@@ -7319,7 +7346,7 @@ Return whether the input passes the named algorithm's check digit.
 const ok = codec.checkdigit.validate("luhn", "4539578763621486"); // true
 ```
 
-#### 17.2.9 codec.compression.algos
+#### 17.3.9 codec.compression.algos
 
 ```
 algos(): string[]
@@ -7335,7 +7362,7 @@ Available compression algorithm names (gzip / deflate / zlib / bzip2 / zstd / br
 const algos = codec.compression.algos(); // ["gzip", "deflate", ...]
 ```
 
-#### 17.2.10 codec.compression.compress
+#### 17.3.10 codec.compression.compress
 
 ```
 compress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>
@@ -7356,7 +7383,7 @@ Compress data with the named algorithm. Returns Uint8Array. Async.
 const packed = await codec.compression.compress("gzip", "hello world");
 ```
 
-#### 17.2.11 codec.compression.decompress
+#### 17.3.11 codec.compression.decompress
 
 ```
 decompress(algo: string, data: string | Uint8Array | ArrayBuffer, opts?: { maxBytes?: number }): Promise<Uint8Array>
@@ -7381,7 +7408,7 @@ const text = new TextDecoder().decode(raw);
 const capped = await codec.compression.decompress("gzip", packed, { maxBytes: 1 << 20 });
 ```
 
-#### 17.2.12 codec.doc.formats
+#### 17.3.12 codec.doc.formats
 
 ```
 formats(): { [format: string]: { read: boolean; write: boolean } }
@@ -7397,7 +7424,7 @@ Report the read/write capability of every document format codec.doc supports. Re
 if (!codec.doc.formats().pdf.write) console.log("pdf is read-only");
 ```
 
-#### 17.2.13 codec.doc.read
+#### 17.3.13 codec.doc.read
 
 ```
 read(src: string | Uint8Array, opts?: { format?: "pdf" | "docx" | "doc" | "rtf" | "odt" }): { format: string; text: string; paragraphs: string[] }
@@ -7418,7 +7445,7 @@ Extract text from a document: PDF, DOCX, DOC (Word 97–2003), RTF, or ODT. Retu
 const d = codec.doc.read("report.pdf"); runtime.log(d.paragraphs.length, "paragraphs");
 ```
 
-#### 17.2.14 codec.doc.write
+#### 17.3.14 codec.doc.write
 
 ```
 write(model: { paragraphs?: string[]; text?: string } | string, opts?: { format?: "docx" | "rtf" | "odt"; dest?: string }): { bytes: Uint8Array } | { path: string }
@@ -7439,7 +7466,7 @@ Write a document to DOCX, RTF, or ODT from { paragraphs } / { text } / a bare st
 const out = codec.doc.write({ paragraphs: ["Hello", "World"] }, { format: "docx" });
 ```
 
-#### 17.2.15 codec.dotenv.parse
+#### 17.3.15 codec.dotenv.parse
 
 ```
 parse(text: string): { [key: string]: string }
@@ -7459,7 +7486,7 @@ Parse dotenv-format text into an object. Handles KEY=VALUE lines, # comments, bl
 const cfg = codec.dotenv.parse('PORT=8080\n# note\nHOST="0.0.0.0"');
 ```
 
-#### 17.2.16 codec.dotenv.stringify
+#### 17.3.16 codec.dotenv.stringify
 
 ```
 stringify(obj: { [key: string]: string | number | boolean }): string
@@ -7479,7 +7506,7 @@ Serialize an object of string/number/boolean values to dotenv-format text (one K
 const text = codec.dotenv.stringify({ PORT: 8080, HOST: "0.0.0.0", DEBUG: true });
 ```
 
-#### 17.2.17 codec.perl.dumper
+#### 17.3.17 codec.perl.dumper
 
 ```
 dumper(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -7500,7 +7527,7 @@ Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS boolean
 const d = codec.perl.dumper({ ok: true });
 ```
 
-#### 17.2.18 codec.perl.parseDumper
+#### 17.3.18 codec.perl.parseDumper
 
 ```
 parseDumper(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -7521,7 +7548,7 @@ Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decod
 const v = codec.perl.parseDumper("$VAR1 = [1, 2];"); // [1, 2]
 ```
 
-#### 17.2.19 codec.php.parseVarDump
+#### 17.3.19 codec.php.parseVarDump
 
 ```
 parseVarDump(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -7542,7 +7569,7 @@ Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, tru
 const v = codec.php.parseVarDump('int(42)'); // 42
 ```
 
-#### 17.2.20 codec.php.parseVarExport
+#### 17.3.20 codec.php.parseVarExport
 
 ```
 parseVarExport(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -7563,7 +7590,7 @@ Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a
 const v = codec.php.parseVarExport("array (\n  0 => 1,\n)");
 ```
 
-#### 17.2.21 codec.php.serialize
+#### 17.3.21 codec.php.serialize
 
 ```
 serialize(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -7584,7 +7611,7 @@ PHP serialize(): encode a value to PHP's canonical serialization string. Objects
 const s = codec.php.serialize({ a: 1, b: [2, 3] });
 ```
 
-#### 17.2.22 codec.php.unserialize
+#### 17.3.22 codec.php.unserialize
 
 ```
 unserialize(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -7605,7 +7632,7 @@ PHP unserialize(): decode a serialize() string back to a value. r:/R: references
 const v = codec.php.unserialize('a:2:{i:0;i:1;i:1;i:2;}'); // [1, 2]
 ```
 
-#### 17.2.23 codec.php.varDump
+#### 17.3.23 codec.php.varDump
 
 ```
 varDump(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -7626,7 +7653,7 @@ PHP var_dump(): human-readable debug output. String lengths are byte counts.
 const dump = codec.php.varDump({ name: "ok" });
 ```
 
-#### 17.2.24 codec.php.varExport
+#### 17.3.24 codec.php.varExport
 
 ```
 varExport(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -7647,7 +7674,7 @@ PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-s
 const code = codec.php.varExport({ x: 1 }, { indent: "    " });
 ```
 
-#### 17.2.25 codec.sheet.formats
+#### 17.3.25 codec.sheet.formats
 
 ```
 formats(): { [format: string]: { read: boolean; write: boolean } }
@@ -7663,7 +7690,7 @@ Report the read/write capability of every spreadsheet format codec.sheet support
 const f = codec.sheet.formats(); if (!f.xls.write) console.log("xls is read-only");
 ```
 
-#### 17.2.26 codec.sheet.read
+#### 17.3.26 codec.sheet.read
 
 ```
 read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" | "ods" | "xls" | "slk" | "dif" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }
@@ -7685,7 +7712,7 @@ const wb = codec.sheet.read("data.ods");
 runtime.log(wb.sheets[0].name, wb.sheets[0].rows.length);
 ```
 
-#### 17.2.27 codec.sheet.write
+#### 17.3.27 codec.sheet.write
 
 ```
 write(model: { sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][], opts: { format: "csv" | "tsv" | "xlsx" | "ods"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
@@ -7707,7 +7734,7 @@ const out = codec.sheet.write([["a", 1, true]], { format: "ods" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.2.28 codec.toml.parse
+#### 17.3.28 codec.toml.parse
 
 ```
 parse(text: string): Record<string, unknown>
@@ -7727,7 +7754,7 @@ Parse a TOML document string into a JS object. Tables become nested objects, arr
 const cfg = codec.toml.parse('port = 8080\n[db]\nhost = "localhost"');
 ```
 
-#### 17.2.29 codec.toml.stringify
+#### 17.3.29 codec.toml.stringify
 
 ```
 stringify(value: Record<string, unknown>): string
@@ -7747,7 +7774,7 @@ Serialize a JS value to a TOML document string. The top-level value must be an o
 const text = codec.toml.stringify({ port: 8080, db: { host: "localhost" } });
 ```
 
-#### 17.2.30 codec.xml.decode
+#### 17.3.30 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -7768,7 +7795,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### 17.2.31 codec.xml.encode
+#### 17.3.31 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string
@@ -7790,11 +7817,11 @@ const xml = codec.xml.encode({ note: { "@id": "5", "#text": "hi" } });
 // <note id="5">hi</note>
 ```
 
-### 17.3 console
+### 17.4 console
 
 Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.
 
-#### 17.3.1 console.debug
+#### 17.4.1 console.debug
 
 ```
 debug(...args: unknown[]): void
@@ -7814,7 +7841,7 @@ Alias of console.log — stringified arguments, space-joined, to stdout.
 console.debug("cache hit", key);
 ```
 
-#### 17.3.2 console.error
+#### 17.4.2 console.error
 
 ```
 error(...args: unknown[]): void
@@ -7834,7 +7861,7 @@ Like console.log but writes to stderr.
 console.error("request failed", { status: 500 });
 ```
 
-#### 17.3.3 console.info
+#### 17.4.3 console.info
 
 ```
 info(...args: unknown[]): void
@@ -7854,7 +7881,7 @@ Alias of console.log — stringified arguments, space-joined, to stdout.
 console.info("listening on", 8080);
 ```
 
-#### 17.3.4 console.log
+#### 17.4.4 console.log
 
 ```
 log(...args: unknown[]): void
@@ -7874,7 +7901,7 @@ Print a space-joined line of the arguments to stdout. Primitives print raw; obje
 console.log("user", { id: 1, name: "ada" }); // user {"id":1,"name":"ada"}
 ```
 
-#### 17.3.5 console.warn
+#### 17.4.5 console.warn
 
 ```
 warn(...args: unknown[]): void
@@ -7894,11 +7921,11 @@ Like console.log but writes to stderr.
 console.warn("retrying in", 5, "seconds");
 ```
 
-### 17.4 crypto
+### 17.5 crypto
 
 Hashing, JWT, age encryption — anything that produces a digest, signature, or ciphertext.
 
-#### 17.4.1 crypto.encrypt.decrypt
+#### 17.5.1 crypto.encrypt.decrypt
 
 ```
 decrypt(ciphertext: string | Uint8Array | ArrayBuffer, identities: string | string[]): Uint8Array
@@ -7920,7 +7947,7 @@ const pt = crypto.encrypt.decrypt(ct, privateKey);
 const text = new TextDecoder().decode(pt);
 ```
 
-#### 17.4.2 crypto.encrypt.detectBackend
+#### 17.5.2 crypto.encrypt.detectBackend
 
 ```
 detectBackend(input: string): { backend: string; kind?: string }
@@ -7940,7 +7967,7 @@ Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown'
 const info = crypto.encrypt.detectBackend("age1abc..."); // { backend: "age", kind: "public" }
 ```
 
-#### 17.4.3 crypto.encrypt.encrypt
+#### 17.5.3 crypto.encrypt.encrypt
 
 ```
 encrypt(data: string | Uint8Array | ArrayBuffer, recipients: string | string[], opts?: { armored?: boolean }): Uint8Array
@@ -7962,7 +7989,7 @@ Seal data to recipients. age public keys (age1...) → age backend (opts.armored
 const ct = crypto.encrypt.encrypt("secret", publicKey, { armored: true });
 ```
 
-#### 17.4.4 crypto.encrypt.keygen
+#### 17.5.4 crypto.encrypt.keygen
 
 ```
 keygen(): { publicKey: string; privateKey: string }
@@ -7978,7 +8005,7 @@ Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey:
 const { publicKey, privateKey } = crypto.encrypt.keygen();
 ```
 
-#### 17.4.5 crypto.encrypt.keygenPgp
+#### 17.5.5 crypto.encrypt.keygenPgp
 
 ```
 keygenPgp(opts?: { name?: string, email?: string }): { publicKey: string; privateKey: string }
@@ -7998,7 +8025,7 @@ Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. 
 const { publicKey, privateKey } = crypto.encrypt.keygenPgp({ name: "Test", email: "t@example.com" });
 ```
 
-#### 17.4.6 crypto.encrypt.rekey
+#### 17.5.6 crypto.encrypt.rekey
 
 ```
 rekey(ciphertext: string | Uint8Array | ArrayBuffer, oldIdentities: string | string[], newRecipients: string | string[], opts?: { armored?: boolean }): Uint8Array
@@ -8021,7 +8048,7 @@ Re-encrypt for a new recipient set without exposing plaintext to JS. Output form
 const rotated = crypto.encrypt.rekey(ct, oldKey, newPublicKey);
 ```
 
-#### 17.4.7 crypto.hash.blake3
+#### 17.5.7 crypto.hash.blake3
 
 ```
 blake3(input: string): string
@@ -8041,7 +8068,7 @@ BLAKE3 hex digest (32-byte output, lukechampine.com/blake3).
 const d = crypto.hash.blake3("hello");
 ```
 
-#### 17.4.8 crypto.hash.crc32
+#### 17.5.8 crypto.hash.crc32
 
 ```
 crc32(input: string): string
@@ -8061,7 +8088,7 @@ CRC-32 (IEEE polynomial), zero-padded to 8 hex chars.
 const c = crypto.hash.crc32("hello"); // "3610a686"
 ```
 
-#### 17.4.9 crypto.hash.md5
+#### 17.5.9 crypto.hash.md5
 
 ```
 md5(input: string): string
@@ -8081,7 +8108,7 @@ MD5 hex digest of a UTF-8 input. Avoid for security purposes — exposed for com
 const d = crypto.hash.md5("hello"); // "5d41402abc4b2a76b9719d911017c592"
 ```
 
-#### 17.4.10 crypto.hash.sha1
+#### 17.5.10 crypto.hash.sha1
 
 ```
 sha1(input: string): string
@@ -8101,7 +8128,7 @@ SHA-1 hex digest of a UTF-8 input. Avoid for security purposes.
 const d = crypto.hash.sha1("hello");
 ```
 
-#### 17.4.11 crypto.hash.sha256
+#### 17.5.11 crypto.hash.sha256
 
 ```
 sha256(input: string): string
@@ -8121,7 +8148,7 @@ SHA-256 hex digest of a UTF-8 input.
 const d = crypto.hash.sha256("hello");
 ```
 
-#### 17.4.12 crypto.hash.sha384
+#### 17.5.12 crypto.hash.sha384
 
 ```
 sha384(input: string): string
@@ -8141,7 +8168,7 @@ SHA-384 hex digest of a UTF-8 input.
 const d = crypto.hash.sha384("hello");
 ```
 
-#### 17.4.13 crypto.hash.sha3_256
+#### 17.5.13 crypto.hash.sha3_256
 
 ```
 sha3_256(input: string): string
@@ -8161,7 +8188,7 @@ SHA-3 256-bit hex digest. The underscore in the name matches recon's binding.
 const d = crypto.hash.sha3_256("hello");
 ```
 
-#### 17.4.14 crypto.hash.sha3_512
+#### 17.5.14 crypto.hash.sha3_512
 
 ```
 sha3_512(input: string): string
@@ -8181,7 +8208,7 @@ SHA-3 512-bit hex digest.
 const d = crypto.hash.sha3_512("hello");
 ```
 
-#### 17.4.15 crypto.hash.sha512
+#### 17.5.15 crypto.hash.sha512
 
 ```
 sha512(input: string): string
@@ -8201,7 +8228,7 @@ SHA-512 hex digest of a UTF-8 input.
 const d = crypto.hash.sha512("hello");
 ```
 
-#### 17.4.16 crypto.jwt.sign
+#### 17.5.16 crypto.jwt.sign
 
 ```
 sign(claims: Record<string, unknown>, secret: string, opts?: { algorithm?: string }): string
@@ -8223,7 +8250,7 @@ Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for R
 const tok = crypto.jwt.sign({ sub: "u1" }, "topsecret", { algorithm: "HS256" });
 ```
 
-#### 17.4.17 crypto.jwt.validate
+#### 17.5.17 crypto.jwt.validate
 
 ```
 validate(token: string, secret: string, opts?: { algorithm?: string, audience?: string, issuer?: string }): { valid: boolean; claims?: object; reason?: string }
@@ -8246,7 +8273,7 @@ const r = crypto.jwt.validate(tok, "topsecret", { algorithm: "HS256" });
 if (r.valid) runtime.log(r.claims.sub);
 ```
 
-#### 17.4.18 crypto.jwt.view
+#### 17.5.18 crypto.jwt.view
 
 ```
 view(token: string): { header: object; payload: object; signature: string }
@@ -8266,11 +8293,11 @@ Decode header + payload WITHOUT verifying the signature. Useful for inspection /
 const { header, payload } = crypto.jwt.view(tok);
 ```
 
-### 17.5 db
+### 17.6 db
 
 Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, Valkey, memcached, LDAP, dict.
 
-#### 17.5.1 db.clickhouse.open
+#### 17.6.1 db.clickhouse.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, secure?: boolean }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -8292,7 +8319,7 @@ const rows = await db.query("SELECT name, value FROM stats WHERE host = ?", "web
 await db.close();
 ```
 
-#### 17.5.2 db.dict.define
+#### 17.6.2 db.dict.define
 
 ```
 define(host: string, word: string, opts?: { database?: string, port?: string, timeout?: number }): Promise<{ word: string, found: boolean, definitions: { db: string, dbName: string, text: string }[] }>
@@ -8315,7 +8342,7 @@ const r = await db.dict.define("dict.org", "serendipity");
 if (r.found) runtime.log(r.definitions[0].text);
 ```
 
-#### 17.5.3 db.dict.match
+#### 17.6.3 db.dict.match
 
 ```
 match(host: string, word: string, opts?: { strategy?: string, database?: string, port?: string, timeout?: number }): Promise<{ word: string, matches: { db: string, word: string }[] }>
@@ -8338,7 +8365,7 @@ const r = await db.dict.match("dict.org", "seren", { strategy: "prefix" });
 runtime.log(r.matches.map(m => m.word));
 ```
 
-#### 17.5.4 db.ldap.open
+#### 17.6.4 db.ldap.open
 
 ```
 open(url: string, opts?: { bindDN?: string, password?: string }): Promise<{ rootDSE(): Promise<Record<string, unknown>>; search(baseDN: string, filter?: string, attrs?: string[]): Promise<Record<string, unknown>[]>; close(): Promise<void> }>
@@ -8362,7 +8389,7 @@ const people = await dir.search("ou=people,dc=example,dc=com", "(uid=alice)", ["
 await dir.close();
 ```
 
-#### 17.5.5 db.memcached.open
+#### 17.6.5 db.memcached.open
 
 ```
 open(addr: string): Promise<{ get(key: string): Promise<string | null>; set(key: string, value: unknown, expirySeconds?: number): Promise<void>; delete(key: string): Promise<boolean> }>
@@ -8385,7 +8412,7 @@ const v = await mc.get("session:42"); // "active" or null
 const existed = await mc.delete("session:42"); // true
 ```
 
-#### 17.5.6 db.mssql.open
+#### 17.6.6 db.mssql.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -8407,7 +8434,7 @@ const rows = await db.query("SELECT TOP 5 id, name FROM users WHERE region = @p1
 await db.close();
 ```
 
-#### 17.5.7 db.mysql.open
+#### 17.6.7 db.mysql.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -8429,7 +8456,7 @@ const n = await db.queryValue("SELECT COUNT(*) FROM orders WHERE status = ?", "p
 await db.close();
 ```
 
-#### 17.5.8 db.oracle.open
+#### 17.6.8 db.oracle.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -8451,7 +8478,7 @@ const rows = await db.query("SELECT id, name FROM users WHERE id = :1", 42);
 await db.close();
 ```
 
-#### 17.5.9 db.postgres.open
+#### 17.6.9 db.postgres.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, sslmode?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -8473,7 +8500,7 @@ const rows = await db.query("SELECT id, name FROM users WHERE id = $1", 42);
 await db.close();
 ```
 
-#### 17.5.10 db.redis.open
+#### 17.6.10 db.redis.open
 
 ```
 open(url: string): Promise<{ do(cmd: string, ...args: unknown[]): Promise<unknown>; ping(): Promise<string>; close(): Promise<void> }>
@@ -8497,7 +8524,7 @@ const missing = await r.do("GET", "nope"); // null
 await r.close();
 ```
 
-#### 17.5.11 db.sqlite.open
+#### 17.6.11 db.sqlite.open
 
 ```
 open(path: string): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -8521,7 +8548,7 @@ const rows = await conn.query("SELECT * FROM t WHERE name = ?", "alice");
 await conn.close();
 ```
 
-#### 17.5.12 db.valkey.open
+#### 17.6.12 db.valkey.open
 
 ```
 open(url: string): Promise<{ do(cmd: string, ...args: unknown[]): Promise<unknown>; ping(): Promise<string>; close(): Promise<void> }>
@@ -8544,11 +8571,11 @@ const v = await r.do("GET", "greeting"); // "hi"
 await r.close();
 ```
 
-### 17.6 fs
+### 17.7 fs
 
 Filesystem operations: path manipulation and archive create/extract.
 
-#### 17.6.1 fs.archive.create
+#### 17.7.1 fs.archive.create
 
 ```
 create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<{ path: string; format: string; entries: string[]; bytes?: number }>
@@ -8570,7 +8597,7 @@ const r = await fs.archive.create("out.tar.gz", ["dist", { path: "README.md", na
 runtime.log(r.format, r.entries.length);
 ```
 
-#### 17.6.2 fs.archive.extract
+#### 17.7.2 fs.archive.extract
 
 ```
 extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean, maxTotalBytes?: number, maxEntries?: number }): Promise<{ path: string; format: string; dest: string; entries: string[] }>
@@ -8593,7 +8620,7 @@ const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true
 runtime.log(r.entries.length, "files extracted");
 ```
 
-#### 17.6.3 fs.exists
+#### 17.7.3 fs.exists
 
 ```
 exists(path: string): Promise<boolean>
@@ -8613,7 +8640,7 @@ Report whether a path exists. Never throws for a missing path.
 if (!(await fs.exists("report"))) await fs.mkdir("report");
 ```
 
-#### 17.6.4 fs.mkdir
+#### 17.7.4 fs.mkdir
 
 ```
 mkdir(path: string): Promise<{ path: string }>
@@ -8633,7 +8660,7 @@ Create a directory, including any missing parents (mkdir -p). Idempotent.
 await fs.mkdir("report/assets");
 ```
 
-#### 17.6.5 fs.path.basename
+#### 17.7.5 fs.path.basename
 
 ```
 basename(path: string, suffix?: string): string
@@ -8654,7 +8681,7 @@ Final segment of a path; optional suffix is stripped if it matches.
 const b = fs.path.basename("/var/log/app.log", ".log"); // "app"
 ```
 
-#### 17.6.6 fs.path.dirname
+#### 17.7.6 fs.path.dirname
 
 ```
 dirname(path: string): string
@@ -8674,7 +8701,7 @@ Directory portion of a path. POSIX-style; trailing slashes are stripped.
 const d = fs.path.dirname("/var/log/app.log"); // "/var/log"
 ```
 
-#### 17.6.7 fs.readBytes
+#### 17.7.7 fs.readBytes
 
 ```
 readBytes(path: string): Promise<Uint8Array>
@@ -8694,7 +8721,7 @@ Read an entire file as bytes.
 const bytes = await fs.readBytes("shot.png");
 ```
 
-#### 17.6.8 fs.readText
+#### 17.7.8 fs.readText
 
 ```
 readText(path: string): Promise<string>
@@ -8714,7 +8741,7 @@ Read an entire file as a UTF-8 string.
 const html = await fs.readText("report/index.html");
 ```
 
-#### 17.6.9 fs.remove
+#### 17.7.9 fs.remove
 
 ```
 remove(path: string): Promise<{ path: string }>
@@ -8734,7 +8761,7 @@ Remove a file or a directory tree (recursive). No error if the path is already a
 await fs.remove("report"); // clean slate
 ```
 
-#### 17.6.10 fs.stat
+#### 17.7.10 fs.stat
 
 ```
 stat(path: string): Promise<{ size: number; isDir: boolean; modifiedMs: number }>
@@ -8755,7 +8782,7 @@ const st = await fs.stat("report/index.html");
 runtime.log(st.size, st.isDir, st.modifiedMs);
 ```
 
-#### 17.6.11 fs.writeBytes
+#### 17.7.11 fs.writeBytes
 
 ```
 writeBytes(path: string, data: Uint8Array): Promise<{ path: string; bytes: number }>
@@ -8777,7 +8804,7 @@ const shot = await d.screenshot();
 await fs.writeBytes("shot.png", new Uint8Array(shot.bytes));
 ```
 
-#### 17.6.12 fs.writeText
+#### 17.7.12 fs.writeText
 
 ```
 writeText(path: string, text: string): Promise<{ path: string; bytes: number }>
@@ -8799,11 +8826,11 @@ await fs.mkdir("report");
 await fs.writeText("report/index.html", "<h1>Hi</h1>");
 ```
 
-### 17.7 image
+### 17.8 image
 
 Image decode/encode (PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in) and a chainable Image handle: resize/crop/rotate/flip/adjust/filter/compose.
 
-#### 17.7.1 image.decode
+#### 17.8.1 image.decode
 
 ```
 decode(data: Uint8Array, opts?: { autoOrient?: boolean }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -8824,7 +8851,7 @@ Decode in-memory image bytes into a chainable Image handle. The format is sniffe
 const im = image.decode(pngBytes, { autoOrient: true });
 ```
 
-#### 17.7.2 image.decodeFrames
+#### 17.8.2 image.decodeFrames
 
 ```
 decodeFrames(src: string | Uint8Array): { format: string; width: number; height: number; loopCount: number; frames: { image: { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }; delayMs: number; xOffset: number; yOffset: number; disposal: "none" | "background" | "previous"; blend?: "source" | "over" }[] }
@@ -8845,7 +8872,7 @@ const a = image.decodeFrames("anim.gif");
 runtime.log(a.format, a.frames.length, a.frames[0].delayMs);
 ```
 
-#### 17.7.3 image.encodeFrames
+#### 17.8.3 image.encodeFrames
 
 ```
 encodeFrames(spec: { width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] }, opts?: { format?: "gif" | "apng"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
@@ -8868,7 +8895,7 @@ const out = image.encodeFrames(a, { format: "apng" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.7.4 image.exif.clear
+#### 17.8.4 image.exif.clear
 
 ```
 clear(src: string | Uint8Array, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -8890,7 +8917,7 @@ const out = image.exif.clear(jpegBytes);
 const e = image.exif.read(out.bytes); // e === {}
 ```
 
-#### 17.7.5 image.exif.read
+#### 17.8.5 image.exif.read
 
 ```
 read(src: string | Uint8Array): { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }
@@ -8911,7 +8938,7 @@ const e = image.exif.read("photo.jpg");
 runtime.log(e.image?.Make, e.gps?.GPSLatitude);
 ```
 
-#### 17.7.6 image.exif.replace
+#### 17.8.6 image.exif.replace
 
 ```
 replace(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -8934,7 +8961,7 @@ const out = image.exif.replace(jpegBytes, { image: { Make: "sercon" } });
 const e = image.exif.read(out.bytes); // e.image.Make === "sercon"
 ```
 
-#### 17.7.7 image.exif.write
+#### 17.8.7 image.exif.write
 
 ```
 write(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -8957,7 +8984,7 @@ const out = image.exif.write(jpegBytes, { image: { Artist: "Alice" } });
 // out.bytes is the updated JPEG
 ```
 
-#### 17.7.8 image.open
+#### 17.8.8 image.open
 
 ```
 open(path: string, opts?: { autoOrient?: boolean }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -8978,7 +9005,7 @@ Read an image file from disk and decode it into a chainable Image handle. The fo
 const im = image.open("avatar.jpg", { autoOrient: true });
 ```
 
-#### 17.7.9 image.rasterizeSVG
+#### 17.8.9 image.rasterizeSVG
 
 ```
 rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -8999,7 +9026,7 @@ Rasterize an SVG (a supported subset) to a raster Image at the requested pixel s
 const im = image.rasterizeSVG("logo.svg", { width: 256, height: 256 });
 ```
 
-#### 17.7.10 image.stego.analyze
+#### 17.8.10 image.stego.analyze
 
 ```
 analyze(carrier: string | Uint8Array): { width: number; height: number; capacity: number; estimatedBits: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; bits?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number; chiSquareByBits: number[]; entropyByPlane: number[] }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } }
@@ -9019,7 +9046,7 @@ Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of
 const r = image.stego.analyze("suspect.png"); console.log(r.verdict.suspicious, r.verdict.reasons);
 ```
 
-#### 17.7.11 image.stego.bitplane
+#### 17.8.11 image.stego.bitplane
 
 ```
 bitplane(carrier: string | Uint8Array, opts?: { channel?: "r" | "g" | "b" | "rgb"; plane?: number; dest?: string }): { bytes: Uint8Array } | { path: string }
@@ -9040,7 +9067,7 @@ Render one bit-plane of an image as a PNG for visual inspection. Hidden LSB data
 const lsb = image.stego.bitplane("photo.png", { plane: 0 });
 ```
 
-#### 17.7.12 image.stego.capacity
+#### 17.8.12 image.stego.capacity
 
 ```
 capacity(carrier: string | Uint8Array, opts?: { bits?: number }): { bytes: number; bits: number }
@@ -9061,7 +9088,7 @@ Report the maximum payload size (in bytes) a carrier can hold, after the fixed 1
 const room = image.stego.capacity("cover.png", { bits: 4 }).bytes;
 ```
 
-#### 17.7.13 image.stego.detect
+#### 17.8.13 image.stego.detect
 
 ```
 detect(carrier: string | Uint8Array): { sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; bits?: number; suspicious: boolean; confidence: number }
@@ -9081,7 +9108,7 @@ Quickly check whether an image carries hidden data. Returns a definitive flag fo
 if (image.stego.detect("photo.png").sercon) console.log("hidden payload!");
 ```
 
-#### 17.7.14 image.stego.embed
+#### 17.8.14 image.stego.embed
 
 ```
 embed(carrier: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string; bits?: number }): { bytes: Uint8Array } | { path: string }
@@ -9103,7 +9130,7 @@ Hide a payload inside a lossless image using least-significant-bit (LSB) stegano
 const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });
 ```
 
-#### 17.7.15 image.stego.extract
+#### 17.8.15 image.stego.extract
 
 ```
 extract(carrier: string | Uint8Array, opts?: { password?: string }): string | Uint8Array
@@ -9124,11 +9151,11 @@ Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, 
 const msg = image.stego.extract("cover.png", { password: "s3cret" });
 ```
 
-### 17.8 net
+### 17.9 net
 
 Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions.
 
-#### 17.8.1 net.browser.open
+#### 17.9.1 net.browser.open
 
 ```
 open(...args: unknown[]): Promise<{ setUserAgent(ua: string): void, setHeader(name: string, value: string): void, get(url: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, post(url: string, body?: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, cookies(url: string): Promise<{ name: string, value: string }[]> }>
@@ -9148,7 +9175,7 @@ const home = await b.get("https://site/home");
 runtime.log(await b.cookies("https://site/"));
 ```
 
-#### 17.8.2 net.capture.interfaces
+#### 17.9.2 net.capture.interfaces
 
 ```
 interfaces(): { name: string; addresses: string[]; up: boolean; loopback: boolean }[]
@@ -9164,7 +9191,7 @@ List the host's network interfaces synchronously: net.capture.interfaces() → a
 for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);
 ```
 
-#### 17.8.3 net.capture.open
+#### 17.9.3 net.capture.open
 
 ```
 open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, vlan?: { id: number, priority: number, drop: boolean, type: string }, arp?: { operation: string, senderMac: string, senderIp: string, targetMac: string, targetIp: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, window: number, checksum: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean }, options?: { mss?: number, windowScale?: number, sackPermitted?: boolean, timestamps?: { val: number, ecr: number } } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, dns?: { id: number, qr: boolean, opcode: string, rcode: string, questions: { name: string, type: string }[], answers: { name: string, type: string, data: string }[] }, payload?: Uint8Array, bytes: Uint8Array }) => void): Promise<{ iface: string, link: string, close(): Promise<void> }>
@@ -9188,7 +9215,7 @@ const cap = await net.capture.open({ iface: "en0", filter: "tcp and port 443" },
 await cap.close();
 ```
 
-#### 17.8.4 net.capture.openFile
+#### 17.9.4 net.capture.openFile
 
 ```
 openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, vlan?: object, arp?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, dns?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): Promise<void>
@@ -9210,7 +9237,7 @@ Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) →
 await net.capture.openFile("/tmp/dump.pcap", pkt => runtime.log(pkt.tcp?.dstPort), { filter: "tcp" });
 ```
 
-#### 17.8.5 net.capture.routes
+#### 17.9.5 net.capture.routes
 
 ```
 routes(): { destination: string; gateway: string; interface: string; family: "ip" | "ip6"; metric: number }[]
@@ -9226,7 +9253,7 @@ List the host's IP routing table synchronously: net.capture.routes() → array o
 const def = net.capture.routes().find(r => r.destination === "0.0.0.0/0");\nruntime.log("default via", def?.gateway, "on", def?.interface);
 ```
 
-#### 17.8.6 net.capture.toFile
+#### 17.9.6 net.capture.toFile
 
 ```
 toFile(path: string, opts?: { snaplen?: number, linkType?: number }): { write(bytes: string | Uint8Array, opts?: { ts?: number }): void; close(): Promise<void> }
@@ -9249,7 +9276,7 @@ w.write(frameBytes, { ts: Date.now() });
 await w.close();
 ```
 
-#### 17.8.7 net.email.all
+#### 17.9.7 net.email.all
 
 ```
 all(domain: string): Promise<{ domain: string, spf: object, dmarc: object, mtaSts: object, tlsRpt: object, bimi: object }>
@@ -9269,7 +9296,7 @@ Run all five email probes in parallel — five-way handshake aggregate.
 const a = await net.email.all("example.com"); runtime.log(a.spf, a.dmarc);
 ```
 
-#### 17.8.8 net.email.bimi
+#### 17.9.8 net.email.bimi
 
 ```
 bimi(domain: string, opts?: { selector?: string }): Promise<{ present: false, selector: string } | { present: true, selector: string, record: string, tags: Record<string, string>, l: string, a: string }>
@@ -9290,7 +9317,7 @@ Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'.
 const r = await net.email.bimi("example.com", { selector: "v1" }); runtime.log(r.present && r.l);
 ```
 
-#### 17.8.9 net.email.dmarc
+#### 17.9.9 net.email.dmarc
 
 ```
 dmarc(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, policy: string, subdomain: string, percent: string, rua: string, ruf: string }>
@@ -9310,7 +9337,7 @@ Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.
 const r = await net.email.dmarc("example.com"); runtime.log(r.present && r.policy);
 ```
 
-#### 17.8.10 net.email.mtaSts
+#### 17.9.10 net.email.mtaSts
 
 ```
 mtaSts(domain: string): Promise<{ present: false } | { present: true, record: string, txt: { v: string, id: string }, policy?: { version?: string, mode?: string, mx?: string[], maxAge?: number | string }, policyError?: string }>
@@ -9330,7 +9357,7 @@ Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file.
 const r = await net.email.mtaSts("example.com"); runtime.log(r.present && r.policy?.mode);
 ```
 
-#### 17.8.11 net.email.send
+#### 17.9.11 net.email.send
 
 ```
 send(opts: { to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number }): Promise<{ accepted: string[], rejected: { address: string, reason: string }[] }>
@@ -9354,7 +9381,7 @@ const r = await net.email.send({
 runtime.log(r.accepted, r.rejected);
 ```
 
-#### 17.8.12 net.email.spf
+#### 17.9.12 net.email.spf
 
 ```
 spf(domain: string): Promise<{ present: false } | { present: true, record: string, mechanisms: string[], allPolicy: string }>
@@ -9374,7 +9401,7 @@ Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.
 const r = await net.email.spf("example.com"); if (r.present) runtime.log(r.allPolicy);
 ```
 
-#### 17.8.13 net.email.tlsRpt
+#### 17.9.13 net.email.tlsRpt
 
 ```
 tlsRpt(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, rua: string }>
@@ -9394,7 +9421,7 @@ Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua.
 const r = await net.email.tlsRpt("example.com"); runtime.log(r.present && r.rua);
 ```
 
-#### 17.8.14 net.http.get
+#### 17.9.14 net.http.get
 
 ```
 get(url: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
@@ -9414,7 +9441,7 @@ Perform an HTTP GET with a 5-second default timeout. Returns { status, body, bod
 const r = await net.http.get("https://example.com"); runtime.log(r.status);
 ```
 
-#### 17.8.15 net.http.post
+#### 17.9.15 net.http.post
 
 ```
 post(url: string, body?: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
@@ -9435,7 +9462,7 @@ Perform an HTTP POST with a 5-second default timeout. Returns { status, body, bo
 const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1 }));
 ```
 
-#### 17.8.16 net.http.request
+#### 17.9.16 net.http.request
 
 ```
 request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string, maxBytes?: number }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
@@ -9461,7 +9488,7 @@ const r = await net.http.request("POST", "https://api.example.com/upload", { mul
 ] });
 ```
 
-#### 17.8.17 net.icmp.open
+#### 17.9.17 net.icmp.open
 
 ```
 open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array, body?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -9485,7 +9512,7 @@ await p.send({ to: "8.8.8.8", id: 1, seq: 1, payload: "ping" });
 await p.send({ to: "8.8.8.8", type: 3, code: 1, body: new Uint8Array([0, 0, 0, 0]) });
 ```
 
-#### 17.8.18 net.load.http
+#### 17.9.18 net.load.http
 
 ```
 http(opts: { url: string, method?: string, headers?: Record<string, string>, body?: string, concurrency?: number, requests?: number, duration?: number, rps?: number, timeout?: number, confirm?: boolean }): Promise<{ target: string, method: string, concurrency: number, durationMs: number, sent: number, completed: number, failed: number, rps: number, errorRate: number, latency: { min: number, mean: number, p50: number, p90: number, p95: number, p99: number, max: number }, statusCounts: Record<string, number>, errors: Record<string, number> }>
@@ -9505,7 +9532,7 @@ Authorized HTTP load / resilience self-test: drive a target with a worker pool a
 const r = await net.load.http({ url: "http://127.0.0.1:8080/", requests: 200, concurrency: 10 }); runtime.log(r.rps, r.latency.p95, r.errorRate);
 ```
 
-#### 17.8.19 net.netstatus.check
+#### 17.9.19 net.netstatus.check
 
 ```
 check(host: string, opts?: { port?: string, timeout?: number }): Promise<{ host: string, port: string, elapsedMs: number, reachable: boolean, dns: { ok: boolean, ips: string[], error?: string }, tcp: { ok: boolean, latencyMs: number, error?: string }, tls: { ok: boolean, daysRemaining: number, error?: string }, http: { ok: boolean, status: number, error?: string } }>
@@ -9526,7 +9553,7 @@ Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, d
 const s = await net.netstatus.check("example.com"); runtime.log(s.reachable);
 ```
 
-#### 17.8.20 net.probe.dns
+#### 17.9.20 net.probe.dns
 
 ```
 dns(host: string, opts?: { types?: string[] }): Promise<{ a?: string[], aaaa?: string[], mx?: { preference: number, host: string }[], txt?: string[], cname?: string, ns?: string[] }>
@@ -9547,7 +9574,7 @@ Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five.
 const r = await net.probe.dns("example.com", { types: ["a", "mx"] });
 ```
 
-#### 17.8.21 net.probe.ntp
+#### 17.9.21 net.probe.ntp
 
 ```
 ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<{ serverTime: string, offsetMs: number, rttMs: number, stratum: number, referenceTime: string, rootDelayMs: number, rootDispersionMs: number }>
@@ -9568,7 +9595,7 @@ Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / di
 const r = await net.probe.ntp("pool.ntp.org"); runtime.log(r.offsetMs);
 ```
 
-#### 17.8.22 net.probe.ping
+#### 17.9.22 net.probe.ping
 
 ```
 ping(host: string, opts?: { mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }): Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }>
@@ -9589,7 +9616,7 @@ Reachability probe. mode tcp (default; dials host:port), icmp (real ICMP echo, n
 const p = await net.probe.ping("example.com", { count: 3 }); runtime.log(p.lossPercent);
 ```
 
-#### 17.8.23 net.probe.smtp
+#### 17.9.23 net.probe.smtp
 
 ```
 smtp(host: string, opts?: { port?: string, timeout?: number, ehloName?: string }): Promise<{ host: string, port: string, banner: string, ehloDomain: string, extensions: string[], starttls: boolean, authMechanisms: string[], sizeLimit: number }>
@@ -9610,7 +9637,7 @@ SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner,
 const s = await net.probe.smtp("mail.example.com"); runtime.log(s.starttls, s.authMechanisms);
 ```
 
-#### 17.8.24 net.probe.tcp
+#### 17.9.24 net.probe.tcp
 
 ```
 tcp(target: string, opts?: { timeout?: number, port?: string }): Promise<{ host: string, port: number, ip: string, latencyMs: number }>
@@ -9631,7 +9658,7 @@ Dial a TCP target and report latency + resolved IP. Default timeout 5s.
 const r = await net.probe.tcp("example.com:443"); runtime.log(r.latencyMs);
 ```
 
-#### 17.8.25 net.probe.tls
+#### 17.9.25 net.probe.tls
 
 ```
 tls(target: string, opts?: { timeout?: number }): Promise<{ cn: string, issuer: string, notBefore: string, notAfter: string, daysRemaining: number, dnsNames: string[], serialNumber: string, fingerprintSha256: string }>
@@ -9652,7 +9679,7 @@ Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert
 const c = await net.probe.tls("example.com:443"); runtime.log(c.daysRemaining);
 ```
 
-#### 17.8.26 net.probe.traceroute
+#### 17.9.26 net.probe.traceroute
 
 ```
 traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string | null; rttsMs: number[]; reached: boolean }[]>
@@ -9675,7 +9702,7 @@ const hops = await net.probe.traceroute("1.1.1.1", { protocol: "icmp", maxHops: 
 for (const h of hops) runtime.log(h.ttl, h.address ?? "*", h.rttsMs);
 ```
 
-#### 17.8.27 net.probe.whois
+#### 17.9.27 net.probe.whois
 
 ```
 whois(domain: string, opts?: { timeout?: number }): Promise<{ raw: string, domain?: { name: string, punycode: string, whoisServer: string, nameServers: string[], status: string[], dnssec: boolean, createdDate: string, updatedDate: string, expirationDate: string }, registrar?: { name: string } }>
@@ -9696,7 +9723,7 @@ Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw re
 const w = await net.probe.whois("example.com"); runtime.log(w.domain?.expirationDate);
 ```
 
-#### 17.8.28 net.probe.wss
+#### 17.9.28 net.probe.wss
 
 ```
 wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string, connected: boolean, subprotocol: string, status: number, handshakeMs: number, pingMs: number }>
@@ -9717,7 +9744,7 @@ WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT.
 const w = await net.probe.wss("wss://echo.websocket.org"); runtime.log(w.handshakeMs);
 ```
 
-#### 17.8.29 net.raw.open
+#### 17.9.29 net.raw.open
 
 ```
 open(opts?: { iface?: string, filter?: string, readBuffer?: number }): Promise<{ link: string; send(spec: object | Uint8Array): Promise<{ bytesSent: number }>; onPacket(cb: (pkt: any) => void): void; onClose(cb: () => void): void; onError(cb: (msg: string) => void): void; close(): Promise<void> }>
@@ -9742,7 +9769,7 @@ await new Promise(r => setTimeout(r, 1000));
 await h.close();
 ```
 
-#### 17.8.30 net.raw.tcp
+#### 17.9.30 net.raw.tcp
 
 ```
 tcp(host: string, port: number, opts?: { flags?: string[], srcPort?: number, src?: string, seq?: number, ttl?: number, payload?: Uint8Array | string, timeout?: number, iface?: string }): Promise<{ ts: number; link: string; ip: { src: string; dst: string; protocol: string; ttl: number }; tcp: { srcPort: number; dstPort: number; seq: number; ack: number; flags: { syn: boolean; ack: boolean; fin: boolean; rst: boolean; psh: boolean; urg: boolean } }; payload?: Uint8Array; bytes: Uint8Array } | null>
@@ -9768,7 +9795,7 @@ else if (reply && reply.tcp.flags.rst) runtime.log("closed");
 else runtime.log("filtered / no answer");
 ```
 
-#### 17.8.31 net.tcp.connect
+#### 17.9.31 net.tcp.connect
 
 ```
 connect(host: string, port: string | number, opts?: { timeout?: number, readBuffer?: number }): Promise<{ remote: string, local: string, write(data: string | Uint8Array): Promise<void>, onData(cb: (ev: { bytes: Uint8Array, text: string }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -9792,7 +9819,7 @@ sock.onData(ev => runtime.log(ev.text));
 await sock.write("GET / HTTP/1.0\r\n\r\n");
 ```
 
-#### 17.8.32 net.udp.open
+#### 17.9.32 net.udp.open
 
 ```
 open(opts: { host?: string, port?: string | number, bind?: string, readBuffer?: number }): Promise<{ local: string, send(data: string | Uint8Array): Promise<void>, sendTo(data: string | Uint8Array, host: string, port: string | number): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address?: string, port?: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -9814,11 +9841,11 @@ u.onMessage(ev => runtime.log(ev.bytes.length));
 await u.send(query);
 ```
 
-### 17.9 runtime
+### 17.10 runtime
 
 Script-host scaffolding: logging, assertions, time, environment, runtime.argv.
 
-#### 17.9.1 runtime.argv
+#### 17.10.1 runtime.argv
 
 ```
 argv: string[]
@@ -9834,7 +9861,7 @@ Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is t
 const target = runtime.argv[2] ?? "default-host";
 ```
 
-#### 17.9.2 runtime.assert.equal
+#### 17.10.2 runtime.assert.equal
 
 ```
 equal(actual: unknown, expected: unknown, msg?: string): void
@@ -9856,7 +9883,7 @@ Throw when actual != expected (strict equality on primitives, deep equality on o
 runtime.assert.equal(1 + 1, 2, "math still works");
 ```
 
-#### 17.9.3 runtime.assert.ok
+#### 17.10.3 runtime.assert.ok
 
 ```
 ok(cond: unknown, msg?: string): void
@@ -9877,7 +9904,7 @@ Throw when cond is falsy. Optional msg appears in the error.
 runtime.assert.ok(user.id, "user must have an id");
 ```
 
-#### 17.9.4 runtime.clearDeadline
+#### 17.10.4 runtime.clearDeadline
 
 ```
 clearDeadline(): void
@@ -9893,7 +9920,7 @@ Remove the running script's wall-clock kill deadline entirely (equivalent to -ti
 runtime.clearDeadline(); // run without a timeout
 ```
 
-#### 17.9.5 runtime.clipboard.available
+#### 17.10.5 runtime.clipboard.available
 
 ```
 available: boolean
@@ -9909,7 +9936,7 @@ True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-cl
 if (!runtime.clipboard.available) runtime.log("no clipboard — skipping");
 ```
 
-#### 17.9.6 runtime.clipboard.imageAvailable
+#### 17.10.6 runtime.clipboard.imageAvailable
 
 ```
 imageAvailable: boolean
@@ -9925,7 +9952,7 @@ True when a PNG image clipboard backend is usable on this host (macOS pngpaste; 
 if (runtime.clipboard.imageAvailable) { /* … */ }
 ```
 
-#### 17.9.7 runtime.clipboard.read
+#### 17.10.7 runtime.clipboard.read
 
 ```
 read(...args: unknown[]): Promise<string>
@@ -9941,7 +9968,7 @@ Read the host OS system clipboard as UTF-8 text. Async (shells out to the platfo
 const text = await runtime.clipboard.read();
 ```
 
-#### 17.9.8 runtime.clipboard.readImage
+#### 17.10.8 runtime.clipboard.readImage
 
 ```
 readImage(...args: unknown[]): Promise<Uint8Array | null>
@@ -9957,7 +9984,7 @@ Read the host clipboard image as PNG bytes. Async (shells out). Resolves null wh
 const png = await runtime.clipboard.readImage();
 ```
 
-#### 17.9.9 runtime.clipboard.write
+#### 17.10.9 runtime.clipboard.write
 
 ```
 write(text: string): Promise<void>
@@ -9977,7 +10004,7 @@ Replace the host OS system clipboard with the given text. Async (shells out to t
 await runtime.clipboard.write("copied from sercon");
 ```
 
-#### 17.9.10 runtime.clipboard.writeImage
+#### 17.10.10 runtime.clipboard.writeImage
 
 ```
 writeImage(png: Uint8Array): Promise<void>
@@ -9997,7 +10024,7 @@ Set the host clipboard image from PNG bytes. Async (shells out). The input must 
 await runtime.clipboard.writeImage(pngBytes);
 ```
 
-#### 17.9.11 runtime.env.get
+#### 17.10.11 runtime.env.get
 
 ```
 get(name: string): string | undefined
@@ -10017,7 +10044,7 @@ Read an environment variable. Returns undefined when unset (not empty string).
 const home = runtime.env.get("HOME") ?? "/tmp";
 ```
 
-#### 17.9.12 runtime.env.load
+#### 17.10.12 runtime.env.load
 
 ```
 load(path: string, opts?: { override?: boolean }): Promise<{ [key: string]: string }>
@@ -10039,7 +10066,7 @@ await runtime.env.load(".env");
 const url = runtime.env.get("DATABASE_URL");
 ```
 
-#### 17.9.13 runtime.getDeadline
+#### 17.10.13 runtime.getDeadline
 
 ```
 getDeadline(): number | null
@@ -10055,7 +10082,7 @@ Return the milliseconds remaining until the running script's kill deadline, or n
 const left = runtime.getDeadline(); // e.g. 9871, or null
 ```
 
-#### 17.9.14 runtime.log
+#### 17.10.14 runtime.log
 
 ```
 log(args: unknown[]): void
@@ -10075,7 +10102,7 @@ Print one space-separated line of the arguments to stdout. Primitives print raw;
 runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}
 ```
 
-#### 17.9.15 runtime.secrets.available
+#### 17.10.15 runtime.secrets.available
 
 ```
 available: boolean
@@ -10091,7 +10118,7 @@ True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows 
 if (!runtime.secrets.available) runtime.log("no keystore — skipping");
 ```
 
-#### 17.9.16 runtime.secrets.delete
+#### 17.10.16 runtime.secrets.delete
 
 ```
 delete(name: string, account: string): Promise<boolean>
@@ -10112,7 +10139,7 @@ Remove a secret from the OS keystore under prefix + name / account. Async (keyst
 const removed = await runtime.secrets.delete("devshop", "tess@example.com");
 ```
 
-#### 17.9.17 runtime.secrets.get
+#### 17.10.17 runtime.secrets.get
 
 ```
 get(name: string, account: string): Promise<string | null>
@@ -10133,7 +10160,7 @@ Read a string secret from the OS keystore. The keystore service is the configure
 const pw = await runtime.secrets.get("devshop", "tess@example.com");
 ```
 
-#### 17.9.18 runtime.secrets.set
+#### 17.10.18 runtime.secrets.set
 
 ```
 set(name: string, account: string, secret: string): Promise<void>
@@ -10155,7 +10182,7 @@ Store or overwrite a string secret in the OS keystore under prefix + name / acco
 await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
 ```
 
-#### 17.9.19 runtime.setDeadline
+#### 17.10.19 runtime.setDeadline
 
 ```
 setDeadline(ms: number): void
@@ -10175,7 +10202,7 @@ Set the running script's wall-clock kill deadline to now + ms (replacing any pri
 runtime.setDeadline(30000); // give this run 30s from now
 ```
 
-#### 17.9.20 runtime.time.format
+#### 17.10.20 runtime.time.format
 
 ```
 format(ms: number, layout: string, tz?: string): string
@@ -10197,7 +10224,7 @@ Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Euro
 const s = runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC");
 ```
 
-#### 17.9.21 runtime.time.nowMs
+#### 17.10.21 runtime.time.nowMs
 
 ```
 nowMs(): number
@@ -10213,7 +10240,7 @@ Wall-clock milliseconds since the Unix epoch.
 const t0 = runtime.time.nowMs();
 ```
 
-#### 17.9.22 runtime.time.sleep
+#### 17.10.22 runtime.time.sleep
 
 ```
 sleep(ms: number): Promise<void>
@@ -10233,11 +10260,11 @@ Resolve after `ms` milliseconds. Cancellable via the engine timeout.
 await runtime.time.sleep(250);
 ```
 
-### 17.10 server
+### 17.11 server
 
 Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.
 
-#### 17.10.1 server.http.listen
+#### 17.11.1 server.http.listen
 
 ```
 listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown; maxBodyBytes?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -10262,7 +10289,7 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### 17.10.2 server.http.static
+#### 17.11.2 server.http.static
 
 ```
 static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
@@ -10285,7 +10312,7 @@ server.http.listen({
 });
 ```
 
-#### 17.10.3 server.https.listen
+#### 17.11.3 server.https.listen
 
 ```
 listen(opts: { port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; maxBodyBytes?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -10310,7 +10337,7 @@ const srv = server.https.listen({
 });
 ```
 
-#### 17.10.4 server.https.static
+#### 17.11.4 server.https.static
 
 ```
 static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
@@ -10333,7 +10360,7 @@ server.https.listen({
 });
 ```
 
-#### 17.10.5 server.icmp.listen
+#### 17.11.5 server.icmp.listen
 
 ```
 listen(opts?: { network?: "ip4" | "ip6" }, handler?: (msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void): { address: string; close(): Promise<void> }
@@ -10359,7 +10386,7 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### 17.10.6 server.smtp.listen
+#### 17.11.6 server.smtp.listen
 
 ```
 listen(opts: { port: number; host?: string; hostname?: string; handlers: { onMail: (env: Envelope) => boolean | string | void | Promise<boolean | string | void>; onRcpt: (env: Envelope, to: string) => boolean | string | void | Promise<boolean | string | void>; onData: (env: Envelope, msg: Message) => boolean | string | void | Promise<boolean | string | void> }; auth?: (user: string, pass: string, env: Envelope) => boolean | Promise<boolean>; starttls?: { cert: string; key: string }; allowInsecureAuth?: boolean; maxMessageBytes?: number; maxRecipients?: number; sessionTimeout?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -10386,7 +10413,7 @@ const srv = server.smtp.listen({
 });
 ```
 
-#### 17.10.7 server.tcp.listen
+#### 17.11.7 server.tcp.listen
 
 ```
 listen(opts: { port: number; host?: string; readBuffer?: number }, handler: (conn: { remote: string; local: string; write(data: string | Uint8Array): Promise<void>; onData(cb: (msg: { bytes: Uint8Array; text: string }) => void): void; onClose(cb: () => void): void; onError(cb: (err: unknown) => void): void; close(): void }) => void): { address: string; close(): Promise<void> }
@@ -10411,7 +10438,7 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### 17.10.8 server.udp.listen
+#### 17.11.8 server.udp.listen
 
 ```
 listen(opts: { port: number; host?: string }, handler: (msg: { bytes: Uint8Array; text: string; address: string; port: number }, reply: (data: string | Uint8Array) => Promise<void>) => void): { address: string; close(): Promise<void> }
@@ -10436,39 +10463,39 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-### 17.11 services
+### 17.12 services
 
 Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, poppler-backed PDF render/extract, external-requirement diagnostics (doctor).
 
-#### 17.11.1 services.agentBrowser.auth
+#### 17.12.1 services.agentBrowser.auth
 
 Namespace object for the auth vault (session-independent): auth.save, auth.list, auth.show, auth.delete. Passwords are never placed in argv — auth.save sends the password via stdin (--password-stdin).
 
-#### 17.11.2 services.agentBrowser.auth.delete
+#### 17.12.2 services.agentBrowser.auth.delete
 
 ```
 delete(...args: unknown[])
 ```
 
-#### 17.11.3 services.agentBrowser.auth.list
+#### 17.12.3 services.agentBrowser.auth.list
 
 ```
 list(...args: unknown[])
 ```
 
-#### 17.11.4 services.agentBrowser.auth.save
+#### 17.12.4 services.agentBrowser.auth.save
 
 ```
 save(...args: unknown[])
 ```
 
-#### 17.11.5 services.agentBrowser.auth.show
+#### 17.12.5 services.agentBrowser.auth.show
 
 ```
 show(...args: unknown[])
 ```
 
-#### 17.11.6 services.agentBrowser.available
+#### 17.12.6 services.agentBrowser.available
 
 ```
 available: boolean
@@ -10484,7 +10511,7 @@ True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run.
 if (!services.agentBrowser.available) runtime.log("install agent-browser first");
 ```
 
-#### 17.11.7 services.agentBrowser.clearDefaultOptions
+#### 17.12.7 services.agentBrowser.clearDefaultOptions
 
 ```
 clearDefaultOptions(): void
@@ -10501,7 +10528,7 @@ services.agentBrowser.clearDefaultOptions();
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {}
 ```
 
-#### 17.11.8 services.agentBrowser.defaultOptions
+#### 17.12.8 services.agentBrowser.defaultOptions
 
 ```
 defaultOptions(): object
@@ -10518,7 +10545,7 @@ services.agentBrowser.setDefaultOptions({ headed: false });
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed":false}
 ```
 
-#### 17.11.9 services.agentBrowser.eval
+#### 17.12.9 services.agentBrowser.eval
 
 ```
 eval(url: string, js: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -10540,7 +10567,7 @@ const r = await services.agentBrowser.eval("data:text/html,<title>Hi</title>", "
 runtime.log(r.data?.result); // "Hi"
 ```
 
-#### 17.11.10 services.agentBrowser.launch
+#### 17.12.10 services.agentBrowser.launch
 
 ```
 launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string, timeout?: number }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; frame(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: "Strict" | "Lax" | "None", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; trace: { start(): Promise<any>; stop(path?: string): Promise<any> }; profiler: { start(opts?: { categories?: string }): Promise<any>; stop(path?: string): Promise<any> }; inspect(): Promise<any>; clipboard(op: "read" | "write" | "copy" | "paste", text?: string): Promise<any>; vitals(url?: string): Promise<any>; pushstate(url: string): Promise<any>; react: { tree(): Promise<any>; inspect(id: string): Promise<any>; renders: { start(): Promise<any>; stop(): Promise<any> }; suspense(opts?: { onlyDynamic?: boolean }): Promise<any> }; stream: { enable(opts?: { port?: number }): Promise<any>; disable(): Promise<any>; status(): Promise<any> }; chat(message: string, opts?: { model?: string }): Promise<any>; cmd(command: string, ...args: string[]): Promise<any>; batch(cmds: string[], opts?: { bail?: boolean }): Promise<any>; auth: { login(name: string): Promise<any> }; close(): Promise<any> }
@@ -10564,7 +10591,7 @@ runtime.log(r.data?.title);
 await b.close();
 ```
 
-#### 17.11.11 services.agentBrowser.pdf
+#### 17.12.11 services.agentBrowser.pdf
 
 ```
 pdf(url: string, path?: string): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
@@ -10586,7 +10613,7 @@ const pdf = await services.agentBrowser.pdf("data:text/html,<h1>Hi</h1>");
 runtime.log(new Uint8Array(pdf.bytes).length, pdf.format); // e.g. 5678 pdf
 ```
 
-#### 17.11.12 services.agentBrowser.screenshot
+#### 17.12.12 services.agentBrowser.screenshot
 
 ```
 screenshot(url: string, path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
@@ -10609,7 +10636,7 @@ const shot = await services.agentBrowser.screenshot("data:text/html,<h1>Hi</h1>"
 runtime.log(new Uint8Array(shot.bytes).length, shot.format); // e.g. 12345 png
 ```
 
-#### 17.11.13 services.agentBrowser.setDefaultOptions
+#### 17.12.13 services.agentBrowser.setDefaultOptions
 
 ```
 setDefaultOptions(opts: object): void
@@ -10630,7 +10657,7 @@ services.agentBrowser.setDefaultOptions({ headed: false, proxy: "http://proxy:31
 const b = services.agentBrowser.launch(); // headed:false + proxy inherited
 ```
 
-#### 17.11.14 services.agentBrowser.snapshot
+#### 17.12.14 services.agentBrowser.snapshot
 
 ```
 snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): Promise<{ success: boolean, data: object, error: string | null }>
@@ -10652,7 +10679,7 @@ const snap = await services.agentBrowser.snapshot("data:text/html,<h1>Hi</h1>", 
 runtime.log(JSON.stringify(snap.data).slice(0, 100));
 ```
 
-#### 17.11.15 services.agentBrowser.version
+#### 17.12.15 services.agentBrowser.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -10668,7 +10695,7 @@ The agent-browser CLI version string.
 runtime.log(await services.agentBrowser.version());
 ```
 
-#### 17.11.16 services.ai.providers
+#### 17.12.16 services.ai.providers
 
 ```
 providers(): string[]
@@ -10684,7 +10711,7 @@ Which of claude / codex / copilot / gemini are on PATH, in preference order.
 const ps = services.ai.providers(); // e.g. ["claude", "gemini"]
 ```
 
-#### 17.11.17 services.ai.send
+#### 17.12.17 services.ai.send
 
 ```
 send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<{ provider: string; output: string; exitCode: number }>
@@ -10705,7 +10732,7 @@ const r = await services.ai.send({ prompt: "Say hi", provider: "claude" });
 runtime.log(r.output);
 ```
 
-#### 17.11.18 services.doctor
+#### 17.12.18 services.doctor
 
 ```
 doctor(requires?: string[]): Promise<{ ok: boolean; satisfied: boolean; unmet: string[]; tools: { name: string; category: string; purpose: string; installed: boolean; version: string | null; ok: boolean; detail?: string }[] }>
@@ -10728,7 +10755,7 @@ const opt = await services.doctor(["typst", "webdriver"]);
 runtime.log("unmet optional features:", JSON.stringify(opt.unmet));
 ```
 
-#### 17.11.19 services.exec.http
+#### 17.12.19 services.exec.http
 
 ```
 http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<{ status: number; headers: Record<string, string>; body: string; durationMs: number; backend: "recon" | "curl" }>
@@ -10751,7 +10778,7 @@ const r = await services.exec.http("GET", "https://example.com");
 runtime.log(r.status, r.backend);
 ```
 
-#### 17.11.20 services.exec.shell
+#### 17.12.20 services.exec.shell
 
 ```
 shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<{ stdout: string; stderr: string; exitCode: number; success: boolean; durationMs: number }>
@@ -10773,7 +10800,7 @@ const r = await services.exec.shell("echo hi");
 if (r.success) runtime.log(r.stdout.trim());
 ```
 
-#### 17.11.21 services.exec.stream
+#### 17.12.21 services.exec.stream
 
 ```
 stream(cmd: string | string[], onLine: (line: string, stream: "stdout" | "stderr") => void, opts?: { cwd?: string, env?: Record<string, string>, stdin?: string, timeout?: number }): Promise<{ exitCode: number; success: boolean; durationMs: number }>
@@ -10798,7 +10825,7 @@ const r = await services.exec.stream("echo one; echo two", (line, stream) => {
 runtime.log("exit", r.exitCode);
 ```
 
-#### 17.11.22 services.gh.authStatus
+#### 17.12.22 services.gh.authStatus
 
 ```
 authStatus(...args: unknown[]): Promise<{ authenticated: boolean; user: string; raw: string }>
@@ -10815,7 +10842,7 @@ const a = await services.gh.authStatus();
 if (a.authenticated) runtime.log("logged in as", a.user);
 ```
 
-#### 17.11.23 services.gh.prList
+#### 17.12.23 services.gh.prList
 
 ```
 prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Array<{ number: number; title: string; state: string; author: string; headRefName: string; baseRefName: string; url: string; createdAt: string; updatedAt: string }>>
@@ -10836,7 +10863,7 @@ const prs = await services.gh.prList({ state: "open", limit: 5 });
 for (const pr of prs) runtime.log(pr.number, pr.title);
 ```
 
-#### 17.11.24 services.gh.repoView
+#### 17.12.24 services.gh.repoView
 
 ```
 repoView(repo?: string, opts?: { cwd?: string }): Promise<{ name: string; owner: string; description: string; url: string; defaultBranch: string; visibility: string }>
@@ -10858,7 +10885,7 @@ const r = await services.gh.repoView("cli/cli");
 runtime.log(r.owner, r.defaultBranch);
 ```
 
-#### 17.11.25 services.git.add
+#### 17.12.25 services.git.add
 
 ```
 add(paths: string | string[], opts?: { cwd?: string }): Promise<{ paths: string[] }>
@@ -10879,7 +10906,7 @@ Stage one path (string) or several (string[]).
 await services.git.add(["src/a.ts", "src/b.ts"]);
 ```
 
-#### 17.11.26 services.git.branch
+#### 17.12.26 services.git.branch
 
 ```
 branch(opts?: { cwd?: string }): Promise<{ current: string; detached: boolean; all: string[] }>
@@ -10900,7 +10927,7 @@ const b = await services.git.branch();
 runtime.log(b.detached ? "(detached)" : b.current);
 ```
 
-#### 17.11.27 services.git.commit
+#### 17.12.27 services.git.commit
 
 ```
 commit(message: string, opts?: { cwd?: string, allowEmpty?: boolean }): Promise<{ sha: string }>
@@ -10921,7 +10948,7 @@ Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --all
 const c = await services.git.commit("chore: bump", { allowEmpty: true });
 ```
 
-#### 17.11.28 services.git.diffStat
+#### 17.12.28 services.git.diffStat
 
 ```
 diffStat(opts?: { cwd?: string, revRange?: string }): Promise<{ files: number; insertions: number; deletions: number }>
@@ -10942,7 +10969,7 @@ const d = await services.git.diffStat();
 runtime.log(d.files, d.insertions, d.deletions);
 ```
 
-#### 17.11.29 services.git.isClean
+#### 17.12.29 services.git.isClean
 
 ```
 isClean(opts?: { cwd?: string }): Promise<boolean>
@@ -10962,7 +10989,7 @@ True iff `git status --porcelain` is empty.
 if (await services.git.isClean()) runtime.log("clean");
 ```
 
-#### 17.11.30 services.git.log
+#### 17.12.30 services.git.log
 
 ```
 log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<Array<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }>>
@@ -10983,7 +11010,7 @@ const log = await services.git.log({ limit: 5 });
 runtime.log(log[0].subject);
 ```
 
-#### 17.11.31 services.git.revParse
+#### 17.12.31 services.git.revParse
 
 ```
 revParse(rev: string, opts?: { cwd?: string }): Promise<string>
@@ -11004,7 +11031,7 @@ Full 40-char SHA for the given rev. Invalid refs throw.
 const sha = await services.git.revParse("HEAD");
 ```
 
-#### 17.11.32 services.git.runText
+#### 17.12.32 services.git.runText
 
 ```
 runText(args: string | string[], opts?: { cwd?: string }): Promise<{ stdout: string; stderr: string; exitCode: number }>
@@ -11026,7 +11053,7 @@ const r = await services.git.runText(["tag", "--list"]);
 if (r.exitCode === 0) runtime.log(r.stdout);
 ```
 
-#### 17.11.33 services.git.status
+#### 17.12.33 services.git.status
 
 ```
 status(opts?: { cwd?: string }): Promise<Array<{ path: string; indexStatus: string; workingStatus: string }>>
@@ -11047,7 +11074,7 @@ for (const e of await services.git.status())
   runtime.log(e.indexStatus + e.workingStatus, e.path);
 ```
 
-#### 17.11.34 services.pdf.available
+#### 17.12.34 services.pdf.available
 
 ```
 available: boolean
@@ -11065,7 +11092,7 @@ if (!services.pdf.available) {
 }
 ```
 
-#### 17.11.35 services.pdf.backend
+#### 17.12.35 services.pdf.backend
 
 ```
 backend: string | null
@@ -11081,7 +11108,7 @@ The active PDF backend name, or null when no backend is available. Currently "po
 runtime.log("pdf backend:", services.pdf.backend ?? "none");
 ```
 
-#### 17.11.36 services.pdf.info
+#### 17.12.36 services.pdf.info
 
 ```
 info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; creationDate?: string; modDate?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>
@@ -11102,7 +11129,7 @@ const meta = await services.pdf.info("report.pdf");
 runtime.log("pages:", meta.pages, "encrypted:", meta.encrypted);
 ```
 
-#### 17.11.37 services.pdf.toHtml
+#### 17.12.37 services.pdf.toHtml
 
 ```
 toHtml(src: string, opts?: { pages?: string, dest?: string }): Promise<string | { path: string }>
@@ -11124,7 +11151,7 @@ const html = await services.pdf.toHtml("report.pdf", { pages: "1" });
 runtime.log(html.length, "bytes of HTML");
 ```
 
-#### 17.11.38 services.pdf.toImage
+#### 17.12.38 services.pdf.toImage
 
 ```
 toImage(src: string, opts?: { page?: number, firstPage?: number, lastPage?: number, format?: "png" | "jpeg" | "tiff", dpi?: number, dest?: string }): Promise<{ format: string; page?: number; bytes?: Uint8Array; paths?: string[] }>
@@ -11150,7 +11177,7 @@ const all = await services.pdf.toImage("report.pdf", { dest: "/tmp/page" });
 runtime.log("wrote", all.paths.length, "images");
 ```
 
-#### 17.11.39 services.pdf.toText
+#### 17.12.39 services.pdf.toText
 
 ```
 toText(src: string, opts?: { pages?: string, layout?: boolean, dest?: string }): Promise<string | { path: string }>
@@ -11172,35 +11199,35 @@ const txt = await services.pdf.toText("report.pdf", { pages: "1-2" });
 runtime.log(txt.slice(0, 80));
 ```
 
-#### 17.11.40 services.pdf.tools
+#### 17.12.40 services.pdf.tools
 
 Per-binary availability for the poppler tools sercon uses, so a partial install can still serve the operations it covers.
 
-#### 17.11.41 services.pdf.tools.pdfinfo
+#### 17.12.41 services.pdf.tools.pdfinfo
 
 ```
 pdfinfo
 ```
 
-#### 17.11.42 services.pdf.tools.pdftohtml
+#### 17.12.42 services.pdf.tools.pdftohtml
 
 ```
 pdftohtml
 ```
 
-#### 17.11.43 services.pdf.tools.pdftoppm
+#### 17.12.43 services.pdf.tools.pdftoppm
 
 ```
 pdftoppm
 ```
 
-#### 17.11.44 services.pdf.tools.pdftotext
+#### 17.12.44 services.pdf.tools.pdftotext
 
 ```
 pdftotext
 ```
 
-#### 17.11.45 services.pdf.version
+#### 17.12.45 services.pdf.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -11216,7 +11243,7 @@ The poppler version string (from `pdftoppm -v`, falling back to `pdfinfo -v`).
 runtime.log(await services.pdf.version());
 ```
 
-#### 17.11.46 services.typst.available
+#### 17.12.46 services.typst.available
 
 ```
 available: boolean
@@ -11234,7 +11261,7 @@ if (!services.typst.available) {
 }
 ```
 
-#### 17.11.47 services.typst.compile
+#### 17.12.47 services.typst.compile
 
 ```
 compile(opts: { input?: string, source?: string, output?: string, format?: "pdf" | "png" | "svg", root?: string, inputs?: Record<string, string>, ppi?: number, fontPaths?: string[], timeout?: number }): Promise<{ format: string; bytes?: Uint8Array; path?: string }>
@@ -11259,7 +11286,7 @@ runtime.log(pdf.format, pdf.bytes.length);
 await services.typst.compile({ input: "report.typ", output: "/tmp/report.png", ppi: 144 });
 ```
 
-#### 17.11.48 services.typst.fonts
+#### 17.12.48 services.typst.fonts
 
 ```
 fonts(...args: unknown[]): Promise<string[]>
@@ -11276,7 +11303,7 @@ const families = await services.typst.fonts();
 runtime.log("fonts:", families.length);
 ```
 
-#### 17.11.49 services.typst.query
+#### 17.12.49 services.typst.query
 
 ```
 query(opts: { selector: string, input?: string, source?: string, field?: string, one?: boolean, root?: string, inputs?: Record<string, string>, timeout?: number }): Promise<unknown>
@@ -11300,7 +11327,7 @@ const v = await services.typst.query({
 runtime.log(v); // 42
 ```
 
-#### 17.11.50 services.typst.version
+#### 17.12.50 services.typst.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -11316,7 +11343,7 @@ The typst CLI version string (from `typst --version`).
 runtime.log(await services.typst.version());
 ```
 
-#### 17.11.51 services.webdriver.available
+#### 17.12.51 services.webdriver.available
 
 ```
 available: boolean
@@ -11334,7 +11361,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-#### 17.11.52 services.webdriver.connect
+#### 17.12.52 services.webdriver.connect
 
 ```
 connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<{ get(url: string): Promise<{ ok: true }>; url(): Promise<string>; title(): Promise<string>; back(): Promise<{ ok: true }>; forward(): Promise<{ ok: true }>; refresh(): Promise<{ ok: true }>; find(by: string, value: string): Promise<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>; findAll(by: string, value: string): Promise<Array<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>>; source(): Promise<string>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }>; executeScript(js: string, args?: unknown[]): Promise<unknown>; executeScriptAsync(js: string, args?: unknown[]): Promise<unknown>; cookies(): Promise<object[]>; setCookie(c: { name: string; value: string; path?: string; domain?: string; secure?: boolean; httpOnly?: boolean; expiry?: number }): Promise<{ ok: true }>; deleteCookie(name: string): Promise<{ ok: true }>; deleteAllCookies(): Promise<{ ok: true }>; setImplicitWait(ms: number): Promise<{ ok: true }>; waitFor(by: string, value: string, opts?: { timeout?: number; visible?: boolean; enabled?: boolean }): Promise<any>; clickWhenReady(by: string, value: string, opts?: { timeout?: number; visible?: boolean; enabled?: boolean; poll?: number }): Promise<{ ok: true }>; windowHandles(): Promise<string[]>; currentWindow(): Promise<string>; switchToWindow(handle: string): Promise<{ ok: true }>; newWindow(type?: "tab" | "window"): Promise<{ handle: string; type: string }>; closeWindow(): Promise<string[]>; switchToFrame(target: number | string | object): Promise<{ ok: true }>; frameChain(targets: (number | string | object)[]): Promise<{ ok: true }>; switchToParentFrame(): Promise<{ ok: true }>; switchToDefaultContent(): Promise<{ ok: true }>; acceptAlert(): Promise<{ ok: true }>; dismissAlert(): Promise<{ ok: true }>; alertText(): Promise<string>; sendAlertText(text: string): Promise<{ ok: true }>; maximize(): Promise<{ x: number; y: number; width: number; height: number }>; minimize(): Promise<{ x: number; y: number; width: number; height: number }>; fullscreen(): Promise<{ x: number; y: number; width: number; height: number }>; setWindowRect(rect: { width?: number; height?: number; x?: number; y?: number }): Promise<{ x: number; y: number; width: number; height: number }>; getWindowRect(): Promise<{ x: number; y: number; width: number; height: number }>; hover(el: object): Promise<{ ok: true }>; dragAndDrop(src: object, dst: object): Promise<{ ok: true }>; keyChord(...keys: string[]): Promise<{ ok: true }>; performActions(sequence: unknown[]): Promise<{ ok: true }>; releaseActions(): Promise<{ ok: true }>; cdp(command: string, params?: object): Promise<unknown>; cdpClick(by: string, value: string, opts?: { timeout?: number; poll?: number; button?: "left" | "right" | "middle"; scrollIntoView?: boolean; offsetX?: number; offsetY?: number }): Promise<{ clicked: true; x: number; y: number; targetId?: string }>; targets(): Promise<Array<{ targetId: string; type: string; url: string; title: string }>>; attach(target: string | { targetId: string }): Promise<{ targetId: string; sessionId: string; cdp(method: string, params?: object): Promise<unknown>; detach(): Promise<{ detached: true }> }>; quit(): Promise<{ closed: true }> }>
@@ -11367,7 +11394,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-#### 17.11.53 services.webdriver.probe
+#### 17.12.53 services.webdriver.probe
 
 ```
 probe(opts: { url: string }): Promise<{ ready: boolean; status?: number; error?: string }>
@@ -11388,11 +11415,11 @@ const r = await services.webdriver.probe({ url: "http://127.0.0.1:9515" });
 runtime.log("ready:", r.ready);
 ```
 
-### 17.12 text
+### 17.13 text
 
 String / regex / charset / data manipulation — all text-shaped transforms.
 
-#### 17.12.1 text.charset.decode
+#### 17.13.1 text.charset.decode
 
 ```
 decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>
@@ -11413,7 +11440,7 @@ Decode bytes in a named charset to a UTF-8 string.
 const s = await text.charset.decode(bytes, "Windows-1252");
 ```
 
-#### 17.12.2 text.charset.detect
+#### 17.13.2 text.charset.detect
 
 ```
 detect(input: string | Uint8Array | ArrayBuffer): Promise<{ charset: string; confidence: number; language?: string; candidates: { charset: string; confidence: number; language?: string }[] }>
@@ -11434,7 +11461,7 @@ const r = await text.charset.detect(bytes);
 runtime.log(r.charset, r.confidence);
 ```
 
-#### 17.12.3 text.charset.encode
+#### 17.13.3 text.charset.encode
 
 ```
 encode(input: string, charset: string): Promise<Uint8Array>
@@ -11455,7 +11482,7 @@ Encode a UTF-8 string to bytes in the named charset.
 const bytes = await text.charset.encode("café", "ISO-8859-1");
 ```
 
-#### 17.12.4 text.diff.compare
+#### 17.13.4 text.diff.compare
 
 ```
 compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number; fromFile?: string; toFile?: string }): Promise<{ identical: boolean; binary: boolean; added: number; removed: number; diff: string; format: "unified" }>
@@ -11478,7 +11505,7 @@ const d = await text.diff.compare("a\n", "b\n");
 runtime.log(d.diff, d.added, d.removed);
 ```
 
-#### 17.12.5 text.jq.query
+#### 17.13.5 text.jq.query
 
 ```
 query(data: unknown, filter: string): Promise<unknown>
@@ -11499,7 +11526,7 @@ Run a jq filter over data and return the first emitted value (or null).
 const name = await text.jq.query(obj, ".users[0].name");
 ```
 
-#### 17.12.6 text.jq.queryAll
+#### 17.13.6 text.jq.queryAll
 
 ```
 queryAll(data: unknown, filter: string): Promise<unknown[]>
@@ -11520,7 +11547,7 @@ Run a jq filter and drain the iterator into an array.
 const ids = await text.jq.queryAll(obj, ".users[].id");
 ```
 
-#### 17.12.7 text.preg.match
+#### 17.13.7 text.preg.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -11541,7 +11568,7 @@ First hit of /pattern/flags against subject, or null. Returns { match, groups, i
 const m = text.preg.match("/(\\d+)/", "x42"); // { match: "42", groups: ["42"], index: 1 }
 ```
 
-#### 17.12.8 text.preg.matchAll
+#### 17.13.8 text.preg.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -11562,7 +11589,7 @@ Every hit of /pattern/flags against subject, as an array of { match, groups, ind
 const all = text.preg.matchAll("/\\d+/", "1 22 333"); // 3 matches
 ```
 
-#### 17.12.9 text.preg.replace
+#### 17.13.9 text.preg.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -11584,7 +11611,7 @@ Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / 
 text.preg.replace("/(\\w+)@/", "${1}_at_", "a@b"); // "a_at_b"
 ```
 
-#### 17.12.10 text.preg2.match
+#### 17.13.10 text.preg2.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -11605,7 +11632,7 @@ First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/ba
 const m = text.preg2.match("/(?<=@)\\w+/", "a@host"); // { match: "host", ... }
 ```
 
-#### 17.12.11 text.preg2.matchAll
+#### 17.13.11 text.preg2.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -11626,7 +11653,7 @@ Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, 
 const all = text.preg2.matchAll("/\\w+/", "a b c"); // 3 matches
 ```
 
-#### 17.12.12 text.preg2.replace
+#### 17.13.12 text.preg2.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -11648,7 +11675,7 @@ Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 /
 text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 ```
 
-#### 17.12.13 text.stego.embed
+#### 17.13.13 text.stego.embed
 
 ```
 embed(cover: string, payload: string | Uint8Array, opts?: { password?: string }): string
@@ -11670,7 +11697,7 @@ Hide a payload inside cover text using zero-width characters (U+200B / U+200C), 
 const out = text.stego.embed("Hello there.", "meet at noon", { password: "s3cret" });
 ```
 
-#### 17.12.14 text.stego.extract
+#### 17.13.14 text.stego.extract
 
 ```
 extract(stegoText: string, opts?: { password?: string }): string | Uint8Array
@@ -11691,7 +11718,7 @@ Recover a payload hidden by text.stego.embed. Scans the string for zero-width ca
 const msg = text.stego.extract(out, { password: "s3cret" });
 ```
 
-#### 17.12.15 text.str.base64Decode
+#### 17.13.15 text.str.base64Decode
 
 ```
 base64Decode(input: string): string
@@ -11711,7 +11738,7 @@ Decode standard (RFC 4648) base64 with padding. The standard alphabet only — U
 text.str.base64Decode("aGk="); // "hi"
 ```
 
-#### 17.12.16 text.str.base64Encode
+#### 17.13.16 text.str.base64Encode
 
 ```
 base64Encode(input: string): string
@@ -11731,7 +11758,7 @@ Standard base64 (with padding).
 text.str.base64Encode("hi"); // "aGk="
 ```
 
-#### 17.12.17 text.str.base64UrlDecode
+#### 17.13.17 text.str.base64UrlDecode
 
 ```
 base64UrlDecode(input: string): string
@@ -11751,7 +11778,7 @@ Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded inpu
 text.str.base64UrlDecode("YT9i"); // "a?b"
 ```
 
-#### 17.12.18 text.str.base64UrlEncode
+#### 17.13.18 text.str.base64UrlEncode
 
 ```
 base64UrlEncode(input: string): string
@@ -11771,7 +11798,7 @@ URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe t
 text.str.base64UrlEncode("a?b"); // "YT9i"
 ```
 
-#### 17.12.19 text.str.br2nl
+#### 17.13.19 text.str.br2nl
 
 ```
 br2nl(input: string): string
@@ -11791,7 +11818,7 @@ Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
 text.str.br2nl("a<br/>b"); // "a\nb"
 ```
 
-#### 17.12.20 text.str.htmlEntityDecode
+#### 17.13.20 text.str.htmlEntityDecode
 
 ```
 htmlEntityDecode(input: string): string
@@ -11811,7 +11838,7 @@ Decode named and numeric HTML entities to their UTF-8 equivalents.
 text.str.htmlEntityDecode("a &amp; b"); // "a & b"
 ```
 
-#### 17.12.21 text.str.lpad
+#### 17.13.21 text.str.lpad
 
 ```
 lpad(input: string, len: number, padChar?: string): string
@@ -11833,7 +11860,7 @@ Shortcut for pad(side: 'left').
 text.str.lpad("7", 3, "0"); // "007"
 ```
 
-#### 17.12.22 text.str.ltrim
+#### 17.13.22 text.str.ltrim
 
 ```
 ltrim(input: string, mask?: string): string
@@ -11854,7 +11881,7 @@ Like trim, left side only.
 text.str.ltrim("--x", "-"); // "x"
 ```
 
-#### 17.12.23 text.str.nl2br
+#### 17.13.23 text.str.nl2br
 
 ```
 nl2br(input: string, xhtml?: boolean): string
@@ -11875,7 +11902,7 @@ Replace newlines with <br> (or <br/> when xhtml=true).
 text.str.nl2br("a\nb"); // "a<br>\nb"
 ```
 
-#### 17.12.24 text.str.normalizeNewlines
+#### 17.13.24 text.str.normalizeNewlines
 
 ```
 normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string
@@ -11896,7 +11923,7 @@ Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr
 text.str.normalizeNewlines("a\r\nb", "lf"); // "a\nb"
 ```
 
-#### 17.12.25 text.str.pad
+#### 17.13.25 text.str.pad
 
 ```
 pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string
@@ -11919,7 +11946,7 @@ Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', 
 text.str.pad("7", 3, "0", "left"); // "007"
 ```
 
-#### 17.12.26 text.str.printf
+#### 17.13.26 text.str.printf
 
 ```
 printf(format: string, ...args: unknown[]): void
@@ -11940,7 +11967,7 @@ sprintf + write to stdout.
 text.str.printf("%d items\n", 3);
 ```
 
-#### 17.12.27 text.str.reverse
+#### 17.13.27 text.str.reverse
 
 ```
 reverse(input: string): string
@@ -11960,7 +11987,7 @@ Rune-aware reversal — `reverse('café')` is `'éfac'`.
 text.str.reverse("café"); // "éfac"
 ```
 
-#### 17.12.28 text.str.rpad
+#### 17.13.28 text.str.rpad
 
 ```
 rpad(input: string, len: number, padChar?: string): string
@@ -11982,7 +12009,7 @@ Shortcut for pad(side: 'right').
 text.str.rpad("7", 3, "."); // "7.."
 ```
 
-#### 17.12.29 text.str.rtrim
+#### 17.13.29 text.str.rtrim
 
 ```
 rtrim(input: string, mask?: string): string
@@ -12003,7 +12030,7 @@ Like trim, right side only.
 text.str.rtrim("x...", "."); // "x"
 ```
 
-#### 17.12.30 text.str.sprintf
+#### 17.13.30 text.str.sprintf
 
 ```
 sprintf(format: string, ...args: unknown[]): string
@@ -12024,7 +12051,7 @@ Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 text.str.sprintf("%s=%d", "n", 5); // "n=5"
 ```
 
-#### 17.12.31 text.str.stripHtml
+#### 17.13.31 text.str.stripHtml
 
 ```
 stripHtml(input: string): string
@@ -12044,7 +12071,7 @@ Remove HTML tags and decode common entities.
 text.str.stripHtml("<b>hi</b>"); // "hi"
 ```
 
-#### 17.12.32 text.str.trim
+#### 17.13.32 text.str.trim
 
 ```
 trim(input: string, mask?: string): string
@@ -12065,7 +12092,7 @@ Strip whitespace (or any char in the optional mask string) from both ends.
 text.str.trim("  hi  "); // "hi"
 ```
 
-#### 17.12.33 text.str.urlDecode
+#### 17.13.33 text.str.urlDecode
 
 ```
 urlDecode(input: string): string
@@ -12085,7 +12112,7 @@ Inverse of urlEncode.
 text.str.urlDecode("a+b%26c"); // "a b&c"
 ```
 
-#### 17.12.34 text.str.urlEncode
+#### 17.13.34 text.str.urlEncode
 
 ```
 urlEncode(input: string): string
@@ -12105,11 +12132,11 @@ Form-encoding ('+' for space). For path segments use encodeURIComponent (provide
 text.str.urlEncode("a b&c"); // "a+b%26c"
 ```
 
-### 17.13 tui
+### 17.14 tui
 
 Multi-pane terminal UI: layout, pane, write, focus.
 
-#### 17.13.1 tui.layout
+#### 17.14.1 tui.layout
 
 ```
 layout(tree: { name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number }): void
@@ -12130,7 +12157,7 @@ tui.layout({ cols: [{ name: "log", title: "Log" }, { name: "out", weight: 2 }] }
 tui.pane("log").writeln("started");
 ```
 
-#### 17.13.2 tui.onKey
+#### 17.14.2 tui.onKey
 
 ```
 onKey(handler: (key: { name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }) => void): () => void
@@ -12151,7 +12178,7 @@ tui.layout({ rows: [{ name: "log" }] });
 const off = tui.onKey((k) => { if (k.name === "Rune" && k.rune === "q") off(); });
 ```
 
-#### 17.13.3 tui.pane
+#### 17.14.3 tui.pane
 
 ```
 pane(name: string): { write(text: string): void; writeln(text: string): void; clear(): void; title(text: string): void }
@@ -12173,7 +12200,7 @@ p.title("Output");
 p.writeln("hello");
 ```
 
-#### 17.13.4 tui.waitKey
+#### 17.14.4 tui.waitKey
 
 ```
 waitKey(...args: unknown[]): Promise<{ name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }>
@@ -12191,11 +12218,11 @@ tui.pane("log").writeln("Done. Press any key to close.");
 await tui.waitKey();
 ```
 
-### 17.14 web
+### 17.15 web
 
 Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).
 
-#### 17.14.1 web.feed.load
+#### 17.15.1 web.feed.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>
@@ -12216,7 +12243,7 @@ Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option 
 const f = await web.feed.load("https://example.com/feed.xml");
 ```
 
-#### 17.14.2 web.feed.parse
+#### 17.15.2 web.feed.parse
 
 ```
 parse(source: string): { feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }
@@ -12236,7 +12263,7 @@ Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-
 const f = web.feed.parse(xml); f.items[0].title;
 ```
 
-#### 17.14.3 web.html.load
+#### 17.15.3 web.html.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>
@@ -12257,7 +12284,7 @@ Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the 
 const doc = await web.html.load("https://example.com"); doc.findAll("a").map(a => a.attr("href"));
 ```
 
-#### 17.14.4 web.html.parse
+#### 17.15.4 web.html.parse
 
 ```
 parse(source: string): { find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }
@@ -12277,7 +12304,7 @@ Parse HTML leniently (real-world tag soup is accepted, never throws on bad marku
 const doc = web.html.parse(html); doc.find("h1").text();
 ```
 
-#### 17.14.5 web.sitemap.load
+#### 17.15.5 web.sitemap.load
 
 ```
 load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>
@@ -12298,7 +12325,7 @@ Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic
 const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });
 ```
 
-#### 17.14.6 web.sitemap.parse
+#### 17.15.6 web.sitemap.parse
 
 ```
 parse(source: string): { type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }

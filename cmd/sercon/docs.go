@@ -14,4 +14,5 @@ package main
 // The per-namespace doc functions now live in docs_<ns>.go files
 // (docs_runtime.go, docs_crypto.go, docs_text.go, docs_codec.go,
 // docs_fs.go, docs_net.go, docs_db.go, docs_services.go, docs_tui.go,
-// docs_server.go, docs_console.go) — one func <ns>Docs() per file.
+// docs_server.go, docs_console.go, docs_cloud.go) — one func <ns>Docs()
+// per file.

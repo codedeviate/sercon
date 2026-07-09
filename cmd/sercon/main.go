@@ -586,6 +586,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("server", serverDocs())
 	e.SetDocs("console", "Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.")
 	e.SetMemberDocsStructured("console", consoleDocs())
+	e.SetDocs("cloud", "Cloud provider clients: cloud.google(opts?) returns a handle with typed services (storage, compute, iam, secrets) plus a generic path-based REST escape hatch (call). Pure-Go, CGO-free; reuses Application Default Credentials.")
+	e.SetMemberDocsStructured("cloud", cloudDocs())
 	return nil
 }
 
