@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -46,5 +49,47 @@ func TestMapGoogleError(t *testing.T) {
 	}
 	if ge.Error() == "" || !contains(ge.Error(), "bucket not found") {
 		t.Fatalf("message should include the API message, got %q", ge.Error())
+	}
+}
+
+func TestGoogleCall_GET(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/compute/v1/projects/p/zones/z/instances" || r.URL.Query().Get("maxResults") != "5" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[{"name":"vm-1"}]}`))
+	}))
+	defer ts.Close()
+
+	cfg := googleConfig{}
+	got, err := googleCallWork(context.Background(), cfg, googleCallArgs{
+		endpointBase: ts.URL, // test-only override field (see impl)
+		api:          "compute", version: "v1", httpMethod: "GET",
+		path:   "/compute/v1/projects/p/zones/z/instances",
+		params: map[string]string{"maxResults": "5"},
+	})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	b, _ := json.Marshal(got)
+	if !contains(string(b), "vm-1") {
+		t.Fatalf("expected instance in response, got %s", b)
+	}
+}
+
+func TestGoogleCall_ErrorThrows(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":404,"message":"nope"}}`))
+	}))
+	defer ts.Close()
+	_, err := googleCallWork(context.Background(), googleConfig{}, googleCallArgs{
+		endpointBase: ts.URL, api: "compute", version: "v1", httpMethod: "GET", path: "/x",
+	})
+	ge, ok := err.(googleError)
+	if !ok || ge.code != 404 {
+		t.Fatalf("expected googleError code 404, got %v (%T)", err, err)
 	}
 }

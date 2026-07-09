@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // googleConfig is the resolved configuration for a cloud.google(...) handle.
@@ -72,11 +75,23 @@ func parseGoogleConfig(vm *goja.Runtime, call goja.FunctionCall) (googleConfig, 
 	return cfg, nil
 }
 
-// googleHandle is a TEMPORARY stub: service accessors are no-ops until Task 4
-// implements the real Google Cloud service surface.
+// googleHandle builds the object returned by cloud.google(...): one accessor
+// per service namespace, plus the generic path-based REST escape hatch
+// `call`. storage/compute/iam/secrets are real per Tasks 5-8; until each
+// lands, googleStorage/googleCompute/googleIAM/googleSecrets are temporary
+// stubs (see cloud_google.go) returning an empty object.
+//
+// This map is built at script-run time (inside the cloud.google(...) call),
+// past the engine's registration-time AsyncBinding unwrap — so `call`'s
+// `.Func` must be unwrapped explicitly here (see the sqlHandle note in
+// db_sql.go for the same pattern).
 func googleHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig) map[string]any {
-	noop := func(goja.FunctionCall) goja.Value { return goja.Undefined() }
 	return map[string]any{
-		"storage": noop, "compute": noop, "iam": noop, "secrets": noop, "call": noop,
+		"storage": func(goja.FunctionCall) goja.Value { return vm.ToValue(googleStorage(vm, loop, cfg)) },
+		"compute": func(goja.FunctionCall) goja.Value { return vm.ToValue(googleCompute(vm, loop, cfg)) },
+		"iam":     func(goja.FunctionCall) goja.Value { return vm.ToValue(googleIAM(vm, loop, cfg)) },
+		"secrets": func(goja.FunctionCall) goja.Value { return vm.ToValue(googleSecrets(vm, loop, cfg)) },
+		"call": scriptengine.PromisifyAsync(vm, loop, googleCallExtract(cfg),
+			func(ctx context.Context, a googleCallArgs) (any, error) { return googleCallWork(ctx, cfg, a) }).Func,
 	}
 }
