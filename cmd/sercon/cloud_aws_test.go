@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	smithy "github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 
@@ -65,5 +68,21 @@ func TestAWSConfig_CredsNeverLogged(t *testing.T) {
 		if strings.Contains(s, leak) {
 			t.Fatalf("awsConfig.String() leaked credential material: %q", s)
 		}
+	}
+}
+
+func TestMapAWSError(t *testing.T) {
+	apiErr := &smithy.GenericAPIError{Code: "NoSuchBucket", Message: "The bucket does not exist"}
+	wrapped := &smithyhttp.ResponseError{Response: &smithyhttp.Response{Response: &http.Response{StatusCode: 404}}, Err: apiErr}
+	ae, ok := mapAWSError(wrapped).(awsError)
+	if !ok {
+		t.Fatalf("expected awsError, got %T", mapAWSError(wrapped))
+	}
+	f := ae.ErrorFields()
+	if f["code"] != "NoSuchBucket" || f["status"] != 404 {
+		t.Fatalf("bad fields: %#v", f)
+	}
+	if !strings.Contains(ae.Error(), "The bucket does not exist") {
+		t.Fatalf("message should include the API message, got %q", ae.Error())
 	}
 }

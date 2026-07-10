@@ -8,6 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	smithy "github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 )
@@ -110,6 +112,39 @@ func awsHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[s
 	}
 }
 
-// mapAWSError is a temporary passthrough shim; Task 2 replaces this with a
-// mapper that converts AWS SDK errors into structured, script-facing errors.
-func mapAWSError(err error) error { return err }
+type awsError struct {
+	code    string
+	status  int
+	message string
+	details any
+}
+
+func (e awsError) Error() string {
+	return fmt.Sprintf("cloud.aws: %s (%d): %s", e.code, e.status, e.message)
+}
+
+func (e awsError) ErrorFields() map[string]any {
+	return map[string]any{"code": e.code, "status": e.status, "message": e.message, "details": e.details}
+}
+
+// mapAWSError normalises a smithy error into a structured awsError. Non-API
+// errors (DNS/TLS/timeout) map to code "" / status 0, with the raw error text
+// as the message.
+func mapAWSError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var out awsError
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		out.code = apiErr.ErrorCode()
+		out.message = apiErr.ErrorMessage()
+	} else {
+		out.message = err.Error()
+	}
+	var re *smithyhttp.ResponseError
+	if errors.As(err, &re) && re.Response != nil {
+		out.status = re.HTTPStatusCode()
+	}
+	return out
+}
