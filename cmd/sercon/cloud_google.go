@@ -27,9 +27,11 @@ var googleTestOptions []option.ClientOption
 func (c googleConfig) clientOptions(extra ...option.ClientOption) []option.ClientOption {
 	opts := make([]option.ClientOption, 0, 6)
 	if c.credentialsFile != "" {
+		//nolint:staticcheck // SA1019: WithCredentialsFile is the documented way to load an explicit service-account key path (exactly this binding's purpose); the non-deprecated path needs a ctx clientOptions() intentionally does not carry.
 		opts = append(opts, option.WithCredentialsFile(c.credentialsFile))
 	}
 	if len(c.credentialsJSON) > 0 {
+		//nolint:staticcheck // SA1019: WithCredentialsJSON is the documented way to load inline service-account JSON (exactly this binding's purpose); the non-deprecated path needs a ctx clientOptions() intentionally does not carry.
 		opts = append(opts, option.WithCredentialsJSON(c.credentialsJSON))
 	}
 	if len(c.scopes) > 0 {
