@@ -120,12 +120,9 @@ func awsHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[s
 	}
 }
 
-// Temporary stubs for the 7 services not yet implemented; each is replaced by
-// its own Task (5-11), which deletes the stub below and adds
+// Temporary stubs for the 6 services not yet implemented; each is replaced by
+// its own Task (6-11), which deletes the stub below and adds
 // cloud_aws_<svc>.go with the real typed service.
-func awsIAM(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
-	return map[string]any{}
-}
 func awsSecretsManager(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
 	return map[string]any{}
 }
