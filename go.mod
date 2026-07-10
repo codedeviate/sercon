@@ -18,6 +18,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.316.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.55.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.105.0
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.43.0
 	github.com/aws/smithy-go v1.27.3
 	github.com/beevik/ntp v1.5.0
 	github.com/boombuler/barcode v1.1.0
