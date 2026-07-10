@@ -22,8 +22,8 @@ type googleConfig struct {
 	scopes          []string
 }
 
-// cloudNamespace builds the `cloud` global: one callable per provider. Google
-// is the only provider in this cut; aws/azure land in follow-up plans.
+// cloudNamespace builds the `cloud` global: one callable per provider.
+// Google and AWS are wired up in this cut; azure lands in a follow-up plan.
 func cloudNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 	return map[string]any{
 		"google": func(call goja.FunctionCall) goja.Value {
@@ -32,6 +32,13 @@ func cloudNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any 
 				panic(vm.NewGoError(err))
 			}
 			return vm.ToValue(googleHandle(vm, loop, cfg))
+		},
+		"aws": func(call goja.FunctionCall) goja.Value {
+			cfg, err := parseAWSConfig(vm, call)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return vm.ToValue(awsHandle(vm, loop, cfg))
 		},
 	}
 }
