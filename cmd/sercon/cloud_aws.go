@@ -103,13 +103,49 @@ func (c awsConfig) String() string {
 	return fmt.Sprintf("awsConfig{region:%q profile:%q creds:%s}", c.region, c.profile, creds)
 }
 
-// awsHandle — temporary stub; service accessors implemented in Tasks 3-11.
+// awsHandle builds the object returned by cloud.aws(...): one accessor per
+// AWS service, each lazily building its own typed service map (so, e.g.,
+// cloud.aws(cfg).s3() only pays for an s3.Client if the script calls it).
 func awsHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
-	noop := func(goja.FunctionCall) goja.Value { return goja.Undefined() }
 	return map[string]any{
-		"s3": noop, "ec2": noop, "iam": noop, "secretsmanager": noop, "sts": noop,
-		"lambda": noop, "sqs": noop, "cloudwatch": noop, "cloudwatchlogs": noop,
+		"s3":             func(goja.FunctionCall) goja.Value { return vm.ToValue(awsS3(vm, loop, cfg)) },
+		"ec2":            func(goja.FunctionCall) goja.Value { return vm.ToValue(awsEC2(vm, loop, cfg)) },
+		"iam":            func(goja.FunctionCall) goja.Value { return vm.ToValue(awsIAM(vm, loop, cfg)) },
+		"secretsmanager": func(goja.FunctionCall) goja.Value { return vm.ToValue(awsSecretsManager(vm, loop, cfg)) },
+		"sts":            func(goja.FunctionCall) goja.Value { return vm.ToValue(awsSTS(vm, loop, cfg)) },
+		"lambda":         func(goja.FunctionCall) goja.Value { return vm.ToValue(awsLambda(vm, loop, cfg)) },
+		"sqs":            func(goja.FunctionCall) goja.Value { return vm.ToValue(awsSQS(vm, loop, cfg)) },
+		"cloudwatch":     func(goja.FunctionCall) goja.Value { return vm.ToValue(awsCloudWatch(vm, loop, cfg)) },
+		"cloudwatchlogs": func(goja.FunctionCall) goja.Value { return vm.ToValue(awsCloudWatchLogs(vm, loop, cfg)) },
 	}
+}
+
+// Temporary stubs for the 8 services not yet implemented; each is replaced by
+// its own Task (4-11), which deletes the stub below and adds
+// cloud_aws_<svc>.go with the real typed service.
+func awsEC2(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
+	return map[string]any{}
+}
+func awsIAM(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
+	return map[string]any{}
+}
+func awsSecretsManager(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
+	return map[string]any{}
+}
+func awsSTS(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
+	return map[string]any{}
+}
+func awsLambda(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
+	return map[string]any{}
+}
+func awsSQS(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
+	return map[string]any{}
+}
+func awsCloudWatch(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
+	return map[string]any{}
+}
+func awsCloudWatchLogs(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
+	return map[string]any{}
 }
 
 type awsError struct {
