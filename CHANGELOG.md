@@ -8,8 +8,10 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.88.0] — 2026-07-10
+
 ### Added
-- **`cloud` namespace — Google provider.** `cloud.google({project, location, credentials?})`
+- **`cloud` namespace — Google provider.** `cloud.google({project, credentials?})`
   returns a handle with typed services `storage()`, `compute()`, `iam()`, `secrets()`
   and a generic path-based REST escape hatch `call({api, path, ...})`. Pure-Go,
   CGO-free (`google.golang.org/api`); reuses Application Default Credentials.
