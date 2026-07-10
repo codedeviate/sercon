@@ -237,6 +237,38 @@ func TestAWSS3_DeleteObject(t *testing.T) {
 	}
 }
 
+// TestAWSS3_ErrorPathThrows proves an AWS API error response is mapped end to
+// end (SDK response -> smithy APIError -> mapAWSError) into a structured
+// awsError, rather than a nil error or a resolved value. This establishes the
+// error-path pattern that Tasks 4-11 copy into their own service test files.
+func TestAWSS3_ErrorPathThrows(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`<?xml version="1.0"?><Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message></Error>`))
+	}))
+	defer ts.Close()
+	withMockAWS(t, ts)
+
+	out, err := awsS3ListObjects(context.Background(), awsConfig{}, awsS3Args{bucket: "missing"})
+	if err == nil {
+		t.Fatalf("expected error, got nil (out=%#v)", out)
+	}
+	ae, ok := err.(awsError)
+	if !ok {
+		t.Fatalf("expected awsError, got %T: %v", err, err)
+	}
+	if ae.code == "" {
+		t.Fatalf("expected non-empty error code, got %q (message=%q)", ae.code, ae.message)
+	}
+	if ae.status != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", ae.status)
+	}
+	if ae.code != "NoSuchBucket" {
+		t.Fatalf("expected code NoSuchBucket, got %q", ae.code)
+	}
+}
+
 func TestAWSS3_ListBuckets_ViaJS(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
