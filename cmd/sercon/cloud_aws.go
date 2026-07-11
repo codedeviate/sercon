@@ -120,12 +120,9 @@ func awsHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[s
 	}
 }
 
-// Temporary stubs for the 2 services not yet implemented; each is replaced by
-// its own Task (10-11), which deletes the stub below and adds
-// cloud_aws_<svc>.go with the real typed service.
-func awsCloudWatch(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
-	return map[string]any{}
-}
+// Temporary stub for the 1 service not yet implemented; Task 11 replaces it,
+// deleting the stub below and adding cloud_aws_cloudwatchlogs.go with the
+// real typed service.
 func awsCloudWatchLogs(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[string]any {
 	return map[string]any{}
 }
