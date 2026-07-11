@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 
 	"github.com/dop251/goja"
@@ -36,13 +37,17 @@ func newStorageService(ctx context.Context, cfg googleConfig) (*storage.Service,
 // goja emits a clean object (SDK structs carry unexported/server-only fields
 // and custom marshalling we don't want leaking into the JS-facing shape).
 func toPlain(v any) (any, error) {
+	// toPlain is shared by every cloud provider (google, aws, …), so its error
+	// must be provider-neutral rather than mapped to any one provider's error
+	// type. A (de)serialisation failure here is a serialisation bug, not an API
+	// error, so a plain wrapped error is the right shape.
 	b, err := json.Marshal(v)
 	if err != nil {
-		return nil, mapGoogleError(err)
+		return nil, fmt.Errorf("cloud: serialise response: %w", err)
 	}
 	var out any
 	if err := json.Unmarshal(b, &out); err != nil {
-		return nil, mapGoogleError(err)
+		return nil, fmt.Errorf("cloud: deserialise response: %w", err)
 	}
 	return out, nil
 }

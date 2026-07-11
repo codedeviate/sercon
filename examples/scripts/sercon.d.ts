@@ -1332,7 +1332,7 @@ declare const cloud: {
   /**
    * Amazon Web Services provider. cloud.aws(opts?) returns a handle with typed services (s3, ec2, iam, secretsmanager, sts, lambda, sqs, cloudwatch, cloudwatchlogs). Pure-Go, CGO-free; reuses the standard AWS credential chain.
    * @param opts region: AWS region (default: from the credential chain / AWS_REGION). profile: named profile. credentials: static creds; omitted ⇒ default chain (env, ~/.aws, SSO, IMDS).
-   * @returns The AWS provider handle exposing the nine typed services.
+   * @returns The AWS provider handle exposing the nine typed services. Most service methods take a small typed options object. The three CloudWatch metric methods — cloudwatch().getMetricData/getMetricStatistics/putMetricData — are pass-through: their argument is an AWS-SDK-shaped object with PascalCase keys (e.g. { Namespace, MetricData: [{ MetricName, Value, Unit, Timestamp }] }), forwarded to the SDK input as-is.
    */
   aws(opts?: { region?: string; profile?: string; credentials?: { accessKeyId: string; secretAccessKey: string; sessionToken?: string } }): {
   s3(): {

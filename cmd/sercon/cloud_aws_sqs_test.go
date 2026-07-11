@@ -132,9 +132,12 @@ func TestAWSSQS_ReceiveMessage(t *testing.T) {
 		gotTarget = r.Header.Get("X-Amz-Target")
 		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+		// MD5OfBody must be the real MD5 of Body so the SDK's receive-side
+		// checksum-validation middleware actually runs (and passes) — exercising
+		// that path end-to-end rather than skipping it on an absent field.
 		_, _ = w.Write([]byte(`{
 			"Messages": [
-				{"MessageId": "msg-1", "ReceiptHandle": "rh-1", "Body": "hello"}
+				{"MessageId": "msg-1", "ReceiptHandle": "rh-1", "Body": "hello", "MD5OfBody": "5d41402abc4b2a76b9719d911017c592"}
 			]
 		}`))
 	}))

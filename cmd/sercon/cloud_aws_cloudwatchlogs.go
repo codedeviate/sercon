@@ -18,7 +18,7 @@ import (
 type awsCloudWatchLogsArgs struct {
 	prefix, logGroupName, logStreamName, filterPattern, queryString, queryId string
 	limit                                                                    int
-	startTime, endTime                                                       int
+	startTime, endTime                                                       int64
 }
 
 // newCloudWatchLogsClient builds a cloudwatchlogs.Client for cfg. Unlike its
@@ -119,8 +119,8 @@ func awsCloudWatchLogsStartQuery(ctx context.Context, cfg awsConfig, a awsCloudW
 	out, err := c.StartQuery(ctx, &cloudwatchlogs.StartQueryInput{
 		LogGroupName: aws.String(a.logGroupName),
 		QueryString:  aws.String(a.queryString),
-		StartTime:    aws.Int64(int64(a.startTime)),
-		EndTime:      aws.Int64(int64(a.endTime)),
+		StartTime:    aws.Int64(a.startTime),
+		EndTime:      aws.Int64(a.endTime),
 	})
 	if err != nil {
 		return nil, mapAWSError(err)
@@ -158,8 +158,8 @@ func awsCloudWatchLogsExtract(call goja.FunctionCall) (awsCloudWatchLogsArgs, er
 	a.queryString = optString(o, "queryString", "")
 	a.queryId = optString(o, "queryId", "")
 	a.limit = optInt(o, "limit", 0)
-	a.startTime = optInt(o, "startTime", 0)
-	a.endTime = optInt(o, "endTime", 0)
+	a.startTime = int64(optInt(o, "startTime", 0))
+	a.endTime = int64(optInt(o, "endTime", 0))
 	return a, nil
 }
 

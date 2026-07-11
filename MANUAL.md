@@ -7250,9 +7250,9 @@ Amazon Web Services provider. cloud.aws(opts?) returns a handle with typed servi
 
 - `opts` *({ region?: string; profile?: string; credentials?: { accessKeyId: string; secretAccessKey: string; sessionToken?: string } }, optional)* — region: AWS region (default: from the credential chain / AWS_REGION). profile: named profile. credentials: static creds; omitted ⇒ default chain (env, ~/.aws, SSO, IMDS).
 
-**Returns:** The AWS provider handle exposing the nine typed services.
+**Returns:** The AWS provider handle exposing the nine typed services. Most service methods take a small typed options object. The three CloudWatch metric methods — cloudwatch().getMetricData/getMetricStatistics/putMetricData — are pass-through: their argument is an AWS-SDK-shaped object with PascalCase keys (e.g. { Namespace, MetricData: [{ MetricName, Value, Unit, Timestamp }] }), forwarded to the SDK input as-is.
 
-**Throws:** Rejects with a structured Error { code, status, message, details } on API/transport failure. Also throws synchronously (not a rejected promise) if opts is provided but is not an object, or credentials is present but is not an object with accessKeyId/secretAccessKey (optionally sessionToken).
+**Throws:** cloud.aws(opts) itself throws synchronously (not a rejected promise) if opts is provided but is not an object, or credentials is present but is not an object carrying accessKeyId and secretAccessKey (sessionToken optional). Each service method returns a promise that rejects with a structured Error { code, status, message, details } on API/transport failure.
 
 ```ts
 const who = await cloud.aws({ region: "eu-north-1" }).sts().getCallerIdentity({});

@@ -39,6 +39,8 @@ func awsBaseEndpoint() *string {
 	return nil
 }
 
+// parseAWSConfig reads the optional cloud.aws(...) options object. It runs on
+// the event loop (inside the host call), so reading goja values here is safe.
 func parseAWSConfig(vm *goja.Runtime, call goja.FunctionCall) (awsConfig, error) {
 	var cfg awsConfig
 	arg := call.Argument(0)
@@ -63,6 +65,15 @@ func parseAWSConfig(vm *goja.Runtime, call goja.FunctionCall) (awsConfig, error)
 		cfg.accessKeyID = optString(cm, "accessKeyId", "")
 		cfg.secretAccessKey = optString(cm, "secretAccessKey", "")
 		cfg.sessionToken = optString(cm, "sessionToken", "")
+		// A non-empty credentials object must carry both key and secret —
+		// static AWS creds are meaningless without them, and a lone
+		// sessionToken would otherwise be silently dropped by load(). An empty
+		// {} is treated as absent (fall through to the default chain).
+		if cfg.accessKeyID != "" || cfg.secretAccessKey != "" || cfg.sessionToken != "" {
+			if cfg.accessKeyID == "" || cfg.secretAccessKey == "" {
+				return cfg, errors.New("cloud.aws: credentials requires both accessKeyId and secretAccessKey")
+			}
+		}
 	}
 	return cfg, nil
 }
@@ -147,6 +158,9 @@ func mapAWSError(err error) error {
 	if errors.As(err, &apiErr) {
 		out.code = apiErr.ErrorCode()
 		out.message = apiErr.ErrorMessage()
+		// Surface the fault origin (client/server/unknown) so the structured
+		// error's `details` carries real content rather than always being null.
+		out.details = map[string]any{"fault": apiErr.ErrorFault().String()}
 	} else {
 		out.message = err.Error()
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -84,5 +85,53 @@ func TestMapAWSError(t *testing.T) {
 	}
 	if !strings.Contains(ae.Error(), "The bucket does not exist") {
 		t.Fatalf("message should include the API message, got %q", ae.Error())
+	}
+}
+
+func TestCloudAWS_RejectsIncompleteCredentials(t *testing.T) {
+	got := runCloudAWSScript(t, `
+		let msg = "";
+		try { cloud.aws({ credentials: { sessionToken: "x" } }); } catch (e) { msg = e.message; }
+		const __result = { msg };
+	`)
+	m := got.(map[string]any)
+	if s, _ := m["msg"].(string); !strings.Contains(s, "accessKeyId and secretAccessKey") {
+		t.Fatalf("expected a credentials-validation error, got %q", s)
+	}
+}
+
+func TestMapAWSError_Nil(t *testing.T) {
+	if got := mapAWSError(nil); got != nil {
+		t.Fatalf("mapAWSError(nil) should be nil, got %v", got)
+	}
+}
+
+func TestMapAWSError_TransportError(t *testing.T) {
+	// A non-API (transport) error: no smithy.APIError, no ResponseError.
+	ae, ok := mapAWSError(errors.New("dial tcp 10.0.0.1:443: i/o timeout")).(awsError)
+	if !ok {
+		t.Fatalf("expected awsError, got %T", mapAWSError(errors.New("x")))
+	}
+	f := ae.ErrorFields()
+	if f["code"] != "" || f["status"] != 0 {
+		t.Fatalf("transport error should have empty code / status 0, got %#v", f)
+	}
+	if !strings.Contains(ae.Error(), "i/o timeout") {
+		t.Fatalf("message should carry the raw transport error, got %q", ae.Error())
+	}
+	if f["details"] != nil {
+		t.Fatalf("transport error should have nil details, got %#v", f["details"])
+	}
+}
+
+func TestMapAWSError_PopulatesFaultDetails(t *testing.T) {
+	apiErr := &smithy.GenericAPIError{Code: "AccessDenied", Message: "no", Fault: smithy.FaultClient}
+	ae := mapAWSError(apiErr).(awsError)
+	d, ok := ae.ErrorFields()["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("API error should populate details, got %#v", ae.ErrorFields()["details"])
+	}
+	if d["fault"] != "client" {
+		t.Fatalf("expected fault 'client', got %#v", d["fault"])
 	}
 }
