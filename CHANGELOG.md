@@ -8,6 +8,13 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`cloud.aws` — Amazon Web Services provider.** `cloud.aws({region?, profile?, credentials?})`
+  returns a handle with nine typed services (s3, ec2, iam, secretsmanager, sts, lambda, sqs,
+  cloudwatch, cloudwatchlogs) on the pure-Go aws-sdk-go-v2. Reuses the standard AWS credential
+  chain; API/transport errors reject with a structured `Error { code, status, message, details }`.
+  No generic escape hatch (AWS has no uniform REST protocol).
+
 ## [0.88.0] — 2026-07-10
 
 ### Added

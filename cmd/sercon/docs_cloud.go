@@ -2,15 +2,19 @@ package main
 
 import "github.com/codedeviate/sercon/pkg/scriptengine"
 
-// Inline handle-type string, mirroring sqlHandleType/respHandleType in
+// Inline handle-type strings, mirroring sqlHandleType/respHandleType in
 // docs_db.go. cloud.google(...)'s per-service handles (storage()/compute()/
-// iam()/secrets()) and the call() escape hatch are all built at script-run
-// time — see googleHandle in cloud.go and googleStorage/googleCompute/
-// googleIAM/googleSecrets in cloud_google_*.go — so the d.ts emitter's
-// reflection has no static shape to recover for them (a Go
-// `func(goja.FunctionCall) goja.Value` carries no type information). This
-// constant hands the emitter the real shape via the "google" MemberDoc's
-// ReturnType, which is spliced in verbatim (see asyncReturnType/
+// iam()/secrets()) and the call() escape hatch, and cloud.aws(...)'s
+// per-service handles (s3()/ec2()/iam()/secretsmanager()/sts()/lambda()/sqs()/
+// cloudwatch()/cloudwatchlogs()), are all built at script-run time — see
+// googleHandle in cloud.go and googleStorage/googleCompute/googleIAM/
+// googleSecrets in cloud_google_*.go, and awsHandle in cloud_aws.go and
+// awsS3/awsEC2/awsIAM/awsSecretsManager/awsSTS/awsLambda/awsSQS/awsCloudWatch/
+// awsCloudWatchLogs in cloud_aws_*.go — so the d.ts emitter's reflection has
+// no static shape to recover for them (a Go
+// `func(goja.FunctionCall) goja.Value` carries no type information). These
+// constants hand the emitter the real shape via the "google"/"aws" MemberDoc
+// entries' ReturnType, which is spliced in verbatim (see asyncReturnType/
 // writeMemberObject in pkg/scriptengine/dts.go) and therefore must be valid
 // TypeScript on its own.
 const (
@@ -62,6 +66,94 @@ const (
 }`
 
 	googleErrors = "Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/\"TRANSPORT\" for non-API errors (DNS, TLS, timeout, connection refused)."
+
+	// awsHandleType is the object cloud.aws(...) resolves to — spliced verbatim
+	// into the "aws" MemberDoc's ReturnType, so it must be valid TypeScript on
+	// its own (same rationale as googleHandleType above). Formatted multi-line
+	// for readable rendering in the d.ts and MANUAL §17 reference: one line per
+	// service, one line per method, covering all nine typed services
+	// (s3/ec2/iam/secretsmanager/sts/lambda/sqs/cloudwatch/cloudwatchlogs — see
+	// cloud_aws_*.go for the implementations these signatures are derived
+	// from). getMetricData/getMetricStatistics/putMetricData on cloudwatch()
+	// take an SDK-shaped pass-through object (PascalCase keys matching the AWS
+	// SDK's Go input struct field names, e.g. Namespace/MetricData/StartTime)
+	// rather than a hand-mapped opts shape — see awsCloudWatchGetMetricData's
+	// doc comment in cloud_aws_cloudwatch.go.
+	awsHandleType = `{
+  s3(): {
+    listBuckets(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    createBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
+    deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
+    listObjects(opts: { bucket: string; prefix?: string }): Promise<Record<string, unknown>>;
+    headObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>;
+    getObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>;
+    putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>;
+    deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>;
+  };
+  ec2(): {
+    describeInstances(opts?: { instanceIds?: string[] }): Promise<Record<string, unknown>>;
+    runInstances(opts: { imageId: string; instanceType: string; minCount?: number; maxCount?: number }): Promise<Record<string, unknown>>;
+    terminateInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>;
+    startInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>;
+    stopInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>;
+    describeVolumes(opts?: { volumeIds?: string[] }): Promise<Record<string, unknown>>;
+    describeAvailabilityZones(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+  };
+  iam(): {
+    listUsers(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    getUser(opts?: { userName?: string }): Promise<Record<string, unknown>>;
+    listRoles(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    getRole(opts: { roleName: string }): Promise<Record<string, unknown>>;
+    listPolicies(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    createUser(opts: { userName: string }): Promise<Record<string, unknown>>;
+    deleteUser(opts: { userName: string }): Promise<Record<string, unknown>>;
+    attachUserPolicy(opts: { userName: string; policyArn: string }): Promise<Record<string, unknown>>;
+  };
+  secretsmanager(): {
+    listSecrets(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    describeSecret(opts: { secretId: string }): Promise<Record<string, unknown>>;
+    createSecret(opts: { name: string; secretString?: string }): Promise<Record<string, unknown>>;
+    getSecretValue(opts: { secretId: string }): Promise<{ value: string }>;
+    putSecretValue(opts: { secretId: string; secretString: string }): Promise<Record<string, unknown>>;
+    deleteSecret(opts: { secretId: string }): Promise<Record<string, unknown>>;
+  };
+  sts(): {
+    getCallerIdentity(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    assumeRole(opts: { roleArn: string; roleSessionName: string; durationSeconds?: number }): Promise<Record<string, unknown>>;
+    getSessionToken(opts?: { durationSeconds?: number }): Promise<Record<string, unknown>>;
+  };
+  lambda(): {
+    listFunctions(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    getFunction(opts: { functionName: string }): Promise<Record<string, unknown>>;
+    invoke(opts: { functionName: string; payload?: string | Record<string, unknown> }): Promise<{ statusCode: number; payload: string; functionError?: string; executedVersion?: string }>;
+    createFunction(opts: { functionName: string; role: string; runtime: string; handler: string; zipFile?: string | Uint8Array | ArrayBuffer; s3Bucket?: string; s3Key?: string }): Promise<Record<string, unknown>>;
+    deleteFunction(opts: { functionName: string }): Promise<Record<string, unknown>>;
+  };
+  sqs(): {
+    listQueues(opts?: { prefix?: string }): Promise<Record<string, unknown>>;
+    createQueue(opts: { queueName: string }): Promise<Record<string, unknown>>;
+    deleteQueue(opts: { queueUrl: string }): Promise<Record<string, unknown>>;
+    sendMessage(opts: { queueUrl: string; messageBody: string }): Promise<Record<string, unknown>>;
+    receiveMessage(opts: { queueUrl: string; maxMessages?: number }): Promise<Record<string, unknown>>;
+    deleteMessage(opts: { queueUrl: string; receiptHandle: string }): Promise<Record<string, unknown>>;
+    getQueueAttributes(opts: { queueUrl: string; attributeNames?: string[] }): Promise<Record<string, unknown>>;
+  };
+  cloudwatch(): {
+    listMetrics(opts?: { namespace?: string; metricName?: string }): Promise<Record<string, unknown>>;
+    getMetricData(opts: Record<string, unknown>): Promise<Record<string, unknown>>;
+    getMetricStatistics(opts: Record<string, unknown>): Promise<Record<string, unknown>>;
+    describeAlarms(opts?: { alarmNames?: string[] }): Promise<Record<string, unknown>>;
+    putMetricData(opts: Record<string, unknown>): Promise<Record<string, unknown>>;
+  };
+  cloudwatchlogs(): {
+    describeLogGroups(opts?: { prefix?: string }): Promise<Record<string, unknown>>;
+    describeLogStreams(opts: { logGroupName: string }): Promise<Record<string, unknown>>;
+    getLogEvents(opts: { logGroupName: string; logStreamName: string; limit?: number }): Promise<Record<string, unknown>>;
+    filterLogEvents(opts: { logGroupName: string; filterPattern?: string }): Promise<Record<string, unknown>>;
+    startQuery(opts: { logGroupName: string; queryString: string; startTime: number; endTime: number }): Promise<Record<string, unknown>>;
+    getQueryResults(opts: { queryId: string }): Promise<Record<string, unknown>>;
+  };
+}`
 )
 
 // cloudDocs documents the `cloud` global (cloud.google(...) and its
@@ -423,6 +515,28 @@ runtime.log(value);`,
 			Returns:    "A promise resolving to {} on success.",
 			Errors:     googleErrors,
 			Example:    `await cloud.google({ project: "p" }).secrets().deleteSecret({ project: "p", name: "db-password" });`,
+		},
+
+		// --- aws — Amazon Web Services provider (Tasks 3-11) ---
+		//
+		// s3()/ec2()/iam()/secretsmanager()/sts()/lambda()/sqs()/cloudwatch()/
+		// cloudwatchlogs() are all built at script-run time (see awsHandle in
+		// cloud_aws.go and awsS3/awsEC2/awsIAM/awsSecretsManager/awsSTS/
+		// awsLambda/awsSQS/awsCloudWatch/awsCloudWatchLogs in the matching
+		// cloud_aws_*.go files) — same "opaque Go func, no reflectable shape"
+		// situation as google's storage()/compute()/iam()/secrets() above.
+		// Unlike google, no flat per-method MemberDoc entries are written out
+		// here: the deep typing that reaches the emitted .d.ts comes entirely
+		// from the "aws" entry's ReturnType (awsHandleType above), and adding
+		// dozens more flat entries here would not change what the emitter
+		// renders.
+		"aws": {
+			Summary:    "Amazon Web Services provider. cloud.aws(opts?) returns a handle with typed services (s3, ec2, iam, secretsmanager, sts, lambda, sqs, cloudwatch, cloudwatchlogs). Pure-Go, CGO-free; reuses the standard AWS credential chain.",
+			Params:     []scriptengine.Param{{Name: "opts", Type: "{ region?: string; profile?: string; credentials?: { accessKeyId: string; secretAccessKey: string; sessionToken?: string } }", Optional: true, Desc: "region: AWS region (default: from the credential chain / AWS_REGION). profile: named profile. credentials: static creds; omitted ⇒ default chain (env, ~/.aws, SSO, IMDS)."}},
+			ReturnType: awsHandleType,
+			Returns:    "The AWS provider handle exposing the nine typed services.",
+			Errors:     "Rejects with a structured Error { code, status, message, details } on API/transport failure. Also throws synchronously (not a rejected promise) if opts is provided but is not an object, or credentials is present but is not an object with accessKeyId/secretAccessKey (optionally sessionToken).",
+			Example:    "const who = await cloud.aws({ region: \"eu-north-1\" }).sts().getCallerIdentity({});",
 		},
 	}
 }

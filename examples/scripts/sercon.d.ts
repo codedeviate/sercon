@@ -1330,6 +1330,86 @@ declare const db: {
 /** Cloud provider clients: cloud.google(opts?) returns a handle with typed services (storage, compute, iam, secrets) plus a generic path-based REST escape hatch (call). Pure-Go, CGO-free; reuses Application Default Credentials. */
 declare const cloud: {
   /**
+   * Amazon Web Services provider. cloud.aws(opts?) returns a handle with typed services (s3, ec2, iam, secretsmanager, sts, lambda, sqs, cloudwatch, cloudwatchlogs). Pure-Go, CGO-free; reuses the standard AWS credential chain.
+   * @param opts region: AWS region (default: from the credential chain / AWS_REGION). profile: named profile. credentials: static creds; omitted ⇒ default chain (env, ~/.aws, SSO, IMDS).
+   * @returns The AWS provider handle exposing the nine typed services.
+   */
+  aws(opts?: { region?: string; profile?: string; credentials?: { accessKeyId: string; secretAccessKey: string; sessionToken?: string } }): {
+  s3(): {
+    listBuckets(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    createBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
+    deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>;
+    listObjects(opts: { bucket: string; prefix?: string }): Promise<Record<string, unknown>>;
+    headObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>;
+    getObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>;
+    putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>;
+    deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>;
+  };
+  ec2(): {
+    describeInstances(opts?: { instanceIds?: string[] }): Promise<Record<string, unknown>>;
+    runInstances(opts: { imageId: string; instanceType: string; minCount?: number; maxCount?: number }): Promise<Record<string, unknown>>;
+    terminateInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>;
+    startInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>;
+    stopInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>;
+    describeVolumes(opts?: { volumeIds?: string[] }): Promise<Record<string, unknown>>;
+    describeAvailabilityZones(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+  };
+  iam(): {
+    listUsers(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    getUser(opts?: { userName?: string }): Promise<Record<string, unknown>>;
+    listRoles(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    getRole(opts: { roleName: string }): Promise<Record<string, unknown>>;
+    listPolicies(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    createUser(opts: { userName: string }): Promise<Record<string, unknown>>;
+    deleteUser(opts: { userName: string }): Promise<Record<string, unknown>>;
+    attachUserPolicy(opts: { userName: string; policyArn: string }): Promise<Record<string, unknown>>;
+  };
+  secretsmanager(): {
+    listSecrets(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    describeSecret(opts: { secretId: string }): Promise<Record<string, unknown>>;
+    createSecret(opts: { name: string; secretString?: string }): Promise<Record<string, unknown>>;
+    getSecretValue(opts: { secretId: string }): Promise<{ value: string }>;
+    putSecretValue(opts: { secretId: string; secretString: string }): Promise<Record<string, unknown>>;
+    deleteSecret(opts: { secretId: string }): Promise<Record<string, unknown>>;
+  };
+  sts(): {
+    getCallerIdentity(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    assumeRole(opts: { roleArn: string; roleSessionName: string; durationSeconds?: number }): Promise<Record<string, unknown>>;
+    getSessionToken(opts?: { durationSeconds?: number }): Promise<Record<string, unknown>>;
+  };
+  lambda(): {
+    listFunctions(opts?: Record<string, never>): Promise<Record<string, unknown>>;
+    getFunction(opts: { functionName: string }): Promise<Record<string, unknown>>;
+    invoke(opts: { functionName: string; payload?: string | Record<string, unknown> }): Promise<{ statusCode: number; payload: string; functionError?: string; executedVersion?: string }>;
+    createFunction(opts: { functionName: string; role: string; runtime: string; handler: string; zipFile?: string | Uint8Array | ArrayBuffer; s3Bucket?: string; s3Key?: string }): Promise<Record<string, unknown>>;
+    deleteFunction(opts: { functionName: string }): Promise<Record<string, unknown>>;
+  };
+  sqs(): {
+    listQueues(opts?: { prefix?: string }): Promise<Record<string, unknown>>;
+    createQueue(opts: { queueName: string }): Promise<Record<string, unknown>>;
+    deleteQueue(opts: { queueUrl: string }): Promise<Record<string, unknown>>;
+    sendMessage(opts: { queueUrl: string; messageBody: string }): Promise<Record<string, unknown>>;
+    receiveMessage(opts: { queueUrl: string; maxMessages?: number }): Promise<Record<string, unknown>>;
+    deleteMessage(opts: { queueUrl: string; receiptHandle: string }): Promise<Record<string, unknown>>;
+    getQueueAttributes(opts: { queueUrl: string; attributeNames?: string[] }): Promise<Record<string, unknown>>;
+  };
+  cloudwatch(): {
+    listMetrics(opts?: { namespace?: string; metricName?: string }): Promise<Record<string, unknown>>;
+    getMetricData(opts: Record<string, unknown>): Promise<Record<string, unknown>>;
+    getMetricStatistics(opts: Record<string, unknown>): Promise<Record<string, unknown>>;
+    describeAlarms(opts?: { alarmNames?: string[] }): Promise<Record<string, unknown>>;
+    putMetricData(opts: Record<string, unknown>): Promise<Record<string, unknown>>;
+  };
+  cloudwatchlogs(): {
+    describeLogGroups(opts?: { prefix?: string }): Promise<Record<string, unknown>>;
+    describeLogStreams(opts: { logGroupName: string }): Promise<Record<string, unknown>>;
+    getLogEvents(opts: { logGroupName: string; logStreamName: string; limit?: number }): Promise<Record<string, unknown>>;
+    filterLogEvents(opts: { logGroupName: string; filterPattern?: string }): Promise<Record<string, unknown>>;
+    startQuery(opts: { logGroupName: string; queryString: string; startTime: number; endTime: number }): Promise<Record<string, unknown>>;
+    getQueryResults(opts: { queryId: string }): Promise<Record<string, unknown>>;
+  };
+};
+  /**
    * Google Cloud provider handle. Pure-Go, CGO-free (google.golang.org/api); reuses Application Default Credentials unless credentials is given. Returns an object exposing storage(), compute(), iam(), secrets(), and the generic call() REST escape hatch.
    * @param opts project: the default GCP project id used by any service call that omits its own `project`. credentials: a file path (string) to a service-account JSON key, or an inline service-account JSON object; omitted ⇒ Application Default Credentials (gcloud auth application-default login, GOOGLE_APPLICATION_CREDENTIALS, or attached-metadata identity). scopes: OAuth scopes to request; omitted ⇒ each service's default scope. quotaProject: billing/quota project override (X-Goog-User-Project).
    * @returns The provider handle: { storage(), compute(), iam(), secrets(), call(opts) }. Each of storage()/compute()/iam()/secrets() returns a fresh service handle bound to this call's config; call() is the generic path-based REST escape hatch for APIs without a typed service above.

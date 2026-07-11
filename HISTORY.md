@@ -910,10 +910,55 @@ against a real project; it is intentionally excluded from `make demo`/CI,
 which stays fully offline via the `httptest`-mocked Go unit tests in
 `cloud_google_*_test.go`.
 
-AWS and Azure are planned follow-up providers under the same `cloud.<vendor>`
-shape — Azure is expected to ship mock-only + PROVISIONAL (no maintainer-run
-live smoke test) given the team's live-account access, while AWS is expected
-to get the same live-smoke treatment as Google once implemented.
+### AWS provider
+
+`cloud.aws(opts?)` followed the same shape as Google: it resolves the
+standard AWS credential chain (environment variables, `~/.aws/config` +
+`~/.aws/credentials` profiles/SSO, or an attached EC2/ECS/Lambda identity via
+IMDS) unless `opts.credentials` supplies static keys, and `opts.region`/
+`opts.profile` steer region and named-profile selection. The handle exposes
+nine typed services — `s3()` (bucket/object CRUD, `getObject`/`putObject`),
+`ec2()` (instance describe/run/terminate/start/stop, volume and availability-
+zone listing), `iam()` (user/role/policy listing, user CRUD, policy
+attachment), `secretsmanager()` (secret CRUD, `getSecretValue`/
+`putSecretValue` — `getSecretValue` returns `{ value }` decoded once, never
+the raw SDK envelope), `sts()` (`getCallerIdentity`, `assumeRole`,
+`getSessionToken`), `lambda()` (function list/get/create/delete plus
+`invoke`, which hand-builds its result since the invoked function's raw
+JSON response `Payload` must stay a string rather than round-tripping into a
+numeric byte array), `sqs()` (queue CRUD, send/receive/delete message, queue
+attributes), `cloudwatch()` (metric/alarm listing plus pass-through
+`getMetricData`/`getMetricStatistics`/`putMetricData` for their
+deeply-nested query shapes), and `cloudwatchlogs()` (log group/stream
+listing, `getLogEvents`/`filterLogEvents`, Logs Insights `startQuery`/
+`getQueryResults`) — built on the pure-Go `aws-sdk-go-v2` (no cgo). Unlike
+Google, there is no generic path-based REST escape hatch: AWS has no single
+uniform REST protocol across services (query/XML for EC2/IAM/S3/STS/
+CloudWatch, JSON for Secrets Manager/Lambda/SQS/CloudWatch Logs), so a
+`call()` fallback would need a different wire encoder per service family
+rather than one shared client.
+
+Errors reuse the same `ErrorFields()` pattern Google established: a
+`smithy.APIError` becomes `{ code, status, message, details }`; anything else
+(DNS, TLS, timeout, connection refused) carries `code: ""`/`status: 0` with
+the raw error text as `message`. Documentation follows the same twist as
+Google's: `s3()`/`ec2()`/`iam()`/`secretsmanager()`/`sts()`/`lambda()`/
+`sqs()`/`cloudwatch()`/`cloudwatchlogs()` are all built at script-run time
+inside the `aws()` accessor, so the `aws` `MemberDoc` entry's `ReturnType`
+(a hand-written, multi-line composite covering all nine services) is what
+gives `cloud.aws(...)`'s return real per-method shapes in the emitted
+`sercon.d.ts`, rather than flat per-method entries (which the automatic
+`.d.ts`/reference-generator reflection can't reach for a runtime-built
+handle either way). A maintainer-run live smoke test
+(`examples/scripts/cloud-aws-smoke.ts`, credential-chain-gated, self-skips
+without `AWS_REGION`/`AWS_DEFAULT_REGION` set) exercises `sts()`, `s3()`, and
+`cloudwatchlogs()` against a real account; like its Google counterpart it is
+intentionally excluded from `make demo`/CI, which stays fully offline via the
+`httptest`-mocked Go unit tests in `cloud_aws_*_test.go`.
+
+Azure is a planned follow-up provider under the same `cloud.<vendor>` shape —
+expected to ship mock-only + PROVISIONAL (no maintainer-run live smoke test)
+given the team's live-account access.
 
 ## Bundled libraries
 
