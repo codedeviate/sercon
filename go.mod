@@ -15,7 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.42.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.29
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.28
-	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.52.0
+	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.52.0 // pinned <v1.53.0: last query/XML before Smithy-CBOR migration — see cloud_aws_cloudwatch.go
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.79.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.316.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.55.0
