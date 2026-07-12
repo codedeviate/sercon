@@ -9,7 +9,10 @@
 version: "2"
 
 run:
-  timeout: 3m
+  # 10m (was 3m): the cloud.aws + cloud.azure SDK dependency graphs grew the
+  # analysis surface enough that a cold-cache CI run exceeded 3m (golangci-lint
+  # exit 4, "Timeout exceeded"). Local `make lint` stays fast on a warm cache.
+  timeout: 10m
 
 linters:
   default: standard
