@@ -161,13 +161,10 @@ func azureHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) m
 }
 
 // Temporary stubs for the remaining ARM/data-plane service accessors — Tasks
-// 5-8 replace these with real implementations. vm/loop/cfg are accepted (and
+// 6-8 replace these with real implementations. vm/loop/cfg are accepted (and
 // currently unused) so the real signatures slot in without call-site churn.
-// azureResourceGroups (Task 4) is implemented in cloud_azure_resourcegroups.go.
-func azureCompute(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
-	return map[string]any{}
-}
-
+// azureResourceGroups (Task 4) is implemented in cloud_azure_resourcegroups.go;
+// azureCompute (Task 5) is implemented in cloud_azure_compute.go.
 func azureResources(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
 	return map[string]any{}
 }
