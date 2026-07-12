@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Changed
+- **MANUAL: new in-depth `cloud` guide (§5.14).** The `cloud` namespace now has a
+  full narrative guide alongside the generated §17.2 reference — per-provider
+  (`cloud.google`/`cloud.aws`/`cloud.azure`) and per-service walkthroughs with
+  inline examples, a Concepts subsection (credentials, scoping, error shape,
+  result-key casing, escape hatches), and cross-provider Recipes, aimed at script
+  authors new to these clouds. `cloud.azure` guidance is marked PROVISIONAL.
+
 ## [0.90.0] — 2026-07-12
 
 ### Added

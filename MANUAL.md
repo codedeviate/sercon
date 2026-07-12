@@ -4865,6 +4865,1155 @@ encoding"` / `"unsupported bit depth"` on an invalid carrier; `embed`
 throws `"payload too large"` when the carrier does not have enough
 samples. Pure-Go, no cgo.
 
+### 5.14 `cloud`
+
+The `cloud` namespace drives the three major cloud providers — Google Cloud
+(`cloud.google`), Amazon Web Services (`cloud.aws`), and Microsoft Azure
+(`cloud.azure`) — natively, in pure Go, with no `gcloud`/`aws`/`az` CLI and no
+subprocess. Each provider is exposed as a **callable** that returns a handle:
+
+```ts
+const g   = cloud.google({ project: "my-project" });
+const aws = cloud.aws({ region: "eu-north-1" });
+const az  = cloud.azure({ subscriptionId: "00000000-0000-0000-0000-000000000000" });
+```
+
+All three share the same shape, so once you know one you know the others:
+
+- **Construction is synchronous; every operation is asynchronous.** Building the
+  handle (and its service objects) does no I/O and never throws for network
+  reasons; each *operation* returns a `Promise`, so you `await` it.
+- **Services are accessed as functions on the handle.** `g.storage()`,
+  `aws.s3()`, `az.compute()` return a service object whose methods are the async
+  operations. Build the service once, call many methods on it.
+- **Credentials are reused, never minted.** Each provider reads the same ambient
+  credentials its own CLI produces (see *Concepts* below) — so if `gcloud`/`aws`/
+  `az` already works on the machine, so does sercon. Credentials are never logged.
+- **Errors throw.** A 4xx/5xx API response or a transport failure *rejects* the
+  promise with a structured `Error { code, status, message, details }` — unlike
+  `net.http`, where a 4xx is a normal return value. Wrap calls in `try/catch` and
+  branch on `e.code` / `e.status`.
+
+> **Two views of the surface.** This section is the *guide*: what each service is
+> for and how to use it, with runnable examples. §17.2 is the generated
+> *reference*: the exact TypeScript signature of every method. Use them together.
+
+#### 5.14.1 Concepts
+
+**Credentials — reuse the cloud's own login.** None of the providers ask you to
+mint tokens; each consumes the ambient credentials its native tooling already set
+up, and each also accepts an explicit override on the handle:
+
+| Provider | Default (ambient) chain | Explicit override |
+| --- | --- | --- |
+| `cloud.google` | Application Default Credentials — `gcloud auth application-default login`, `GOOGLE_APPLICATION_CREDENTIALS`, or the metadata server | `credentials` (service-account key path or inline JSON), `scopes`, `quotaProject` |
+| `cloud.aws` | the standard AWS chain — env vars, `~/.aws/config`+`credentials`, `AWS_PROFILE`, SSO, IMDS (instance role) | `credentials: { accessKeyId, secretAccessKey, sessionToken? }`, `profile` |
+| `cloud.azure` | `DefaultAzureCredential` — env, managed identity, `az login` | `{ tenantId, clientId, clientSecret }` (client-secret credential) |
+
+Secret material (`clientSecret`, SA keys, tokens) is never written to logs or
+error strings.
+
+**Scoping differs by provider — this is the main thing to get right:**
+
+- **Google** is scoped per **project**. `cloud.google({ project })` sets a
+  default; most methods also take a `project` in their options.
+- **AWS** is scoped per **region**, set once on the handle
+  (`cloud.aws({ region })`, or from `AWS_REGION`/the profile). Clients are
+  region-bound at construction — there is no per-call region.
+- **Azure** has two planes. The **management plane** (ARM: `resourceGroups`,
+  `compute`, `resources`, and the `call()` escape hatch) is scoped per
+  **subscription** — set `subscriptionId` on the handle (or `AZURE_SUBSCRIPTION_ID`);
+  calling one without a resolvable subscription throws. The **data plane**
+  (`blob`, `keyvaultSecrets`) is scoped per **resource endpoint** — you pass the
+  account/vault URL to the accessor itself: `az.blob("https://acct.blob.core.windows.net")`.
+
+**Error shape.** Every provider maps a failed call to the same structured error:
+
+```ts
+try {
+  await cloud.aws({ region: "eu-north-1" }).s3().getObject({ bucket: "b", key: "missing" });
+} catch (e) {
+  runtime.log(`failed: code=${e.code} status=${e.status} — ${e.message}`);
+  // e.code: provider error code ("NoSuchKey", "ResourceGroupNotFound", …)
+  // e.status: HTTP status (404, 403, …); 0 for a transport/DNS/TLS failure
+}
+```
+
+**Result shapes and key casing.** Responses come back as plain JS objects
+(the SDK response round-tripped to JSON), so the key casing follows each SDK:
+
+- **Google** results are mostly lowercase/camelCase (`items`, `buckets`).
+- **AWS** results are **PascalCase** (`Buckets`, `Reservations`, `LogGroups`) —
+  the AWS SDK response structs carry no JSON tags, so their Go field names show
+  through. Write `r.Buckets`, not `r.buckets`.
+- **Azure** varies: ARM and Blob results are PascalCase (`Name`), Key Vault is
+  lowercase (`id`).
+
+Binary payloads (`s3().getObject`, `blob().download`, GCS `readObject`) come back
+as `{ bytes }`, where `bytes` renders in JS as an **array of numbers**, not a real
+`Uint8Array` — wrap it yourself: `const buf = new Uint8Array(res.bytes)`. Decoded
+secret values (`getSecretValue`/`getSecret`/`accessSecretVersion`) come back as
+`{ value: string }`.
+
+**Escape hatches (reach anything).** Where a cloud has a uniform REST surface,
+the provider offers a generic `call()` for operations no typed service covers:
+
+- `cloud.google().call({ api, path, ... })` — any Google REST API (path-based).
+- `cloud.azure().call({ path, apiVersion, ... })` — any ARM resource provider.
+- **AWS has no escape hatch** — its per-service SDK clients have no uniform wire
+  protocol, so `cloud.aws` is typed-services-only.
+
+**`cloud.azure` is PROVISIONAL.** It is built against the Azure SDK but has **not
+been verified against a live Azure account** — the maintainer and CI have no Azure
+credentials, so it is exercised only by mocked unit tests. Treat its behaviour as
+unconfirmed until you have run it against a real subscription; the Azure examples
+below are illustrative.
+
+**Not covered this release:** streaming / event-stream operations and gRPC-only
+data-plane services (e.g. Pub/Sub streaming, Firestore, Spanner). Operations are
+whole-value (bytes in / bytes out).
+
+
+#### 5.14.2 `cloud.google`
+
+`cloud.google(opts?)` builds a handle onto Google Cloud: Cloud Storage,
+Compute Engine, IAM service accounts, and Secret Manager as typed services,
+plus a generic path-based REST `call()` for anything else. It is **pure Go,
+CGO-free** — built on `google.golang.org/api`, not the C++ gRPC client — so
+it runs the same way on every platform sercon supports, with no native
+dependency to install.
+
+**Credentials.** If you've never used a Google Cloud SDK before, the concept
+to know is **Application Default Credentials (ADC)**: a small chain of
+places the client library looks for a usable identity, tried in order —
+
+1. an explicit `credentials` value passed to `cloud.google({...})` (see
+   below) — this always wins when present;
+2. the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, pointing at a
+   service-account JSON key file on disk;
+3. the credentials left behind by running `gcloud auth application-default
+   login` on the machine (typical for local development);
+4. the attached identity of the environment itself — a GCE/GKE/Cloud Run
+   metadata server, when running inside Google Cloud.
+
+You do not select which of these applies from script code — omit
+`credentials` entirely and the first one that's actually configured on the
+host wins. For a local dev machine, step 3 (`gcloud auth
+application-default login`) is usually the quickest way to get something
+working before scripting against a service account.
+
+To bypass ADC and pin an explicit identity, pass `credentials` yourself:
+either a **string** (a filesystem path to a service-account JSON key) or an
+**object** (the key's JSON, inlined — handy when the key comes from a
+secret store rather than a file). Credential fields are never logged by
+sercon, in errors or otherwise.
+
+Construct the handle synchronously — `cloud.google({...})` itself never
+returns a `Promise` and never touches the network:
+
+```ts
+const g = cloud.google({ project: "my-gcp-project" });
+```
+
+`opts` (all fields optional):
+
+- `project` — the default GCP **project id** (not the numeric project
+  number, not the display name) used by any service call that omits its
+  own `project`. Most examples below rely on this default rather than
+  repeating `project` on every call.
+- `credentials` — a file path (string) or inline service-account JSON
+  (object), as described above; omitted ⇒ ADC.
+- `scopes` — OAuth scopes to request; omitted ⇒ each service's own default
+  scope (broad enough for everything documented here).
+- `quotaProject` — a billing/quota project override, for the case where
+  the calling identity's home project shouldn't absorb the API quota (sent
+  as `X-Goog-User-Project`).
+
+Every service accessor (`storage()`, `compute()`, `iam()`, `secrets()`) and
+every method on them is **async** — call them with `await`, they resolve
+to plain data. A failure — a 403 from an IAM-permission gap, a 404 for a
+bucket that doesn't exist, a network timeout reaching Google — **rejects**
+with a structured `Error { code, status, message, details }` rather than
+returning an error value; `code`/`status` are `0`/`"TRANSPORT"` for
+non-API failures (DNS, TLS, timeout) that never reached Google at all.
+Wrap calls in `try/catch` when you need to distinguish "the resource
+doesn't exist" from "the network is down."
+
+A first call — list the Cloud Storage buckets in a project (safe,
+read-only, and a good way to prove ADC actually resolved an identity):
+
+```ts
+const g = cloud.google({ project: "my-gcp-project" });
+try {
+  const r = await g.storage().listBuckets({ project: "my-gcp-project" });
+  runtime.log(`ok: ${(r.items ?? []).length} bucket(s)`);
+} catch (e: any) {
+  runtime.log(`failed: ${e.message} (code=${e.code} status=${e.status})`);
+}
+```
+
+See §17.2 for the full type signatures of every method below.
+
+##### storage()
+
+`g.storage()` returns a handle onto **Cloud Storage** (GCS) — Google's
+object store, the rough equivalent of S3: *buckets* hold *objects*
+(arbitrary blobs addressed by a string key). Methods:
+
+- `listBuckets(opts: { project })` → `Promise<{ items?: [...] }>`
+- `getBucket(opts: { bucket })` → `Promise<Record<string, unknown>>`
+- `createBucket(opts: { project, bucket })` → `Promise<Record<string, unknown>>`
+- `deleteBucket(opts: { bucket })` → `Promise<Record<string, unknown>>` — bucket must be empty
+- `listObjects(opts: { bucket, prefix? })` → `Promise<{ items?: [...] }>`
+- `statObject(opts: { bucket, key })` → `Promise<Record<string, unknown>>` — metadata only
+- `readObject(opts: { bucket, key })` → `Promise<{ bytes: number[] }>`
+- `putObject(opts: { bucket, key, body })` → `Promise<Record<string, unknown>>` — `body` is a string (UTF-8) or `Uint8Array`/`ArrayBuffer`
+- `deleteObject(opts: { bucket, key })` → `Promise<Record<string, unknown>>`
+
+`readObject`'s `{ bytes }` comes back as a **plain JS number array**, not a
+real `Uint8Array` (it's round-tripped through JSON) — wrap it before doing
+anything binary with it:
+
+```ts
+const gcs = cloud.google({ project: "p" }).storage();
+
+const r = await gcs.listObjects({ bucket: "my-bucket", prefix: "logs/" });
+runtime.log(`${(r.items ?? []).length} object(s) under logs/`);
+
+const obj = await gcs.readObject({ bucket: "my-bucket", key: "logs/a.txt" });
+const bytes = new Uint8Array(obj.bytes); // now a real Uint8Array
+runtime.log(`read ${bytes.length} byte(s)`);
+```
+
+##### compute()
+
+`g.compute()` returns a handle onto **Compute Engine** — GCP's VM service.
+Instances live in a **zone** (e.g. `europe-north1-a`), a sub-division of a
+**region**; most methods need both `project` and `zone`. Methods:
+
+- `listInstances(opts: { project, zone })` → `Promise<{ items?: [...] }>`
+- `getInstance(opts: { project, zone, name })` → `Promise<Record<string, unknown>>`
+- `createInstance(opts: { project, zone, instance })` → `Promise<Record<string, unknown>>` — `instance` is a raw Compute Engine `Instance` resource body (`machineType`, `disks`, `networkInterfaces`, ...); returns the (typically long-running) operation resource, not the finished instance
+- `deleteInstance(opts: { project, zone, name })` → `Promise<Record<string, unknown>>`
+- `startInstance(opts: { project, zone, name })` → `Promise<Record<string, unknown>>`
+- `stopInstance(opts: { project, zone, name })` → `Promise<Record<string, unknown>>`
+- `listZones(opts: { project })` → `Promise<{ items?: [...] }>`
+- `listDisks(opts: { project, zone })` → `Promise<{ items?: [...] }>`
+
+```ts
+const c = cloud.google({ project: "p" }).compute();
+
+const zones = await c.listZones({ project: "p" });
+runtime.log(`${(zones.items ?? []).length} zone(s) available`);
+
+const vms = await c.listInstances({ project: "p", zone: "europe-north1-a" });
+for (const vm of vms.items ?? []) {
+  runtime.log(`${vm.name}: ${vm.status}`);
+}
+```
+
+##### iam()
+
+`g.iam()` returns a handle onto **Cloud IAM service accounts** — the
+robot identities scripts/workloads authenticate as (distinct from human
+Google accounts). A service account is addressed by its email
+(`<id>@<project>.iam.gserviceaccount.com`). Methods:
+
+- `listServiceAccounts(opts: { project })` → `Promise<{ accounts?: [...] }>`
+- `getServiceAccount(opts: { project, email })` → `Promise<Record<string, unknown>>`
+- `createServiceAccount(opts: { project, accountId, displayName? })` → `Promise<Record<string, unknown>>`
+- `deleteServiceAccount(opts: { project, email })` → `Promise<Record<string, unknown>>`
+- `listKeys(opts: { project, email })` → `Promise<{ keys?: [...] }>`
+- `createKey(opts: { project, email })` → `Promise<Record<string, unknown>>` — private key material is returned **only** by this call; capture it immediately, it can't be re-fetched
+- `getIamPolicy(opts: { resource })` → `Promise<Record<string, unknown>>`
+- `setIamPolicy(opts: { resource, policy })` → `Promise<Record<string, unknown>>` — **replaces** the whole policy; always read-modify-write via `getIamPolicy` first, or you'll clobber existing bindings
+
+```ts
+const iam = cloud.google({ project: "p" }).iam();
+
+const sas = await iam.listServiceAccounts({ project: "p" });
+runtime.log(`${(sas.accounts ?? []).length} service account(s)`);
+
+const resource = "projects/p/serviceAccounts/sa@p.iam.gserviceaccount.com";
+const policy = await iam.getIamPolicy({ resource });
+policy.bindings = [
+  ...(policy.bindings as any[] ?? []),
+  { role: "roles/iam.serviceAccountUser", members: ["user:me@example.com"] },
+];
+await iam.setIamPolicy({ resource, policy });
+```
+
+##### secrets()
+
+`g.secrets()` returns a handle onto **Secret Manager** — versioned,
+encrypted key/value storage for things like DB passwords or API keys. A
+*secret* is a named container; each write creates a new immutable
+*version*, addressed by number or the alias `"latest"`. Methods:
+
+- `listSecrets(opts: { project })` → `Promise<{ secrets?: [...] }>` — metadata only, never values
+- `getSecret(opts: { project, name })` → `Promise<Record<string, unknown>>`
+- `createSecret(opts: { project, name })` → `Promise<Record<string, unknown>>` — creates the empty container (automatic replication); it has no value until you `addSecretVersion`
+- `addSecretVersion(opts: { project, name, payload })` → `Promise<Record<string, unknown>>` — `payload` is plaintext; base64-encoded on the wire for you
+- `accessSecretVersion(opts: { project, name, version? })` → `Promise<{ value: string }>` — `version` defaults to `"latest"`
+- `deleteSecret(opts: { project, name })` → `Promise<Record<string, unknown>>` — deletes the secret and every version
+
+`accessSecretVersion`'s `value` is already base64-**decoded** plaintext —
+you never see the raw wire-format base64:
+
+```ts
+const s = cloud.google({ project: "p" }).secrets();
+
+await s.createSecret({ project: "p", name: "db-password" });
+await s.addSecretVersion({ project: "p", name: "db-password", payload: "s3cr3t" });
+
+const { value } = await s.accessSecretVersion({ project: "p", name: "db-password" });
+runtime.log(value); // "s3cr3t"
+```
+
+##### call() — REST escape hatch
+
+`storage()`/`compute()`/`iam()`/`secrets()` cover four services; Google
+Cloud has hundreds. `g.call(opts)` reaches **any** `{api}.googleapis.com`
+REST endpoint directly — no typed wrapper, no Discovery-document lookup —
+by giving it the request pieces yourself:
+
+```ts
+{
+  api: string;                      // subdomain, e.g. "run" for run.googleapis.com
+  version?: string;                 // informational only; defaults to "v1" — path is used as given
+  httpMethod?: string;              // defaults to "GET"
+  path: string;                     // appended to https://{api}.googleapis.com as-is
+  params?: Record<string, string>;  // query-string parameters
+  body?: unknown;                   // JSON-serialisable request body
+}
+```
+
+Reach for `call()` whenever the service you need isn't one of the four
+typed ones above — Cloud Run, Pub/Sub, BigQuery, Cloud Functions, whatever
+REST surface Google publishes. It authenticates exactly like the parent
+`cloud.google({...})` handle (same ADC / explicit-credentials resolution)
+and returns the **raw decoded JSON** response body (`{}` for an empty
+body) — there's no per-service response shape to learn.
+
+```ts
+const g = cloud.google({ project: "my-gcp-project" });
+
+// Same data as compute().listZones(), reached the raw way:
+const zones = await g.call({
+  api: "compute",
+  path: "/compute/v1/projects/my-gcp-project/zones",
+});
+runtime.log(`${(zones as any).items?.length ?? 0} zone(s)`);
+
+// A service with no typed wrapper above — list Cloud Run services in a region:
+const services = await g.call({
+  api: "run",
+  path: "/v2/projects/my-gcp-project/locations/europe-north1/services",
+});
+runtime.log(JSON.stringify(services));
+```
+
+`call()` rejects with the same structured `Error { code, status, message,
+details }` as every other method here — plus if `api` or `path` is
+missing, or `body` isn't JSON-serialisable.
+
+#### 5.14.3 `cloud.aws`
+
+`cloud.aws(opts?)` is a provider handle onto Amazon Web Services, built on
+the pure-Go `aws-sdk-go-v2` — no CGO, no vendored AWS CLI, no shelling out.
+Construction is **synchronous**; every service call it returns is
+**asynchronous** (a `Promise`).
+
+If you've never touched the AWS SDK before, two concepts carry the whole
+surface:
+
+- **Region.** Almost everything in AWS is scoped to a region (`us-east-1`,
+  `eu-north-1`, …) — resources in one region are invisible from another.
+  `region` is a property of the *handle*, not of each call: set it once when
+  you build `cloud.aws({...})` and every service accessor off that handle
+  inherits it. If you omit it, sercon falls through to whatever the
+  credential chain supplies (`AWS_REGION`/`AWS_DEFAULT_REGION`, or a region
+  baked into your `~/.aws/config` profile) — if none of those resolve, calls
+  will fail with a client-side "missing region" error.
+- **Credentials.** `cloud.aws` reuses the exact same lookup order the AWS
+  CLI and every official SDK use — the "default credential chain":
+  environment variables (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
+  `AWS_SESSION_TOKEN`), `~/.aws/credentials` + `~/.aws/config` (including
+  named profiles and SSO sessions), `AWS_PROFILE`, and finally an attached
+  instance/task identity via IMDS (EC2 instance role, ECS task role, Lambda
+  execution role). You don't have to do anything for this to work — just
+  have `aws configure`'d credentials or an attached role. To skip the chain
+  and supply keys directly (e.g. a throwaway CI credential), pass
+  `credentials: { accessKeyId, secretAccessKey, sessionToken? }` — but note
+  it's all-or-nothing: if you provide any of the three you must provide
+  both `accessKeyId` and `secretAccessKey` (`cloud.aws` throws synchronously
+  otherwise). `profile` selects a named profile from your local AWS config
+  instead of the process's default profile.
+
+```ts
+const aws = cloud.aws({ region: "eu-north-1" });
+```
+
+That's the whole handle. Nothing talks to AWS yet — each service is
+accessed lazily via its own accessor (`aws.s3()`, `aws.sts()`, …), and only
+building a *client* for that service, not making a call.
+
+Every service method returns a `Promise` that **rejects with a structured
+`Error`** — `{ code, status, message, details }` — on failure, rather than
+throwing synchronously. `code` is the AWS API error code (e.g.
+`"AccessDenied"`, `"NoSuchBucket"`), `status` is the HTTP status AWS
+returned, and `details.fault` says whether AWS blamed the client or itself.
+A non-API failure (DNS, TLS, connection refused, timeout) still comes back
+as the same shape, just with `code`/`status` empty/zero and the raw
+transport error as `message`. Always wrap calls in `try/catch` (or handle
+the rejection) rather than assuming success.
+
+**There is no generic escape hatch here** — unlike `cloud.google(...).call()`
+or `cloud.azure(...).call()`, `cloud.aws(...)` exposes **only** the nine
+typed services below. This isn't an oversight: AWS has no single uniform
+wire protocol the way Google/Azure's REST APIs do — S3 speaks a
+REST/XML-ish dialect, EC2/IAM/STS/CloudWatch speak classic
+query-string+XML, Lambda/SecretsManager/SQS speak different flavors of
+JSON — so there's no one generic "make a request" primitive that could
+paper over all of them. If you need an AWS operation that isn't listed
+under one of the nine services, it isn't reachable from sercon yet; see
+this repo's "missing sercon capabilities" process to request it.
+
+One more thing worth knowing up front: because these are the AWS SDK's own
+Go response structs (not hand-written JSON schemas) marshalled straight to
+JS, **result keys come back in the SDK's PascalCase**, matching the Go
+struct field names — `Buckets`, `Reservations`, `LogGroups`, `Account`, and
+so on — *not* the lowerCamelCase you might expect from a typical REST API.
+Keep that in mind reading every example below and when destructuring
+results yourself.
+
+The traditional "who am I, and is this working at all" first call is
+`sts().getCallerIdentity`, since it needs no arguments and no permissions
+beyond the ones every principal implicitly has:
+
+```ts
+const aws = cloud.aws({ region: "eu-north-1" });
+try {
+  const id = await aws.sts().getCallerIdentity({});
+  runtime.log(`account=${id.Account} arn=${id.Arn} userId=${id.UserId}`);
+} catch (e: any) {
+  runtime.log(`sts.getCallerIdentity failed: ${e.code} ${e.status} ${e.message}`);
+}
+```
+
+See §17.2 for the full typed signatures of every method below.
+
+##### s3()
+
+Amazon S3 is AWS's object store — buckets holding arbitrary blobs
+("objects") addressed by key, not a filesystem or database.
+
+- `listBuckets(opts?: Record<string, never>)`
+- `createBucket(opts: { bucket })`
+- `deleteBucket(opts: { bucket })` — the bucket must already be empty
+- `listObjects(opts: { bucket; prefix? })`
+- `headObject(opts: { bucket; key })` — metadata only, no body
+- `getObject(opts: { bucket; key })` → `{ bytes }`
+- `putObject(opts: { bucket; key; body })` — `body` is a `string` (UTF-8) or
+  `Uint8Array`/`ArrayBuffer`
+- `deleteObject(opts: { bucket; key })`
+
+`getObject` is the one method here with a special return shape: rather than
+the SDK's raw struct, you get back `{ bytes }` where `bytes` is a plain
+JS number array (not a real `Uint8Array`) — wrap it before treating it as
+binary:
+
+```ts
+const s3 = aws.s3();
+try {
+  const { bytes } = await s3.getObject({ bucket: "my-bucket", key: "logs/app.log" });
+  const data = new Uint8Array(bytes);
+  runtime.log(`downloaded ${data.length} bytes`);
+} catch (e: any) {
+  runtime.log(`getObject failed: ${e.code} (${e.status}): ${e.message}`);
+}
+```
+
+```ts
+const list = await s3.listObjects({ bucket: "my-bucket", prefix: "logs/" });
+for (const obj of list.Contents ?? []) {
+  runtime.log(`${obj.Key} (${obj.Size} bytes)`);
+}
+```
+
+##### ec2()
+
+EC2 (Elastic Compute Cloud) is AWS's virtual machine service — "instances"
+you launch from a machine image, plus the block-storage "volumes" attached
+to them.
+
+- `describeInstances(opts?: { instanceIds? })`
+- `runInstances(opts: { imageId; instanceType; minCount?; maxCount? })` —
+  `minCount`/`maxCount` default to `1` when omitted (matching EC2's own
+  default)
+- `terminateInstances(opts: { instanceIds })`
+- `startInstances(opts: { instanceIds })`
+- `stopInstances(opts: { instanceIds })`
+- `describeVolumes(opts?: { volumeIds? })`
+- `describeAvailabilityZones(opts?: Record<string, never>)`
+
+```ts
+const ec2 = aws.ec2();
+const out = await ec2.describeInstances({});
+for (const res of out.Reservations ?? []) {
+  for (const inst of res.Instances ?? []) {
+    runtime.log(`${inst.InstanceId} ${inst.State?.Name} ${inst.InstanceType}`);
+  }
+}
+```
+
+```ts
+try {
+  const zones = await ec2.describeAvailabilityZones({});
+  runtime.log(`zones: ${(zones.AvailabilityZones ?? []).map((z: any) => z.ZoneName).join(", ")}`);
+} catch (e: any) {
+  runtime.log(`describeAvailabilityZones failed: ${e.message}`);
+}
+```
+
+##### iam()
+
+IAM (Identity and Access Management) is AWS's account-wide authorization
+service — the users, roles, and policies that decide who can do what.
+Unlike most AWS services, IAM is **global**, not per-region.
+
+- `listUsers(opts?: Record<string, never>)`
+- `getUser(opts?: { userName? })` — omit `userName` to get the calling
+  principal's own user
+- `listRoles(opts?: Record<string, never>)`
+- `getRole(opts: { roleName })`
+- `listPolicies(opts?: Record<string, never>)`
+- `createUser(opts: { userName })`
+- `deleteUser(opts: { userName })`
+- `attachUserPolicy(opts: { userName; policyArn })`
+
+```ts
+const iam = aws.iam();
+const roles = await iam.listRoles({});
+runtime.log(`roles: ${(roles.Roles ?? []).map((r: any) => r.RoleName).join(", ")}`);
+```
+
+```ts
+try {
+  await iam.createUser({ userName: "ci-deploy" });
+  await iam.attachUserPolicy({
+    userName: "ci-deploy",
+    policyArn: "arn:aws:iam::aws:policy/ReadOnlyAccess",
+  });
+  runtime.log("ci-deploy user created and policy attached");
+} catch (e: any) {
+  runtime.log(`iam setup failed: ${e.code}: ${e.message}`);
+}
+```
+
+##### secretsmanager()
+
+Secrets Manager stores and versions sensitive values (DB passwords, API
+keys) so you don't have to bake them into config files or environment
+variables.
+
+- `listSecrets(opts?: Record<string, never>)`
+- `describeSecret(opts: { secretId })` — metadata only, no value
+- `createSecret(opts: { name; secretString? })`
+- `getSecretValue(opts: { secretId })` → `{ value }`
+- `putSecretValue(opts: { secretId; secretString })`
+- `deleteSecret(opts: { secretId })`
+
+`getSecretValue` is the method to reach for actual credential material — it
+hands back only the decoded plaintext, never the ARN/version metadata that
+the raw SDK response would also carry:
+
+```ts
+const sm = aws.secretsmanager();
+try {
+  const { value } = await sm.getSecretValue({ secretId: "prod/db/password" });
+  runtime.log(`secret length: ${value.length}`);
+} catch (e: any) {
+  runtime.log(`getSecretValue failed: ${e.code}: ${e.message}`);
+}
+```
+
+```ts
+await sm.createSecret({ name: "prod/api/key", secretString: "s3cr3t-value" });
+await sm.putSecretValue({ secretId: "prod/api/key", secretString: "rotated-value" });
+```
+
+##### sts()
+
+STS (Security Token Service) issues and inspects temporary credentials — the
+"who am I" and "become this role" API.
+
+- `getCallerIdentity(opts?: Record<string, never>)` → the identity behind
+  whatever credentials `cloud.aws(...)` resolved (`Account`, `Arn`,
+  `UserId`) — no secrets in the response
+- `assumeRole(opts: { roleArn; roleSessionName; durationSeconds? })` →
+  temporary `AccessKeyId`/`SecretAccessKey`/`SessionToken` for the assumed
+  role
+- `getSessionToken(opts?: { durationSeconds? })` → temporary credentials for
+  the current principal
+
+`durationSeconds` is omitted from the request entirely unless you pass a
+positive value (AWS's own minimum is 900 seconds).
+
+```ts
+const sts = aws.sts();
+const id = await sts.getCallerIdentity({});
+runtime.log(`running as ${id.Arn}`);
+```
+
+```ts
+try {
+  const creds = await sts.assumeRole({
+    roleArn: "arn:aws:iam::123456789012:role/deploy",
+    roleSessionName: "sercon-deploy",
+    durationSeconds: 900,
+  });
+  // creds.Credentials.{AccessKeyId,SecretAccessKey,SessionToken} — never log these.
+  runtime.log("assumed role ok");
+} catch (e: any) {
+  runtime.log(`assumeRole failed: ${e.code}: ${e.message}`);
+}
+```
+
+Note: `assumeRole`/`getSessionToken` results carry live AWS credentials in
+their response — treat `runtime.log`-ing them the way you'd treat logging a
+password.
+
+##### lambda()
+
+Lambda runs your code on-demand without a server to manage — you upload a
+"function" (a zip or an S3 pointer), and AWS invokes it per-event.
+
+- `listFunctions(opts?: Record<string, never>)`
+- `getFunction(opts: { functionName })`
+- `invoke(opts: { functionName; payload? })` → `{ statusCode, payload, functionError?, executedVersion? }`
+- `createFunction(opts: { functionName; role; runtime; handler; zipFile?; s3Bucket?; s3Key? })`
+  — `zipFile` is a `string`/`Uint8Array`/`ArrayBuffer` of the deployment
+  package; alternatively point at an existing package with `s3Bucket`/`s3Key`
+- `deleteFunction(opts: { functionName })`
+
+`invoke` hand-builds its result rather than round-tripping the raw SDK
+struct: `payload` is the invoked function's JSON response **as a string**
+(parse it yourself with `JSON.parse` if you expect JSON back), and
+`functionError` is only present when the function itself threw.
+
+```ts
+const lambda = aws.lambda();
+try {
+  const res = await lambda.invoke({
+    functionName: "my-function",
+    payload: { ping: true },
+  });
+  runtime.log(`status=${res.statusCode} functionError=${res.functionError ?? "none"}`);
+  const body = JSON.parse(res.payload);
+  runtime.log(`response: ${JSON.stringify(body)}`);
+} catch (e: any) {
+  runtime.log(`invoke failed: ${e.code}: ${e.message}`);
+}
+```
+
+```ts
+const fns = await lambda.listFunctions({});
+runtime.log(`functions: ${(fns.Functions ?? []).map((f: any) => f.FunctionName).join(", ")}`);
+```
+
+##### sqs()
+
+SQS (Simple Queue Service) is a message queue — producers `sendMessage`,
+consumers `receiveMessage` and then `deleteMessage` once they've processed
+it (SQS doesn't remove a message just because you read it).
+
+- `listQueues(opts?: { prefix? })`
+- `createQueue(opts: { queueName })`
+- `deleteQueue(opts: { queueUrl })`
+- `sendMessage(opts: { queueUrl; messageBody })`
+- `receiveMessage(opts: { queueUrl; maxMessages? })`
+- `deleteMessage(opts: { queueUrl; receiptHandle })` — `receiptHandle` comes
+  from the message you got back from `receiveMessage`, not the message id
+- `getQueueAttributes(opts: { queueUrl; attributeNames? })`
+
+```ts
+const sqs = aws.sqs();
+const queue = await sqs.createQueue({ queueName: "my-queue" });
+await sqs.sendMessage({ queueUrl: queue.QueueUrl, messageBody: "hello" });
+
+const received = await sqs.receiveMessage({ queueUrl: queue.QueueUrl, maxMessages: 5 });
+for (const msg of received.Messages ?? []) {
+  runtime.log(`body=${msg.Body}`);
+  await sqs.deleteMessage({ queueUrl: queue.QueueUrl, receiptHandle: msg.ReceiptHandle });
+}
+```
+
+##### cloudwatch()
+
+CloudWatch is AWS's metrics service — numeric time series (CPU%, request
+count, custom app metrics) organized under a "namespace".
+
+- `listMetrics(opts?: { namespace?; metricName? })`
+- `getMetricData(opts)` — **pass-through**
+- `getMetricStatistics(opts)` — **pass-through**
+- `describeAlarms(opts?: { alarmNames? })`
+- `putMetricData(opts)` — **pass-through**, always resolves to `{}`
+
+The three pass-through methods are different from every other call in this
+guide: their `opts` object is **not** a small hand-mapped shape — it's
+JSON-round-tripped directly into the AWS SDK's own Go input struct, so it
+must be shaped like that struct, **PascalCase keys and all**
+(`Namespace`, `MetricData`, `MetricName`, `StartTime`, …), not the
+lowerCamelCase used everywhere else in this API.
+
+```ts
+const cw = aws.cloudwatch();
+try {
+  await cw.putMetricData({
+    Namespace: "MyApp/Recon",
+    MetricData: [
+      { MetricName: "ScriptRuns", Value: 1, Unit: "Count", Timestamp: new Date().toISOString() },
+    ],
+  });
+  runtime.log("putMetricData ok");
+} catch (e: any) {
+  runtime.log(`putMetricData failed: ${e.code}: ${e.message}`);
+}
+```
+
+```ts
+const stats = await cw.getMetricStatistics({
+  Namespace: "AWS/EC2",
+  MetricName: "CPUUtilization",
+  Dimensions: [{ Name: "InstanceId", Value: "i-0123456789abcdef0" }],
+  StartTime: new Date(Date.now() - 3600_000).toISOString(),
+  EndTime: new Date().toISOString(),
+  Period: 300,
+  Statistics: ["Average"],
+});
+for (const p of stats.Datapoints ?? []) {
+  runtime.log(`${p.Timestamp} avg=${p.Average}`);
+}
+```
+
+##### cloudwatchlogs()
+
+CloudWatch Logs is where most AWS services (and your own apps, if
+instrumented) ship their log lines — organized into "log groups" (one per
+app/service) containing "log streams" (one per instance/invocation). This
+is usually the most useful service here for recon: find the group, tail
+recent events, or run a full CloudWatch Logs Insights query.
+
+- `describeLogGroups(opts?: { prefix? })`
+- `describeLogStreams(opts: { logGroupName })`
+- `getLogEvents(opts: { logGroupName; logStreamName; limit? })`
+- `filterLogEvents(opts: { logGroupName; filterPattern? })`
+- `startQuery(opts: { logGroupName; queryString; startTime; endTime })` —
+  `startTime`/`endTime` here are **epoch seconds** (unlike `getLogEvents`/
+  `filterLogEvents`, whose timestamps are epoch **milliseconds**)
+- `getQueryResults(opts: { queryId })`
+
+A log-tail: find the group, find its most recent stream, pull the latest
+events.
+
+```ts
+const logs = aws.cloudwatchlogs();
+const groups = await logs.describeLogGroups({ prefix: "/aws/lambda/my-function" });
+const group = (groups.LogGroups ?? [])[0];
+if (group) {
+  const streams = await logs.describeLogStreams({ logGroupName: group.LogGroupName });
+  const latest = (streams.LogStreams ?? [])[0];
+  if (latest) {
+    const events = await logs.getLogEvents({
+      logGroupName: group.LogGroupName,
+      logStreamName: latest.LogStreamName,
+      limit: 50,
+    });
+    for (const e of events.Events ?? []) {
+      runtime.log(`${e.Timestamp} ${e.Message}`);
+    }
+  }
+}
+```
+
+For a cross-stream search, `filterLogEvents` is usually more useful than
+walking streams by hand:
+
+```ts
+const hits = await logs.filterLogEvents({
+  logGroupName: "/aws/lambda/my-function",
+  filterPattern: "ERROR",
+});
+runtime.log(`${(hits.Events ?? []).length} matching log line(s)`);
+```
+
+For anything beyond a simple substring filter (aggregation, field
+extraction, stats over a time range), use Logs Insights via
+`startQuery`/`getQueryResults` — the query itself runs asynchronously on
+AWS's side, so poll `getQueryResults` until `status` reads `"Complete"`:
+
+```ts
+const nowSec = Math.floor(Date.now() / 1000);
+const started = await logs.startQuery({
+  logGroupName: "/aws/lambda/my-function",
+  queryString: "fields @timestamp, @message | filter @message like /ERROR/ | limit 20",
+  startTime: nowSec - 3600,
+  endTime: nowSec,
+});
+let results = await logs.getQueryResults({ queryId: started.QueryId });
+while (results.Status === "Running" || results.Status === "Scheduled") {
+  await new Promise((r) => setTimeout(r, 1000));
+  results = await logs.getQueryResults({ queryId: started.QueryId });
+}
+runtime.log(`query status=${results.Status}, rows=${(results.Results ?? []).length}`);
+```
+
+#### 5.14.4 `cloud.azure`
+
+> **PROVISIONAL — unverified against a live Azure account.** `cloud.azure`
+> is built against `azure-sdk-for-go` and covered by mock-server
+> (`httptest`) tests, but no one on this project has a real Azure
+> subscription to run it against, and CI has no Azure credentials either.
+> Every method below is expected to work — the request shapes come
+> straight from the generated SDK clients — but nothing here has been
+> confirmed against a real `management.azure.com`, blob account, or Key
+> Vault. Treat every example as illustrative, not proven. If you run this
+> against a real subscription and it misbehaves, that's useful signal:
+> please report back what broke.
+
+`cloud.azure` is sercon's Microsoft Azure provider: pure Go, no CGO,
+built on the official `azure-sdk-for-go` client libraries. If you've
+never scripted against Azure before, the two ideas to hold onto are
+**credentials** and **the two-plane model** — everything else follows
+from those.
+
+**Credentials.** Azure SDKs authenticate through a *token credential*,
+not a raw API key. `cloud.azure` gives you two ways to get one:
+
+- Leave `tenantId`/`clientId`/`clientSecret` out entirely and it falls
+  back to `DefaultAzureCredential` — Azure's standard credential chain,
+  which tries (in order, roughly) environment variables in the
+  azidentity-recognized shape, a managed identity if the process is
+  running on an Azure host, and your local `az login` session. This is
+  the right default for anything running on an Azure VM/App
+  Service/Container App, or on a developer machine that's already run
+  `az login`.
+- Pass `{ tenantId, clientId, clientSecret }` explicitly to use a
+  service-principal (client-secret) credential — the usual choice for
+  CI or any environment without an interactive `az login` or managed
+  identity available.
+
+Nothing under `clientSecret` is ever logged by sercon, in errors or
+otherwise.
+
+**The two-plane model.** Azure splits every service into a *management
+plane* and a *data plane*, and `cloud.azure`'s shape mirrors that split
+exactly:
+
+- **ARM (management plane)** — Azure Resource Manager, the API that
+  creates/lists/deletes the resources themselves: resource groups, VMs,
+  and (generically) anything else ARM knows about. ARM is
+  **subscription-scoped**: every ARM call needs a subscription id, which
+  `cloud.azure` resolves from `opts.subscriptionId` or the
+  `AZURE_SUBSCRIPTION_ID` env var — and throws if neither is set. ARM is
+  exposed as `resourceGroups()`, `compute()`, `resources()`, and the
+  generic `call()` escape hatch.
+- **Data plane** — the services that do things *inside* a resource once
+  it exists: reading/writing blobs inside a storage account, reading
+  secrets out of a Key Vault. Data-plane accessors take the resource's
+  own endpoint URL directly (`blob(accountUrl)`,
+  `keyvaultSecrets(vaultUrl)`) and need **no subscription id at all** —
+  the URL you pass in *is* the target, full stop.
+
+If you're new to Azure: a **subscription** is the billing/administrative
+boundary (roughly: an AWS account or a GCP project), and a **resource
+group** is a folder-like container inside a subscription that most
+resources live in and get deleted together with.
+
+**Construction** is synchronous and cheap — it just resolves config, it
+does not make a network call:
+
+```ts
+const az = cloud.azure({ subscriptionId: "00000000-0000-0000-0000-000000000000" });
+```
+
+Every service method after that is `async` — call it with `await` — and
+on failure rejects with a structured error carrying `{ code, status,
+message, details }` (`code`/`status` are `""`/`0` for non-API failures
+like DNS, TLS, or a credential/token problem — only a real ARM/data-plane
+HTTP error fills them in). A missing subscription (no `subscriptionId`
+and no `AZURE_SUBSCRIPTION_ID`) throws as soon as an ARM method or
+`call()` is invoked; `blob()`/`keyvaultSecrets()` have no such
+requirement.
+
+One casing wrinkle worth knowing up front: ARM services and
+`keyvaultSecrets()` return lowercase-camelCase keys (`id`, `name`,
+`properties`, ...) straight from the SDK's own JSON encoding, but
+`blob()` results come back **PascalCase** (`Name`, `Properties`,
+`Deleted`, ...) — the Storage Blob wire protocol is XML under the hood,
+so there's no custom JSON marshalling to normalize the casing. Don't
+assume one casing convention carries across every service.
+
+See §17.2 for the full type signatures of every method below.
+
+##### resourceGroups()
+
+A resource group is Azure's basic organizational container — most
+ARM resources belong to exactly one, and deleting a group cascades to
+everything inside it. `resourceGroups()` is subscription-scoped (via
+`cfg.subscriptionId`/`AZURE_SUBSCRIPTION_ID`) and gives you:
+
+- `list(opts?)` → `Promise<{ value: [...] }>` — every resource group in
+  the subscription, paged through automatically.
+- `get(opts: { name })` → `Promise<{...}>` — a single group's details.
+- `create(opts: { name, location })` → `Promise<{...}>` — create-or-update.
+- `delete(opts: { name })` → `Promise<{}>` — starts the delete and waits
+  for the long-running operation to finish before resolving.
+
+```ts
+const groups = await az.resourceGroups().list();
+runtime.log(`resource groups: ${groups.value?.length ?? 0}`);
+```
+
+```ts
+const rg = await az.resourceGroups().get({ name: "my-rg" });
+runtime.log(`location: ${rg.location}`);
+```
+
+##### compute()
+
+`compute()` wraps Azure's virtual-machine API (ARM's
+`Microsoft.Compute` provider) — start/stop/list/inspect VMs. Also
+subscription-scoped.
+
+- `listVirtualMachines(opts?: { resourceGroup? })` → `Promise<{ value:
+  [...] }>` — omit `resourceGroup` to list every VM in the subscription;
+  supply it to scope the list to one group.
+- `getVirtualMachine(opts: { resourceGroup, name })` → `Promise<{...}>`
+- `start(opts: { resourceGroup, name })` → `Promise<{}>`
+- `powerOff(opts: { resourceGroup, name })` → `Promise<{}>`
+- `deallocate(opts: { resourceGroup, name })` → `Promise<{}>` — like
+  `powerOff`, but also releases the underlying compute allocation (so you
+  stop being billed for the VM size, not just for it running).
+- `delete(opts: { resourceGroup, name })` → `Promise<{}>`
+
+All of `start`/`powerOff`/`deallocate`/`delete` are long-running ARM
+operations under the hood; `cloud.azure` polls until each one completes
+before resolving, so `await` genuinely means "done", not just "accepted".
+
+```ts
+const vms = await az.compute().listVirtualMachines({ resourceGroup: "my-rg" });
+runtime.log(`VMs in my-rg: ${vms.value?.length ?? 0}`);
+```
+
+```ts
+const vm = await az.compute().getVirtualMachine({ resourceGroup: "my-rg", name: "web-1" });
+runtime.log(`vm state fields: ${Object.keys(vm)}`);
+```
+
+##### resources()
+
+`resources()` is ARM's *generic* resource API — useful when you want to
+work across resource types without pulling in a type-specific service
+like `compute()`. It's the right tool when you already know a resource's
+ID (or just want everything in a group regardless of type) and don't
+need type-specific verbs like `start`/`powerOff`.
+
+- `listByResourceGroup(opts: { resourceGroup })` → `Promise<{ value:
+  [...] }>` — every resource in the group, any type.
+- `getById(opts: { resourceId, apiVersion })` → `Promise<{...}>` — fetch
+  by the resource's fully-qualified ARM ID. Unlike the typed services,
+  the generic resources API has no built-in default API version per
+  resource type, so you must supply `apiVersion` yourself (check the
+  resource provider's REST API reference for the right value).
+
+```ts
+const all = await az.resources().listByResourceGroup({ resourceGroup: "my-rg" });
+runtime.log(`resources in my-rg: ${all.value?.length ?? 0}`);
+```
+
+```ts
+const site = await az.resources().getById({
+  resourceId: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.Web/sites/my-site",
+  apiVersion: "2023-12-01",
+});
+runtime.log(site.name);
+```
+
+##### call() — ARM REST escape hatch
+
+`resourceGroups()`/`compute()`/`resources()` cover three ARM providers;
+`call()` reaches **any** ARM resource provider by talking directly to
+`management.azure.com` — useful the moment you need a resource type (App
+Service, Cosmos DB, Storage accounts, anything) that doesn't have a
+dedicated service above. It shares the same subscription/credential
+resolution as the typed services (so it also throws if no subscription
+is configured), and takes:
+
+```ts
+call(opts: {
+  path: string;             // ARM path, e.g. "/subscriptions/{id}/resourceGroups/..."
+  apiVersion: string;       // required — ARM has no per-path default
+  method?: string;          // default "GET"
+  params?: Record<string, string>;
+  body?: unknown;           // JSON-serialisable request body
+}): Promise<unknown>
+```
+
+```ts
+// List every Microsoft.Web/sites (App Service) resource in a resource group.
+const sites: any = await az.call({
+  path: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-rg/providers/Microsoft.Web/sites",
+  apiVersion: "2023-12-01",
+});
+runtime.log(`sites: ${sites.value?.length ?? 0}`);
+```
+
+##### blob(accountUrl)
+
+`blob(accountUrl)` is Azure Blob Storage's data plane. Unlike the ARM
+services above, this accessor takes the storage account's own URL
+(e.g. `https://myaccount.blob.core.windows.net`) directly — there's no
+subscription involved at all; the URL you hand it *is* the target
+account, authenticated with the same credential chain as everything
+else. Remember the PascalCase note above: results here come back as
+`Name`/`Properties`/etc., not lowercase.
+
+- `listContainers(opts?)` → `Promise<{ value: [...] }>`
+- `listBlobs(opts: { container })` → `Promise<{ value: [...] }>` — flat
+  listing (no folder/delimiter hierarchy).
+- `download(opts: { container, blob })` → `Promise<{ bytes: number[] }>`
+  — `bytes` is a plain JS array of byte values, not a real typed array;
+  wrap it yourself: `new Uint8Array(res.bytes)`.
+- `upload(opts: { container, blob, body })` → `Promise<{...}>` — `body`
+  accepts a `string` (sent as UTF-8) or raw bytes (`Uint8Array` /
+  `ArrayBuffer`); uploads as a single block blob.
+- `deleteBlob(opts: { container, blob })` → `Promise<{}>`
+
+```ts
+const blob = az.blob("https://myaccount.blob.core.windows.net");
+const containers = await blob.listContainers();
+runtime.log(`containers: ${containers.value?.length ?? 0}`);
+```
+
+```ts
+const blob = az.blob("https://myaccount.blob.core.windows.net");
+const res = await blob.download({ container: "logs", blob: "2026-07-01.log" });
+const bytes = new Uint8Array(res.bytes);
+runtime.log(`downloaded ${bytes.length} bytes`);
+```
+
+##### keyvaultSecrets(vaultUrl)
+
+`keyvaultSecrets(vaultUrl)` is Azure Key Vault's secrets data plane —
+pass the vault's own URL (e.g. `https://myvault.vault.azure.net`)
+directly, same no-subscription pattern as `blob()`. Results here are
+lowercase-camelCase (`id`, `attributes`, `contentType`, ...), matching
+the ARM services rather than `blob()`'s PascalCase.
+
+- `listSecrets(opts?)` → `Promise<{ value: [...] }>` — metadata only
+  (names, attributes, tags); values are never included in a list, by
+  Key Vault's own design.
+- `getSecret(opts: { name })` → `Promise<{ value: string }>` — the
+  latest version's plaintext value.
+- `setSecret(opts: { name, value })` → `Promise<{...}>` — creates a new
+  version of the named secret.
+- `deleteSecret(opts: { name })` → `Promise<{}>` — deletes all versions.
+
+Secret values are never logged by sercon anywhere along this path — only
+ever handed back to your script to do with as you choose. Be equally
+careful in your own `runtime.log` calls.
+
+```ts
+const kv = az.keyvaultSecrets("https://myvault.vault.azure.net");
+const { value } = await kv.getSecret({ name: "db-password" });
+// don't log `value` — pass it straight to whatever needs it
+```
+
+```ts
+const kv = az.keyvaultSecrets("https://myvault.vault.azure.net");
+try {
+  const secrets = await kv.listSecrets();
+  runtime.log(`secrets in vault: ${secrets.value?.length ?? 0} (metadata only)`);
+} catch (e: any) {
+  runtime.log(`keyvaultSecrets.listSecrets failed: ${e.message} (code=${e.code} status=${e.status})`);
+}
+```
+
+#### 5.14.5 Recipes
+
+**"Who am I / what's here" — a first call per provider.** A cheap read to confirm
+credentials and orient yourself:
+
+```ts
+// AWS: caller identity + a bucket count
+const aws = cloud.aws({ region: "eu-north-1" });
+const who = await aws.sts().getCallerIdentity({});
+runtime.log(`aws account ${who.Account} as ${who.Arn}`);
+runtime.log(`buckets: ${(await aws.s3().listBuckets()).Buckets?.length ?? 0}`);
+
+// Google: buckets in a project
+const g = cloud.google({ project: "my-project" });
+runtime.log(`gcs buckets: ${(await g.storage().listBuckets({ project: "my-project" })).items?.length ?? 0}`);
+
+// Azure (PROVISIONAL): resource groups in a subscription
+const az = cloud.azure({ subscriptionId: runtime.env.get("AZURE_SUBSCRIPTION_ID") });
+runtime.log(`resource groups: ${(await az.resourceGroups().list()).value?.length ?? 0}`);
+```
+
+**Read a secret from each provider's secret store:**
+
+```ts
+const awsSecret = (await cloud.aws({ region: "eu-north-1" })
+  .secretsmanager().getSecretValue({ secretId: "prod/db" })).value;
+
+const gcpSecret = (await cloud.google({ project: "my-project" })
+  .secrets().accessSecretVersion({ project: "my-project", name: "db-password" })).value;
+
+const azSecret = (await cloud.azure({ subscriptionId: "…" })
+  .keyvaultSecrets("https://myvault.vault.azure.net").getSecret({ name: "db-password" })).value;
+```
+
+**Tail recent CloudWatch logs (AWS) for a Lambda:**
+
+```ts
+const logs = cloud.aws({ region: "eu-north-1" }).cloudwatchlogs();
+const r = await logs.filterLogEvents({
+  logGroupName: "/aws/lambda/my-fn",
+  filterPattern: "ERROR",
+});
+for (const ev of r.Events ?? []) runtime.log(ev.Message);
+```
+
+**Reach an untyped API via an escape hatch:**
+
+```ts
+// Google: list Cloud Run services (no typed service — use call())
+const runSvcs = await cloud.google({ project: "my-project" }).call({
+  api: "run", version: "v1",
+  path: "/apis/serving.knative.dev/v1/namespaces/my-project/services",
+});
+
+// Azure (PROVISIONAL): list Web Apps via ARM call()
+const sites = await cloud.azure({ subscriptionId: "…" }).call({
+  path: "/subscriptions/…/providers/Microsoft.Web/sites",
+  apiVersion: "2023-12-01",
+});
+```
+
+**Network-tolerant recon.** Cloud calls throw on failure; in a recon script that
+should degrade rather than abort, catch and log:
+
+```ts
+try {
+  const vms = await cloud.aws({ region: "eu-north-1" }).ec2().describeInstances({});
+  runtime.log(`reservations: ${vms.Reservations?.length ?? 0}`);
+} catch (e) {
+  runtime.log(`ec2 skip: ${e.code || "transport"} — ${e.message}`);
+}
+```
+
 ## 6. Servers
 
 The `server` global (added in v0.10.0) hosts inbound listeners — scripts
