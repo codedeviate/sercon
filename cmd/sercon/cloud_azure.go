@@ -146,8 +146,9 @@ func (c azureConfig) String() string {
 // azureHandle builds the object returned by cloud.azure(...): one accessor
 // per service namespace, plus the generic ARM call escape hatch. The five
 // service accessors are temporary stubs — real implementations land in Tasks
-// 4-8 (resourceGroups/compute/resources in Tasks 4-6; blob/keyvaultSecrets,
-// which take a URL argument, in Tasks 7-8).
+// 4-8. resourceGroups (Task 4), compute (Task 5), and resources (Task 6) are
+// now implemented; blob/keyvaultSecrets, which take a URL argument, remain
+// stubs for Tasks 7-8.
 func azureHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
 	return map[string]any{
 		"resourceGroups":  func(goja.FunctionCall) goja.Value { return vm.ToValue(azureResourceGroups(vm, loop, cfg)) },
@@ -160,15 +161,12 @@ func azureHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) m
 	}
 }
 
-// Temporary stubs for the remaining ARM/data-plane service accessors — Tasks
-// 6-8 replace these with real implementations. vm/loop/cfg are accepted (and
+// Temporary stubs for the remaining data-plane service accessors — Tasks 7-8
+// replace these with real implementations. vm/loop/cfg are accepted (and
 // currently unused) so the real signatures slot in without call-site churn.
 // azureResourceGroups (Task 4) is implemented in cloud_azure_resourcegroups.go;
-// azureCompute (Task 5) is implemented in cloud_azure_compute.go.
-func azureResources(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
-	return map[string]any{}
-}
-
+// azureCompute (Task 5) is implemented in cloud_azure_compute.go;
+// azureResources (Task 6) is implemented in cloud_azure_resources.go.
 func azureBlob(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
 	return map[string]any{}
 }
