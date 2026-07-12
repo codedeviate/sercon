@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.89.0] — 2026-07-12
+
 ### Added
 - **`cloud.aws` — Amazon Web Services provider.** `cloud.aws({region?, profile?, credentials?})`
   returns a handle with nine typed services (s3, ec2, iam, secretsmanager, sts, lambda, sqs,
