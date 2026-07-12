@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.90.0] — 2026-07-12
+
 ### Added
 - **`cloud.azure` — Microsoft Azure provider (PROVISIONAL — unverified against a live Azure account).**
   `cloud.azure({subscriptionId?, tenantId?, clientId?, clientSecret?})` returns a handle with
