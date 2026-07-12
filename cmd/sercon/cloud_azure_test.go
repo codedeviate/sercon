@@ -44,6 +44,7 @@ func withMockAzure(t *testing.T, ts *httptest.Server) {
 	azureTestOptions = &azureTestSeam{
 		transport: roundTripTransporter{c: ts.Client()},
 		cred:      stubTokenCredential{},
+		endpoint:  ts.URL,
 	}
 	t.Cleanup(func() { azureTestOptions = prev })
 }

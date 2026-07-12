@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/dop251/goja"
@@ -31,9 +32,21 @@ type azureConfig struct {
 // azureTestSeam (tests only) supplies a stub token credential + a custom
 // transport so clients hit an httptest server without real Azure auth. nil in
 // production.
+//
+// endpoint (added alongside the first ARM SDK client consumer, resourceGroups
+// in Task 4) is the httptest server's base URL. The azureCallWork escape
+// hatch routes requests manually (its own endpointBase field) and only needs
+// the Transport override to reach an httptest server. But a generated ARM SDK
+// client (armresources.NewResourceGroupsClient et al.) resolves its target
+// host from arm.ClientOptions.Cloud — set via cloud.ResourceManager below —
+// *before* handing the request to the Transport; a Transport override alone
+// still targets the real https://management.azure.com and, over a real
+// network, would actually leave the sandbox. endpoint closes that gap so
+// every ARM client (Tasks 4-8) is routed to the mock server.
 type azureTestSeam struct {
 	transport policy.Transporter
 	cred      azcore.TokenCredential
+	endpoint  string
 }
 
 var azureTestOptions *azureTestSeam
@@ -97,11 +110,26 @@ func (c azureConfig) subscription() (string, error) {
 	return "", errors.New("cloud.azure: subscriptionId is required (set it in cloud.azure({subscriptionId}) or AZURE_SUBSCRIPTION_ID)")
 }
 
-// armClientOptions injects the test transport when the seam is active, else
-// nil (SDK defaults).
+// armClientOptions injects the test transport (and, when set, the test
+// endpoint override) when the seam is active, else nil (SDK defaults).
 func (c azureConfig) armClientOptions() *arm.ClientOptions {
 	if azureTestOptions != nil && azureTestOptions.transport != nil {
-		return &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Transport: azureTestOptions.transport}}
+		opts := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{
+			Transport: azureTestOptions.transport,
+			// The mock server is a plain httptest.NewServer (http://), and the
+			// SDK's bearer-token policy refuses to attach an Authorization
+			// header to a non-HTTPS request unless explicitly told this is
+			// safe. Test-only: azureTestOptions is nil in production.
+			InsecureAllowCredentialWithHTTP: true,
+		}}
+		if azureTestOptions.endpoint != "" {
+			opts.Cloud = cloud.Configuration{
+				Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+					cloud.ResourceManager: {Endpoint: azureTestOptions.endpoint, Audience: "https://management.azure.com"},
+				},
+			}
+		}
+		return opts
 	}
 	return nil
 }
@@ -132,13 +160,10 @@ func azureHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) m
 	}
 }
 
-// Temporary stubs for the five ARM/data-plane service accessors — Tasks 4-8
-// replace these with real implementations. vm/loop/cfg are accepted (and
+// Temporary stubs for the remaining ARM/data-plane service accessors — Tasks
+// 5-8 replace these with real implementations. vm/loop/cfg are accepted (and
 // currently unused) so the real signatures slot in without call-site churn.
-func azureResourceGroups(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
-	return map[string]any{}
-}
-
+// azureResourceGroups (Task 4) is implemented in cloud_azure_resourcegroups.go.
 func azureCompute(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
 	return map[string]any{}
 }
