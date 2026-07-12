@@ -134,6 +134,23 @@ func (c azureConfig) armClientOptions() *arm.ClientOptions {
 	return nil
 }
 
+// coreClientOptions injects the test transport (and, when the seam is
+// active, permission to attach a bearer token to a plain-HTTP request) for
+// data-plane clients (blob, keyvaultSecrets — Tasks 7-8), else a zero-value
+// azcore.ClientOptions (SDK defaults). Unlike armClientOptions, this never
+// sets a Cloud/endpoint override: a data-plane client is built directly from
+// the caller-supplied accountURL/vaultURL, which in tests already points at
+// the mock server — there is no separate "real" host to redirect away from.
+func (c azureConfig) coreClientOptions() azcore.ClientOptions {
+	if azureTestOptions != nil && azureTestOptions.transport != nil {
+		return azcore.ClientOptions{
+			Transport:                       azureTestOptions.transport,
+			InsecureAllowCredentialWithHTTP: true,
+		}
+	}
+	return azcore.ClientOptions{}
+}
+
 // String renders a redacted summary; clientSecret is NEVER included.
 func (c azureConfig) String() string {
 	auth := "default-chain"
@@ -144,33 +161,37 @@ func (c azureConfig) String() string {
 }
 
 // azureHandle builds the object returned by cloud.azure(...): one accessor
-// per service namespace, plus the generic ARM call escape hatch. The five
-// service accessors are temporary stubs — real implementations land in Tasks
-// 4-8. resourceGroups (Task 4), compute (Task 5), and resources (Task 6) are
-// now implemented; blob/keyvaultSecrets, which take a URL argument, remain
-// stubs for Tasks 7-8.
+// per service namespace, plus the generic ARM call escape hatch.
+// resourceGroups (Task 4), compute (Task 5), resources (Task 6), and blob
+// (Task 7) are now implemented; keyvaultSecrets, which — like blob — takes a
+// URL argument (data-plane, not ARM), remains a stub for Task 8.
 func azureHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
 	return map[string]any{
-		"resourceGroups":  func(goja.FunctionCall) goja.Value { return vm.ToValue(azureResourceGroups(vm, loop, cfg)) },
-		"compute":         func(goja.FunctionCall) goja.Value { return vm.ToValue(azureCompute(vm, loop, cfg)) },
-		"resources":       func(goja.FunctionCall) goja.Value { return vm.ToValue(azureResources(vm, loop, cfg)) },
-		"blob":            func(goja.FunctionCall) goja.Value { return vm.ToValue(azureBlob(vm, loop, cfg)) },
+		"resourceGroups": func(goja.FunctionCall) goja.Value { return vm.ToValue(azureResourceGroups(vm, loop, cfg)) },
+		"compute":        func(goja.FunctionCall) goja.Value { return vm.ToValue(azureCompute(vm, loop, cfg)) },
+		"resources":      func(goja.FunctionCall) goja.Value { return vm.ToValue(azureResources(vm, loop, cfg)) },
+		// blob is a data-plane service (Task 7): the accessor reads the
+		// account URL argument on-loop (goja values are only safe to touch
+		// here) and passes it through — the client is built from that URL,
+		// not from cfg's subscription. Task 8 (keyvaultSecrets) copies this
+		// shape with a vault URL instead.
+		"blob": func(call goja.FunctionCall) goja.Value {
+			url := call.Argument(0).String()
+			return vm.ToValue(azureBlob(vm, loop, cfg, url))
+		},
 		"keyvaultSecrets": func(goja.FunctionCall) goja.Value { return vm.ToValue(azureKeyvaultSecrets(vm, loop, cfg)) },
 		"call": scriptengine.PromisifyAsync(vm, loop, azureCallExtract(cfg),
 			func(ctx context.Context, a azureCallArgs) (any, error) { return azureCallWork(ctx, cfg, a) }).Func,
 	}
 }
 
-// Temporary stubs for the remaining data-plane service accessors — Tasks 7-8
-// replace these with real implementations. vm/loop/cfg are accepted (and
-// currently unused) so the real signatures slot in without call-site churn.
+// Temporary stub for the remaining data-plane service accessor — Task 8
+// replaces this with a real implementation. vm/loop/cfg are accepted (and
+// currently unused) so the real signature slots in without call-site churn.
 // azureResourceGroups (Task 4) is implemented in cloud_azure_resourcegroups.go;
 // azureCompute (Task 5) is implemented in cloud_azure_compute.go;
-// azureResources (Task 6) is implemented in cloud_azure_resources.go.
-func azureBlob(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
-	return map[string]any{}
-}
-
+// azureResources (Task 6) is implemented in cloud_azure_resources.go;
+// azureBlob (Task 7) is implemented in cloud_azure_blob.go.
 func azureKeyvaultSecrets(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
 	return map[string]any{}
 }
