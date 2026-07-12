@@ -121,6 +121,36 @@ func azureHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) m
 	}
 }
 
-// mapAzureError is a temporary passthrough shim; replaced with real ARM
-// error-mapping in Task 2.
-func mapAzureError(err error) error { return err }
+type azureError struct {
+	code    string
+	status  int
+	message string
+	details any
+}
+
+func (e azureError) Error() string {
+	return fmt.Sprintf("cloud.azure: %s (%d): %s", e.code, e.status, e.message)
+}
+
+func (e azureError) ErrorFields() map[string]any {
+	return map[string]any{"code": e.code, "status": e.status, "message": e.message, "details": e.details}
+}
+
+// mapAzureError normalises an azcore.ResponseError into a structured
+// azureError. Non-response errors (transport, credential/token acquisition)
+// map to code "" / status 0 with the raw error text as the message.
+func mapAzureError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var out azureError
+	var re *azcore.ResponseError
+	if errors.As(err, &re) {
+		out.code = re.ErrorCode
+		out.status = re.StatusCode
+		out.message = re.Error()
+	} else {
+		out.message = err.Error()
+	}
+	return out
+}

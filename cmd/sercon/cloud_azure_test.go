@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 
@@ -61,5 +64,38 @@ func TestAzureConfig_CredsNeverLogged(t *testing.T) {
 	c := azureConfig{subscriptionID: "sub", tenantID: "ten", clientID: "cli", clientSecret: "SHHH-SECRET"}
 	if s := c.String(); strings.Contains(s, "SHHH-SECRET") {
 		t.Fatalf("azureConfig.String() leaked clientSecret: %q", s)
+	}
+}
+
+func TestMapAzureError(t *testing.T) {
+	re := &azcore.ResponseError{ErrorCode: "ResourceGroupNotFound", StatusCode: 404,
+		RawResponse: &http.Response{StatusCode: 404}}
+	ae, ok := mapAzureError(re).(azureError)
+	if !ok {
+		t.Fatalf("expected azureError, got %T", mapAzureError(re))
+	}
+	f := ae.ErrorFields()
+	if f["code"] != "ResourceGroupNotFound" || f["status"] != 404 {
+		t.Fatalf("bad fields: %#v", f)
+	}
+}
+
+func TestMapAzureError_PlainError(t *testing.T) {
+	ae, ok := mapAzureError(errors.New("dial tcp: connection refused")).(azureError)
+	if !ok {
+		t.Fatalf("expected azureError, got %T", mapAzureError(errors.New("x")))
+	}
+	f := ae.ErrorFields()
+	if f["code"] != "" || f["status"] != 0 {
+		t.Fatalf("expected zero code/status for non-response error, got %#v", f)
+	}
+	if f["message"] != "dial tcp: connection refused" {
+		t.Fatalf("expected raw message passthrough, got %#v", f["message"])
+	}
+}
+
+func TestMapAzureError_Nil(t *testing.T) {
+	if got := mapAzureError(nil); got != nil {
+		t.Fatalf("expected nil, got %#v", got)
 	}
 }
