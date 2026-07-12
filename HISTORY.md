@@ -956,9 +956,69 @@ without `AWS_REGION`/`AWS_DEFAULT_REGION` set) exercises `sts()`, `s3()`, and
 intentionally excluded from `make demo`/CI, which stays fully offline via the
 `httptest`-mocked Go unit tests in `cloud_aws_*_test.go`.
 
-Azure is a planned follow-up provider under the same `cloud.<vendor>` shape —
-expected to ship mock-only + PROVISIONAL (no maintainer-run live smoke test)
-given the team's live-account access.
+### Azure provider (PROVISIONAL — unverified against a live Azure account)
+
+`cloud.azure(opts?)` completes the 3-provider arc (aws, google, azure) under
+the same `cloud.<vendor>` shape, but with an explicit caveat the other two
+don't carry: there is no Azure credential/subscription available to the team
+that built it, so **nothing about its wire behaviour has been verified
+against a real Azure account** — every method is exercised only by
+`httptest`-mocked Go unit tests (`cloud_azure*_test.go`). Treat any claim
+about actual Azure REST/SDK response shapes in the docs as unverified until
+a maintainer with real Azure access runs the smoke script below.
+
+`cloud.azure(opts?)` resolves credentials via a client-secret (service-
+principal) credential when `opts.tenantId`/`opts.clientId`/`opts.clientSecret`
+are all supplied, else falls back to `DefaultAzureCredential`'s chain
+(environment variables, managed identity, `az login`, and the other links in
+the default chain). Unlike Google/AWS, Azure splits its surface into two
+distinct shapes:
+
+- **ARM (Resource Manager) services** — `resourceGroups()` (list/get/create/
+  delete), `compute()` (Virtual Machines: `listVirtualMachines`/
+  `getVirtualMachine`/`start`/`powerOff`/`deallocate`/`delete`), and
+  `resources()` (the generic resource-graph API: `listByResourceGroup`/
+  `getById`) — plus a generic `call({path, apiVersion, method?, params?,
+  body?})` ARM REST escape hatch for APIs without a typed service above. All
+  four require a subscription id (`opts.subscriptionId`, else
+  `AZURE_SUBSCRIPTION_ID`); long-running operations (`Begin*` SDK calls) are
+  polled to completion (`PollUntilDone`) before the promise resolves, and
+  list-style methods page through every page the SDK's pager returns before
+  resolving with `{ value: [...] }`.
+- **Data-plane services** — `blob(accountUrl)` (container/blob CRUD:
+  `listContainers`/`listBlobs`/`download`/`upload`/`deleteBlob`) and
+  `keyvaultSecrets(vaultUrl)` (`listSecrets`/`getSecret`/`setSecret`/
+  `deleteSecret`) — take the target endpoint URL directly as an argument
+  rather than resolving one from a subscription, and have no subscription
+  requirement of their own. `blob`'s list/download results come back with
+  PascalCase keys (`Name`, `Properties`, ...) since the Storage Blob SDK's
+  generated structs have no JSON marshalling of their own (the wire protocol
+  is XML) and `toPlain`'s JSON round-trip falls back to the Go field names
+  verbatim; `keyvaultSecrets`' results come back lowercase-camelCase (`id`,
+  `attributes`, `contentType`, ...) since `azsecrets` structs do define their
+  own `MarshalJSON`, same convention as the ARM services.
+
+Errors reuse the same `ErrorFields()` pattern Google/AWS established: an
+`azcore.ResponseError` becomes `{ code, status, message, details }`; anything
+else (DNS, TLS, timeout, connection refused, credential/token acquisition
+failure) carries `code: ""`/`status: 0` with the raw error text as `message`.
+Documentation follows the AWS convention (not Google's): no flat per-method
+`MemberDoc` entries are written out for `resourceGroups()`/`compute()`/
+`resources()`/`blob()`/`keyvaultSecrets()`, since they're all built at
+script-run time inside the `azure()` accessor same as AWS's/Google's runtime-
+built handles — the `azure` entry's `ReturnType` (a hand-written, multi-line
+composite covering all six method groups) is what gives `cloud.azure(...)`'s
+return real per-method shapes in the emitted `sercon.d.ts`. A maintainer-run
+live smoke test (`examples/scripts/cloud-azure-smoke.ts`,
+`AZURE_SUBSCRIPTION_ID`-gated with optional `AZURE_TENANT_ID`/
+`AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET`/`AZURE_STORAGE_ACCOUNT_URL`/
+`AZURE_KEYVAULT_URL`, self-skips without a subscription id) is provided for
+exercising `resourceGroups()`, `compute()`, `call()`, `blob()`, and
+`keyvaultSecrets()` against a real subscription — like its Google/AWS
+counterparts it is excluded from `make demo`/CI, which stays fully offline
+via the `httptest`-mocked Go unit tests — but unlike them, **this script has
+never actually been run against live Azure**, so its first real run is the
+actual validation of the `cloud.azure` surface, not this document.
 
 ## Bundled libraries
 

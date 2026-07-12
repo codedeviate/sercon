@@ -8,6 +8,20 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`cloud.azure` — Microsoft Azure provider (PROVISIONAL — unverified against a live Azure account).**
+  `cloud.azure({subscriptionId?, tenantId?, clientId?, clientSecret?})` returns a handle with
+  three ARM (Resource Manager) services — `resourceGroups()`, `compute()`, `resources()` — plus
+  a generic ARM `call({path, apiVersion, ...})` REST escape hatch, and two data-plane services —
+  `blob(accountUrl)`, `keyvaultSecrets(vaultUrl)` — that take an endpoint URL directly rather than
+  a subscription. Pure-Go, CGO-free (`azure-sdk-for-go`); reuses the standard Azure credential
+  chain (client-secret when `tenantId`/`clientId`/`clientSecret` are given, else
+  `DefaultAzureCredential`). API/transport errors reject with a structured
+  `Error { code, status, message, details }`. Built and exercised only against `httptest`-mocked
+  unit tests — **PROVISIONAL — unverified against a live Azure account**; a maintainer-run smoke
+  script (`examples/scripts/cloud-azure-smoke.ts`, excluded from `make demo`) is provided for that
+  verification but has not itself been run against real Azure.
+
 ## [0.89.0] — 2026-07-12
 
 ### Added

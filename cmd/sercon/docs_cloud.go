@@ -4,19 +4,23 @@ import "github.com/codedeviate/sercon/pkg/scriptengine"
 
 // Inline handle-type strings, mirroring sqlHandleType/respHandleType in
 // docs_db.go. cloud.google(...)'s per-service handles (storage()/compute()/
-// iam()/secrets()) and the call() escape hatch, and cloud.aws(...)'s
-// per-service handles (s3()/ec2()/iam()/secretsmanager()/sts()/lambda()/sqs()/
-// cloudwatch()/cloudwatchlogs()), are all built at script-run time — see
+// iam()/secrets()) and the call() escape hatch, cloud.aws(...)'s per-service
+// handles (s3()/ec2()/iam()/secretsmanager()/sts()/lambda()/sqs()/
+// cloudwatch()/cloudwatchlogs()), and cloud.azure(...)'s per-service handles
+// (resourceGroups()/compute()/resources()/blob()/keyvaultSecrets()) plus its
+// ARM call() escape hatch, are all built at script-run time — see
 // googleHandle in cloud.go and googleStorage/googleCompute/googleIAM/
-// googleSecrets in cloud_google_*.go, and awsHandle in cloud_aws.go and
+// googleSecrets in cloud_google_*.go, awsHandle in cloud_aws.go and
 // awsS3/awsEC2/awsIAM/awsSecretsManager/awsSTS/awsLambda/awsSQS/awsCloudWatch/
-// awsCloudWatchLogs in cloud_aws_*.go — so the d.ts emitter's reflection has
-// no static shape to recover for them (a Go
+// awsCloudWatchLogs in cloud_aws_*.go, and azureHandle in cloud_azure.go and
+// azureResourceGroups/azureCompute/azureResources/azureBlob/
+// azureKeyvaultSecrets in cloud_azure_*.go — so the d.ts emitter's reflection
+// has no static shape to recover for them (a Go
 // `func(goja.FunctionCall) goja.Value` carries no type information). These
-// constants hand the emitter the real shape via the "google"/"aws" MemberDoc
-// entries' ReturnType, which is spliced in verbatim (see asyncReturnType/
-// writeMemberObject in pkg/scriptengine/dts.go) and therefore must be valid
-// TypeScript on its own.
+// constants hand the emitter the real shape via the "google"/"aws"/"azure"
+// MemberDoc entries' ReturnType, which is spliced in verbatim (see
+// asyncReturnType/writeMemberObject in pkg/scriptengine/dts.go) and therefore
+// must be valid TypeScript on its own.
 const (
 	// googleHandleType is the object cloud.google(...) resolves to — spliced
 	// verbatim into the "google" MemberDoc's ReturnType, so it must be valid
@@ -154,6 +158,70 @@ const (
     getQueryResults(opts: { queryId: string }): Promise<Record<string, unknown>>;
   };
 }`
+
+	// azureHandleType is the object cloud.azure(...) resolves to — spliced
+	// verbatim into the "azure" MemberDoc's ReturnType, so it must be valid
+	// TypeScript on its own (same rationale as googleHandleType/awsHandleType
+	// above). Formatted multi-line for readable rendering in the d.ts and
+	// MANUAL §17 reference. Covers exactly the implemented surface (Tasks 1-8
+	// of the cloud.azure feature — see cloud_azure.go and cloud_azure_*.go for
+	// the source these signatures are derived from):
+	//
+	//   - resourceGroups()/compute()/resources() are ARM (subscription-scoped)
+	//     services — list()/getVirtualMachine()/getById() etc. return the ARM
+	//     SDK's own JSON shape (lowercase-camelCase keys like
+	//     id/name/location/properties — the generated SDK types' own
+	//     MarshalJSON, not Go struct field names) via toPlain, round-tripped
+	//     as Record<string, unknown> (or { value: [...] } for list-style
+	//     methods, matching the ARM list response envelope).
+	//   - call(opts) is the generic ARM REST escape hatch (top-level on the
+	//     handle, not nested under any one ARM service — see azureHandle in
+	//     cloud_azure.go) for ARM APIs without a typed service above.
+	//   - blob(accountUrl)/keyvaultSecrets(vaultUrl) are data-plane services:
+	//     the accessor takes the target endpoint URL directly rather than
+	//     resolving one from the subscription. blob's list/download results
+	//     come from the Storage Blob SDK's un-marshalled Go structs, which
+	//     carry no json tags and no custom MarshalJSON (the Storage Blob wire
+	//     protocol is XML, not JSON) — toPlain's JSON round-trip therefore
+	//     falls back to the exported Go field names verbatim, i.e. PascalCase
+	//     keys (Name, Properties, Deleted, ...). keyvaultSecrets' results, by
+	//     contrast, use the SDK's own MarshalJSON and so come back
+	//     lowercase-camelCase (id, attributes, contentType, managed, tags),
+	//     same convention as the ARM services.
+	azureHandleType = `{
+  resourceGroups(): {
+    list(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    get(opts: { name: string }): Promise<Record<string, unknown>>;
+    create(opts: { name: string; location: string }): Promise<Record<string, unknown>>;
+    delete(opts: { name: string }): Promise<Record<string, unknown>>;
+  };
+  compute(): {
+    listVirtualMachines(opts?: { resourceGroup?: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getVirtualMachine(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    start(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    powerOff(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    deallocate(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    delete(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+  };
+  resources(): {
+    listByResourceGroup(opts: { resourceGroup: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getById(opts: { resourceId: string; apiVersion: string }): Promise<Record<string, unknown>>;
+  };
+  call(opts: { path: string; apiVersion: string; method?: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>;
+  blob(accountUrl: string): {
+    listContainers(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    listBlobs(opts: { container: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    download(opts: { container: string; blob: string }): Promise<{ bytes: number[] }>;
+    upload(opts: { container: string; blob: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>;
+    deleteBlob(opts: { container: string; blob: string }): Promise<Record<string, unknown>>;
+  };
+  keyvaultSecrets(vaultUrl: string): {
+    listSecrets(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getSecret(opts: { name: string }): Promise<{ value: string }>;
+    setSecret(opts: { name: string; value: string }): Promise<Record<string, unknown>>;
+    deleteSecret(opts: { name: string }): Promise<Record<string, unknown>>;
+  };
+}`
 )
 
 // cloudDocs documents the `cloud` global (cloud.google(...) and its
@@ -170,6 +238,10 @@ const (
 // case a future emitter upgrade recurses into runtime-built handles); the
 // deep typing that DOES reach the emitted .d.ts today comes from the
 // "google" entry's ReturnType (googleHandleType above), not from these.
+// The "aws" and "azure" entries below follow the same runtime-built-handle
+// situation but use the leaner convention (no flat per-method entries —
+// see the comments above each) since the deep typing already lives entirely
+// in their ReturnType (awsHandleType/azureHandleType above).
 func cloudDocs() map[string]scriptengine.MemberDoc {
 	return map[string]scriptengine.MemberDoc{
 		"google": {
@@ -537,6 +609,44 @@ runtime.log(value);`,
 			Returns:    "The AWS provider handle exposing the nine typed services. Most service methods take a small typed options object. The three CloudWatch metric methods — cloudwatch().getMetricData/getMetricStatistics/putMetricData — are pass-through: their argument is an AWS-SDK-shaped object with PascalCase keys (e.g. { Namespace, MetricData: [{ MetricName, Value, Unit, Timestamp }] }), forwarded to the SDK input as-is.",
 			Errors:     "cloud.aws(opts) itself throws synchronously (not a rejected promise) if opts is provided but is not an object, or credentials is present but is not an object carrying accessKeyId and secretAccessKey (sessionToken optional). Each service method returns a promise that rejects with a structured Error { code, status, message, details } on API/transport failure.",
 			Example:    "const who = await cloud.aws({ region: \"eu-north-1\" }).sts().getCallerIdentity({});",
+		},
+
+		// --- azure — Microsoft Azure provider (Tasks 1-8) — PROVISIONAL ---
+		//
+		// PROVISIONAL: built against the azure-sdk-for-go modules pinned in
+		// go.mod (azcore/azidentity + armresources/armcompute/azblob/
+		// azsecrets) and exercised only by httptest-mocked Go unit tests
+		// (cloud_azure*_test.go) — there is no live Azure account available in
+		// this environment, so none of the wire behaviour documented below has
+		// been verified against a real Azure account. Treat any claim about
+		// actual Azure REST/SDK response shapes as unverified until a
+		// maintainer runs examples/scripts/cloud-azure-smoke.ts (see Task 9)
+		// against a real subscription.
+		//
+		// resourceGroups()/compute()/resources()/blob()/keyvaultSecrets() are
+		// all built at script-run time (see azureHandle in cloud_azure.go and
+		// azureResourceGroups/azureCompute/azureResources/azureBlob/
+		// azureKeyvaultSecrets in the matching cloud_azure_*.go files) — same
+		// "opaque Go func, no reflectable shape" situation as google's
+		// storage()/compute()/iam()/secrets() and aws's s3()/ec2()/etc above.
+		// Matching the aws convention (not google's), no flat per-method
+		// MemberDoc entries are written out here: the deep typing that reaches
+		// the emitted .d.ts comes entirely from the "azure" entry's ReturnType
+		// (azureHandleType above), and adding a dozen more flat entries here
+		// would not change what the emitter renders.
+		"azure": {
+			Summary:    "PROVISIONAL — built against the Azure SDK but not yet verified against a live Azure account. Microsoft Azure provider. cloud.azure(opts?) returns a handle with three ARM (Resource Manager) services — resourceGroups, compute, resources — plus a generic ARM call() REST escape hatch, and two data-plane services — blob, keyvaultSecrets — that take an endpoint URL directly. Pure-Go, CGO-free (azure-sdk-for-go); reuses the standard Azure credential chain.",
+			Params:     []scriptengine.Param{{Name: "opts", Type: "{ subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }", Optional: true, Desc: "subscriptionId: the ARM subscription id used by resourceGroups()/compute()/resources() and call(); omitted ⇒ falls back to the AZURE_SUBSCRIPTION_ID env var (required only when an ARM service or call() is actually invoked — blob()/keyvaultSecrets() need no subscription at all). tenantId/clientId/clientSecret: together select a client-secret (service-principal) credential; when any is omitted, falls back to DefaultAzureCredential (environment variables, managed identity, az login, and the other links in the default chain)."}},
+			ReturnType: azureHandleType,
+			Returns:    "The Azure provider handle: { resourceGroups(), compute(), resources(), call(opts), blob(accountUrl), keyvaultSecrets(vaultUrl) }. resourceGroups()/compute()/resources() return fresh ARM service handles bound to this call's subscription/credential; call() is the generic ARM REST escape hatch for APIs without a typed service above; blob(accountUrl)/keyvaultSecrets(vaultUrl) return data-plane handles bound directly to the given endpoint URL, independent of any subscription.",
+			Errors:     "cloud.azure(opts) itself throws synchronously (not a rejected promise) only if opts is provided but is not a plain object — there is no further synchronous validation of the credential fields (a bad/incomplete tenantId/clientId/clientSecret combination fails later, asynchronously, on first credential use). Every service method (ARM and data-plane alike) returns a promise that rejects with a structured Error { code, status, message, details } on API/transport failure — code/status are \"\"/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). resourceGroups()/compute()/resources() and call() additionally reject if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID); blob()/keyvaultSecrets() have no such requirement since they operate directly against the caller-supplied accountUrl/vaultUrl.",
+			Example: `// PROVISIONAL example — illustrative only, not run against a live account.
+const az = cloud.azure({ subscriptionId: "00000000-0000-0000-0000-000000000000" });
+const groups = await az.resourceGroups().list();
+runtime.log(groups.value?.length ?? 0);
+
+const kv = az.keyvaultSecrets("https://my-vault.vault.azure.net");
+const { value } = await kv.getSecret({ name: "db-password" });`,
 		},
 	}
 }

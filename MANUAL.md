@@ -7258,7 +7258,66 @@ Amazon Web Services provider. cloud.aws(opts?) returns a handle with typed servi
 const who = await cloud.aws({ region: "eu-north-1" }).sts().getCallerIdentity({});
 ```
 
-#### 17.2.2 cloud.google
+#### 17.2.2 cloud.azure
+
+```
+azure(opts?: { subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }): {
+  resourceGroups(): {
+    list(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    get(opts: { name: string }): Promise<Record<string, unknown>>;
+    create(opts: { name: string; location: string }): Promise<Record<string, unknown>>;
+    delete(opts: { name: string }): Promise<Record<string, unknown>>;
+  };
+  compute(): {
+    listVirtualMachines(opts?: { resourceGroup?: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getVirtualMachine(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    start(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    powerOff(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    deallocate(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    delete(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+  };
+  resources(): {
+    listByResourceGroup(opts: { resourceGroup: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getById(opts: { resourceId: string; apiVersion: string }): Promise<Record<string, unknown>>;
+  };
+  call(opts: { path: string; apiVersion: string; method?: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>;
+  blob(accountUrl: string): {
+    listContainers(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    listBlobs(opts: { container: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    download(opts: { container: string; blob: string }): Promise<{ bytes: number[] }>;
+    upload(opts: { container: string; blob: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>;
+    deleteBlob(opts: { container: string; blob: string }): Promise<Record<string, unknown>>;
+  };
+  keyvaultSecrets(vaultUrl: string): {
+    listSecrets(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getSecret(opts: { name: string }): Promise<{ value: string }>;
+    setSecret(opts: { name: string; value: string }): Promise<Record<string, unknown>>;
+    deleteSecret(opts: { name: string }): Promise<Record<string, unknown>>;
+  };
+}
+```
+
+PROVISIONAL — built against the Azure SDK but not yet verified against a live Azure account. Microsoft Azure provider. cloud.azure(opts?) returns a handle with three ARM (Resource Manager) services — resourceGroups, compute, resources — plus a generic ARM call() REST escape hatch, and two data-plane services — blob, keyvaultSecrets — that take an endpoint URL directly. Pure-Go, CGO-free (azure-sdk-for-go); reuses the standard Azure credential chain.
+
+**Parameters**
+
+- `opts` *({ subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }, optional)* — subscriptionId: the ARM subscription id used by resourceGroups()/compute()/resources() and call(); omitted ⇒ falls back to the AZURE_SUBSCRIPTION_ID env var (required only when an ARM service or call() is actually invoked — blob()/keyvaultSecrets() need no subscription at all). tenantId/clientId/clientSecret: together select a client-secret (service-principal) credential; when any is omitted, falls back to DefaultAzureCredential (environment variables, managed identity, az login, and the other links in the default chain).
+
+**Returns:** The Azure provider handle: { resourceGroups(), compute(), resources(), call(opts), blob(accountUrl), keyvaultSecrets(vaultUrl) }. resourceGroups()/compute()/resources() return fresh ARM service handles bound to this call's subscription/credential; call() is the generic ARM REST escape hatch for APIs without a typed service above; blob(accountUrl)/keyvaultSecrets(vaultUrl) return data-plane handles bound directly to the given endpoint URL, independent of any subscription.
+
+**Throws:** cloud.azure(opts) itself throws synchronously (not a rejected promise) only if opts is provided but is not a plain object — there is no further synchronous validation of the credential fields (a bad/incomplete tenantId/clientId/clientSecret combination fails later, asynchronously, on first credential use). Every service method (ARM and data-plane alike) returns a promise that rejects with a structured Error { code, status, message, details } on API/transport failure — code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). resourceGroups()/compute()/resources() and call() additionally reject if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID); blob()/keyvaultSecrets() have no such requirement since they operate directly against the caller-supplied accountUrl/vaultUrl.
+
+```ts
+// PROVISIONAL example — illustrative only, not run against a live account.
+const az = cloud.azure({ subscriptionId: "00000000-0000-0000-0000-000000000000" });
+const groups = await az.resourceGroups().list();
+runtime.log(groups.value?.length ?? 0);
+
+const kv = az.keyvaultSecrets("https://my-vault.vault.azure.net");
+const { value } = await kv.getSecret({ name: "db-password" });
+```
+
+#### 17.2.3 cloud.google
 
 ```
 google(opts?: { project?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): {

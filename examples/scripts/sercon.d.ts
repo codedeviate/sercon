@@ -1410,6 +1410,45 @@ declare const cloud: {
   };
 };
   /**
+   * PROVISIONAL — built against the Azure SDK but not yet verified against a live Azure account. Microsoft Azure provider. cloud.azure(opts?) returns a handle with three ARM (Resource Manager) services — resourceGroups, compute, resources — plus a generic ARM call() REST escape hatch, and two data-plane services — blob, keyvaultSecrets — that take an endpoint URL directly. Pure-Go, CGO-free (azure-sdk-for-go); reuses the standard Azure credential chain.
+   * @param opts subscriptionId: the ARM subscription id used by resourceGroups()/compute()/resources() and call(); omitted ⇒ falls back to the AZURE_SUBSCRIPTION_ID env var (required only when an ARM service or call() is actually invoked — blob()/keyvaultSecrets() need no subscription at all). tenantId/clientId/clientSecret: together select a client-secret (service-principal) credential; when any is omitted, falls back to DefaultAzureCredential (environment variables, managed identity, az login, and the other links in the default chain).
+   * @returns The Azure provider handle: { resourceGroups(), compute(), resources(), call(opts), blob(accountUrl), keyvaultSecrets(vaultUrl) }. resourceGroups()/compute()/resources() return fresh ARM service handles bound to this call's subscription/credential; call() is the generic ARM REST escape hatch for APIs without a typed service above; blob(accountUrl)/keyvaultSecrets(vaultUrl) return data-plane handles bound directly to the given endpoint URL, independent of any subscription.
+   */
+  azure(opts?: { subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }): {
+  resourceGroups(): {
+    list(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    get(opts: { name: string }): Promise<Record<string, unknown>>;
+    create(opts: { name: string; location: string }): Promise<Record<string, unknown>>;
+    delete(opts: { name: string }): Promise<Record<string, unknown>>;
+  };
+  compute(): {
+    listVirtualMachines(opts?: { resourceGroup?: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getVirtualMachine(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    start(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    powerOff(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    deallocate(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+    delete(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>;
+  };
+  resources(): {
+    listByResourceGroup(opts: { resourceGroup: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getById(opts: { resourceId: string; apiVersion: string }): Promise<Record<string, unknown>>;
+  };
+  call(opts: { path: string; apiVersion: string; method?: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>;
+  blob(accountUrl: string): {
+    listContainers(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    listBlobs(opts: { container: string }): Promise<{ value?: Array<Record<string, unknown>> }>;
+    download(opts: { container: string; blob: string }): Promise<{ bytes: number[] }>;
+    upload(opts: { container: string; blob: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>;
+    deleteBlob(opts: { container: string; blob: string }): Promise<Record<string, unknown>>;
+  };
+  keyvaultSecrets(vaultUrl: string): {
+    listSecrets(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>;
+    getSecret(opts: { name: string }): Promise<{ value: string }>;
+    setSecret(opts: { name: string; value: string }): Promise<Record<string, unknown>>;
+    deleteSecret(opts: { name: string }): Promise<Record<string, unknown>>;
+  };
+};
+  /**
    * Google Cloud provider handle. Pure-Go, CGO-free (google.golang.org/api); reuses Application Default Credentials unless credentials is given. Returns an object exposing storage(), compute(), iam(), secrets(), and the generic call() REST escape hatch.
    * @param opts project: the default GCP project id used by any service call that omits its own `project`. credentials: a file path (string) to a service-account JSON key, or an inline service-account JSON object; omitted ⇒ Application Default Credentials (gcloud auth application-default login, GOOGLE_APPLICATION_CREDENTIALS, or attached-metadata identity). scopes: OAuth scopes to request; omitted ⇒ each service's default scope. quotaProject: billing/quota project override (X-Goog-User-Project).
    * @returns The provider handle: { storage(), compute(), iam(), secrets(), call(opts) }. Each of storage()/compute()/iam()/secrets() returns a fresh service handle bound to this call's config; call() is the generic path-based REST escape hatch for APIs without a typed service above.
