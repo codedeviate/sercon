@@ -4,16 +4,49 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
+
+// stubTokenCredential is a fake azcore.TokenCredential for tests: it never
+// touches the network and always returns a fixed, obviously-fake token.
+type stubTokenCredential struct{}
+
+func (stubTokenCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+// roundTripTransporter adapts an *http.Client (typically ts.Client() from an
+// httptest.Server) to policy.Transporter, so ARM SDK clients — and the
+// azureCallWork escape hatch — can be pointed at a local mock server.
+type roundTripTransporter struct {
+	c *http.Client
+}
+
+func (t roundTripTransporter) Do(req *http.Request) (*http.Response, error) {
+	return t.c.Do(req)
+}
+
+// withMockAzure points cloud.azure's test seam at ts for the duration of the
+// test, restoring the previous (nil) seam via t.Cleanup. Reused by Tasks 4-8.
+func withMockAzure(t *testing.T, ts *httptest.Server) {
+	t.Helper()
+	prev := azureTestOptions
+	azureTestOptions = &azureTestSeam{
+		transport: roundTripTransporter{c: ts.Client()},
+		cred:      stubTokenCredential{},
+	}
+	t.Cleanup(func() { azureTestOptions = prev })
+}
 
 func runCloudAzureScript(t *testing.T, body string) any {
 	t.Helper()
@@ -97,5 +130,76 @@ func TestMapAzureError_PlainError(t *testing.T) {
 func TestMapAzureError_Nil(t *testing.T) {
 	if got := mapAzureError(nil); got != nil {
 		t.Fatalf("expected nil, got %#v", got)
+	}
+}
+
+func TestAzureCall_GET(t *testing.T) {
+	var gotQuery string
+	var gotAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"value":[{"name":"rg1"}]}`))
+	}))
+	defer ts.Close()
+	withMockAzure(t, ts)
+
+	out, err := azureCallWork(context.Background(), azureConfig{subscriptionID: "s"}, azureCallArgs{
+		endpointBase: ts.URL,
+		path:         "/subscriptions/s/resourcegroups",
+		apiVersion:   "2021-04-01",
+	})
+	if err != nil {
+		t.Fatalf("azureCallWork error: %v", err)
+	}
+
+	m, ok := out.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map result, got %T", out)
+	}
+	vals, ok := m["value"].([]any)
+	if !ok || len(vals) != 1 {
+		t.Fatalf("unexpected decoded shape: %#v", m)
+	}
+	first, ok := vals[0].(map[string]any)
+	if !ok || first["name"] != "rg1" {
+		t.Fatalf("unexpected first element: %#v", vals[0])
+	}
+
+	if !strings.Contains(gotQuery, "api-version=2021-04-01") {
+		t.Fatalf("expected api-version in query, got %q", gotQuery)
+	}
+	if gotAuth != "Bearer test-token" {
+		t.Fatalf("expected Authorization: Bearer test-token, got %q", gotAuth)
+	}
+}
+
+func TestAzureCall_ErrorPathThrows(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":"ResourceGroupNotFound","message":"not found"}}`))
+	}))
+	defer ts.Close()
+	withMockAzure(t, ts)
+
+	_, err := azureCallWork(context.Background(), azureConfig{subscriptionID: "s"}, azureCallArgs{
+		endpointBase: ts.URL,
+		path:         "/subscriptions/s/resourcegroups/missing",
+		apiVersion:   "2021-04-01",
+	})
+	if err == nil {
+		t.Fatal("expected an error for a 404 response")
+	}
+	ae, ok := err.(azureError)
+	if !ok {
+		t.Fatalf("expected azureError, got %T: %v", err, err)
+	}
+	if ae.status != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", ae.status)
+	}
+	if !strings.Contains(ae.message, "ResourceGroupNotFound") {
+		t.Fatalf("expected message to contain body, got %q", ae.message)
 	}
 }

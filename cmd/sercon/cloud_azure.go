@@ -1,9 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -11,6 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // azureConfig is the resolved config for a cloud.azure(...) handle. clientSecret
@@ -107,18 +116,160 @@ func (c azureConfig) String() string {
 }
 
 // azureHandle builds the object returned by cloud.azure(...): one accessor
-// per service namespace, plus the generic call escape hatch. Temporary stubs
-// — real implementations land in Tasks 3-8.
+// per service namespace, plus the generic ARM call escape hatch. The five
+// service accessors are temporary stubs — real implementations land in Tasks
+// 4-8 (resourceGroups/compute/resources in Tasks 4-6; blob/keyvaultSecrets,
+// which take a URL argument, in Tasks 7-8).
 func azureHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
-	noop := func(goja.FunctionCall) goja.Value { return goja.Undefined() }
 	return map[string]any{
-		"resourceGroups":  noop,
-		"compute":         noop,
-		"resources":       noop,
-		"blob":            noop,
-		"keyvaultSecrets": noop,
-		"call":            noop,
+		"resourceGroups":  func(goja.FunctionCall) goja.Value { return vm.ToValue(azureResourceGroups(vm, loop, cfg)) },
+		"compute":         func(goja.FunctionCall) goja.Value { return vm.ToValue(azureCompute(vm, loop, cfg)) },
+		"resources":       func(goja.FunctionCall) goja.Value { return vm.ToValue(azureResources(vm, loop, cfg)) },
+		"blob":            func(goja.FunctionCall) goja.Value { return vm.ToValue(azureBlob(vm, loop, cfg)) },
+		"keyvaultSecrets": func(goja.FunctionCall) goja.Value { return vm.ToValue(azureKeyvaultSecrets(vm, loop, cfg)) },
+		"call": scriptengine.PromisifyAsync(vm, loop, azureCallExtract(cfg),
+			func(ctx context.Context, a azureCallArgs) (any, error) { return azureCallWork(ctx, cfg, a) }).Func,
 	}
+}
+
+// Temporary stubs for the five ARM/data-plane service accessors — Tasks 4-8
+// replace these with real implementations. vm/loop/cfg are accepted (and
+// currently unused) so the real signatures slot in without call-site churn.
+func azureResourceGroups(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
+	return map[string]any{}
+}
+
+func azureCompute(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
+	return map[string]any{}
+}
+
+func azureResources(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
+	return map[string]any{}
+}
+
+func azureBlob(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
+	return map[string]any{}
+}
+
+func azureKeyvaultSecrets(vm *goja.Runtime, loop *eventloop.EventLoop, cfg azureConfig) map[string]any {
+	return map[string]any{}
+}
+
+// azureCallArgs is the plain-Go carrier for cloud.azure(...).call({...}),
+// extracted on-loop by azureCallExtract and consumed off-loop by
+// azureCallWork.
+type azureCallArgs struct {
+	path       string
+	apiVersion string
+	method     string
+	params     map[string]string
+	body       any
+	// endpointBase is test-only and JS-unreachable: azureCallExtract never
+	// populates it. Empty ⇒ https://management.azure.com.
+	endpointBase string
+}
+
+// azureCallExtract runs on the event loop: read + validate JS args. Does NOT
+// read endpointBase — that field is only ever set directly by Go tests.
+func azureCallExtract(cfg azureConfig) func(goja.FunctionCall) (azureCallArgs, error) {
+	return func(call goja.FunctionCall) (azureCallArgs, error) {
+		obj, ok := call.Argument(0).(*goja.Object)
+		if !ok {
+			return azureCallArgs{}, errors.New("cloud.azure.call: an options object is required")
+		}
+		o, ok := obj.Export().(map[string]any)
+		if !ok {
+			return azureCallArgs{}, errors.New("cloud.azure.call: an options object is required")
+		}
+		a := azureCallArgs{
+			path:       optString(o, "path", ""),
+			apiVersion: optString(o, "apiVersion", ""),
+			method:     strings.ToUpper(optString(o, "method", "GET")),
+			params:     optStringMap(o, "params"),
+			body:       o["body"],
+		}
+		if a.path == "" || a.apiVersion == "" {
+			return a, errors.New("cloud.azure.call: `path` and `apiVersion` are required")
+		}
+		return a, nil
+	}
+}
+
+// httpDoer is the minimal interface azureCallWork needs to perform a request.
+// Both policy.Transporter and *http.Client satisfy it, so the test seam's
+// transport and the production http.DefaultClient are interchangeable.
+type httpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// azureCallWork runs off the event loop: acquire an ARM bearer token, perform
+// the REST call, decode JSON. Every error path is mapped through
+// mapAzureError (or an azureError for a non-2xx response).
+func azureCallWork(ctx context.Context, cfg azureConfig, a azureCallArgs) (any, error) {
+	cred, err := cfg.credential()
+	if err != nil {
+		return nil, err
+	}
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{"https://management.azure.com/.default"}})
+	if err != nil {
+		return nil, mapAzureError(err)
+	}
+
+	base := a.endpointBase
+	if base == "" {
+		base = "https://management.azure.com"
+	}
+	u, err := url.Parse(base + a.path)
+	if err != nil {
+		return nil, mapAzureError(err)
+	}
+	q := u.Query()
+	q.Set("api-version", a.apiVersion)
+	for k, v := range a.params {
+		q.Set(k, v)
+	}
+	u.RawQuery = q.Encode()
+
+	var bodyReader io.Reader
+	if a.body != nil {
+		bb, mErr := json.Marshal(a.body)
+		if mErr != nil {
+			return nil, azureError{message: "cloud.azure.call: body is not JSON-serialisable"}
+		}
+		bodyReader = bytes.NewReader(bb)
+	}
+	req, err := http.NewRequestWithContext(ctx, a.method, u.String(), bodyReader)
+	if err != nil {
+		return nil, mapAzureError(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+	if bodyReader != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	var doer httpDoer
+	if azureTestOptions != nil && azureTestOptions.transport != nil {
+		doer = azureTestOptions.transport
+	} else {
+		doer = http.DefaultClient
+	}
+	resp, err := doer.Do(req)
+	if err != nil {
+		return nil, mapAzureError(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, azureError{status: resp.StatusCode, message: strings.TrimSpace(string(raw))}
+	}
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, azureError{status: resp.StatusCode, message: "cloud.azure.call: response was not JSON"}
+	}
+	return out, nil
 }
 
 type azureError struct {
