@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.90.2] — 2026-07-13
+
 ### Changed
 - **MANUAL: §17 binding reference is now hierarchical.** The generated reference
   numbers and levels each member by its real dotted-path depth — e.g.
