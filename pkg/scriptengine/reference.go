@@ -129,6 +129,56 @@ func writeReferenceMembers(w *errWriter, members map[string]any, path string, do
 		}
 		doc := docs[memberPath]
 		writeReferenceEntry(w, memberNum(nsNum, mem), memberPath, k, doc, sigForMember(k, v, doc))
+		// A leaf member may build a runtime handle the surface walk can't
+		// introspect (e.g. the cloud.<provider> callables, whose services and
+		// methods only exist after the handle is constructed at script-run
+		// time). Emit any documented members nested under this leaf's path so
+		// those signatures reach the reference too.
+		writeOrphanChildren(w, memberPath, docs, nsNum, mem)
+	}
+}
+
+// writeOrphanChildren emits reference entries for documented members nested
+// under a leaf (non-map) member — methods and service groups of a runtime-built
+// handle that writeReferenceMembers' surface walk cannot reach. Doc keys with
+// the prefix `<parentPath>.` are emitted in sorted dotted-path order, which
+// groups them naturally (provider → service → method). A summary-only doc
+// (no Params and no ReturnType) renders as a service-group heading + summary,
+// mirroring the nested-namespace container form; a doc carrying Params and/or a
+// ReturnType renders as a full method entry with a signature built from the doc.
+// Namespaces whose leaves have no nested doc keys emit nothing here, so existing
+// generated output stays byte-for-byte identical.
+func writeOrphanChildren(w *errWriter, parentPath string, docs map[string]MemberDoc, nsNum string, mem *int) {
+	prefix := parentPath + "."
+	keys := make([]string, 0)
+	for k := range docs {
+		if strings.HasPrefix(k, prefix) {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return
+	}
+	sort.Strings(keys)
+	for _, path := range keys {
+		doc := docs[path]
+		if len(doc.Params) == 0 && doc.ReturnType == "" {
+			// A container (service group): heading + summary only, no signature
+			// fence — the same shape writeReferenceMembers uses for a documented
+			// sub-namespace.
+			if s := strings.TrimSpace(doc.Summary); s != "" {
+				w.WriteString("\n#### " + numberedHeading(memberNum(nsNum, mem), path) + "\n\n" + s + "\n")
+			}
+			// An empty doc (no summary, params, or return) emits nothing and
+			// does not advance the counter, keeping member numbers contiguous.
+			continue
+		}
+		name := path[strings.LastIndex(path, ".")+1:]
+		ret := doc.ReturnType
+		if ret == "" {
+			ret = "void"
+		}
+		writeReferenceEntry(w, memberNum(nsNum, mem), path, name, doc, name+sigFromParams(doc.Params, ret))
 	}
 }
 

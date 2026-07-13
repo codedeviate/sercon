@@ -107,6 +107,81 @@ func TestWriteReferenceNumbered(t *testing.T) {
 	}
 }
 
+// TestWriteReference_OrphanChildren covers the runtime-handle case: a leaf
+// member builds its real surface only at script-run time (like the
+// cloud.<provider> callables), so the surface walk can't introspect its
+// services/methods. Documented members nested under the leaf's dotted path
+// must still be emitted — a summary-only doc as a group heading, a
+// signature-bearing doc as a full method entry — in sorted dotted-path order.
+func TestWriteReference_OrphanChildren(t *testing.T) {
+	e := New(Options{})
+	if err := e.RegisterNamespace("cloud", map[string]any{
+		"prov": func(...any) any { return nil }, // opaque runtime-handle factory
+	}); err != nil {
+		t.Fatalf("RegisterNamespace: %v", err)
+	}
+	e.SetMemberDocsStructured("cloud", map[string]MemberDoc{
+		"prov":            {Summary: "Provider handle.", ReturnType: "{ svc(): { get(): Promise<unknown> } }"},
+		"prov.svc":        {Summary: "A service group."},                                                 // container: heading + summary only
+		"prov.svc.getOne": {Summary: "Fetch one.", ReturnType: "Promise<unknown>", Returns: "the thing"}, // method: full entry
+		"prov.svc.putOne": {Summary: "Store one.", Params: []Param{{Name: "id", Type: "string"}}, Returns: "ok"},
+	})
+
+	var buf bytes.Buffer
+	if err := e.WriteReferenceNumbered(&buf, "17"); err != nil {
+		t.Fatalf("WriteReferenceNumbered: %v", err)
+	}
+	out := buf.String()
+
+	// The provider leaf entry (walked) carries its composite ReturnType; the
+	// nested service group renders as a summary-only heading; the nested
+	// methods render as full entries with signatures.
+	for _, w := range []string{
+		"#### 17.1.1 cloud.prov",
+		"{ svc(): { get(): Promise<unknown> } }",
+		"#### 17.1.2 cloud.prov.svc",
+		"A service group.",
+		"#### 17.1.3 cloud.prov.svc.getOne",
+		"getOne(): Promise<unknown>",
+		"**Returns:** the thing",
+		"#### 17.1.4 cloud.prov.svc.putOne",
+		"putOne(id: string): void",
+	} {
+		if !strings.Contains(out, w) {
+			t.Errorf("orphan-children output missing %q\n---\n%s", w, out)
+		}
+	}
+	// The service-group container is summary-only: no signature fence directly
+	// under its heading. Verify the heading is immediately followed by the
+	// summary paragraph, not a fenced block.
+	if i := strings.Index(out, "#### 17.1.2 cloud.prov.svc\n"); i >= 0 {
+		after := out[i+len("#### 17.1.2 cloud.prov.svc\n"):]
+		if strings.HasPrefix(after, "\n```") {
+			t.Errorf("service-group container must not emit a signature fence\n---\n%s", out)
+		}
+	}
+}
+
+// TestWriteReference_NoOrphansUnaffected guards byte-stability: a namespace
+// whose leaves have no nested doc keys must emit exactly what it did before
+// writeOrphanChildren existed — the orphan pass adds nothing.
+func TestWriteReference_NoOrphansUnaffected(t *testing.T) {
+	e := New(Options{})
+	_ = e.RegisterNamespace("crypto", map[string]any{"sha256": func(string) string { return "" }})
+	e.SetMemberDocsStructured("crypto", map[string]MemberDoc{
+		"sha256": {Summary: "SHA-256.", Params: []Param{{Name: "in", Type: "string"}}, ReturnType: "string"},
+	})
+	var buf bytes.Buffer
+	if err := e.WriteReference(&buf); err != nil {
+		t.Fatalf("WriteReference: %v", err)
+	}
+	out := buf.String()
+	// Exactly one member heading — no phantom entries from the orphan pass.
+	if n := strings.Count(out, "#### "); n != 1 {
+		t.Errorf("expected exactly 1 member heading, got %d\n---\n%s", n, out)
+	}
+}
+
 func TestWriteReference_Deterministic(t *testing.T) {
 	build := func() string {
 		e := New(Options{})
