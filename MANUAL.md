@@ -8719,7 +8719,7 @@ Launch one or more EC2 instances from an AMI.
 
 **Parameters**
 
-- `opts` *({ imageId: string; instanceType: string; minCount?: number; maxCount?: number })* — imageId: the AMI id to launch. instanceType: e.g. "t3.micro". minCount/maxCount: the minimum/maximum number of instances to launch; both default to 1 when omitted (matching the EC2 API's own RunInstances default).
+- `opts` *({ imageId: string; instanceType: string; minCount?: number; maxCount?: number })* — imageId: the AMI id to launch. instanceType: e.g. "t3.micro". minCount/maxCount: the minimum/maximum number of instances to launch; both default to 1 when omitted (a sercon convenience — the EC2 RunInstances API itself marks both required).
 
 **Returns:** A promise resolving to the EC2 RunInstances response — Instances (array of the newly launched instances' descriptions), ReservationId, OwnerId.
 
@@ -9547,7 +9547,7 @@ Get temporary credentials for the current principal.
 
 **Parameters**
 
-- `opts` *({ durationSeconds?: number }, optional)* — durationSeconds: session duration in seconds; omitted ⇒ the API's own default (3600).
+- `opts` *({ durationSeconds?: number }, optional)* — durationSeconds: session duration in seconds; omitted ⇒ the API's own default (43200 / 12h for IAM-user credentials; 3600 / 1h for root-account credentials).
 
 **Returns:** A promise resolving to the STS GetSessionToken response — Credentials: { AccessKeyId, SecretAccessKey, SessionToken, Expiration }. Same sensitivity note as assumeRole applies.
 
@@ -9600,11 +9600,11 @@ PROVISIONAL — built against the Azure SDK but not yet verified against a live 
 
 **Parameters**
 
-- `opts` *({ subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }, optional)* — subscriptionId: the ARM subscription id used by resourceGroups()/compute()/resources() and call(); omitted ⇒ falls back to the AZURE_SUBSCRIPTION_ID env var (required only when an ARM service or call() is actually invoked — blob()/keyvaultSecrets() need no subscription at all). tenantId/clientId/clientSecret: together select a client-secret (service-principal) credential; when any is omitted, falls back to DefaultAzureCredential (environment variables, managed identity, az login, and the other links in the default chain).
+- `opts` *({ subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }, optional)* — subscriptionId: the ARM subscription id used by the ARM services resourceGroups()/compute()/resources(); omitted ⇒ falls back to the AZURE_SUBSCRIPTION_ID env var (required only when an ARM service is actually invoked — call() targets management.azure.com with the subscription embedded in its path, and blob()/keyvaultSecrets() operate on a caller-supplied endpoint URL, so none of those need a configured subscription). tenantId/clientId/clientSecret: together select a client-secret (service-principal) credential; when any is omitted, falls back to DefaultAzureCredential (environment variables, managed identity, az login, and the other links in the default chain).
 
 **Returns:** The Azure provider handle: { resourceGroups(), compute(), resources(), call(opts), blob(accountUrl), keyvaultSecrets(vaultUrl) }. resourceGroups()/compute()/resources() return fresh ARM service handles bound to this call's subscription/credential; call() is the generic ARM REST escape hatch for APIs without a typed service above; blob(accountUrl)/keyvaultSecrets(vaultUrl) return data-plane handles bound directly to the given endpoint URL, independent of any subscription.
 
-**Throws:** cloud.azure(opts) itself throws synchronously (not a rejected promise) only if opts is provided but is not a plain object — there is no further synchronous validation of the credential fields (a bad/incomplete tenantId/clientId/clientSecret combination fails later, asynchronously, on first credential use). Every service method (ARM and data-plane alike) returns a promise that rejects with a structured Error { code, status, message, details } on API/transport failure — code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). resourceGroups()/compute()/resources() and call() additionally reject if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID); blob()/keyvaultSecrets() have no such requirement since they operate directly against the caller-supplied accountUrl/vaultUrl.
+**Throws:** cloud.azure(opts) itself throws synchronously (not a rejected promise) only if opts is provided but is not a plain object — there is no further synchronous validation of the credential fields (a bad/incomplete tenantId/clientId/clientSecret combination fails later, asynchronously, on first credential use). Every service method (ARM and data-plane alike) returns a promise that rejects with a structured Error { code, status, message, details } on API/transport failure — code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). resourceGroups()/compute()/resources() additionally reject if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID); call(), blob() and keyvaultSecrets() have no such requirement — call() embeds the subscription in its path and targets management.azure.com, while blob()/keyvaultSecrets() operate directly against the caller-supplied accountUrl/vaultUrl.
 
 ```ts
 // PROVISIONAL example — illustrative only, not run against a live account.
@@ -9711,7 +9711,7 @@ runtime.log(r.value?.length ?? 0);
 upload(opts: { container: string; blob: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>
 ```
 
-Upload a blob's content in a single request (block blob "Put Blob"), creating or overwriting it.
+Upload a blob's content, creating or overwriting it. Bodies up to 256 MiB are sent in a single Put Blob request; larger bodies are split into staged blocks and committed (the SDK's UploadBuffer).
 
 **Parameters**
 
@@ -9840,7 +9840,7 @@ const r = await cloud.azure({ subscriptionId: "..." }).compute().listVirtualMach
 powerOff(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
 ```
 
-Power off a running virtual machine (stops compute billing for the VM; disks remain attached). Long-running ARM operation; the call blocks (polls) until it completes.
+Power off a running virtual machine. The VM stays allocated and keeps incurring compute charges (use deallocate() to stop compute billing); disks remain attached. Long-running ARM operation; the call blocks (polls) until it completes.
 
 **Parameters**
 

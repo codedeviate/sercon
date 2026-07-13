@@ -728,7 +728,7 @@ runtime.log(bytes.length);`,
 		"aws.ec2.runInstances": {
 			Summary: "Launch one or more EC2 instances from an AMI.",
 			Params: []scriptengine.Param{
-				{Name: "opts", Type: "{ imageId: string; instanceType: string; minCount?: number; maxCount?: number }", Desc: "imageId: the AMI id to launch. instanceType: e.g. \"t3.micro\". minCount/maxCount: the minimum/maximum number of instances to launch; both default to 1 when omitted (matching the EC2 API's own RunInstances default)."},
+				{Name: "opts", Type: "{ imageId: string; instanceType: string; minCount?: number; maxCount?: number }", Desc: "imageId: the AMI id to launch. instanceType: e.g. \"t3.micro\". minCount/maxCount: the minimum/maximum number of instances to launch; both default to 1 when omitted (a sercon convenience — the EC2 RunInstances API itself marks both required)."},
 			},
 			ReturnType: "Promise<Record<string, unknown>>",
 			Returns:    "A promise resolving to the EC2 RunInstances response — Instances (array of the newly launched instances' descriptions), ReservationId, OwnerId.",
@@ -932,7 +932,7 @@ runtime.log(value);`,
 		},
 		"aws.sts.getSessionToken": {
 			Summary:    "Get temporary credentials for the current principal.",
-			Params:     []scriptengine.Param{{Name: "opts", Type: "{ durationSeconds?: number }", Optional: true, Desc: "durationSeconds: session duration in seconds; omitted ⇒ the API's own default (3600)."}},
+			Params:     []scriptengine.Param{{Name: "opts", Type: "{ durationSeconds?: number }", Optional: true, Desc: "durationSeconds: session duration in seconds; omitted ⇒ the API's own default (43200 / 12h for IAM-user credentials; 3600 / 1h for root-account credentials)."}},
 			ReturnType: "Promise<Record<string, unknown>>",
 			Returns:    "A promise resolving to the STS GetSessionToken response — Credentials: { AccessKeyId, SecretAccessKey, SessionToken, Expiration }. Same sensitivity note as assumeRole applies.",
 			Errors:     awsErrors,
@@ -1204,13 +1204,14 @@ runtime.log(JSON.parse(r.payload));`,
 		// writeOrphanChildren — see cloudDocs's doc comment); both derive from
 		// the same cloud_azure_*.go implementations, so the composite overview
 		// and the broken-out entries always agree. All are PROVISIONAL — see the
-		// PROVISIONAL note above and each entry's illustrative-only Example.
+		// PROVISIONAL note above; every azure Example is illustrative only and
+		// has not been run against a live account.
 		"azure": {
 			Summary:    "PROVISIONAL — built against the Azure SDK but not yet verified against a live Azure account. Microsoft Azure provider. cloud.azure(opts?) returns a handle with three ARM (Resource Manager) services — resourceGroups, compute, resources — plus a generic ARM call() REST escape hatch, and two data-plane services — blob, keyvaultSecrets — that take an endpoint URL directly. Pure-Go, CGO-free (azure-sdk-for-go); reuses the standard Azure credential chain.",
-			Params:     []scriptengine.Param{{Name: "opts", Type: "{ subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }", Optional: true, Desc: "subscriptionId: the ARM subscription id used by resourceGroups()/compute()/resources() and call(); omitted ⇒ falls back to the AZURE_SUBSCRIPTION_ID env var (required only when an ARM service or call() is actually invoked — blob()/keyvaultSecrets() need no subscription at all). tenantId/clientId/clientSecret: together select a client-secret (service-principal) credential; when any is omitted, falls back to DefaultAzureCredential (environment variables, managed identity, az login, and the other links in the default chain)."}},
+			Params:     []scriptengine.Param{{Name: "opts", Type: "{ subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }", Optional: true, Desc: "subscriptionId: the ARM subscription id used by the ARM services resourceGroups()/compute()/resources(); omitted ⇒ falls back to the AZURE_SUBSCRIPTION_ID env var (required only when an ARM service is actually invoked — call() targets management.azure.com with the subscription embedded in its path, and blob()/keyvaultSecrets() operate on a caller-supplied endpoint URL, so none of those need a configured subscription). tenantId/clientId/clientSecret: together select a client-secret (service-principal) credential; when any is omitted, falls back to DefaultAzureCredential (environment variables, managed identity, az login, and the other links in the default chain)."}},
 			ReturnType: azureHandleType,
 			Returns:    "The Azure provider handle: { resourceGroups(), compute(), resources(), call(opts), blob(accountUrl), keyvaultSecrets(vaultUrl) }. resourceGroups()/compute()/resources() return fresh ARM service handles bound to this call's subscription/credential; call() is the generic ARM REST escape hatch for APIs without a typed service above; blob(accountUrl)/keyvaultSecrets(vaultUrl) return data-plane handles bound directly to the given endpoint URL, independent of any subscription.",
-			Errors:     "cloud.azure(opts) itself throws synchronously (not a rejected promise) only if opts is provided but is not a plain object — there is no further synchronous validation of the credential fields (a bad/incomplete tenantId/clientId/clientSecret combination fails later, asynchronously, on first credential use). Every service method (ARM and data-plane alike) returns a promise that rejects with a structured Error { code, status, message, details } on API/transport failure — code/status are \"\"/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). resourceGroups()/compute()/resources() and call() additionally reject if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID); blob()/keyvaultSecrets() have no such requirement since they operate directly against the caller-supplied accountUrl/vaultUrl.",
+			Errors:     "cloud.azure(opts) itself throws synchronously (not a rejected promise) only if opts is provided but is not a plain object — there is no further synchronous validation of the credential fields (a bad/incomplete tenantId/clientId/clientSecret combination fails later, asynchronously, on first credential use). Every service method (ARM and data-plane alike) returns a promise that rejects with a structured Error { code, status, message, details } on API/transport failure — code/status are \"\"/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). resourceGroups()/compute()/resources() additionally reject if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID); call(), blob() and keyvaultSecrets() have no such requirement — call() embeds the subscription in its path and targets management.azure.com, while blob()/keyvaultSecrets() operate directly against the caller-supplied accountUrl/vaultUrl.",
 			Example: `// PROVISIONAL example — illustrative only, not run against a live account.
 const az = cloud.azure({ subscriptionId: "00000000-0000-0000-0000-000000000000" });
 const groups = await az.resourceGroups().list();
@@ -1296,7 +1297,7 @@ runtime.log(r.value?.length ?? 0);`,
 			Example:    `await cloud.azure({ subscriptionId: "..." }).compute().start({ resourceGroup: "my-rg", name: "web-1" });`,
 		},
 		"azure.compute.powerOff": {
-			Summary: "Power off a running virtual machine (stops compute billing for the VM; disks remain attached). Long-running ARM operation; the call blocks (polls) until it completes.",
+			Summary: "Power off a running virtual machine. The VM stays allocated and keeps incurring compute charges (use deallocate() to stop compute billing); disks remain attached. Long-running ARM operation; the call blocks (polls) until it completes.",
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ resourceGroup: string; name: string }", Desc: "resourceGroup: the VM's resource group. name: the VM's name."},
 			},
@@ -1408,7 +1409,7 @@ const bytes = new Uint8Array(res.bytes);
 runtime.log(bytes.length);`,
 		},
 		"azure.blob.upload": {
-			Summary: "Upload a blob's content in a single request (block blob \"Put Blob\"), creating or overwriting it.",
+			Summary: "Upload a blob's content, creating or overwriting it. Bodies up to 256 MiB are sent in a single Put Blob request; larger bodies are split into staged blocks and committed (the SDK's UploadBuffer).",
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ container: string; blob: string; body: string | Uint8Array | ArrayBuffer }", Desc: "container: the container's name. blob: the blob's name. body: a string (encoded as UTF-8) or raw bytes (Uint8Array/ArrayBuffer) to upload as the blob's content."},
 			},
