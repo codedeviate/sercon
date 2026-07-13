@@ -8407,7 +8407,1157 @@ Amazon Web Services provider. cloud.aws(opts?) returns a handle with typed servi
 const who = await cloud.aws({ region: "eu-north-1" }).sts().getCallerIdentity({});
 ```
 
-#### 17.2.2 cloud.azure
+#### 17.2.2 cloud.aws.cloudwatch
+
+CloudWatch — metrics and alarms (github.com/aws/aws-sdk-go-v2/service/cloudwatch). Reached via `cloud.aws({...}).cloudwatch()`; each method below is called on that service handle.
+
+#### 17.2.3 cloud.aws.cloudwatch.describeAlarms
+
+```
+describeAlarms(opts?: { alarmNames?: string[] }): Promise<Record<string, unknown>>
+```
+
+Describe CloudWatch alarms, optionally filtered to specific alarm names.
+
+**Parameters**
+
+- `opts` *({ alarmNames?: string[] }, optional)* — alarmNames: filter to specific alarm names; omitted or empty ⇒ describe every alarm.
+
+**Returns:** A promise resolving to the CloudWatch DescribeAlarms response — MetricAlarms (array of alarm descriptions), CompositeAlarms.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatch().describeAlarms();
+```
+
+#### 17.2.4 cloud.aws.cloudwatch.getMetricData
+
+```
+getMetricData(opts: Record<string, unknown>): Promise<Record<string, unknown>>
+```
+
+Fetch datapoints for one or more metrics via CloudWatch's metric-math query interface. Pass-through method: the argument is forwarded to the SDK's GetMetricDataInput as-is.
+
+**Parameters**
+
+- `opts` *(Record<string, unknown>)* — opts: an AWS-SDK-shaped object with PascalCase keys matching GetMetricDataInput (e.g. { MetricDataQueries: [{ Id, MetricStat: { Metric: { Namespace, MetricName, Dimensions }, Period, Stat } }], StartTime, EndTime }) — JSON round-tripped straight into the Go SDK input struct: RFC3339 timestamp strings unmarshal into the struct's *time.Time fields.
+
+**Returns:** A promise resolving to the CloudWatch GetMetricData response — MetricDataResults (array of { Id, Label, Timestamps, Values, StatusCode }), Messages, NextToken.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatch().getMetricData({
+  MetricDataQueries: [{ Id: "m1", MetricStat: { Metric: { Namespace: "AWS/EC2", MetricName: "CPUUtilization" }, Period: 300, Stat: "Average" } }],
+  StartTime: "2026-07-13T00:00:00Z", EndTime: "2026-07-13T01:00:00Z",
+});
+```
+
+#### 17.2.5 cloud.aws.cloudwatch.getMetricStatistics
+
+```
+getMetricStatistics(opts: Record<string, unknown>): Promise<Record<string, unknown>>
+```
+
+Fetch aggregated statistics for a single metric. Pass-through method: the argument is forwarded to the SDK's GetMetricStatisticsInput as-is.
+
+**Parameters**
+
+- `opts` *(Record<string, unknown>)* — opts: an AWS-SDK-shaped object with PascalCase keys matching GetMetricStatisticsInput (e.g. { Namespace, MetricName, StartTime, EndTime, Period, Statistics: ["Average"], Dimensions? }) — JSON round-tripped straight into the Go SDK input struct.
+
+**Returns:** A promise resolving to the CloudWatch GetMetricStatistics response — Datapoints (array of { Timestamp, Average, Sum, Minimum, Maximum, SampleCount, Unit }), Label.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatch().getMetricStatistics({
+  Namespace: "AWS/EC2", MetricName: "CPUUtilization", StartTime: "2026-07-13T00:00:00Z", EndTime: "2026-07-13T01:00:00Z", Period: 300, Statistics: ["Average"],
+});
+```
+
+#### 17.2.6 cloud.aws.cloudwatch.listMetrics
+
+```
+listMetrics(opts?: { namespace?: string; metricName?: string }): Promise<Record<string, unknown>>
+```
+
+List published CloudWatch metrics, optionally filtered by namespace/metric name.
+
+**Parameters**
+
+- `opts` *({ namespace?: string; metricName?: string }, optional)* — namespace: e.g. "AWS/EC2"; omitted ⇒ all namespaces. metricName: filter to one metric name within the namespace; omitted ⇒ all metrics.
+
+**Returns:** A promise resolving to the CloudWatch ListMetrics response — Metrics (array of { Namespace, MetricName, Dimensions }), NextToken, OwningAccounts.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatch().listMetrics({ namespace: "AWS/EC2" });
+```
+
+#### 17.2.7 cloud.aws.cloudwatch.putMetricData
+
+```
+putMetricData(opts: Record<string, unknown>): Promise<Record<string, unknown>>
+```
+
+Publish custom metric datapoints. Pass-through method: the argument is forwarded to the SDK's PutMetricDataInput as-is.
+
+**Parameters**
+
+- `opts` *(Record<string, unknown>)* — opts: an AWS-SDK-shaped object with PascalCase keys matching PutMetricDataInput (e.g. { Namespace, MetricData: [{ MetricName, Value, Unit, Timestamp, Dimensions? }] }) — JSON round-tripped straight into the Go SDK input struct.
+
+**Returns:** A promise resolving to {} on success — PutMetricData's response carries no payload beyond request metadata.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).cloudwatch().putMetricData({
+  Namespace: "MyApp", MetricData: [{ MetricName: "QueueDepth", Value: 42, Unit: "Count" }],
+});
+```
+
+#### 17.2.8 cloud.aws.cloudwatchlogs
+
+CloudWatch Logs — log groups, streams, and Logs Insights queries (github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs). Reached via `cloud.aws({...}).cloudwatchlogs()`; each method below is called on that service handle.
+
+#### 17.2.9 cloud.aws.cloudwatchlogs.describeLogGroups
+
+```
+describeLogGroups(opts?: { prefix?: string }): Promise<Record<string, unknown>>
+```
+
+List log groups, optionally filtered by name prefix.
+
+**Parameters**
+
+- `opts` *({ prefix?: string }, optional)* — prefix: only list log groups whose name starts with this string (sent as LogGroupNamePrefix); omitted ⇒ list all log groups.
+
+**Returns:** A promise resolving to the CloudWatch Logs DescribeLogGroups response — LogGroups (array of { LogGroupName, Arn, CreationTime, RetentionInDays, ... }), NextToken.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().describeLogGroups({ prefix: "/aws/lambda/" });
+```
+
+#### 17.2.10 cloud.aws.cloudwatchlogs.describeLogStreams
+
+```
+describeLogStreams(opts: { logGroupName: string }): Promise<Record<string, unknown>>
+```
+
+List the log streams within a log group.
+
+**Parameters**
+
+- `opts` *({ logGroupName: string })* — logGroupName: the log group's name.
+
+**Returns:** A promise resolving to the CloudWatch Logs DescribeLogStreams response — LogStreams (array of { LogStreamName, Arn, CreationTime, FirstEventTimestamp, LastEventTimestamp, ... }), NextToken.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().describeLogStreams({ logGroupName: "/aws/lambda/my-fn" });
+```
+
+#### 17.2.11 cloud.aws.cloudwatchlogs.filterLogEvents
+
+```
+filterLogEvents(opts: { logGroupName: string; filterPattern?: string }): Promise<Record<string, unknown>>
+```
+
+Search log events across all (or filtered) streams in a log group.
+
+**Parameters**
+
+- `opts` *({ logGroupName: string; filterPattern?: string })* — logGroupName: the log group's name. filterPattern: a CloudWatch Logs filter pattern to restrict matching events; omitted ⇒ all events.
+
+**Returns:** A promise resolving to the CloudWatch Logs FilterLogEvents response — Events (array of { LogStreamName, Timestamp, Message, IngestionTime, EventId }), SearchedLogStreams, NextToken.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().filterLogEvents({ logGroupName: "/aws/lambda/my-fn", filterPattern: "ERROR" });
+```
+
+#### 17.2.12 cloud.aws.cloudwatchlogs.getLogEvents
+
+```
+getLogEvents(opts: { logGroupName: string; logStreamName: string; limit?: number }): Promise<Record<string, unknown>>
+```
+
+Fetch log events from a specific log stream, in chronological order.
+
+**Parameters**
+
+- `opts` *({ logGroupName: string; logStreamName: string; limit?: number })* — logGroupName: the log group's name. logStreamName: the log stream's name. limit: max number of log events to return; omitted ⇒ the API's own default.
+
+**Returns:** A promise resolving to the CloudWatch Logs GetLogEvents response — Events (array of { Timestamp, Message, IngestionTime }), NextForwardToken, NextBackwardToken. Timestamps here are epoch milliseconds.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().getLogEvents({ logGroupName: "/aws/lambda/my-fn", logStreamName: "2026/07/13/[$LATEST]abc123" });
+```
+
+#### 17.2.13 cloud.aws.cloudwatchlogs.getQueryResults
+
+```
+getQueryResults(opts: { queryId: string }): Promise<Record<string, unknown>>
+```
+
+Poll for a Logs Insights query's results and status.
+
+**Parameters**
+
+- `opts` *({ queryId: string })* — queryId: the id returned by startQuery.
+
+**Returns:** A promise resolving to the CloudWatch Logs GetQueryResults response — Results (array of arrays of { Field, Value } — one inner array per matched log record), Statistics, Status (e.g. "Scheduled", "Running", "Complete").
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().getQueryResults({ queryId: QueryId });
+```
+
+#### 17.2.14 cloud.aws.cloudwatchlogs.startQuery
+
+```
+startQuery(opts: { logGroupName: string; queryString: string; startTime: number; endTime: number }): Promise<Record<string, unknown>>
+```
+
+Start a CloudWatch Logs Insights query. Returns immediately with a query id — poll getQueryResults for the results.
+
+**Parameters**
+
+- `opts` *({ logGroupName: string; queryString: string; startTime: number; endTime: number })* — logGroupName: the log group to query. queryString: the Logs Insights query. startTime/endTime: the query's time range, in epoch seconds (unlike getLogEvents/filterLogEvents, whose time fields are epoch milliseconds).
+
+**Returns:** A promise resolving to the CloudWatch Logs StartQuery response — QueryId: pass it to getQueryResults to poll for the query's results.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const { QueryId } = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().startQuery({
+  logGroupName: "/aws/lambda/my-fn", queryString: "fields @timestamp, @message | filter @message like /ERROR/",
+  startTime: Math.floor(Date.now() / 1000) - 3600, endTime: Math.floor(Date.now() / 1000),
+});
+```
+
+#### 17.2.15 cloud.aws.ec2
+
+EC2 — instances, volumes, and availability zones (github.com/aws/aws-sdk-go-v2/service/ec2). Reached via `cloud.aws({...}).ec2()`; each method below is called on that service handle.
+
+#### 17.2.16 cloud.aws.ec2.describeAvailabilityZones
+
+```
+describeAvailabilityZones(opts?: Record<string, never>): Promise<Record<string, unknown>>
+```
+
+List the availability zones available in the configured region.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — opts: unused — describeAvailabilityZones takes no filtering parameters; accepts only an empty object or omission.
+
+**Returns:** A promise resolving to the EC2 DescribeAvailabilityZones response — AvailabilityZones (array of { ZoneName, State, RegionName, ... }).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).ec2().describeAvailabilityZones();
+```
+
+#### 17.2.17 cloud.aws.ec2.describeInstances
+
+```
+describeInstances(opts?: { instanceIds?: string[] }): Promise<Record<string, unknown>>
+```
+
+Describe EC2 instances, optionally filtered to specific instance ids.
+
+**Parameters**
+
+- `opts` *({ instanceIds?: string[] }, optional)* — instanceIds: filter to specific instance ids; omitted or empty ⇒ describe every instance visible to the caller.
+
+**Returns:** A promise resolving to the EC2 DescribeInstances response — Reservations (array of { Instances: [...], ReservationId, OwnerId, ... }); instances are nested inside each reservation, not returned as a flat list.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).ec2().describeInstances();
+```
+
+#### 17.2.18 cloud.aws.ec2.describeVolumes
+
+```
+describeVolumes(opts?: { volumeIds?: string[] }): Promise<Record<string, unknown>>
+```
+
+Describe EBS volumes, optionally filtered to specific volume ids.
+
+**Parameters**
+
+- `opts` *({ volumeIds?: string[] }, optional)* — volumeIds: filter to specific volume ids; omitted or empty ⇒ describe every volume visible to the caller.
+
+**Returns:** A promise resolving to the EC2 DescribeVolumes response — Volumes (array of EBS volume descriptions).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).ec2().describeVolumes();
+```
+
+#### 17.2.19 cloud.aws.ec2.runInstances
+
+```
+runInstances(opts: { imageId: string; instanceType: string; minCount?: number; maxCount?: number }): Promise<Record<string, unknown>>
+```
+
+Launch one or more EC2 instances from an AMI.
+
+**Parameters**
+
+- `opts` *({ imageId: string; instanceType: string; minCount?: number; maxCount?: number })* — imageId: the AMI id to launch. instanceType: e.g. "t3.micro". minCount/maxCount: the minimum/maximum number of instances to launch; both default to 1 when omitted (matching the EC2 API's own RunInstances default).
+
+**Returns:** A promise resolving to the EC2 RunInstances response — Instances (array of the newly launched instances' descriptions), ReservationId, OwnerId.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).ec2().runInstances({ imageId: "ami-0123456789abcdef0", instanceType: "t3.micro" });
+```
+
+#### 17.2.20 cloud.aws.ec2.startInstances
+
+```
+startInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>
+```
+
+Start stopped EC2 instances.
+
+**Parameters**
+
+- `opts` *({ instanceIds: string[] })* — instanceIds: the instance ids to start.
+
+**Returns:** A promise resolving to the EC2 StartInstances response — StartingInstances (array of { InstanceId, CurrentState, PreviousState }).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).ec2().startInstances({ instanceIds: ["i-0123456789abcdef0"] });
+```
+
+#### 17.2.21 cloud.aws.ec2.stopInstances
+
+```
+stopInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>
+```
+
+Stop running EC2 instances.
+
+**Parameters**
+
+- `opts` *({ instanceIds: string[] })* — instanceIds: the instance ids to stop.
+
+**Returns:** A promise resolving to the EC2 StopInstances response — StoppingInstances (array of { InstanceId, CurrentState, PreviousState }).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).ec2().stopInstances({ instanceIds: ["i-0123456789abcdef0"] });
+```
+
+#### 17.2.22 cloud.aws.ec2.terminateInstances
+
+```
+terminateInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>
+```
+
+Terminate EC2 instances.
+
+**Parameters**
+
+- `opts` *({ instanceIds: string[] })* — instanceIds: the instance ids to terminate.
+
+**Returns:** A promise resolving to the EC2 TerminateInstances response — TerminatingInstances (array of { InstanceId, CurrentState, PreviousState }).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).ec2().terminateInstances({ instanceIds: ["i-0123456789abcdef0"] });
+```
+
+#### 17.2.23 cloud.aws.iam
+
+IAM — users, roles, and policies (github.com/aws/aws-sdk-go-v2/service/iam). Reached via `cloud.aws({...}).iam()`; each method below is called on that service handle.
+
+#### 17.2.24 cloud.aws.iam.attachUserPolicy
+
+```
+attachUserPolicy(opts: { userName: string; policyArn: string }): Promise<Record<string, unknown>>
+```
+
+Attach a managed IAM policy to a user.
+
+**Parameters**
+
+- `opts` *({ userName: string; policyArn: string })* — userName: the user to attach the policy to. policyArn: the managed policy's ARN.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).iam().attachUserPolicy({ userName: "new-user", policyArn: "arn:aws:iam::aws:policy/ReadOnlyAccess" });
+```
+
+#### 17.2.25 cloud.aws.iam.createUser
+
+```
+createUser(opts: { userName: string }): Promise<Record<string, unknown>>
+```
+
+Create an IAM user.
+
+**Parameters**
+
+- `opts` *({ userName: string })* — userName: the new user's name.
+
+**Returns:** A promise resolving to the IAM CreateUser response — User: the newly created user's description.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).iam().createUser({ userName: "new-user" });
+```
+
+#### 17.2.26 cloud.aws.iam.deleteUser
+
+```
+deleteUser(opts: { userName: string }): Promise<Record<string, unknown>>
+```
+
+Delete an IAM user.
+
+**Parameters**
+
+- `opts` *({ userName: string })* — userName: the user to delete.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).iam().deleteUser({ userName: "new-user" });
+```
+
+#### 17.2.27 cloud.aws.iam.getRole
+
+```
+getRole(opts: { roleName: string }): Promise<Record<string, unknown>>
+```
+
+Get an IAM role's metadata.
+
+**Parameters**
+
+- `opts` *({ roleName: string })* — roleName: the role's name.
+
+**Returns:** A promise resolving to the IAM GetRole response — Role: { RoleName, Arn, RoleId, AssumeRolePolicyDocument, ... }.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const role = await cloud.aws({ region: "eu-north-1" }).iam().getRole({ roleName: "my-role" });
+```
+
+#### 17.2.28 cloud.aws.iam.getUser
+
+```
+getUser(opts?: { userName?: string }): Promise<Record<string, unknown>>
+```
+
+Get an IAM user's metadata.
+
+**Parameters**
+
+- `opts` *({ userName?: string }, optional)* — userName: the IAM user to look up; omitted ⇒ the user making the request (the credentials' own identity).
+
+**Returns:** A promise resolving to the IAM GetUser response — User: { UserName, Arn, UserId, CreateDate, ... }.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const me = await cloud.aws({ region: "eu-north-1" }).iam().getUser();
+```
+
+#### 17.2.29 cloud.aws.iam.listPolicies
+
+```
+listPolicies(opts?: Record<string, never>): Promise<Record<string, unknown>>
+```
+
+List the customer-managed and AWS-managed IAM policies visible to the account.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — opts: unused — listPolicies takes no filtering parameters; accepts only an empty object or omission.
+
+**Returns:** A promise resolving to the IAM ListPolicies response — Policies (array of { PolicyName, Arn, PolicyId, ... }).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).iam().listPolicies();
+```
+
+#### 17.2.30 cloud.aws.iam.listRoles
+
+```
+listRoles(opts?: Record<string, never>): Promise<Record<string, unknown>>
+```
+
+List the IAM roles in the account.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — opts: unused — listRoles takes no filtering parameters; accepts only an empty object or omission.
+
+**Returns:** A promise resolving to the IAM ListRoles response — Roles (array of { RoleName, Arn, RoleId, AssumeRolePolicyDocument, ... }).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).iam().listRoles();
+```
+
+#### 17.2.31 cloud.aws.iam.listUsers
+
+```
+listUsers(opts?: Record<string, never>): Promise<Record<string, unknown>>
+```
+
+List the IAM users in the account.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — opts: unused — listUsers takes no filtering parameters; accepts only an empty object or omission.
+
+**Returns:** A promise resolving to the IAM ListUsers response — Users (array of { UserName, Arn, UserId, CreateDate, ... }), IsTruncated, Marker.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).iam().listUsers();
+```
+
+#### 17.2.32 cloud.aws.lambda
+
+Lambda — functions and invocations (github.com/aws/aws-sdk-go-v2/service/lambda). Reached via `cloud.aws({...}).lambda()`; each method below is called on that service handle.
+
+#### 17.2.33 cloud.aws.lambda.createFunction
+
+```
+createFunction(opts: { functionName: string; role: string; runtime: string; handler: string; zipFile?: string | Uint8Array | ArrayBuffer; s3Bucket?: string; s3Key?: string }): Promise<Record<string, unknown>>
+```
+
+Create a Lambda function, from a zip file uploaded inline or a reference to one already in S3.
+
+**Parameters**
+
+- `opts` *({ functionName: string; role: string; runtime: string; handler: string; zipFile?: string | Uint8Array | ArrayBuffer; s3Bucket?: string; s3Key?: string })* — functionName: the new function's name. role: the execution role's ARN. runtime: e.g. "nodejs20.x", "provided.al2023". handler: the entry point, e.g. "index.handler". zipFile: the deployment package's bytes (string encoded as UTF-8, or Uint8Array/ArrayBuffer) uploaded inline. s3Bucket/s3Key: alternative to zipFile — reference an existing deployment package already uploaded to S3. Only the code-source field(s) actually supplied are attached to the request.
+
+**Returns:** A promise resolving to the Lambda CreateFunction response, which carries the same fields as a function configuration (FunctionName, FunctionArn, Runtime, Role, Handler, CodeSha256, Version, ...).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).lambda().createFunction({ functionName: "my-fn", role: "arn:aws:iam::123456789012:role/lambda-role", runtime: "nodejs20.x", handler: "index.handler", s3Bucket: "my-bucket", s3Key: "my-fn.zip" });
+```
+
+#### 17.2.34 cloud.aws.lambda.deleteFunction
+
+```
+deleteFunction(opts: { functionName: string }): Promise<Record<string, unknown>>
+```
+
+Delete a Lambda function.
+
+**Parameters**
+
+- `opts` *({ functionName: string })* — functionName: the function's name or ARN.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).lambda().deleteFunction({ functionName: "my-fn" });
+```
+
+#### 17.2.35 cloud.aws.lambda.getFunction
+
+```
+getFunction(opts: { functionName: string }): Promise<Record<string, unknown>>
+```
+
+Get a Lambda function's configuration and code location.
+
+**Parameters**
+
+- `opts` *({ functionName: string })* — functionName: the function's name or ARN.
+
+**Returns:** A promise resolving to the Lambda GetFunction response — Configuration ({ FunctionName, Runtime, Handler, ... }), Code ({ Location, RepositoryType }), Tags, Concurrency.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const fn = await cloud.aws({ region: "eu-north-1" }).lambda().getFunction({ functionName: "my-fn" });
+```
+
+#### 17.2.36 cloud.aws.lambda.invoke
+
+```
+invoke(opts: { functionName: string; payload?: string | Record<string, unknown> }): Promise<{ statusCode: number; payload: string; functionError?: string; executedVersion?: string }>
+```
+
+Synchronously invoke a Lambda function.
+
+**Parameters**
+
+- `opts` *({ functionName: string; payload?: string | Record<string, unknown> })* — functionName: the function's name or ARN. payload: the invocation payload — a string sent as-is, or a plain object JSON-serialised before sending; omitted ⇒ no payload.
+
+**Returns:** A promise resolving to a hand-built shape (not the raw SDK output, since Payload is raw bytes there): statusCode is the Lambda invocation's HTTP status; payload is the invoked function's raw JSON response body, always returned as a string (never JSON-parsed for you — call JSON.parse yourself); functionError and executedVersion are present only when the SDK response set them.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).lambda().invoke({ functionName: "my-fn", payload: { hello: "world" } });
+runtime.log(JSON.parse(r.payload));
+```
+
+#### 17.2.37 cloud.aws.lambda.listFunctions
+
+```
+listFunctions(opts?: Record<string, never>): Promise<Record<string, unknown>>
+```
+
+List the Lambda functions in the account/region.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — opts: unused — listFunctions takes no filtering parameters; accepts only an empty object or omission.
+
+**Returns:** A promise resolving to the Lambda ListFunctions response — Functions (array of { FunctionName, FunctionArn, Runtime, Handler, ... }), NextMarker.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).lambda().listFunctions();
+```
+
+#### 17.2.38 cloud.aws.s3
+
+S3 — buckets and objects (github.com/aws/aws-sdk-go-v2/service/s3). Reached via `cloud.aws({...}).s3()`; each method below is called on that service handle.
+
+#### 17.2.39 cloud.aws.s3.createBucket
+
+```
+createBucket(opts: { bucket: string }): Promise<Record<string, unknown>>
+```
+
+Create an S3 bucket.
+
+**Parameters**
+
+- `opts` *({ bucket: string })* — bucket: the new bucket's globally-unique name.
+
+**Returns:** A promise resolving to the S3 CreateBucket response — Location.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).s3().createBucket({ bucket: "my-new-bucket" });
+```
+
+#### 17.2.40 cloud.aws.s3.deleteBucket
+
+```
+deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>
+```
+
+Delete an S3 bucket. The bucket must be empty.
+
+**Parameters**
+
+- `opts` *({ bucket: string })* — bucket: the bucket name.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).s3().deleteBucket({ bucket: "my-bucket" });
+```
+
+#### 17.2.41 cloud.aws.s3.deleteObject
+
+```
+deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>
+```
+
+Delete an object.
+
+**Parameters**
+
+- `opts` *({ bucket: string; key: string })* — bucket: the bucket name. key: the object's key.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).s3().deleteObject({ bucket: "my-bucket", key: "logs/a.txt" });
+```
+
+#### 17.2.42 cloud.aws.s3.getObject
+
+```
+getObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>
+```
+
+Download an object's content.
+
+**Parameters**
+
+- `opts` *({ bucket: string; key: string })* — bucket: the bucket name. key: the object's key.
+
+**Returns:** A promise resolving to { bytes } where bytes is a plain JS number[] (byte-value array read from the object body), NOT a real Uint8Array — wrap it with new Uint8Array(res.bytes) before treating it as binary data (e.g. before fs.writeBytes or further decoding).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const res = await cloud.aws({ region: "eu-north-1" }).s3().getObject({ bucket: "my-bucket", key: "logs/a.txt" });
+const bytes = new Uint8Array(res.bytes);
+runtime.log(bytes.length);
+```
+
+#### 17.2.43 cloud.aws.s3.headObject
+
+```
+headObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>
+```
+
+Get an object's metadata without downloading its content.
+
+**Parameters**
+
+- `opts` *({ bucket: string; key: string })* — bucket: the bucket name. key: the object's key (path within the bucket).
+
+**Returns:** A promise resolving to the S3 HeadObject response — ContentLength, ContentType, ETag, LastModified, Metadata, etc. (metadata only, no body).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const meta = await cloud.aws({ region: "eu-north-1" }).s3().headObject({ bucket: "my-bucket", key: "logs/a.txt" });
+```
+
+#### 17.2.44 cloud.aws.s3.listBuckets
+
+```
+listBuckets(opts?: Record<string, never>): Promise<Record<string, unknown>>
+```
+
+List the S3 buckets owned by the caller.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — opts: unused — listBuckets takes no filtering parameters; accepts only an empty object or omission.
+
+**Returns:** A promise resolving to the S3 ListBuckets response — Buckets (array of { Name, CreationDate }) and Owner.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).s3().listBuckets();
+```
+
+#### 17.2.45 cloud.aws.s3.listObjects
+
+```
+listObjects(opts: { bucket: string; prefix?: string }): Promise<Record<string, unknown>>
+```
+
+List objects in a bucket, optionally filtered by key prefix.
+
+**Parameters**
+
+- `opts` *({ bucket: string; prefix?: string })* — bucket: the bucket name. prefix: only list objects whose key starts with this string.
+
+**Returns:** A promise resolving to the S3 ListObjectsV2 response — Contents (array of { Key, Size, LastModified, ETag, ... }), IsTruncated, KeyCount, NextContinuationToken.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).s3().listObjects({ bucket: "my-bucket", prefix: "logs/" });
+```
+
+#### 17.2.46 cloud.aws.s3.putObject
+
+```
+putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>
+```
+
+Upload/overwrite an object's content.
+
+**Parameters**
+
+- `opts` *({ bucket: string; key: string; body: string | Uint8Array | ArrayBuffer })* — bucket: the bucket name. key: the object's key. body: a string (encoded as UTF-8) or raw bytes (Uint8Array/ArrayBuffer) to upload as the object's content.
+
+**Returns:** A promise resolving to the S3 PutObject response — ETag, VersionId (when bucket versioning is enabled), etc.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).s3().putObject({ bucket: "my-bucket", key: "logs/a.txt", body: "hello" });
+```
+
+#### 17.2.47 cloud.aws.secretsmanager
+
+Secrets Manager — secret containers and their values (github.com/aws/aws-sdk-go-v2/service/secretsmanager). Reached via `cloud.aws({...}).secretsmanager()`; each method below is called on that service handle.
+
+#### 17.2.48 cloud.aws.secretsmanager.createSecret
+
+```
+createSecret(opts: { name: string; secretString?: string }): Promise<Record<string, unknown>>
+```
+
+Create a secret, optionally with an initial value.
+
+**Parameters**
+
+- `opts` *({ name: string; secretString?: string })* — name: the new secret's name. secretString: an optional initial plaintext value; omitted ⇒ the secret is created with no value.
+
+**Returns:** A promise resolving to the Secrets Manager CreateSecret response — ARN, Name, VersionId.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).secretsmanager().createSecret({ name: "db-password", secretString: "s3cr3t" });
+```
+
+#### 17.2.49 cloud.aws.secretsmanager.deleteSecret
+
+```
+deleteSecret(opts: { secretId: string }): Promise<Record<string, unknown>>
+```
+
+Delete a secret.
+
+**Parameters**
+
+- `opts` *({ secretId: string })* — secretId: the secret's name or ARN.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).secretsmanager().deleteSecret({ secretId: "db-password" });
+```
+
+#### 17.2.50 cloud.aws.secretsmanager.describeSecret
+
+```
+describeSecret(opts: { secretId: string }): Promise<Record<string, unknown>>
+```
+
+Get a secret's metadata (not its value — use getSecretValue for that).
+
+**Parameters**
+
+- `opts` *({ secretId: string })* — secretId: the secret's name or ARN.
+
+**Returns:** A promise resolving to the Secrets Manager DescribeSecret response — ARN, Name, Description, VersionIdsToStages, ... (metadata only, not the value).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const secret = await cloud.aws({ region: "eu-north-1" }).secretsmanager().describeSecret({ secretId: "db-password" });
+```
+
+#### 17.2.51 cloud.aws.secretsmanager.getSecretValue
+
+```
+getSecretValue(opts: { secretId: string }): Promise<{ value: string }>
+```
+
+Get a secret's current plaintext value.
+
+**Parameters**
+
+- `opts` *({ secretId: string })* — secretId: the secret's name or ARN.
+
+**Returns:** A promise resolving to { value } — the decoded secret value. SecretString is returned verbatim when present; otherwise SecretBinary's raw bytes are converted to a string as-is (no further base64 decoding — the SDK already decodes the wire-format blob for both fields).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const { value } = await cloud.aws({ region: "eu-north-1" }).secretsmanager().getSecretValue({ secretId: "db-password" });
+runtime.log(value);
+```
+
+#### 17.2.52 cloud.aws.secretsmanager.listSecrets
+
+```
+listSecrets(opts?: Record<string, never>): Promise<Record<string, unknown>>
+```
+
+List the secrets in the account (metadata only — not their values).
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — opts: unused — listSecrets takes no filtering parameters; accepts only an empty object or omission.
+
+**Returns:** A promise resolving to the Secrets Manager ListSecrets response — SecretList (array of { Name, ARN, Description, ... }), NextToken.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).secretsmanager().listSecrets();
+```
+
+#### 17.2.53 cloud.aws.secretsmanager.putSecretValue
+
+```
+putSecretValue(opts: { secretId: string; secretString: string }): Promise<Record<string, unknown>>
+```
+
+Add a new value to an existing secret (creates a new version).
+
+**Parameters**
+
+- `opts` *({ secretId: string; secretString: string })* — secretId: the secret's name or ARN. secretString: the new plaintext value.
+
+**Returns:** A promise resolving to the Secrets Manager PutSecretValue response — ARN, Name, VersionId, VersionStages.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).secretsmanager().putSecretValue({ secretId: "db-password", secretString: "n3w-s3cr3t" });
+```
+
+#### 17.2.54 cloud.aws.sqs
+
+SQS — queues and messages (github.com/aws/aws-sdk-go-v2/service/sqs). Reached via `cloud.aws({...}).sqs()`; each method below is called on that service handle.
+
+#### 17.2.55 cloud.aws.sqs.createQueue
+
+```
+createQueue(opts: { queueName: string }): Promise<Record<string, unknown>>
+```
+
+Create a standard or FIFO SQS queue.
+
+**Parameters**
+
+- `opts` *({ queueName: string })* — queueName: the new queue's name (append ".fifo" for a FIFO queue).
+
+**Returns:** A promise resolving to the SQS CreateQueue response — QueueUrl: the new queue's URL.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).sqs().createQueue({ queueName: "my-queue" });
+```
+
+#### 17.2.56 cloud.aws.sqs.deleteMessage
+
+```
+deleteMessage(opts: { queueUrl: string; receiptHandle: string }): Promise<Record<string, unknown>>
+```
+
+Delete a message from a queue after successful processing.
+
+**Parameters**
+
+- `opts` *({ queueUrl: string; receiptHandle: string })* — queueUrl: the queue's URL. receiptHandle: the receipt handle returned by receiveMessage for this message (not the MessageId).
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).sqs().deleteMessage({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue", receiptHandle: r.Messages[0].ReceiptHandle });
+```
+
+#### 17.2.57 cloud.aws.sqs.deleteQueue
+
+```
+deleteQueue(opts: { queueUrl: string }): Promise<Record<string, unknown>>
+```
+
+Delete a queue.
+
+**Parameters**
+
+- `opts` *({ queueUrl: string })* — queueUrl: the queue's URL (as returned by createQueue/listQueues).
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).sqs().deleteQueue({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue" });
+```
+
+#### 17.2.58 cloud.aws.sqs.getQueueAttributes
+
+```
+getQueueAttributes(opts: { queueUrl: string; attributeNames?: string[] }): Promise<Record<string, unknown>>
+```
+
+Get a queue's attributes.
+
+**Parameters**
+
+- `opts` *({ queueUrl: string; attributeNames?: string[] })* — queueUrl: the queue's URL. attributeNames: which attributes to fetch (e.g. "All", "ApproximateNumberOfMessages"); omitted ⇒ none are requested.
+
+**Returns:** A promise resolving to the SQS GetQueueAttributes response — Attributes: a flat map of attribute name to string value.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).sqs().getQueueAttributes({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue", attributeNames: ["All"] });
+```
+
+#### 17.2.59 cloud.aws.sqs.listQueues
+
+```
+listQueues(opts?: { prefix?: string }): Promise<Record<string, unknown>>
+```
+
+List queue URLs, optionally filtered by name prefix.
+
+**Parameters**
+
+- `opts` *({ prefix?: string }, optional)* — prefix: only list queues whose name starts with this string (sent as QueueNamePrefix); omitted ⇒ list all queues.
+
+**Returns:** A promise resolving to the SQS ListQueues response — QueueUrls (array of queue URL strings), NextToken.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).sqs().listQueues({ prefix: "orders-" });
+```
+
+#### 17.2.60 cloud.aws.sqs.receiveMessage
+
+```
+receiveMessage(opts: { queueUrl: string; maxMessages?: number }): Promise<Record<string, unknown>>
+```
+
+Receive (poll for) messages from a queue.
+
+**Parameters**
+
+- `opts` *({ queueUrl: string; maxMessages?: number })* — queueUrl: the queue's URL. maxMessages: the maximum number of messages to return (1-10); omitted ⇒ the API's own default (1).
+
+**Returns:** A promise resolving to the SQS ReceiveMessage response — Messages (array of { MessageId, ReceiptHandle, Body, MD5OfBody, ... }); absent/empty when the queue currently has no visible messages.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).sqs().receiveMessage({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue", maxMessages: 5 });
+```
+
+#### 17.2.61 cloud.aws.sqs.sendMessage
+
+```
+sendMessage(opts: { queueUrl: string; messageBody: string }): Promise<Record<string, unknown>>
+```
+
+Send a message to a queue.
+
+**Parameters**
+
+- `opts` *({ queueUrl: string; messageBody: string })* — queueUrl: the queue's URL. messageBody: the message text.
+
+**Returns:** A promise resolving to the SQS SendMessage response — MessageId, MD5OfMessageBody, and (for FIFO queues) SequenceNumber.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.aws({ region: "eu-north-1" }).sqs().sendMessage({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue", messageBody: "hello" });
+```
+
+#### 17.2.62 cloud.aws.sts
+
+STS — caller identity and temporary credentials (github.com/aws/aws-sdk-go-v2/service/sts). Reached via `cloud.aws({...}).sts()`; each method below is called on that service handle.
+
+#### 17.2.63 cloud.aws.sts.assumeRole
+
+```
+assumeRole(opts: { roleArn: string; roleSessionName: string; durationSeconds?: number }): Promise<Record<string, unknown>>
+```
+
+Assume an IAM role, returning temporary credentials.
+
+**Parameters**
+
+- `opts` *({ roleArn: string; roleSessionName: string; durationSeconds?: number })* — roleArn: the ARN of the role to assume. roleSessionName: an identifier for the assumed-role session (shows up in CloudTrail). durationSeconds: session duration in seconds (AWS minimum 900); omitted ⇒ the API's own default (3600).
+
+**Returns:** A promise resolving to the STS AssumeRole response — Credentials: { AccessKeyId, SecretAccessKey, SessionToken, Expiration } plus AssumedRoleUser. These are temporary but sensitive credentials — handle/store them with the same care as long-lived ones; never log them.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).sts().assumeRole({ roleArn: "arn:aws:iam::123456789012:role/my-role", roleSessionName: "my-session" });
+```
+
+#### 17.2.64 cloud.aws.sts.getCallerIdentity
+
+```
+getCallerIdentity(opts?: Record<string, never>): Promise<Record<string, unknown>>
+```
+
+Get the identity behind the credentials currently in use.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — opts: unused — getCallerIdentity takes no parameters; accepts only an empty object or omission.
+
+**Returns:** A promise resolving to the STS GetCallerIdentity response — Account, Arn, UserId. Contains no secrets.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const who = await cloud.aws({ region: "eu-north-1" }).sts().getCallerIdentity({});
+```
+
+#### 17.2.65 cloud.aws.sts.getSessionToken
+
+```
+getSessionToken(opts?: { durationSeconds?: number }): Promise<Record<string, unknown>>
+```
+
+Get temporary credentials for the current principal.
+
+**Parameters**
+
+- `opts` *({ durationSeconds?: number }, optional)* — durationSeconds: session duration in seconds; omitted ⇒ the API's own default (3600).
+
+**Returns:** A promise resolving to the STS GetSessionToken response — Credentials: { AccessKeyId, SecretAccessKey, SessionToken, Expiration }. Same sensitivity note as assumeRole applies.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.aws({ region: "eu-north-1" }).sts().getSessionToken();
+```
+
+#### 17.2.66 cloud.azure
 
 ```
 azure(opts?: { subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }): {
@@ -8466,7 +9616,486 @@ const kv = az.keyvaultSecrets("https://my-vault.vault.azure.net");
 const { value } = await kv.getSecret({ name: "db-password" });
 ```
 
-#### 17.2.3 cloud.google
+#### 17.2.67 cloud.azure.blob
+
+Blob Storage — containers and blobs on a storage account (azure-sdk-for-go azblob.Client). Data-plane: reached via `cloud.azure({...}).blob(accountUrl)`, where accountUrl is the target storage account's blob endpoint (e.g. https://myaccount.blob.core.windows.net) supplied directly by the caller rather than resolved from the subscription — no subscription is required for these methods. Each method below is called on that service handle.
+
+#### 17.2.68 cloud.azure.blob.deleteBlob
+
+```
+deleteBlob(opts: { container: string; blob: string }): Promise<Record<string, unknown>>
+```
+
+Delete a blob.
+
+**Parameters**
+
+- `opts` *({ container: string; blob: string })* — container: the container's name. blob: the blob's name.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+await cloud.azure({}).blob("https://myaccount.blob.core.windows.net").deleteBlob({ container: "logs", blob: "a.txt" });
+```
+
+#### 17.2.69 cloud.azure.blob.download
+
+```
+download(opts: { container: string; blob: string }): Promise<{ bytes: number[] }>
+```
+
+Download a blob's entire content into memory.
+
+**Parameters**
+
+- `opts` *({ container: string; blob: string })* — container: the container's name. blob: the blob's name (path within the container).
+
+**Returns:** A promise resolving to { bytes } where bytes is a plain JS number[] (byte-value array), NOT a real Uint8Array — wrap it with new Uint8Array(res.bytes) before treating it as binary data (e.g. before fs.writeBytes or further decoding).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+const blob = cloud.azure({}).blob("https://myaccount.blob.core.windows.net");
+const res = await blob.download({ container: "logs", blob: "a.txt" });
+const bytes = new Uint8Array(res.bytes);
+runtime.log(bytes.length);
+```
+
+#### 17.2.70 cloud.azure.blob.listBlobs
+
+```
+listBlobs(opts: { container: string }): Promise<{ value?: Array<Record<string, unknown>> }>
+```
+
+List every blob in a container (flat listing — no hierarchy/delimiter), paging through every page the SDK's pager returns.
+
+**Parameters**
+
+- `opts` *({ container: string })* — container: the container's name.
+
+**Returns:** A promise resolving to { value } — a list envelope wrapping every blob, with PascalCase keys (Name, Properties, Deleted, ...) — see listContainers for why.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+const r = await cloud.azure({}).blob("https://myaccount.blob.core.windows.net").listBlobs({ container: "logs" });
+```
+
+#### 17.2.71 cloud.azure.blob.listContainers
+
+```
+listContainers(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>
+```
+
+List every container in the storage account, paging through every page the SDK's pager returns.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — Unused — listContainers ignores any options object entirely.
+
+**Returns:** A promise resolving to { value } — a list envelope wrapping every container. The Storage Blob SDK's structs carry no JSON tags (the wire protocol is XML, not JSON), so toPlain's JSON round-trip falls back to the Go struct field names verbatim: PascalCase keys (Name, Properties, Deleted, ...) — unlike the ARM services and keyvaultSecrets, which come back lowercase-camelCase.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+const blob = cloud.azure({}).blob("https://myaccount.blob.core.windows.net");
+const r = await blob.listContainers();
+runtime.log(r.value?.length ?? 0);
+```
+
+#### 17.2.72 cloud.azure.blob.upload
+
+```
+upload(opts: { container: string; blob: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>
+```
+
+Upload a blob's content in a single request (block blob "Put Blob"), creating or overwriting it.
+
+**Parameters**
+
+- `opts` *({ container: string; blob: string; body: string | Uint8Array | ArrayBuffer })* — container: the container's name. blob: the blob's name. body: a string (encoded as UTF-8) or raw bytes (Uint8Array/ArrayBuffer) to upload as the blob's content.
+
+**Returns:** A promise resolving to the SDK's UploadBuffer response, round-tripped via toPlain (PascalCase keys — see listContainers for why).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+await cloud.azure({}).blob("https://myaccount.blob.core.windows.net").upload({ container: "logs", blob: "a.txt", body: "hello" });
+```
+
+#### 17.2.73 cloud.azure.call
+
+```
+call(opts: { path: string; apiVersion: string; method?: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>
+```
+
+Generic path-based REST escape hatch onto the ARM (management.azure.com) API — for ARM APIs without a typed service above (resourceGroups/compute/resources). Authenticates the same way as the parent cloud.azure(...) handle, acquiring a management.azure.com/.default bearer token.
+
+**Parameters**
+
+- `opts` *({ path: string; apiVersion: string; method?: string; params?: Record<string, string>; body?: unknown })* — path: request path appended to https://management.azure.com as-is, e.g. "/subscriptions/{id}/providers/Microsoft.Compute/virtualMachines" — the caller supplies the subscription segment directly. apiVersion: the ARM api-version query parameter (required — ARM has no default). method: HTTP verb, defaults to "GET". params: additional query-string parameters (merged with api-version). body: JSON-serialisable request body; sent with Content-Type: application/json when present.
+
+**Returns:** A promise resolving to the decoded JSON response body ({} when the response body is empty).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Also rejects if `path` or `apiVersion` is missing/empty, or if body is not JSON-serialisable. Note: call() does NOT require a configured subscription — it targets https://management.azure.com and the caller embeds the subscription segment in `path` directly.
+
+```ts
+// PROVISIONAL example — illustrative only, not run against a live account.
+const az = cloud.azure({ subscriptionId: "00000000-0000-0000-0000-000000000000" });
+const vms = await az.call({
+  path: "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Compute/virtualMachines",
+  apiVersion: "2023-09-01",
+});
+```
+
+#### 17.2.74 cloud.azure.compute
+
+Virtual Machines — ARM (subscription-scoped) compute instances (azure-sdk-for-go armcompute.VirtualMachinesClient). Reached via `cloud.azure({...}).compute()`; each method below is called on that service handle.
+
+#### 17.2.75 cloud.azure.compute.deallocate
+
+```
+deallocate(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Deallocate a virtual machine — releases the compute resources (and their billing) while retaining disks and configuration. Long-running ARM operation; the call blocks (polls) until it completes.
+
+**Parameters**
+
+- `opts` *({ resourceGroup: string; name: string })* — resourceGroup: the VM's resource group. name: the VM's name.
+
+**Returns:** A promise resolving to {} once the deallocate operation completes.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+await cloud.azure({ subscriptionId: "..." }).compute().deallocate({ resourceGroup: "my-rg", name: "web-1" });
+```
+
+#### 17.2.76 cloud.azure.compute.delete
+
+```
+delete(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Delete a virtual machine. Long-running ARM operation; the call blocks (polls) until it completes.
+
+**Parameters**
+
+- `opts` *({ resourceGroup: string; name: string })* — resourceGroup: the VM's resource group. name: the VM's name.
+
+**Returns:** A promise resolving to {} once the delete operation completes.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+await cloud.azure({ subscriptionId: "..." }).compute().delete({ resourceGroup: "my-rg", name: "web-1" });
+```
+
+#### 17.2.77 cloud.azure.compute.getVirtualMachine
+
+```
+getVirtualMachine(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Fetch a single virtual machine's metadata.
+
+**Parameters**
+
+- `opts` *({ resourceGroup: string; name: string })* — resourceGroup: the VM's resource group. name: the VM's name.
+
+**Returns:** A promise resolving to the VM's ARM JSON representation (lowercase-camelCase keys: id, name, location, properties, ...).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+const vm = await cloud.azure({ subscriptionId: "..." }).compute().getVirtualMachine({ resourceGroup: "my-rg", name: "web-1" });
+```
+
+#### 17.2.78 cloud.azure.compute.listVirtualMachines
+
+```
+listVirtualMachines(opts?: { resourceGroup?: string }): Promise<{ value?: Array<Record<string, unknown>> }>
+```
+
+List virtual machines — scoped to a single resource group when one is given, else every VM in the subscription.
+
+**Parameters**
+
+- `opts` *({ resourceGroup?: string }, optional)* — resourceGroup: restrict the listing to this resource group; omitted ⇒ subscription-wide (the SDK's NewListAllPager).
+
+**Returns:** A promise resolving to { value } — the ARM list envelope wrapping every matching VM, each in the ARM SDK's own JSON shape (lowercase-camelCase keys: id, name, location, properties, ...).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+const r = await cloud.azure({ subscriptionId: "..." }).compute().listVirtualMachines({ resourceGroup: "my-rg" });
+```
+
+#### 17.2.79 cloud.azure.compute.powerOff
+
+```
+powerOff(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Power off a running virtual machine (stops compute billing for the VM; disks remain attached). Long-running ARM operation; the call blocks (polls) until it completes.
+
+**Parameters**
+
+- `opts` *({ resourceGroup: string; name: string })* — resourceGroup: the VM's resource group. name: the VM's name.
+
+**Returns:** A promise resolving to {} once the power-off operation completes.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+await cloud.azure({ subscriptionId: "..." }).compute().powerOff({ resourceGroup: "my-rg", name: "web-1" });
+```
+
+#### 17.2.80 cloud.azure.compute.start
+
+```
+start(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Start a stopped virtual machine. Long-running ARM operation; the call blocks (polls) until it completes.
+
+**Parameters**
+
+- `opts` *({ resourceGroup: string; name: string })* — resourceGroup: the VM's resource group. name: the VM's name.
+
+**Returns:** A promise resolving to {} once the start operation completes.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+await cloud.azure({ subscriptionId: "..." }).compute().start({ resourceGroup: "my-rg", name: "web-1" });
+```
+
+#### 17.2.81 cloud.azure.keyvaultSecrets
+
+Key Vault Secrets — secret values and their versioned metadata in a vault (azure-sdk-for-go azsecrets.Client). Data-plane: reached via `cloud.azure({...}).keyvaultSecrets(vaultUrl)`, where vaultUrl is the target vault's endpoint (e.g. https://myvault.vault.azure.net) supplied directly by the caller rather than resolved from the subscription — no subscription is required for these methods. Each method below is called on that service handle.
+
+#### 17.2.82 cloud.azure.keyvaultSecrets.deleteSecret
+
+```
+deleteSecret(opts: { name: string }): Promise<Record<string, unknown>>
+```
+
+Delete a secret and all of its versions.
+
+**Parameters**
+
+- `opts` *({ name: string })* — name: the secret's name.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+await cloud.azure({}).keyvaultSecrets("https://my-vault.vault.azure.net").deleteSecret({ name: "db-password" });
+```
+
+#### 17.2.83 cloud.azure.keyvaultSecrets.getSecret
+
+```
+getSecret(opts: { name: string }): Promise<{ value: string }>
+```
+
+Fetch the latest version of a secret and its decoded plaintext value.
+
+**Parameters**
+
+- `opts` *({ name: string })* — name: the secret's name.
+
+**Returns:** A promise resolving to { value } — the secret's current plaintext value (already decoded; never the raw wire form). The value is never logged anywhere in this path.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+const kv = cloud.azure({}).keyvaultSecrets("https://my-vault.vault.azure.net");
+const { value } = await kv.getSecret({ name: "db-password" });
+runtime.log(value);
+```
+
+#### 17.2.84 cloud.azure.keyvaultSecrets.listSecrets
+
+```
+listSecrets(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>
+```
+
+List every secret's properties in the vault (metadata only — never includes values, matching the SDK's own List operation), paging through every page the SDK's pager returns.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — Unused — listSecrets ignores any options object entirely.
+
+**Returns:** A promise resolving to { value } — a list envelope wrapping every secret's properties. Uses the SDK's own MarshalJSON, so keys come back lowercase-camelCase (id, attributes, contentType, managed, tags, ...) — the same convention as the ARM services, unlike blob's PascalCase.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+const kv = cloud.azure({}).keyvaultSecrets("https://my-vault.vault.azure.net");
+const r = await kv.listSecrets();
+runtime.log(r.value?.length ?? 0);
+```
+
+#### 17.2.85 cloud.azure.keyvaultSecrets.setSecret
+
+```
+setSecret(opts: { name: string; value: string }): Promise<Record<string, unknown>>
+```
+
+Create a new version of a secret with the given value.
+
+**Parameters**
+
+- `opts` *({ name: string; value: string })* — name: the secret's name. value: the plaintext value to store; never logged.
+
+**Returns:** A promise resolving to the SDK's SetSecret response, round-tripped via toPlain (lowercase-camelCase keys: id, attributes, ... — same convention as the ARM services).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure).
+
+```ts
+await cloud.azure({}).keyvaultSecrets("https://my-vault.vault.azure.net").setSecret({ name: "db-password", value: "s3cr3t" });
+```
+
+#### 17.2.86 cloud.azure.resourceGroups
+
+Resource Groups — ARM (subscription-scoped) container objects for organizing resources (azure-sdk-for-go armresources.ResourceGroupsClient). Reached via `cloud.azure({...}).resourceGroups()`; each method below is called on that service handle.
+
+#### 17.2.87 cloud.azure.resourceGroups.create
+
+```
+create(opts: { name: string; location: string }): Promise<Record<string, unknown>>
+```
+
+Create a resource group, or update it if one with this name already exists (ARM's CreateOrUpdate semantics).
+
+**Parameters**
+
+- `opts` *({ name: string; location: string })* — name: the resource group's name. location: the Azure region, e.g. "westeurope".
+
+**Returns:** A promise resolving to the created/updated resource group's ARM JSON representation.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+await cloud.azure({ subscriptionId: "..." }).resourceGroups().create({ name: "my-rg", location: "westeurope" });
+```
+
+#### 17.2.88 cloud.azure.resourceGroups.delete
+
+```
+delete(opts: { name: string }): Promise<Record<string, unknown>>
+```
+
+Delete a resource group and everything in it. This is a long-running ARM operation; the call blocks (polls) until it completes.
+
+**Parameters**
+
+- `opts` *({ name: string })* — name: the resource group's name.
+
+**Returns:** A promise resolving to {} once the delete operation completes.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+await cloud.azure({ subscriptionId: "..." }).resourceGroups().delete({ name: "my-rg" });
+```
+
+#### 17.2.89 cloud.azure.resourceGroups.get
+
+```
+get(opts: { name: string }): Promise<Record<string, unknown>>
+```
+
+Fetch a single resource group by name.
+
+**Parameters**
+
+- `opts` *({ name: string })* — name: the resource group's name.
+
+**Returns:** A promise resolving to the resource group's ARM JSON representation (lowercase-camelCase keys: id, name, location, properties, tags, ...).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+const rg = await cloud.azure({ subscriptionId: "..." }).resourceGroups().get({ name: "my-rg" });
+```
+
+#### 17.2.90 cloud.azure.resourceGroups.list
+
+```
+list(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>
+```
+
+List every resource group in the subscription, paging through every page the ARM API returns.
+
+**Parameters**
+
+- `opts` *(Record<string, never>, optional)* — Unused — list ignores any options object entirely; the subscription is that of the parent cloud.azure(...) handle.
+
+**Returns:** A promise resolving to { value } — the ARM list envelope wrapping every resource group, each in the ARM SDK's own JSON shape (lowercase-camelCase keys: id, name, location, properties, tags, ...).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+const az = cloud.azure({ subscriptionId: "00000000-0000-0000-0000-000000000000" });
+const r = await az.resourceGroups().list();
+runtime.log(r.value?.length ?? 0);
+```
+
+#### 17.2.91 cloud.azure.resources
+
+Generic Resources — ARM (subscription-scoped) cross-resource-type listing and lookup (azure-sdk-for-go armresources.Client — a distinct client from the resourceGroups() service above). Reached via `cloud.azure({...}).resources()`; each method below is called on that service handle.
+
+#### 17.2.92 cloud.azure.resources.getById
+
+```
+getById(opts: { resourceId: string; apiVersion: string }): Promise<Record<string, unknown>>
+```
+
+Fetch a single resource by its fully qualified ARM resource ID. Unlike the typed services above, the generic resources API has no per-resource-type default api-version, so the caller must supply one explicitly.
+
+**Parameters**
+
+- `opts` *({ resourceId: string; apiVersion: string })* — resourceId: the resource's fully qualified ARM ID (e.g. "/subscriptions/.../resourceGroups/my-rg/providers/Microsoft.Compute/virtualMachines/web-1"). apiVersion: the ARM api-version to request for this resource type, e.g. "2023-09-01".
+
+**Returns:** A promise resolving to the resource's ARM JSON representation (lowercase-camelCase keys).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+const vm = await cloud.azure({ subscriptionId: "..." }).resources().getById({
+  resourceId: "/subscriptions/.../resourceGroups/my-rg/providers/Microsoft.Compute/virtualMachines/web-1",
+  apiVersion: "2023-09-01",
+});
+```
+
+#### 17.2.93 cloud.azure.resources.listByResourceGroup
+
+```
+listByResourceGroup(opts: { resourceGroup: string }): Promise<{ value?: Array<Record<string, unknown>> }>
+```
+
+List every resource (of any type) in a resource group, paging through every page the ARM API returns.
+
+**Parameters**
+
+- `opts` *({ resourceGroup: string })* — resourceGroup: the resource group's name.
+
+**Returns:** A promise resolving to { value } — the ARM list envelope wrapping every resource in the group, each in the ARM SDK's own generic-resource JSON shape (lowercase-camelCase keys: id, name, type, location, ...).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are ""/0 for non-API errors (DNS, TLS, timeout, connection refused, credential/token acquisition failure). Additionally rejects if no subscription is configured (neither opts.subscriptionId nor AZURE_SUBSCRIPTION_ID).
+
+```ts
+const r = await cloud.azure({ subscriptionId: "..." }).resources().listByResourceGroup({ resourceGroup: "my-rg" });
+```
+
+#### 17.2.94 cloud.google
 
 ```
 google(opts?: { project?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): {
@@ -8528,6 +10157,673 @@ const g = cloud.google({ project: "my-proj" });
 const gcs = g.storage();
 const r = await gcs.listBuckets({ project: "my-proj" });
 runtime.log(r.items?.length ?? 0);
+```
+
+#### 17.2.95 cloud.google.call
+
+```
+call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>
+```
+
+Generic path-based REST escape hatch onto any {api}.googleapis.com endpoint — for APIs without a typed service above (storage/compute/iam/secrets). Authenticates the same way as the parent cloud.google(...) handle.
+
+**Parameters**
+
+- `opts` *({ api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown })* — api: the API's subdomain, e.g. "compute" for compute.googleapis.com. version: URL-versioning hint some paths embed directly; defaults to "v1" (informational — path is used as given). httpMethod: HTTP verb, defaults to "GET". path: request path, e.g. "/compute/v1/projects/p/zones" — appended to https://{api}.googleapis.com as-is. params: query-string parameters. body: JSON-serialisable request body; sent with Content-Type: application/json when present.
+
+**Returns:** A promise resolving to the decoded JSON response body ({} when the response body is empty).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused). Also rejects if `api` or `path` is missing/empty, or if body is not JSON-serialisable.
+
+```ts
+const g = cloud.google({ project: "my-proj" });
+const zones = await g.call({ api: "compute", path: "/compute/v1/projects/my-proj/zones" });
+runtime.log(zones.items?.length ?? 0);
+```
+
+#### 17.2.96 cloud.google.compute
+
+Compute Engine — VM instances, zones, and disks (google.golang.org/api/compute/v1). Reached via `cloud.google({...}).compute()`; each method below is called on that service handle.
+
+#### 17.2.97 cloud.google.compute.createInstance
+
+```
+createInstance(opts: { project: string; zone: string; instance: Record<string, unknown> }): Promise<Record<string, unknown>>
+```
+
+Create a Compute Engine VM instance.
+
+**Parameters**
+
+- `opts` *({ project: string; zone: string; instance: Record<string, unknown> })* — project: the GCP project id. zone: the target zone. instance: a Compute Engine Instance resource body (machineType, disks, networkInterfaces, etc. — see the Compute Engine instances.insert API reference).
+
+**Returns:** A promise resolving to the (typically long-running) Compute instances.insert operation resource.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const op = await cloud.google({ project: "p" }).compute().createInstance({
+  project: "p", zone: "europe-north1-a",
+  instance: { name: "web-1", machineType: "zones/europe-north1-a/machineTypes/e2-micro" },
+});
+```
+
+#### 17.2.98 cloud.google.compute.deleteInstance
+
+```
+deleteInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Delete a Compute Engine VM instance.
+
+**Parameters**
+
+- `opts` *({ project: string; zone: string; name: string })* — project: the GCP project id. zone: the instance's zone. name: the instance name.
+
+**Returns:** A promise resolving to the Compute instances.delete operation resource.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).compute().deleteInstance({ project: "p", zone: "europe-north1-a", name: "web-1" });
+```
+
+#### 17.2.99 cloud.google.compute.getInstance
+
+```
+getInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Get a Compute Engine VM instance's metadata.
+
+**Parameters**
+
+- `opts` *({ project: string; zone: string; name: string })* — project: the GCP project id. zone: the instance's zone. name: the instance name.
+
+**Returns:** A promise resolving to the Compute instances.get response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const inst = await cloud.google({ project: "p" }).compute().getInstance({ project: "p", zone: "europe-north1-a", name: "web-1" });
+```
+
+#### 17.2.100 cloud.google.compute.listDisks
+
+```
+listDisks(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>
+```
+
+List Compute Engine persistent disks in a zone.
+
+**Parameters**
+
+- `opts` *({ project: string; zone: string })* — project: the GCP project id. zone: e.g. "europe-north1-a".
+
+**Returns:** A promise resolving to the Compute disks.list response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.google({ project: "p" }).compute().listDisks({ project: "p", zone: "europe-north1-a" });
+```
+
+#### 17.2.101 cloud.google.compute.listInstances
+
+```
+listInstances(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>
+```
+
+List Compute Engine VM instances in a zone.
+
+**Parameters**
+
+- `opts` *({ project: string; zone: string })* — project: the GCP project id. zone: e.g. "europe-north1-a".
+
+**Returns:** A promise resolving to the Compute instances.list response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.google({ project: "p" }).compute().listInstances({ project: "p", zone: "europe-north1-a" });
+```
+
+#### 17.2.102 cloud.google.compute.listZones
+
+```
+listZones(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>
+```
+
+List the Compute Engine zones available to a project.
+
+**Parameters**
+
+- `opts` *({ project: string })* — project: the GCP project id.
+
+**Returns:** A promise resolving to the Compute zones.list response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.google({ project: "p" }).compute().listZones({ project: "p" });
+```
+
+#### 17.2.103 cloud.google.compute.startInstance
+
+```
+startInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Start a stopped Compute Engine VM instance.
+
+**Parameters**
+
+- `opts` *({ project: string; zone: string; name: string })* — project: the GCP project id. zone: the instance's zone. name: the instance name.
+
+**Returns:** A promise resolving to the Compute instances.start operation resource.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).compute().startInstance({ project: "p", zone: "europe-north1-a", name: "web-1" });
+```
+
+#### 17.2.104 cloud.google.compute.stopInstance
+
+```
+stopInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Stop a running Compute Engine VM instance.
+
+**Parameters**
+
+- `opts` *({ project: string; zone: string; name: string })* — project: the GCP project id. zone: the instance's zone. name: the instance name.
+
+**Returns:** A promise resolving to the Compute instances.stop operation resource.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).compute().stopInstance({ project: "p", zone: "europe-north1-a", name: "web-1" });
+```
+
+#### 17.2.105 cloud.google.iam
+
+Cloud IAM — service accounts, their keys, and resource IAM policies (google.golang.org/api/iam/v1). Reached via `cloud.google({...}).iam()`; each method below is called on that service handle.
+
+#### 17.2.106 cloud.google.iam.createKey
+
+```
+createKey(opts: { project: string; email: string }): Promise<Record<string, unknown>>
+```
+
+Create a new IAM key for a service account. The private key material is only ever returned by this call — store it immediately.
+
+**Parameters**
+
+- `opts` *({ project: string; email: string })* — project: the GCP project id. email: the service account's email address.
+
+**Returns:** A promise resolving to the IAM serviceAccounts.keys.create response, including the base64-encoded private key material.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const key = await cloud.google({ project: "p" }).iam().createKey({ project: "p", email: "sa@p.iam.gserviceaccount.com" });
+```
+
+#### 17.2.107 cloud.google.iam.createServiceAccount
+
+```
+createServiceAccount(opts: { project: string; accountId: string; displayName?: string }): Promise<Record<string, unknown>>
+```
+
+Create an IAM service account.
+
+**Parameters**
+
+- `opts` *({ project: string; accountId: string; displayName?: string })* — project: the GCP project id. accountId: the service account id (the part before @ in its email). displayName: an optional human-readable name.
+
+**Returns:** A promise resolving to the IAM serviceAccounts.create response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const sa = await cloud.google({ project: "p" }).iam().createServiceAccount({ project: "p", accountId: "my-sa", displayName: "My SA" });
+```
+
+#### 17.2.108 cloud.google.iam.deleteServiceAccount
+
+```
+deleteServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>
+```
+
+Delete an IAM service account.
+
+**Parameters**
+
+- `opts` *({ project: string; email: string })* — project: the GCP project id. email: the service account's email address.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).iam().deleteServiceAccount({ project: "p", email: "sa@p.iam.gserviceaccount.com" });
+```
+
+#### 17.2.109 cloud.google.iam.getIamPolicy
+
+```
+getIamPolicy(opts: { resource: string }): Promise<Record<string, unknown>>
+```
+
+Get the IAM policy attached to a resource (e.g. a service account).
+
+**Parameters**
+
+- `opts` *({ resource: string })* — resource: the full resource name, e.g. "projects/p/serviceAccounts/sa@p.iam.gserviceaccount.com".
+
+**Returns:** A promise resolving to the IAM getIamPolicy response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const policy = await cloud.google({ project: "p" }).iam().getIamPolicy({ resource: "projects/p/serviceAccounts/sa@p.iam.gserviceaccount.com" });
+```
+
+#### 17.2.110 cloud.google.iam.getServiceAccount
+
+```
+getServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>
+```
+
+Get an IAM service account's metadata.
+
+**Parameters**
+
+- `opts` *({ project: string; email: string })* — project: the GCP project id. email: the service account's email address.
+
+**Returns:** A promise resolving to the IAM serviceAccounts.get response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const sa = await cloud.google({ project: "p" }).iam().getServiceAccount({ project: "p", email: "sa@p.iam.gserviceaccount.com" });
+```
+
+#### 17.2.111 cloud.google.iam.listKeys
+
+```
+listKeys(opts: { project: string; email: string }): Promise<{ keys?: Array<Record<string, unknown>> }>
+```
+
+List a service account's IAM keys.
+
+**Parameters**
+
+- `opts` *({ project: string; email: string })* — project: the GCP project id. email: the service account's email address.
+
+**Returns:** A promise resolving to the IAM serviceAccounts.keys.list response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.google({ project: "p" }).iam().listKeys({ project: "p", email: "sa@p.iam.gserviceaccount.com" });
+```
+
+#### 17.2.112 cloud.google.iam.listServiceAccounts
+
+```
+listServiceAccounts(opts: { project: string }): Promise<{ accounts?: Array<Record<string, unknown>> }>
+```
+
+List the IAM service accounts in a project.
+
+**Parameters**
+
+- `opts` *({ project: string })* — project: the GCP project id.
+
+**Returns:** A promise resolving to the IAM serviceAccounts.list response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.google({ project: "p" }).iam().listServiceAccounts({ project: "p" });
+```
+
+#### 17.2.113 cloud.google.iam.setIamPolicy
+
+```
+setIamPolicy(opts: { resource: string; policy: Record<string, unknown> }): Promise<Record<string, unknown>>
+```
+
+Replace the IAM policy attached to a resource. This is a full replace, not a merge — read-modify-write via getIamPolicy first to avoid clobbering existing bindings.
+
+**Parameters**
+
+- `opts` *({ resource: string; policy: Record<string, unknown> })* — resource: the full resource name. policy: the complete IAM Policy body ({ bindings: [{ role, members }], etag?, version? }).
+
+**Returns:** A promise resolving to the IAM setIamPolicy response (the policy as stored).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const resource = "projects/p/serviceAccounts/sa@p.iam.gserviceaccount.com";
+const current = await cloud.google({ project: "p" }).iam().getIamPolicy({ resource });
+current.bindings = [...(current.bindings ?? []), { role: "roles/iam.serviceAccountUser", members: ["user:me@example.com"] }];
+await cloud.google({ project: "p" }).iam().setIamPolicy({ resource, policy: current });
+```
+
+#### 17.2.114 cloud.google.secrets
+
+Secret Manager — secret containers and their versioned values (google.golang.org/api/secretmanager/v1). Reached via `cloud.google({...}).secrets()`; each method below is called on that service handle.
+
+#### 17.2.115 cloud.google.secrets.accessSecretVersion
+
+```
+accessSecretVersion(opts: { project: string; name: string; version?: string }): Promise<{ value: string }>
+```
+
+Access (decrypt) a secret version's plaintext value.
+
+**Parameters**
+
+- `opts` *({ project: string; name: string; version?: string })* — project: the GCP project id. name: the secret id. version: a version number as a string, or "latest"; defaults to "latest" when omitted.
+
+**Returns:** A promise resolving to { value } — the decoded plaintext secret value (already base64-decoded; never the raw wire-format base64).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const { value } = await cloud.google({ project: "p" }).secrets().accessSecretVersion({ project: "p", name: "db-password" });
+runtime.log(value);
+```
+
+#### 17.2.116 cloud.google.secrets.addSecretVersion
+
+```
+addSecretVersion(opts: { project: string; name: string; payload: string }): Promise<Record<string, unknown>>
+```
+
+Add a new version (value) to an existing secret. The payload is base64-encoded on the wire automatically.
+
+**Parameters**
+
+- `opts` *({ project: string; name: string; payload: string })* — project: the GCP project id. name: the secret id. payload: the plaintext secret value.
+
+**Returns:** A promise resolving to the Secret Manager secrets.addVersion response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).secrets().addSecretVersion({ project: "p", name: "db-password", payload: "s3cr3t" });
+```
+
+#### 17.2.117 cloud.google.secrets.createSecret
+
+```
+createSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Create a secret container (automatic replication). Does not set a value — call addSecretVersion to add one.
+
+**Parameters**
+
+- `opts` *({ project: string; name: string })* — project: the GCP project id. name: the new secret's id.
+
+**Returns:** A promise resolving to the Secret Manager secrets.create response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).secrets().createSecret({ project: "p", name: "db-password" });
+```
+
+#### 17.2.118 cloud.google.secrets.deleteSecret
+
+```
+deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Delete a secret and all of its versions.
+
+**Parameters**
+
+- `opts` *({ project: string; name: string })* — project: the GCP project id. name: the secret id.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).secrets().deleteSecret({ project: "p", name: "db-password" });
+```
+
+#### 17.2.119 cloud.google.secrets.getSecret
+
+```
+getSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>
+```
+
+Get a secret's metadata (not its value — use accessSecretVersion for that).
+
+**Parameters**
+
+- `opts` *({ project: string; name: string })* — project: the GCP project id. name: the secret id.
+
+**Returns:** A promise resolving to the Secret Manager secrets.get response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const secret = await cloud.google({ project: "p" }).secrets().getSecret({ project: "p", name: "db-password" });
+```
+
+#### 17.2.120 cloud.google.secrets.listSecrets
+
+```
+listSecrets(opts: { project: string }): Promise<{ secrets?: Array<Record<string, unknown>> }>
+```
+
+List the secrets in a project (metadata only — not their values).
+
+**Parameters**
+
+- `opts` *({ project: string })* — project: the GCP project id.
+
+**Returns:** A promise resolving to the Secret Manager secrets.list response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.google({ project: "p" }).secrets().listSecrets({ project: "p" });
+```
+
+#### 17.2.121 cloud.google.storage
+
+Cloud Storage — buckets and objects (google.golang.org/api/storage/v1). Reached via `cloud.google({...}).storage()`; each method below is called on that service handle.
+
+#### 17.2.122 cloud.google.storage.createBucket
+
+```
+createBucket(opts: { project: string; bucket: string }): Promise<Record<string, unknown>>
+```
+
+Create a Cloud Storage bucket.
+
+**Parameters**
+
+- `opts` *({ project: string; bucket: string })* — project: owning GCP project id. bucket: the new bucket's globally-unique name.
+
+**Returns:** A promise resolving to the Storage buckets.insert response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).storage().createBucket({ project: "p", bucket: "my-new-bucket" });
+```
+
+#### 17.2.123 cloud.google.storage.deleteBucket
+
+```
+deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>
+```
+
+Delete a Cloud Storage bucket. The bucket must be empty.
+
+**Parameters**
+
+- `opts` *({ bucket: string })* — bucket: the bucket name.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).storage().deleteBucket({ bucket: "my-bucket" });
+```
+
+#### 17.2.124 cloud.google.storage.deleteObject
+
+```
+deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>
+```
+
+Delete an object.
+
+**Parameters**
+
+- `opts` *({ bucket: string; key: string })* — bucket: the bucket name. key: the object's key.
+
+**Returns:** A promise resolving to {} on success.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).storage().deleteObject({ bucket: "my-bucket", key: "logs/a.txt" });
+```
+
+#### 17.2.125 cloud.google.storage.getBucket
+
+```
+getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>
+```
+
+Get a Cloud Storage bucket's metadata.
+
+**Parameters**
+
+- `opts` *({ bucket: string })* — bucket: the bucket name (not the gs:// URI).
+
+**Returns:** A promise resolving to the Storage buckets.get response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const b = await cloud.google({ project: "p" }).storage().getBucket({ bucket: "my-bucket" });
+```
+
+#### 17.2.126 cloud.google.storage.listBuckets
+
+```
+listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>
+```
+
+List the Cloud Storage buckets in a project.
+
+**Parameters**
+
+- `opts` *({ project: string })* — project: the GCP project id.
+
+**Returns:** A promise resolving to the Storage buckets.list response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const gcs = cloud.google({ project: "p" }).storage(); const r = await gcs.listBuckets({ project: "p" });
+```
+
+#### 17.2.127 cloud.google.storage.listObjects
+
+```
+listObjects(opts: { bucket: string; prefix?: string }): Promise<{ items?: Array<Record<string, unknown>> }>
+```
+
+List objects in a bucket, optionally filtered by key prefix.
+
+**Parameters**
+
+- `opts` *({ bucket: string; prefix?: string })* — bucket: the bucket name. prefix: only list objects whose key starts with this string.
+
+**Returns:** A promise resolving to the Storage objects.list response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const r = await cloud.google({ project: "p" }).storage().listObjects({ bucket: "my-bucket", prefix: "logs/" });
+```
+
+#### 17.2.128 cloud.google.storage.putObject
+
+```
+putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>
+```
+
+Upload/overwrite an object's content.
+
+**Parameters**
+
+- `opts` *({ bucket: string; key: string; body: string | Uint8Array | ArrayBuffer })* — bucket: the bucket name. key: the object's key. body: a string (encoded as UTF-8) or raw bytes (Uint8Array/ArrayBuffer) to upload as the object's content.
+
+**Returns:** A promise resolving to the Storage objects.insert response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+await cloud.google({ project: "p" }).storage().putObject({ bucket: "my-bucket", key: "logs/a.txt", body: "hello" });
+```
+
+#### 17.2.129 cloud.google.storage.readObject
+
+```
+readObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>
+```
+
+Download an object's content.
+
+**Parameters**
+
+- `opts` *({ bucket: string; key: string })* — bucket: the bucket name. key: the object's key.
+
+**Returns:** A promise resolving to { bytes } where bytes is a plain JS number[] (byte-value array), NOT a real Uint8Array — wrap it with new Uint8Array(res.bytes) before treating it as binary data (e.g. before fs.writeBytes or further decoding).
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const res = await cloud.google({ project: "p" }).storage().readObject({ bucket: "my-bucket", key: "logs/a.txt" });
+const bytes = new Uint8Array(res.bytes);
+runtime.log(bytes.length);
+```
+
+#### 17.2.130 cloud.google.storage.statObject
+
+```
+statObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>
+```
+
+Get an object's metadata without downloading its content.
+
+**Parameters**
+
+- `opts` *({ bucket: string; key: string })* — bucket: the bucket name. key: the object's key (path within the bucket).
+
+**Returns:** A promise resolving to the Storage objects.get response.
+
+**Throws:** Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+const meta = await cloud.google({ project: "p" }).storage().statObject({ bucket: "my-bucket", key: "logs/a.txt" });
 ```
 
 ### 17.3 codec
