@@ -51,11 +51,11 @@ func writeReference(w io.Writer, regs []registration, docs map[string]MemberDoc,
 		}
 		bw.WriteString("\n### " + numberedHeading(nsNum, reg.name) + "\n")
 		doc := docs[reg.name]
-		mem := 0 // per-namespace member counter for #### numbering
 		switch reg.kind {
 		case regNamespace:
 			// A namespace is a container, not a callable — render its summary
-			// as the section intro (no signature fence), then its members.
+			// as the section intro (no signature fence), then its members as a
+			// hierarchical tree (numbers and heading levels track dotted depth).
 			if s := strings.TrimSpace(doc.Summary); s != "" {
 				bw.WriteString("\n" + s + "\n")
 			}
@@ -63,11 +63,12 @@ func writeReference(w io.Writer, regs []registration, docs map[string]MemberDoc,
 			if m, ok := reg.value.(namespaceFactoryMarker); ok && members == nil {
 				members = introspectNamespaceFactory(m)
 			}
-			writeReferenceMembers(bw, members, reg.name, docs, nsNum, &mem)
+			emitNamespaceTree(bw, members, reg.name, docs, nsNum)
 		case regValue, regConstructor:
 			// A top-level value/constructor IS callable — full entry with a
-			// signature.
-			writeReferenceEntry(bw, memberNum(nsNum, &mem), reg.name, reg.name, doc, topLevelSig(reg, doc))
+			// signature, rendered one level below the namespace heading (H4).
+			mem := 0
+			writeReferenceEntry(bw, 4, memberNum(nsNum, &mem), reg.name, doc, topLevelSig(reg, doc), true)
 		}
 	}
 	return bw.err
@@ -104,91 +105,141 @@ func introspectNamespaceFactory(m namespaceFactoryMarker) (members map[string]an
 	return m.fn(nil, nil)
 }
 
-// writeReferenceMembers walks a namespace's members in sorted dotted-path
-// order, descending into nested namespace maps. `path` is the dotted prefix
-// used for both headings and doc lookup, matching writeMemberObject.
-func writeReferenceMembers(w *errWriter, members map[string]any, path string, docs map[string]MemberDoc, nsNum string, mem *int) {
-	keys := make([]string, 0, len(members))
-	for k := range members {
+// refNode is one node in a namespace's reference tree. A node may correspond to
+// a member reachable by the surface walk (hasValue) and/or a member documented
+// only via a doc-map key (for runtime-built handles the walk can't introspect,
+// e.g. the cloud.<provider> services/methods). Children are merged from nested
+// surface maps and nested doc keys, so both sources form one tree.
+type refNode struct {
+	name     string
+	path     string // full dotted path, e.g. "cloud.aws.s3"
+	value    any    // surface value when hasValue is true
+	hasValue bool
+	isMap    bool // surface value is a map[string]any (a sub-namespace container)
+	children map[string]*refNode
+}
+
+func (n *refNode) child(seg, path string) *refNode {
+	if n.children == nil {
+		n.children = make(map[string]*refNode)
+	}
+	c := n.children[seg]
+	if c == nil {
+		c = &refNode{name: seg, path: path}
+		n.children[seg] = c
+	}
+	return c
+}
+
+// buildNamespaceTree merges the walked surface (recursing into nested maps) with
+// any documented doc-map keys under the namespace prefix into a single tree, so
+// statically-reachable members and runtime-handle members (documented only via
+// orphan doc keys) are numbered and levelled by their real dotted-path depth.
+func buildNamespaceTree(nsName string, members map[string]any, docs map[string]MemberDoc) *refNode {
+	root := &refNode{name: nsName, path: nsName}
+	for k, v := range members {
+		insertSurfaceMember(root, k, nsName+"."+k, v)
+	}
+	prefix := nsName + "."
+	for key := range docs {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		cur, p := root, nsName
+		for _, seg := range strings.Split(key[len(prefix):], ".") {
+			p += "." + seg
+			cur = cur.child(seg, p)
+		}
+	}
+	return root
+}
+
+// insertSurfaceMember adds a walked member to the tree, descending into nested
+// namespace maps so each level becomes its own node.
+func insertSurfaceMember(parent *refNode, name, path string, v any) {
+	n := parent.child(name, path)
+	n.hasValue = true
+	if nested, ok := v.(map[string]any); ok {
+		n.isMap = true
+		for k, cv := range nested {
+			insertSurfaceMember(n, k, path+"."+k, cv)
+		}
+		return
+	}
+	n.value = v
+}
+
+// emitNamespaceTree renders a namespace's members as a hierarchical tree: each
+// child is numbered <parentNum>.<index> (1-based, in sorted dotted-path order)
+// and rendered at heading level 3+depth — capped at markdown's H6 — so the
+// dotted-path hierarchy shows up in both the section numbers and the heading
+// levels (and therefore the TOC). Direct members start at H4.
+func emitNamespaceTree(w *errWriter, members map[string]any, nsName string, docs map[string]MemberDoc, nsNum string) {
+	root := buildNamespaceTree(nsName, members, docs)
+	emitRefChildren(w, root, docs, nsNum, 4)
+}
+
+func emitRefChildren(w *errWriter, parent *refNode, docs map[string]MemberDoc, parentNum string, level int) {
+	keys := make([]string, 0, len(parent.children))
+	for k := range parent.children {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	for _, k := range keys {
-		v := members[k]
-		memberPath := path + "." + k
-		if nested, ok := v.(map[string]any); ok {
-			// A nested sub-namespace is a container too: if documented, emit a
-			// heading + summary paragraph (no signature fence), then recurse.
-			if doc, ok := docs[memberPath]; ok {
-				if s := strings.TrimSpace(doc.Summary); s != "" {
-					w.WriteString("\n#### " + numberedHeading(memberNum(nsNum, mem), memberPath) + "\n\n" + s + "\n")
-				}
-			}
-			writeReferenceMembers(w, nested, memberPath, docs, nsNum, mem)
-			continue
+	lvl := level
+	if lvl > 6 {
+		lvl = 6
+	}
+	for i, k := range keys {
+		n := parent.children[k]
+		num := parentNum // "" stays "" for unnumbered output (still nests by level)
+		if parentNum != "" {
+			num = parentNum + "." + strconv.Itoa(i+1)
 		}
-		doc := docs[memberPath]
-		writeReferenceEntry(w, memberNum(nsNum, mem), memberPath, k, doc, sigForMember(k, v, doc))
-		// A leaf member may build a runtime handle the surface walk can't
-		// introspect (e.g. the cloud.<provider> callables, whose services and
-		// methods only exist after the handle is constructed at script-run
-		// time). Emit any documented members nested under this leaf's path so
-		// those signatures reach the reference too.
-		writeOrphanChildren(w, memberPath, docs, nsNum, mem)
+		emitRefNode(w, n, docs, num, lvl)
+		emitRefChildren(w, n, docs, num, level+1)
 	}
 }
 
-// writeOrphanChildren emits reference entries for documented members nested
-// under a leaf (non-map) member — methods and service groups of a runtime-built
-// handle that writeReferenceMembers' surface walk cannot reach. Doc keys with
-// the prefix `<parentPath>.` are emitted in sorted dotted-path order, which
-// groups them naturally (provider → service → method). A summary-only doc
-// (no Params and no ReturnType) renders as a service-group heading + summary,
-// mirroring the nested-namespace container form; a doc carrying Params and/or a
-// ReturnType renders as a full method entry with a signature built from the doc.
-// Namespaces whose leaves have no nested doc keys emit nothing here, so existing
-// generated output stays byte-for-byte identical.
-func writeOrphanChildren(w *errWriter, parentPath string, docs map[string]MemberDoc, nsNum string, mem *int) {
-	prefix := parentPath + "."
-	keys := make([]string, 0)
-	for k := range docs {
-		if strings.HasPrefix(k, prefix) {
-			keys = append(keys, k)
-		}
-	}
-	if len(keys) == 0 {
-		return
-	}
-	sort.Strings(keys)
-	for _, path := range keys {
-		doc := docs[path]
-		if len(doc.Params) == 0 && doc.ReturnType == "" {
-			// A container (service group): heading + summary only, no signature
-			// fence — the same shape writeReferenceMembers uses for a documented
-			// sub-namespace.
-			if s := strings.TrimSpace(doc.Summary); s != "" {
-				w.WriteString("\n#### " + numberedHeading(memberNum(nsNum, mem), path) + "\n\n" + s + "\n")
-			}
-			// An empty doc (no summary, params, or return) emits nothing and
-			// does not advance the counter, keeping member numbers contiguous.
-			continue
-		}
-		name := path[strings.LastIndex(path, ".")+1:]
+// emitRefNode renders one tree node: a callable/method gets a fenced signature
+// plus its documented body; a container (a sub-namespace surface map, or a
+// documented-but-not-callable service group) gets a heading and its summary
+// only. num is "" for unnumbered output; level is the heading depth in '#'s.
+func emitRefNode(w *errWriter, n *refNode, docs map[string]MemberDoc, num string, level int) {
+	doc := docs[n.path]
+	var signature string
+	hasSig := false
+	switch {
+	case n.hasValue && !n.isMap:
+		// A surface leaf (callable or value): reflected or documented signature.
+		signature = sigForMember(n.name, n.value, doc)
+		hasSig = true
+	case !n.hasValue && (len(doc.Params) > 0 || doc.ReturnType != ""):
+		// A documented runtime-handle method (no surface value): build the
+		// signature from the doc.
 		ret := doc.ReturnType
 		if ret == "" {
 			ret = "void"
 		}
-		writeReferenceEntry(w, memberNum(nsNum, mem), path, name, doc, name+sigFromParams(doc.Params, ret))
+		signature = n.name + sigFromParams(doc.Params, ret)
+		hasSig = true
 	}
+	writeReferenceEntry(w, level, num, n.path, doc, signature, hasSig)
 }
 
-// writeReferenceEntry emits a single `#### <num> <path>` section: a fenced
-// signature, the Summary paragraph, Parameters, Returns, Throws, and Example —
-// omitting every empty section. num is "" for unnumbered output.
-func writeReferenceEntry(w *errWriter, num, path, name string, doc MemberDoc, signature string) {
-	w.WriteString("\n#### " + numberedHeading(num, path) + "\n")
-	w.WriteString("\n```\n" + signature + "\n```\n")
+// writeReferenceEntry emits a single `<level '#'s> <num> <path>` section: an
+// optional fenced signature (when hasSig), then the documented body. num is ""
+// for unnumbered output.
+func writeReferenceEntry(w *errWriter, level int, num, path string, doc MemberDoc, signature string, hasSig bool) {
+	w.WriteString("\n" + strings.Repeat("#", level) + " " + numberedHeading(num, path) + "\n")
+	if hasSig {
+		w.WriteString("\n```\n" + signature + "\n```\n")
+	}
+	writeDocBody(w, doc)
+}
 
+// writeDocBody writes the Summary paragraph, Parameters list, Returns, Throws,
+// and Example fenced block for a member, omitting every empty section.
+func writeDocBody(w *errWriter, doc MemberDoc) {
 	if s := strings.TrimSpace(doc.Summary); s != "" {
 		w.WriteString("\n" + s + "\n")
 	}

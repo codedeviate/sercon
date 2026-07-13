@@ -193,7 +193,7 @@ manual: reference
 		--gfm --page-break-on-h1 \
 		--font "IBM Plex Sans" \
 		--cover \
-		--toc --toc-depth 4 --toc-plain --toc-title "Contents" \
+		--toc --toc-depth 6 --toc-plain --toc-title "Contents" \
 		--doc-title "sercon User Manual" \
 		--doc-subtitle "Embeddable TypeScript script engine — reference and guide" \
 		--doc-version "$(MANUAL_VERSION)" \

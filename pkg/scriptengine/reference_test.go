@@ -111,8 +111,10 @@ func TestWriteReferenceNumbered(t *testing.T) {
 // member builds its real surface only at script-run time (like the
 // cloud.<provider> callables), so the surface walk can't introspect its
 // services/methods. Documented members nested under the leaf's dotted path
-// must still be emitted — a summary-only doc as a group heading, a
-// signature-bearing doc as a full method entry — in sorted dotted-path order.
+// must still be emitted — and numbered/levelled by their real dotted-path
+// depth: the provider at H4/17.1.1, its service group at H5/17.1.1.1, and its
+// methods at H6/17.1.1.1.N — a summary-only doc as a group heading, a
+// signature-bearing doc as a full method entry, in sorted dotted-path order.
 func TestWriteReference_OrphanChildren(t *testing.T) {
 	e := New(Options{})
 	if err := e.RegisterNamespace("cloud", map[string]any{
@@ -133,18 +135,19 @@ func TestWriteReference_OrphanChildren(t *testing.T) {
 	}
 	out := buf.String()
 
-	// The provider leaf entry (walked) carries its composite ReturnType; the
-	// nested service group renders as a summary-only heading; the nested
-	// methods render as full entries with signatures.
+	// The provider leaf entry (walked, H4) carries its composite ReturnType; the
+	// nested service group renders as a summary-only H5 heading; the nested
+	// methods render as full H6 entries — numbers and heading levels both track
+	// the dotted-path depth.
 	for _, w := range []string{
 		"#### 17.1.1 cloud.prov",
 		"{ svc(): { get(): Promise<unknown> } }",
-		"#### 17.1.2 cloud.prov.svc",
+		"##### 17.1.1.1 cloud.prov.svc",
 		"A service group.",
-		"#### 17.1.3 cloud.prov.svc.getOne",
+		"###### 17.1.1.1.1 cloud.prov.svc.getOne",
 		"getOne(): Promise<unknown>",
 		"**Returns:** the thing",
-		"#### 17.1.4 cloud.prov.svc.putOne",
+		"###### 17.1.1.1.2 cloud.prov.svc.putOne",
 		"putOne(id: string): void",
 	} {
 		if !strings.Contains(out, w) {
@@ -154,9 +157,9 @@ func TestWriteReference_OrphanChildren(t *testing.T) {
 	// The service-group container is summary-only: no signature fence directly
 	// under its heading. Verify the heading is immediately followed by the
 	// summary paragraph, not a fenced block.
-	if i := strings.Index(out, "#### 17.1.2 cloud.prov.svc\n"); i >= 0 {
-		after := out[i+len("#### 17.1.2 cloud.prov.svc\n"):]
-		if strings.HasPrefix(after, "\n```") {
+	const svcHeading = "##### 17.1.1.1 cloud.prov.svc\n"
+	if i := strings.Index(out, svcHeading); i >= 0 {
+		if after := out[i+len(svcHeading):]; strings.HasPrefix(after, "\n```") {
 			t.Errorf("service-group container must not emit a signature fence\n---\n%s", out)
 		}
 	}

@@ -8,7 +8,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
-## [0.90.1] — 2026-07-13
+### Changed
+- **MANUAL: §17 binding reference is now hierarchical.** The generated reference
+  numbers and levels each member by its real dotted-path depth — e.g.
+  `17.2.1 cloud.aws` (H4) → `17.2.1.1 cloud.aws.cloudwatch` (H5) →
+  `17.2.1.1.1 cloud.aws.cloudwatch.describeAlarms` (H6) — instead of a flat
+  per-namespace counter that rendered every member at the same level. This
+  applies to every namespace with nested members (`net`, `services`, `text`,
+  `cloud`, …), so the section numbers and heading weights now mirror the API
+  structure, and the PDF TOC (`--toc-depth` raised 4 → 6) shows the full tree.
+
+
 
 ### Changed
 - **MANUAL: new in-depth `cloud` guide (§5.14).** The `cloud` namespace now has a

@@ -8245,7 +8245,9 @@ Probe an audio file's metadata without returning samples. Detects the container 
 const meta = audio.info("song.flac"); // { format: "flac", sampleRate: 44100, ... }
 ```
 
-#### 17.1.5 audio.stego.capacity
+#### 17.1.5 audio.stego
+
+##### 17.1.5.1 audio.stego.capacity
 
 ```
 capacity(cover: string | Uint8Array, opts?: { bits?: number }): { bytes: number; bits: number }
@@ -8266,7 +8268,7 @@ Report the maximum payload size in bytes a WAV carrier can hold via LSB steganog
 const room = audio.stego.capacity("song.wav", { bits: 4 }).bytes;
 ```
 
-#### 17.1.6 audio.stego.embed
+##### 17.1.5.2 audio.stego.embed
 
 ```
 embed(cover: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string; bits?: number }): { bytes: Uint8Array } | { path: string }
@@ -8288,7 +8290,7 @@ Hide a payload in a WAV audio file using least-significant-bit steganography on 
 const out = audio.stego.embed("song.wav", "secret", { password: "p" });
 ```
 
-#### 17.1.7 audio.stego.extract
+##### 17.1.5.3 audio.stego.extract
 
 ```
 extract(cover: string | Uint8Array, opts?: { password?: string }): string | Uint8Array
@@ -8407,11 +8409,11 @@ Amazon Web Services provider. cloud.aws(opts?) returns a handle with typed servi
 const who = await cloud.aws({ region: "eu-north-1" }).sts().getCallerIdentity({});
 ```
 
-#### 17.2.2 cloud.aws.cloudwatch
+##### 17.2.1.1 cloud.aws.cloudwatch
 
 CloudWatch — metrics and alarms (github.com/aws/aws-sdk-go-v2/service/cloudwatch). Reached via `cloud.aws({...}).cloudwatch()`; each method below is called on that service handle.
 
-#### 17.2.3 cloud.aws.cloudwatch.describeAlarms
+###### 17.2.1.1.1 cloud.aws.cloudwatch.describeAlarms
 
 ```
 describeAlarms(opts?: { alarmNames?: string[] }): Promise<Record<string, unknown>>
@@ -8431,7 +8433,7 @@ Describe CloudWatch alarms, optionally filtered to specific alarm names.
 const r = await cloud.aws({ region: "eu-north-1" }).cloudwatch().describeAlarms();
 ```
 
-#### 17.2.4 cloud.aws.cloudwatch.getMetricData
+###### 17.2.1.1.2 cloud.aws.cloudwatch.getMetricData
 
 ```
 getMetricData(opts: Record<string, unknown>): Promise<Record<string, unknown>>
@@ -8454,7 +8456,7 @@ const r = await cloud.aws({ region: "eu-north-1" }).cloudwatch().getMetricData({
 });
 ```
 
-#### 17.2.5 cloud.aws.cloudwatch.getMetricStatistics
+###### 17.2.1.1.3 cloud.aws.cloudwatch.getMetricStatistics
 
 ```
 getMetricStatistics(opts: Record<string, unknown>): Promise<Record<string, unknown>>
@@ -8476,7 +8478,7 @@ const r = await cloud.aws({ region: "eu-north-1" }).cloudwatch().getMetricStatis
 });
 ```
 
-#### 17.2.6 cloud.aws.cloudwatch.listMetrics
+###### 17.2.1.1.4 cloud.aws.cloudwatch.listMetrics
 
 ```
 listMetrics(opts?: { namespace?: string; metricName?: string }): Promise<Record<string, unknown>>
@@ -8496,7 +8498,7 @@ List published CloudWatch metrics, optionally filtered by namespace/metric name.
 const r = await cloud.aws({ region: "eu-north-1" }).cloudwatch().listMetrics({ namespace: "AWS/EC2" });
 ```
 
-#### 17.2.7 cloud.aws.cloudwatch.putMetricData
+###### 17.2.1.1.5 cloud.aws.cloudwatch.putMetricData
 
 ```
 putMetricData(opts: Record<string, unknown>): Promise<Record<string, unknown>>
@@ -8518,11 +8520,11 @@ await cloud.aws({ region: "eu-north-1" }).cloudwatch().putMetricData({
 });
 ```
 
-#### 17.2.8 cloud.aws.cloudwatchlogs
+##### 17.2.1.2 cloud.aws.cloudwatchlogs
 
 CloudWatch Logs — log groups, streams, and Logs Insights queries (github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs). Reached via `cloud.aws({...}).cloudwatchlogs()`; each method below is called on that service handle.
 
-#### 17.2.9 cloud.aws.cloudwatchlogs.describeLogGroups
+###### 17.2.1.2.1 cloud.aws.cloudwatchlogs.describeLogGroups
 
 ```
 describeLogGroups(opts?: { prefix?: string }): Promise<Record<string, unknown>>
@@ -8542,7 +8544,7 @@ List log groups, optionally filtered by name prefix.
 const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().describeLogGroups({ prefix: "/aws/lambda/" });
 ```
 
-#### 17.2.10 cloud.aws.cloudwatchlogs.describeLogStreams
+###### 17.2.1.2.2 cloud.aws.cloudwatchlogs.describeLogStreams
 
 ```
 describeLogStreams(opts: { logGroupName: string }): Promise<Record<string, unknown>>
@@ -8562,7 +8564,7 @@ List the log streams within a log group.
 const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().describeLogStreams({ logGroupName: "/aws/lambda/my-fn" });
 ```
 
-#### 17.2.11 cloud.aws.cloudwatchlogs.filterLogEvents
+###### 17.2.1.2.3 cloud.aws.cloudwatchlogs.filterLogEvents
 
 ```
 filterLogEvents(opts: { logGroupName: string; filterPattern?: string }): Promise<Record<string, unknown>>
@@ -8582,7 +8584,7 @@ Search log events across all (or filtered) streams in a log group.
 const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().filterLogEvents({ logGroupName: "/aws/lambda/my-fn", filterPattern: "ERROR" });
 ```
 
-#### 17.2.12 cloud.aws.cloudwatchlogs.getLogEvents
+###### 17.2.1.2.4 cloud.aws.cloudwatchlogs.getLogEvents
 
 ```
 getLogEvents(opts: { logGroupName: string; logStreamName: string; limit?: number }): Promise<Record<string, unknown>>
@@ -8602,7 +8604,7 @@ Fetch log events from a specific log stream, in chronological order.
 const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().getLogEvents({ logGroupName: "/aws/lambda/my-fn", logStreamName: "2026/07/13/[$LATEST]abc123" });
 ```
 
-#### 17.2.13 cloud.aws.cloudwatchlogs.getQueryResults
+###### 17.2.1.2.5 cloud.aws.cloudwatchlogs.getQueryResults
 
 ```
 getQueryResults(opts: { queryId: string }): Promise<Record<string, unknown>>
@@ -8622,7 +8624,7 @@ Poll for a Logs Insights query's results and status.
 const r = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().getQueryResults({ queryId: QueryId });
 ```
 
-#### 17.2.14 cloud.aws.cloudwatchlogs.startQuery
+###### 17.2.1.2.6 cloud.aws.cloudwatchlogs.startQuery
 
 ```
 startQuery(opts: { logGroupName: string; queryString: string; startTime: number; endTime: number }): Promise<Record<string, unknown>>
@@ -8645,11 +8647,11 @@ const { QueryId } = await cloud.aws({ region: "eu-north-1" }).cloudwatchlogs().s
 });
 ```
 
-#### 17.2.15 cloud.aws.ec2
+##### 17.2.1.3 cloud.aws.ec2
 
 EC2 — instances, volumes, and availability zones (github.com/aws/aws-sdk-go-v2/service/ec2). Reached via `cloud.aws({...}).ec2()`; each method below is called on that service handle.
 
-#### 17.2.16 cloud.aws.ec2.describeAvailabilityZones
+###### 17.2.1.3.1 cloud.aws.ec2.describeAvailabilityZones
 
 ```
 describeAvailabilityZones(opts?: Record<string, never>): Promise<Record<string, unknown>>
@@ -8669,7 +8671,7 @@ List the availability zones available in the configured region.
 const r = await cloud.aws({ region: "eu-north-1" }).ec2().describeAvailabilityZones();
 ```
 
-#### 17.2.17 cloud.aws.ec2.describeInstances
+###### 17.2.1.3.2 cloud.aws.ec2.describeInstances
 
 ```
 describeInstances(opts?: { instanceIds?: string[] }): Promise<Record<string, unknown>>
@@ -8689,7 +8691,7 @@ Describe EC2 instances, optionally filtered to specific instance ids.
 const r = await cloud.aws({ region: "eu-north-1" }).ec2().describeInstances();
 ```
 
-#### 17.2.18 cloud.aws.ec2.describeVolumes
+###### 17.2.1.3.3 cloud.aws.ec2.describeVolumes
 
 ```
 describeVolumes(opts?: { volumeIds?: string[] }): Promise<Record<string, unknown>>
@@ -8709,7 +8711,7 @@ Describe EBS volumes, optionally filtered to specific volume ids.
 const r = await cloud.aws({ region: "eu-north-1" }).ec2().describeVolumes();
 ```
 
-#### 17.2.19 cloud.aws.ec2.runInstances
+###### 17.2.1.3.4 cloud.aws.ec2.runInstances
 
 ```
 runInstances(opts: { imageId: string; instanceType: string; minCount?: number; maxCount?: number }): Promise<Record<string, unknown>>
@@ -8729,7 +8731,7 @@ Launch one or more EC2 instances from an AMI.
 const r = await cloud.aws({ region: "eu-north-1" }).ec2().runInstances({ imageId: "ami-0123456789abcdef0", instanceType: "t3.micro" });
 ```
 
-#### 17.2.20 cloud.aws.ec2.startInstances
+###### 17.2.1.3.5 cloud.aws.ec2.startInstances
 
 ```
 startInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>
@@ -8749,7 +8751,7 @@ Start stopped EC2 instances.
 await cloud.aws({ region: "eu-north-1" }).ec2().startInstances({ instanceIds: ["i-0123456789abcdef0"] });
 ```
 
-#### 17.2.21 cloud.aws.ec2.stopInstances
+###### 17.2.1.3.6 cloud.aws.ec2.stopInstances
 
 ```
 stopInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>
@@ -8769,7 +8771,7 @@ Stop running EC2 instances.
 await cloud.aws({ region: "eu-north-1" }).ec2().stopInstances({ instanceIds: ["i-0123456789abcdef0"] });
 ```
 
-#### 17.2.22 cloud.aws.ec2.terminateInstances
+###### 17.2.1.3.7 cloud.aws.ec2.terminateInstances
 
 ```
 terminateInstances(opts: { instanceIds: string[] }): Promise<Record<string, unknown>>
@@ -8789,11 +8791,11 @@ Terminate EC2 instances.
 await cloud.aws({ region: "eu-north-1" }).ec2().terminateInstances({ instanceIds: ["i-0123456789abcdef0"] });
 ```
 
-#### 17.2.23 cloud.aws.iam
+##### 17.2.1.4 cloud.aws.iam
 
 IAM — users, roles, and policies (github.com/aws/aws-sdk-go-v2/service/iam). Reached via `cloud.aws({...}).iam()`; each method below is called on that service handle.
 
-#### 17.2.24 cloud.aws.iam.attachUserPolicy
+###### 17.2.1.4.1 cloud.aws.iam.attachUserPolicy
 
 ```
 attachUserPolicy(opts: { userName: string; policyArn: string }): Promise<Record<string, unknown>>
@@ -8813,7 +8815,7 @@ Attach a managed IAM policy to a user.
 await cloud.aws({ region: "eu-north-1" }).iam().attachUserPolicy({ userName: "new-user", policyArn: "arn:aws:iam::aws:policy/ReadOnlyAccess" });
 ```
 
-#### 17.2.25 cloud.aws.iam.createUser
+###### 17.2.1.4.2 cloud.aws.iam.createUser
 
 ```
 createUser(opts: { userName: string }): Promise<Record<string, unknown>>
@@ -8833,7 +8835,7 @@ Create an IAM user.
 await cloud.aws({ region: "eu-north-1" }).iam().createUser({ userName: "new-user" });
 ```
 
-#### 17.2.26 cloud.aws.iam.deleteUser
+###### 17.2.1.4.3 cloud.aws.iam.deleteUser
 
 ```
 deleteUser(opts: { userName: string }): Promise<Record<string, unknown>>
@@ -8853,7 +8855,7 @@ Delete an IAM user.
 await cloud.aws({ region: "eu-north-1" }).iam().deleteUser({ userName: "new-user" });
 ```
 
-#### 17.2.27 cloud.aws.iam.getRole
+###### 17.2.1.4.4 cloud.aws.iam.getRole
 
 ```
 getRole(opts: { roleName: string }): Promise<Record<string, unknown>>
@@ -8873,7 +8875,7 @@ Get an IAM role's metadata.
 const role = await cloud.aws({ region: "eu-north-1" }).iam().getRole({ roleName: "my-role" });
 ```
 
-#### 17.2.28 cloud.aws.iam.getUser
+###### 17.2.1.4.5 cloud.aws.iam.getUser
 
 ```
 getUser(opts?: { userName?: string }): Promise<Record<string, unknown>>
@@ -8893,7 +8895,7 @@ Get an IAM user's metadata.
 const me = await cloud.aws({ region: "eu-north-1" }).iam().getUser();
 ```
 
-#### 17.2.29 cloud.aws.iam.listPolicies
+###### 17.2.1.4.6 cloud.aws.iam.listPolicies
 
 ```
 listPolicies(opts?: Record<string, never>): Promise<Record<string, unknown>>
@@ -8913,7 +8915,7 @@ List the customer-managed and AWS-managed IAM policies visible to the account.
 const r = await cloud.aws({ region: "eu-north-1" }).iam().listPolicies();
 ```
 
-#### 17.2.30 cloud.aws.iam.listRoles
+###### 17.2.1.4.7 cloud.aws.iam.listRoles
 
 ```
 listRoles(opts?: Record<string, never>): Promise<Record<string, unknown>>
@@ -8933,7 +8935,7 @@ List the IAM roles in the account.
 const r = await cloud.aws({ region: "eu-north-1" }).iam().listRoles();
 ```
 
-#### 17.2.31 cloud.aws.iam.listUsers
+###### 17.2.1.4.8 cloud.aws.iam.listUsers
 
 ```
 listUsers(opts?: Record<string, never>): Promise<Record<string, unknown>>
@@ -8953,11 +8955,11 @@ List the IAM users in the account.
 const r = await cloud.aws({ region: "eu-north-1" }).iam().listUsers();
 ```
 
-#### 17.2.32 cloud.aws.lambda
+##### 17.2.1.5 cloud.aws.lambda
 
 Lambda — functions and invocations (github.com/aws/aws-sdk-go-v2/service/lambda). Reached via `cloud.aws({...}).lambda()`; each method below is called on that service handle.
 
-#### 17.2.33 cloud.aws.lambda.createFunction
+###### 17.2.1.5.1 cloud.aws.lambda.createFunction
 
 ```
 createFunction(opts: { functionName: string; role: string; runtime: string; handler: string; zipFile?: string | Uint8Array | ArrayBuffer; s3Bucket?: string; s3Key?: string }): Promise<Record<string, unknown>>
@@ -8977,7 +8979,7 @@ Create a Lambda function, from a zip file uploaded inline or a reference to one 
 await cloud.aws({ region: "eu-north-1" }).lambda().createFunction({ functionName: "my-fn", role: "arn:aws:iam::123456789012:role/lambda-role", runtime: "nodejs20.x", handler: "index.handler", s3Bucket: "my-bucket", s3Key: "my-fn.zip" });
 ```
 
-#### 17.2.34 cloud.aws.lambda.deleteFunction
+###### 17.2.1.5.2 cloud.aws.lambda.deleteFunction
 
 ```
 deleteFunction(opts: { functionName: string }): Promise<Record<string, unknown>>
@@ -8997,7 +8999,7 @@ Delete a Lambda function.
 await cloud.aws({ region: "eu-north-1" }).lambda().deleteFunction({ functionName: "my-fn" });
 ```
 
-#### 17.2.35 cloud.aws.lambda.getFunction
+###### 17.2.1.5.3 cloud.aws.lambda.getFunction
 
 ```
 getFunction(opts: { functionName: string }): Promise<Record<string, unknown>>
@@ -9017,7 +9019,7 @@ Get a Lambda function's configuration and code location.
 const fn = await cloud.aws({ region: "eu-north-1" }).lambda().getFunction({ functionName: "my-fn" });
 ```
 
-#### 17.2.36 cloud.aws.lambda.invoke
+###### 17.2.1.5.4 cloud.aws.lambda.invoke
 
 ```
 invoke(opts: { functionName: string; payload?: string | Record<string, unknown> }): Promise<{ statusCode: number; payload: string; functionError?: string; executedVersion?: string }>
@@ -9038,7 +9040,7 @@ const r = await cloud.aws({ region: "eu-north-1" }).lambda().invoke({ functionNa
 runtime.log(JSON.parse(r.payload));
 ```
 
-#### 17.2.37 cloud.aws.lambda.listFunctions
+###### 17.2.1.5.5 cloud.aws.lambda.listFunctions
 
 ```
 listFunctions(opts?: Record<string, never>): Promise<Record<string, unknown>>
@@ -9058,11 +9060,11 @@ List the Lambda functions in the account/region.
 const r = await cloud.aws({ region: "eu-north-1" }).lambda().listFunctions();
 ```
 
-#### 17.2.38 cloud.aws.s3
+##### 17.2.1.6 cloud.aws.s3
 
 S3 — buckets and objects (github.com/aws/aws-sdk-go-v2/service/s3). Reached via `cloud.aws({...}).s3()`; each method below is called on that service handle.
 
-#### 17.2.39 cloud.aws.s3.createBucket
+###### 17.2.1.6.1 cloud.aws.s3.createBucket
 
 ```
 createBucket(opts: { bucket: string }): Promise<Record<string, unknown>>
@@ -9082,7 +9084,7 @@ Create an S3 bucket.
 await cloud.aws({ region: "eu-north-1" }).s3().createBucket({ bucket: "my-new-bucket" });
 ```
 
-#### 17.2.40 cloud.aws.s3.deleteBucket
+###### 17.2.1.6.2 cloud.aws.s3.deleteBucket
 
 ```
 deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>
@@ -9102,7 +9104,7 @@ Delete an S3 bucket. The bucket must be empty.
 await cloud.aws({ region: "eu-north-1" }).s3().deleteBucket({ bucket: "my-bucket" });
 ```
 
-#### 17.2.41 cloud.aws.s3.deleteObject
+###### 17.2.1.6.3 cloud.aws.s3.deleteObject
 
 ```
 deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>
@@ -9122,7 +9124,7 @@ Delete an object.
 await cloud.aws({ region: "eu-north-1" }).s3().deleteObject({ bucket: "my-bucket", key: "logs/a.txt" });
 ```
 
-#### 17.2.42 cloud.aws.s3.getObject
+###### 17.2.1.6.4 cloud.aws.s3.getObject
 
 ```
 getObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>
@@ -9144,7 +9146,7 @@ const bytes = new Uint8Array(res.bytes);
 runtime.log(bytes.length);
 ```
 
-#### 17.2.43 cloud.aws.s3.headObject
+###### 17.2.1.6.5 cloud.aws.s3.headObject
 
 ```
 headObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>
@@ -9164,7 +9166,7 @@ Get an object's metadata without downloading its content.
 const meta = await cloud.aws({ region: "eu-north-1" }).s3().headObject({ bucket: "my-bucket", key: "logs/a.txt" });
 ```
 
-#### 17.2.44 cloud.aws.s3.listBuckets
+###### 17.2.1.6.6 cloud.aws.s3.listBuckets
 
 ```
 listBuckets(opts?: Record<string, never>): Promise<Record<string, unknown>>
@@ -9184,7 +9186,7 @@ List the S3 buckets owned by the caller.
 const r = await cloud.aws({ region: "eu-north-1" }).s3().listBuckets();
 ```
 
-#### 17.2.45 cloud.aws.s3.listObjects
+###### 17.2.1.6.7 cloud.aws.s3.listObjects
 
 ```
 listObjects(opts: { bucket: string; prefix?: string }): Promise<Record<string, unknown>>
@@ -9204,7 +9206,7 @@ List objects in a bucket, optionally filtered by key prefix.
 const r = await cloud.aws({ region: "eu-north-1" }).s3().listObjects({ bucket: "my-bucket", prefix: "logs/" });
 ```
 
-#### 17.2.46 cloud.aws.s3.putObject
+###### 17.2.1.6.8 cloud.aws.s3.putObject
 
 ```
 putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>
@@ -9224,11 +9226,11 @@ Upload/overwrite an object's content.
 await cloud.aws({ region: "eu-north-1" }).s3().putObject({ bucket: "my-bucket", key: "logs/a.txt", body: "hello" });
 ```
 
-#### 17.2.47 cloud.aws.secretsmanager
+##### 17.2.1.7 cloud.aws.secretsmanager
 
 Secrets Manager — secret containers and their values (github.com/aws/aws-sdk-go-v2/service/secretsmanager). Reached via `cloud.aws({...}).secretsmanager()`; each method below is called on that service handle.
 
-#### 17.2.48 cloud.aws.secretsmanager.createSecret
+###### 17.2.1.7.1 cloud.aws.secretsmanager.createSecret
 
 ```
 createSecret(opts: { name: string; secretString?: string }): Promise<Record<string, unknown>>
@@ -9248,7 +9250,7 @@ Create a secret, optionally with an initial value.
 await cloud.aws({ region: "eu-north-1" }).secretsmanager().createSecret({ name: "db-password", secretString: "s3cr3t" });
 ```
 
-#### 17.2.49 cloud.aws.secretsmanager.deleteSecret
+###### 17.2.1.7.2 cloud.aws.secretsmanager.deleteSecret
 
 ```
 deleteSecret(opts: { secretId: string }): Promise<Record<string, unknown>>
@@ -9268,7 +9270,7 @@ Delete a secret.
 await cloud.aws({ region: "eu-north-1" }).secretsmanager().deleteSecret({ secretId: "db-password" });
 ```
 
-#### 17.2.50 cloud.aws.secretsmanager.describeSecret
+###### 17.2.1.7.3 cloud.aws.secretsmanager.describeSecret
 
 ```
 describeSecret(opts: { secretId: string }): Promise<Record<string, unknown>>
@@ -9288,7 +9290,7 @@ Get a secret's metadata (not its value — use getSecretValue for that).
 const secret = await cloud.aws({ region: "eu-north-1" }).secretsmanager().describeSecret({ secretId: "db-password" });
 ```
 
-#### 17.2.51 cloud.aws.secretsmanager.getSecretValue
+###### 17.2.1.7.4 cloud.aws.secretsmanager.getSecretValue
 
 ```
 getSecretValue(opts: { secretId: string }): Promise<{ value: string }>
@@ -9309,7 +9311,7 @@ const { value } = await cloud.aws({ region: "eu-north-1" }).secretsmanager().get
 runtime.log(value);
 ```
 
-#### 17.2.52 cloud.aws.secretsmanager.listSecrets
+###### 17.2.1.7.5 cloud.aws.secretsmanager.listSecrets
 
 ```
 listSecrets(opts?: Record<string, never>): Promise<Record<string, unknown>>
@@ -9329,7 +9331,7 @@ List the secrets in the account (metadata only — not their values).
 const r = await cloud.aws({ region: "eu-north-1" }).secretsmanager().listSecrets();
 ```
 
-#### 17.2.53 cloud.aws.secretsmanager.putSecretValue
+###### 17.2.1.7.6 cloud.aws.secretsmanager.putSecretValue
 
 ```
 putSecretValue(opts: { secretId: string; secretString: string }): Promise<Record<string, unknown>>
@@ -9349,11 +9351,11 @@ Add a new value to an existing secret (creates a new version).
 await cloud.aws({ region: "eu-north-1" }).secretsmanager().putSecretValue({ secretId: "db-password", secretString: "n3w-s3cr3t" });
 ```
 
-#### 17.2.54 cloud.aws.sqs
+##### 17.2.1.8 cloud.aws.sqs
 
 SQS — queues and messages (github.com/aws/aws-sdk-go-v2/service/sqs). Reached via `cloud.aws({...}).sqs()`; each method below is called on that service handle.
 
-#### 17.2.55 cloud.aws.sqs.createQueue
+###### 17.2.1.8.1 cloud.aws.sqs.createQueue
 
 ```
 createQueue(opts: { queueName: string }): Promise<Record<string, unknown>>
@@ -9373,7 +9375,7 @@ Create a standard or FIFO SQS queue.
 const r = await cloud.aws({ region: "eu-north-1" }).sqs().createQueue({ queueName: "my-queue" });
 ```
 
-#### 17.2.56 cloud.aws.sqs.deleteMessage
+###### 17.2.1.8.2 cloud.aws.sqs.deleteMessage
 
 ```
 deleteMessage(opts: { queueUrl: string; receiptHandle: string }): Promise<Record<string, unknown>>
@@ -9393,7 +9395,7 @@ Delete a message from a queue after successful processing.
 await cloud.aws({ region: "eu-north-1" }).sqs().deleteMessage({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue", receiptHandle: r.Messages[0].ReceiptHandle });
 ```
 
-#### 17.2.57 cloud.aws.sqs.deleteQueue
+###### 17.2.1.8.3 cloud.aws.sqs.deleteQueue
 
 ```
 deleteQueue(opts: { queueUrl: string }): Promise<Record<string, unknown>>
@@ -9413,7 +9415,7 @@ Delete a queue.
 await cloud.aws({ region: "eu-north-1" }).sqs().deleteQueue({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue" });
 ```
 
-#### 17.2.58 cloud.aws.sqs.getQueueAttributes
+###### 17.2.1.8.4 cloud.aws.sqs.getQueueAttributes
 
 ```
 getQueueAttributes(opts: { queueUrl: string; attributeNames?: string[] }): Promise<Record<string, unknown>>
@@ -9433,7 +9435,7 @@ Get a queue's attributes.
 const r = await cloud.aws({ region: "eu-north-1" }).sqs().getQueueAttributes({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue", attributeNames: ["All"] });
 ```
 
-#### 17.2.59 cloud.aws.sqs.listQueues
+###### 17.2.1.8.5 cloud.aws.sqs.listQueues
 
 ```
 listQueues(opts?: { prefix?: string }): Promise<Record<string, unknown>>
@@ -9453,7 +9455,7 @@ List queue URLs, optionally filtered by name prefix.
 const r = await cloud.aws({ region: "eu-north-1" }).sqs().listQueues({ prefix: "orders-" });
 ```
 
-#### 17.2.60 cloud.aws.sqs.receiveMessage
+###### 17.2.1.8.6 cloud.aws.sqs.receiveMessage
 
 ```
 receiveMessage(opts: { queueUrl: string; maxMessages?: number }): Promise<Record<string, unknown>>
@@ -9473,7 +9475,7 @@ Receive (poll for) messages from a queue.
 const r = await cloud.aws({ region: "eu-north-1" }).sqs().receiveMessage({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue", maxMessages: 5 });
 ```
 
-#### 17.2.61 cloud.aws.sqs.sendMessage
+###### 17.2.1.8.7 cloud.aws.sqs.sendMessage
 
 ```
 sendMessage(opts: { queueUrl: string; messageBody: string }): Promise<Record<string, unknown>>
@@ -9493,11 +9495,11 @@ Send a message to a queue.
 await cloud.aws({ region: "eu-north-1" }).sqs().sendMessage({ queueUrl: "https://sqs.eu-north-1.amazonaws.com/123456789012/my-queue", messageBody: "hello" });
 ```
 
-#### 17.2.62 cloud.aws.sts
+##### 17.2.1.9 cloud.aws.sts
 
 STS — caller identity and temporary credentials (github.com/aws/aws-sdk-go-v2/service/sts). Reached via `cloud.aws({...}).sts()`; each method below is called on that service handle.
 
-#### 17.2.63 cloud.aws.sts.assumeRole
+###### 17.2.1.9.1 cloud.aws.sts.assumeRole
 
 ```
 assumeRole(opts: { roleArn: string; roleSessionName: string; durationSeconds?: number }): Promise<Record<string, unknown>>
@@ -9517,7 +9519,7 @@ Assume an IAM role, returning temporary credentials.
 const r = await cloud.aws({ region: "eu-north-1" }).sts().assumeRole({ roleArn: "arn:aws:iam::123456789012:role/my-role", roleSessionName: "my-session" });
 ```
 
-#### 17.2.64 cloud.aws.sts.getCallerIdentity
+###### 17.2.1.9.2 cloud.aws.sts.getCallerIdentity
 
 ```
 getCallerIdentity(opts?: Record<string, never>): Promise<Record<string, unknown>>
@@ -9537,7 +9539,7 @@ Get the identity behind the credentials currently in use.
 const who = await cloud.aws({ region: "eu-north-1" }).sts().getCallerIdentity({});
 ```
 
-#### 17.2.65 cloud.aws.sts.getSessionToken
+###### 17.2.1.9.3 cloud.aws.sts.getSessionToken
 
 ```
 getSessionToken(opts?: { durationSeconds?: number }): Promise<Record<string, unknown>>
@@ -9557,7 +9559,7 @@ Get temporary credentials for the current principal.
 const r = await cloud.aws({ region: "eu-north-1" }).sts().getSessionToken();
 ```
 
-#### 17.2.66 cloud.azure
+#### 17.2.2 cloud.azure
 
 ```
 azure(opts?: { subscriptionId?: string; tenantId?: string; clientId?: string; clientSecret?: string }): {
@@ -9616,11 +9618,11 @@ const kv = az.keyvaultSecrets("https://my-vault.vault.azure.net");
 const { value } = await kv.getSecret({ name: "db-password" });
 ```
 
-#### 17.2.67 cloud.azure.blob
+##### 17.2.2.1 cloud.azure.blob
 
 Blob Storage — containers and blobs on a storage account (azure-sdk-for-go azblob.Client). Data-plane: reached via `cloud.azure({...}).blob(accountUrl)`, where accountUrl is the target storage account's blob endpoint (e.g. https://myaccount.blob.core.windows.net) supplied directly by the caller rather than resolved from the subscription — no subscription is required for these methods. Each method below is called on that service handle.
 
-#### 17.2.68 cloud.azure.blob.deleteBlob
+###### 17.2.2.1.1 cloud.azure.blob.deleteBlob
 
 ```
 deleteBlob(opts: { container: string; blob: string }): Promise<Record<string, unknown>>
@@ -9640,7 +9642,7 @@ Delete a blob.
 await cloud.azure({}).blob("https://myaccount.blob.core.windows.net").deleteBlob({ container: "logs", blob: "a.txt" });
 ```
 
-#### 17.2.69 cloud.azure.blob.download
+###### 17.2.2.1.2 cloud.azure.blob.download
 
 ```
 download(opts: { container: string; blob: string }): Promise<{ bytes: number[] }>
@@ -9663,7 +9665,7 @@ const bytes = new Uint8Array(res.bytes);
 runtime.log(bytes.length);
 ```
 
-#### 17.2.70 cloud.azure.blob.listBlobs
+###### 17.2.2.1.3 cloud.azure.blob.listBlobs
 
 ```
 listBlobs(opts: { container: string }): Promise<{ value?: Array<Record<string, unknown>> }>
@@ -9683,7 +9685,7 @@ List every blob in a container (flat listing — no hierarchy/delimiter), paging
 const r = await cloud.azure({}).blob("https://myaccount.blob.core.windows.net").listBlobs({ container: "logs" });
 ```
 
-#### 17.2.71 cloud.azure.blob.listContainers
+###### 17.2.2.1.4 cloud.azure.blob.listContainers
 
 ```
 listContainers(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>
@@ -9705,7 +9707,7 @@ const r = await blob.listContainers();
 runtime.log(r.value?.length ?? 0);
 ```
 
-#### 17.2.72 cloud.azure.blob.upload
+###### 17.2.2.1.5 cloud.azure.blob.upload
 
 ```
 upload(opts: { container: string; blob: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>
@@ -9725,7 +9727,7 @@ Upload a blob's content, creating or overwriting it. Bodies up to 256 MiB are se
 await cloud.azure({}).blob("https://myaccount.blob.core.windows.net").upload({ container: "logs", blob: "a.txt", body: "hello" });
 ```
 
-#### 17.2.73 cloud.azure.call
+##### 17.2.2.2 cloud.azure.call
 
 ```
 call(opts: { path: string; apiVersion: string; method?: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>
@@ -9750,11 +9752,11 @@ const vms = await az.call({
 });
 ```
 
-#### 17.2.74 cloud.azure.compute
+##### 17.2.2.3 cloud.azure.compute
 
 Virtual Machines — ARM (subscription-scoped) compute instances (azure-sdk-for-go armcompute.VirtualMachinesClient). Reached via `cloud.azure({...}).compute()`; each method below is called on that service handle.
 
-#### 17.2.75 cloud.azure.compute.deallocate
+###### 17.2.2.3.1 cloud.azure.compute.deallocate
 
 ```
 deallocate(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
@@ -9774,7 +9776,7 @@ Deallocate a virtual machine — releases the compute resources (and their billi
 await cloud.azure({ subscriptionId: "..." }).compute().deallocate({ resourceGroup: "my-rg", name: "web-1" });
 ```
 
-#### 17.2.76 cloud.azure.compute.delete
+###### 17.2.2.3.2 cloud.azure.compute.delete
 
 ```
 delete(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
@@ -9794,7 +9796,7 @@ Delete a virtual machine. Long-running ARM operation; the call blocks (polls) un
 await cloud.azure({ subscriptionId: "..." }).compute().delete({ resourceGroup: "my-rg", name: "web-1" });
 ```
 
-#### 17.2.77 cloud.azure.compute.getVirtualMachine
+###### 17.2.2.3.3 cloud.azure.compute.getVirtualMachine
 
 ```
 getVirtualMachine(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
@@ -9814,7 +9816,7 @@ Fetch a single virtual machine's metadata.
 const vm = await cloud.azure({ subscriptionId: "..." }).compute().getVirtualMachine({ resourceGroup: "my-rg", name: "web-1" });
 ```
 
-#### 17.2.78 cloud.azure.compute.listVirtualMachines
+###### 17.2.2.3.4 cloud.azure.compute.listVirtualMachines
 
 ```
 listVirtualMachines(opts?: { resourceGroup?: string }): Promise<{ value?: Array<Record<string, unknown>> }>
@@ -9834,7 +9836,7 @@ List virtual machines — scoped to a single resource group when one is given, e
 const r = await cloud.azure({ subscriptionId: "..." }).compute().listVirtualMachines({ resourceGroup: "my-rg" });
 ```
 
-#### 17.2.79 cloud.azure.compute.powerOff
+###### 17.2.2.3.5 cloud.azure.compute.powerOff
 
 ```
 powerOff(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
@@ -9854,7 +9856,7 @@ Power off a running virtual machine. The VM stays allocated and keeps incurring 
 await cloud.azure({ subscriptionId: "..." }).compute().powerOff({ resourceGroup: "my-rg", name: "web-1" });
 ```
 
-#### 17.2.80 cloud.azure.compute.start
+###### 17.2.2.3.6 cloud.azure.compute.start
 
 ```
 start(opts: { resourceGroup: string; name: string }): Promise<Record<string, unknown>>
@@ -9874,11 +9876,11 @@ Start a stopped virtual machine. Long-running ARM operation; the call blocks (po
 await cloud.azure({ subscriptionId: "..." }).compute().start({ resourceGroup: "my-rg", name: "web-1" });
 ```
 
-#### 17.2.81 cloud.azure.keyvaultSecrets
+##### 17.2.2.4 cloud.azure.keyvaultSecrets
 
 Key Vault Secrets — secret values and their versioned metadata in a vault (azure-sdk-for-go azsecrets.Client). Data-plane: reached via `cloud.azure({...}).keyvaultSecrets(vaultUrl)`, where vaultUrl is the target vault's endpoint (e.g. https://myvault.vault.azure.net) supplied directly by the caller rather than resolved from the subscription — no subscription is required for these methods. Each method below is called on that service handle.
 
-#### 17.2.82 cloud.azure.keyvaultSecrets.deleteSecret
+###### 17.2.2.4.1 cloud.azure.keyvaultSecrets.deleteSecret
 
 ```
 deleteSecret(opts: { name: string }): Promise<Record<string, unknown>>
@@ -9898,7 +9900,7 @@ Delete a secret and all of its versions.
 await cloud.azure({}).keyvaultSecrets("https://my-vault.vault.azure.net").deleteSecret({ name: "db-password" });
 ```
 
-#### 17.2.83 cloud.azure.keyvaultSecrets.getSecret
+###### 17.2.2.4.2 cloud.azure.keyvaultSecrets.getSecret
 
 ```
 getSecret(opts: { name: string }): Promise<{ value: string }>
@@ -9920,7 +9922,7 @@ const { value } = await kv.getSecret({ name: "db-password" });
 runtime.log(value);
 ```
 
-#### 17.2.84 cloud.azure.keyvaultSecrets.listSecrets
+###### 17.2.2.4.3 cloud.azure.keyvaultSecrets.listSecrets
 
 ```
 listSecrets(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>
@@ -9942,7 +9944,7 @@ const r = await kv.listSecrets();
 runtime.log(r.value?.length ?? 0);
 ```
 
-#### 17.2.85 cloud.azure.keyvaultSecrets.setSecret
+###### 17.2.2.4.4 cloud.azure.keyvaultSecrets.setSecret
 
 ```
 setSecret(opts: { name: string; value: string }): Promise<Record<string, unknown>>
@@ -9962,11 +9964,11 @@ Create a new version of a secret with the given value.
 await cloud.azure({}).keyvaultSecrets("https://my-vault.vault.azure.net").setSecret({ name: "db-password", value: "s3cr3t" });
 ```
 
-#### 17.2.86 cloud.azure.resourceGroups
+##### 17.2.2.5 cloud.azure.resourceGroups
 
 Resource Groups — ARM (subscription-scoped) container objects for organizing resources (azure-sdk-for-go armresources.ResourceGroupsClient). Reached via `cloud.azure({...}).resourceGroups()`; each method below is called on that service handle.
 
-#### 17.2.87 cloud.azure.resourceGroups.create
+###### 17.2.2.5.1 cloud.azure.resourceGroups.create
 
 ```
 create(opts: { name: string; location: string }): Promise<Record<string, unknown>>
@@ -9986,7 +9988,7 @@ Create a resource group, or update it if one with this name already exists (ARM'
 await cloud.azure({ subscriptionId: "..." }).resourceGroups().create({ name: "my-rg", location: "westeurope" });
 ```
 
-#### 17.2.88 cloud.azure.resourceGroups.delete
+###### 17.2.2.5.2 cloud.azure.resourceGroups.delete
 
 ```
 delete(opts: { name: string }): Promise<Record<string, unknown>>
@@ -10006,7 +10008,7 @@ Delete a resource group and everything in it. This is a long-running ARM operati
 await cloud.azure({ subscriptionId: "..." }).resourceGroups().delete({ name: "my-rg" });
 ```
 
-#### 17.2.89 cloud.azure.resourceGroups.get
+###### 17.2.2.5.3 cloud.azure.resourceGroups.get
 
 ```
 get(opts: { name: string }): Promise<Record<string, unknown>>
@@ -10026,7 +10028,7 @@ Fetch a single resource group by name.
 const rg = await cloud.azure({ subscriptionId: "..." }).resourceGroups().get({ name: "my-rg" });
 ```
 
-#### 17.2.90 cloud.azure.resourceGroups.list
+###### 17.2.2.5.4 cloud.azure.resourceGroups.list
 
 ```
 list(opts?: Record<string, never>): Promise<{ value?: Array<Record<string, unknown>> }>
@@ -10048,11 +10050,11 @@ const r = await az.resourceGroups().list();
 runtime.log(r.value?.length ?? 0);
 ```
 
-#### 17.2.91 cloud.azure.resources
+##### 17.2.2.6 cloud.azure.resources
 
 Generic Resources — ARM (subscription-scoped) cross-resource-type listing and lookup (azure-sdk-for-go armresources.Client — a distinct client from the resourceGroups() service above). Reached via `cloud.azure({...}).resources()`; each method below is called on that service handle.
 
-#### 17.2.92 cloud.azure.resources.getById
+###### 17.2.2.6.1 cloud.azure.resources.getById
 
 ```
 getById(opts: { resourceId: string; apiVersion: string }): Promise<Record<string, unknown>>
@@ -10075,7 +10077,7 @@ const vm = await cloud.azure({ subscriptionId: "..." }).resources().getById({
 });
 ```
 
-#### 17.2.93 cloud.azure.resources.listByResourceGroup
+###### 17.2.2.6.2 cloud.azure.resources.listByResourceGroup
 
 ```
 listByResourceGroup(opts: { resourceGroup: string }): Promise<{ value?: Array<Record<string, unknown>> }>
@@ -10095,7 +10097,7 @@ List every resource (of any type) in a resource group, paging through every page
 const r = await cloud.azure({ subscriptionId: "..." }).resources().listByResourceGroup({ resourceGroup: "my-rg" });
 ```
 
-#### 17.2.94 cloud.google
+#### 17.2.3 cloud.google
 
 ```
 google(opts?: { project?: string; credentials?: string | Record<string, unknown>; scopes?: string[]; quotaProject?: string }): {
@@ -10159,7 +10161,7 @@ const r = await gcs.listBuckets({ project: "my-proj" });
 runtime.log(r.items?.length ?? 0);
 ```
 
-#### 17.2.95 cloud.google.call
+##### 17.2.3.1 cloud.google.call
 
 ```
 call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>
@@ -10181,11 +10183,11 @@ const zones = await g.call({ api: "compute", path: "/compute/v1/projects/my-proj
 runtime.log(zones.items?.length ?? 0);
 ```
 
-#### 17.2.96 cloud.google.compute
+##### 17.2.3.2 cloud.google.compute
 
 Compute Engine — VM instances, zones, and disks (google.golang.org/api/compute/v1). Reached via `cloud.google({...}).compute()`; each method below is called on that service handle.
 
-#### 17.2.97 cloud.google.compute.createInstance
+###### 17.2.3.2.1 cloud.google.compute.createInstance
 
 ```
 createInstance(opts: { project: string; zone: string; instance: Record<string, unknown> }): Promise<Record<string, unknown>>
@@ -10208,7 +10210,7 @@ const op = await cloud.google({ project: "p" }).compute().createInstance({
 });
 ```
 
-#### 17.2.98 cloud.google.compute.deleteInstance
+###### 17.2.3.2.2 cloud.google.compute.deleteInstance
 
 ```
 deleteInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>
@@ -10228,7 +10230,7 @@ Delete a Compute Engine VM instance.
 await cloud.google({ project: "p" }).compute().deleteInstance({ project: "p", zone: "europe-north1-a", name: "web-1" });
 ```
 
-#### 17.2.99 cloud.google.compute.getInstance
+###### 17.2.3.2.3 cloud.google.compute.getInstance
 
 ```
 getInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>
@@ -10248,7 +10250,7 @@ Get a Compute Engine VM instance's metadata.
 const inst = await cloud.google({ project: "p" }).compute().getInstance({ project: "p", zone: "europe-north1-a", name: "web-1" });
 ```
 
-#### 17.2.100 cloud.google.compute.listDisks
+###### 17.2.3.2.4 cloud.google.compute.listDisks
 
 ```
 listDisks(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>
@@ -10268,7 +10270,7 @@ List Compute Engine persistent disks in a zone.
 const r = await cloud.google({ project: "p" }).compute().listDisks({ project: "p", zone: "europe-north1-a" });
 ```
 
-#### 17.2.101 cloud.google.compute.listInstances
+###### 17.2.3.2.5 cloud.google.compute.listInstances
 
 ```
 listInstances(opts: { project: string; zone: string }): Promise<{ items?: Array<Record<string, unknown>> }>
@@ -10288,7 +10290,7 @@ List Compute Engine VM instances in a zone.
 const r = await cloud.google({ project: "p" }).compute().listInstances({ project: "p", zone: "europe-north1-a" });
 ```
 
-#### 17.2.102 cloud.google.compute.listZones
+###### 17.2.3.2.6 cloud.google.compute.listZones
 
 ```
 listZones(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>
@@ -10308,7 +10310,7 @@ List the Compute Engine zones available to a project.
 const r = await cloud.google({ project: "p" }).compute().listZones({ project: "p" });
 ```
 
-#### 17.2.103 cloud.google.compute.startInstance
+###### 17.2.3.2.7 cloud.google.compute.startInstance
 
 ```
 startInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>
@@ -10328,7 +10330,7 @@ Start a stopped Compute Engine VM instance.
 await cloud.google({ project: "p" }).compute().startInstance({ project: "p", zone: "europe-north1-a", name: "web-1" });
 ```
 
-#### 17.2.104 cloud.google.compute.stopInstance
+###### 17.2.3.2.8 cloud.google.compute.stopInstance
 
 ```
 stopInstance(opts: { project: string; zone: string; name: string }): Promise<Record<string, unknown>>
@@ -10348,11 +10350,11 @@ Stop a running Compute Engine VM instance.
 await cloud.google({ project: "p" }).compute().stopInstance({ project: "p", zone: "europe-north1-a", name: "web-1" });
 ```
 
-#### 17.2.105 cloud.google.iam
+##### 17.2.3.3 cloud.google.iam
 
 Cloud IAM — service accounts, their keys, and resource IAM policies (google.golang.org/api/iam/v1). Reached via `cloud.google({...}).iam()`; each method below is called on that service handle.
 
-#### 17.2.106 cloud.google.iam.createKey
+###### 17.2.3.3.1 cloud.google.iam.createKey
 
 ```
 createKey(opts: { project: string; email: string }): Promise<Record<string, unknown>>
@@ -10372,7 +10374,7 @@ Create a new IAM key for a service account. The private key material is only eve
 const key = await cloud.google({ project: "p" }).iam().createKey({ project: "p", email: "sa@p.iam.gserviceaccount.com" });
 ```
 
-#### 17.2.107 cloud.google.iam.createServiceAccount
+###### 17.2.3.3.2 cloud.google.iam.createServiceAccount
 
 ```
 createServiceAccount(opts: { project: string; accountId: string; displayName?: string }): Promise<Record<string, unknown>>
@@ -10392,7 +10394,7 @@ Create an IAM service account.
 const sa = await cloud.google({ project: "p" }).iam().createServiceAccount({ project: "p", accountId: "my-sa", displayName: "My SA" });
 ```
 
-#### 17.2.108 cloud.google.iam.deleteServiceAccount
+###### 17.2.3.3.3 cloud.google.iam.deleteServiceAccount
 
 ```
 deleteServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>
@@ -10412,7 +10414,7 @@ Delete an IAM service account.
 await cloud.google({ project: "p" }).iam().deleteServiceAccount({ project: "p", email: "sa@p.iam.gserviceaccount.com" });
 ```
 
-#### 17.2.109 cloud.google.iam.getIamPolicy
+###### 17.2.3.3.4 cloud.google.iam.getIamPolicy
 
 ```
 getIamPolicy(opts: { resource: string }): Promise<Record<string, unknown>>
@@ -10432,7 +10434,7 @@ Get the IAM policy attached to a resource (e.g. a service account).
 const policy = await cloud.google({ project: "p" }).iam().getIamPolicy({ resource: "projects/p/serviceAccounts/sa@p.iam.gserviceaccount.com" });
 ```
 
-#### 17.2.110 cloud.google.iam.getServiceAccount
+###### 17.2.3.3.5 cloud.google.iam.getServiceAccount
 
 ```
 getServiceAccount(opts: { project: string; email: string }): Promise<Record<string, unknown>>
@@ -10452,7 +10454,7 @@ Get an IAM service account's metadata.
 const sa = await cloud.google({ project: "p" }).iam().getServiceAccount({ project: "p", email: "sa@p.iam.gserviceaccount.com" });
 ```
 
-#### 17.2.111 cloud.google.iam.listKeys
+###### 17.2.3.3.6 cloud.google.iam.listKeys
 
 ```
 listKeys(opts: { project: string; email: string }): Promise<{ keys?: Array<Record<string, unknown>> }>
@@ -10472,7 +10474,7 @@ List a service account's IAM keys.
 const r = await cloud.google({ project: "p" }).iam().listKeys({ project: "p", email: "sa@p.iam.gserviceaccount.com" });
 ```
 
-#### 17.2.112 cloud.google.iam.listServiceAccounts
+###### 17.2.3.3.7 cloud.google.iam.listServiceAccounts
 
 ```
 listServiceAccounts(opts: { project: string }): Promise<{ accounts?: Array<Record<string, unknown>> }>
@@ -10492,7 +10494,7 @@ List the IAM service accounts in a project.
 const r = await cloud.google({ project: "p" }).iam().listServiceAccounts({ project: "p" });
 ```
 
-#### 17.2.113 cloud.google.iam.setIamPolicy
+###### 17.2.3.3.8 cloud.google.iam.setIamPolicy
 
 ```
 setIamPolicy(opts: { resource: string; policy: Record<string, unknown> }): Promise<Record<string, unknown>>
@@ -10515,11 +10517,11 @@ current.bindings = [...(current.bindings ?? []), { role: "roles/iam.serviceAccou
 await cloud.google({ project: "p" }).iam().setIamPolicy({ resource, policy: current });
 ```
 
-#### 17.2.114 cloud.google.secrets
+##### 17.2.3.4 cloud.google.secrets
 
 Secret Manager — secret containers and their versioned values (google.golang.org/api/secretmanager/v1). Reached via `cloud.google({...}).secrets()`; each method below is called on that service handle.
 
-#### 17.2.115 cloud.google.secrets.accessSecretVersion
+###### 17.2.3.4.1 cloud.google.secrets.accessSecretVersion
 
 ```
 accessSecretVersion(opts: { project: string; name: string; version?: string }): Promise<{ value: string }>
@@ -10540,7 +10542,7 @@ const { value } = await cloud.google({ project: "p" }).secrets().accessSecretVer
 runtime.log(value);
 ```
 
-#### 17.2.116 cloud.google.secrets.addSecretVersion
+###### 17.2.3.4.2 cloud.google.secrets.addSecretVersion
 
 ```
 addSecretVersion(opts: { project: string; name: string; payload: string }): Promise<Record<string, unknown>>
@@ -10560,7 +10562,7 @@ Add a new version (value) to an existing secret. The payload is base64-encoded o
 await cloud.google({ project: "p" }).secrets().addSecretVersion({ project: "p", name: "db-password", payload: "s3cr3t" });
 ```
 
-#### 17.2.117 cloud.google.secrets.createSecret
+###### 17.2.3.4.3 cloud.google.secrets.createSecret
 
 ```
 createSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>
@@ -10580,7 +10582,7 @@ Create a secret container (automatic replication). Does not set a value — call
 await cloud.google({ project: "p" }).secrets().createSecret({ project: "p", name: "db-password" });
 ```
 
-#### 17.2.118 cloud.google.secrets.deleteSecret
+###### 17.2.3.4.4 cloud.google.secrets.deleteSecret
 
 ```
 deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>
@@ -10600,7 +10602,7 @@ Delete a secret and all of its versions.
 await cloud.google({ project: "p" }).secrets().deleteSecret({ project: "p", name: "db-password" });
 ```
 
-#### 17.2.119 cloud.google.secrets.getSecret
+###### 17.2.3.4.5 cloud.google.secrets.getSecret
 
 ```
 getSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>
@@ -10620,7 +10622,7 @@ Get a secret's metadata (not its value — use accessSecretVersion for that).
 const secret = await cloud.google({ project: "p" }).secrets().getSecret({ project: "p", name: "db-password" });
 ```
 
-#### 17.2.120 cloud.google.secrets.listSecrets
+###### 17.2.3.4.6 cloud.google.secrets.listSecrets
 
 ```
 listSecrets(opts: { project: string }): Promise<{ secrets?: Array<Record<string, unknown>> }>
@@ -10640,11 +10642,11 @@ List the secrets in a project (metadata only — not their values).
 const r = await cloud.google({ project: "p" }).secrets().listSecrets({ project: "p" });
 ```
 
-#### 17.2.121 cloud.google.storage
+##### 17.2.3.5 cloud.google.storage
 
 Cloud Storage — buckets and objects (google.golang.org/api/storage/v1). Reached via `cloud.google({...}).storage()`; each method below is called on that service handle.
 
-#### 17.2.122 cloud.google.storage.createBucket
+###### 17.2.3.5.1 cloud.google.storage.createBucket
 
 ```
 createBucket(opts: { project: string; bucket: string }): Promise<Record<string, unknown>>
@@ -10664,7 +10666,7 @@ Create a Cloud Storage bucket.
 await cloud.google({ project: "p" }).storage().createBucket({ project: "p", bucket: "my-new-bucket" });
 ```
 
-#### 17.2.123 cloud.google.storage.deleteBucket
+###### 17.2.3.5.2 cloud.google.storage.deleteBucket
 
 ```
 deleteBucket(opts: { bucket: string }): Promise<Record<string, unknown>>
@@ -10684,7 +10686,7 @@ Delete a Cloud Storage bucket. The bucket must be empty.
 await cloud.google({ project: "p" }).storage().deleteBucket({ bucket: "my-bucket" });
 ```
 
-#### 17.2.124 cloud.google.storage.deleteObject
+###### 17.2.3.5.3 cloud.google.storage.deleteObject
 
 ```
 deleteObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>
@@ -10704,7 +10706,7 @@ Delete an object.
 await cloud.google({ project: "p" }).storage().deleteObject({ bucket: "my-bucket", key: "logs/a.txt" });
 ```
 
-#### 17.2.125 cloud.google.storage.getBucket
+###### 17.2.3.5.4 cloud.google.storage.getBucket
 
 ```
 getBucket(opts: { bucket: string }): Promise<Record<string, unknown>>
@@ -10724,7 +10726,7 @@ Get a Cloud Storage bucket's metadata.
 const b = await cloud.google({ project: "p" }).storage().getBucket({ bucket: "my-bucket" });
 ```
 
-#### 17.2.126 cloud.google.storage.listBuckets
+###### 17.2.3.5.5 cloud.google.storage.listBuckets
 
 ```
 listBuckets(opts: { project: string }): Promise<{ items?: Array<Record<string, unknown>> }>
@@ -10744,7 +10746,7 @@ List the Cloud Storage buckets in a project.
 const gcs = cloud.google({ project: "p" }).storage(); const r = await gcs.listBuckets({ project: "p" });
 ```
 
-#### 17.2.127 cloud.google.storage.listObjects
+###### 17.2.3.5.6 cloud.google.storage.listObjects
 
 ```
 listObjects(opts: { bucket: string; prefix?: string }): Promise<{ items?: Array<Record<string, unknown>> }>
@@ -10764,7 +10766,7 @@ List objects in a bucket, optionally filtered by key prefix.
 const r = await cloud.google({ project: "p" }).storage().listObjects({ bucket: "my-bucket", prefix: "logs/" });
 ```
 
-#### 17.2.128 cloud.google.storage.putObject
+###### 17.2.3.5.7 cloud.google.storage.putObject
 
 ```
 putObject(opts: { bucket: string; key: string; body: string | Uint8Array | ArrayBuffer }): Promise<Record<string, unknown>>
@@ -10784,7 +10786,7 @@ Upload/overwrite an object's content.
 await cloud.google({ project: "p" }).storage().putObject({ bucket: "my-bucket", key: "logs/a.txt", body: "hello" });
 ```
 
-#### 17.2.129 cloud.google.storage.readObject
+###### 17.2.3.5.8 cloud.google.storage.readObject
 
 ```
 readObject(opts: { bucket: string; key: string }): Promise<{ bytes: number[] }>
@@ -10806,7 +10808,7 @@ const bytes = new Uint8Array(res.bytes);
 runtime.log(bytes.length);
 ```
 
-#### 17.2.130 cloud.google.storage.statObject
+###### 17.2.3.5.9 cloud.google.storage.statObject
 
 ```
 statObject(opts: { bucket: string; key: string }): Promise<Record<string, unknown>>
@@ -10830,7 +10832,9 @@ const meta = await cloud.google({ project: "p" }).storage().statObject({ bucket:
 
 Binary-format codecs: compression, barcodes, check digits.
 
-#### 17.3.1 codec.barcode.decodableFormats
+#### 17.3.1 codec.barcode
+
+##### 17.3.1.1 codec.barcode.decodableFormats
 
 ```
 decodableFormats(): string[]
@@ -10846,7 +10850,7 @@ Available decode formats (qr / datamatrix / aztec / code128 / code39 / code93 / 
 const fmts = codec.barcode.decodableFormats();
 ```
 
-#### 17.3.2 codec.barcode.decode
+##### 17.3.1.2 codec.barcode.decode
 
 ```
 decode(data: string | Uint8Array | ArrayBuffer, format?: string): Promise<{ format: string, text: string }>
@@ -10867,7 +10871,7 @@ Decode a PNG/JPEG/WebP image to { format, text } via gozxing. Optional format hi
 const { format, text } = await codec.barcode.decode(png);
 ```
 
-#### 17.3.3 codec.barcode.encode
+##### 17.3.1.3 codec.barcode.encode
 
 ```
 encode(format: string, data: string, opts?: { width?: number, height?: number, quietZone?: boolean | number }): Promise<Uint8Array>
@@ -10889,7 +10893,7 @@ Render data into a PNG of the chosen format. opts.width / opts.height default to
 const png = await codec.barcode.encode("qr", "https://example.com", { width: 320, height: 320 });
 ```
 
-#### 17.3.4 codec.barcode.formats
+##### 17.3.1.4 codec.barcode.formats
 
 ```
 formats(): string[]
@@ -10905,7 +10909,9 @@ Available encode formats (qr / datamatrix / aztec / pdf417 / code128 / code39 / 
 const fmts = codec.barcode.formats(); // ["qr", "datamatrix", ...]
 ```
 
-#### 17.3.5 codec.checkdigit.algos
+#### 17.3.2 codec.checkdigit
+
+##### 17.3.2.1 codec.checkdigit.algos
 
 ```
 algos(): string[]
@@ -10921,7 +10927,7 @@ Supported algorithms (luhn / isbn10 / isbn13 / ean13 / ean8 / upca).
 const algos = codec.checkdigit.algos();
 ```
 
-#### 17.3.6 codec.checkdigit.compute
+##### 17.3.2.2 codec.checkdigit.compute
 
 ```
 compute(algo: string, partial: string): string
@@ -10942,7 +10948,7 @@ Compute the missing trailing check digit for a partial input.
 const cd = codec.checkdigit.compute("ean13", "123456789012"); // "8"
 ```
 
-#### 17.3.7 codec.checkdigit.inspect
+##### 17.3.2.3 codec.checkdigit.inspect
 
 ```
 inspect(algo: string, input: string): { algo: string, input: string, valid: boolean, given: string, computed: string }
@@ -10964,7 +10970,7 @@ const r = codec.checkdigit.inspect("ean13", "1234567890128");
 // { algo: "ean13", input: "...", valid: true, given: "8", computed: "8" }
 ```
 
-#### 17.3.8 codec.checkdigit.validate
+##### 17.3.2.4 codec.checkdigit.validate
 
 ```
 validate(algo: string, input: string): boolean
@@ -10985,7 +10991,9 @@ Return whether the input passes the named algorithm's check digit.
 const ok = codec.checkdigit.validate("luhn", "4539578763621486"); // true
 ```
 
-#### 17.3.9 codec.compression.algos
+#### 17.3.3 codec.compression
+
+##### 17.3.3.1 codec.compression.algos
 
 ```
 algos(): string[]
@@ -11001,7 +11009,7 @@ Available compression algorithm names (gzip / deflate / zlib / bzip2 / zstd / br
 const algos = codec.compression.algos(); // ["gzip", "deflate", ...]
 ```
 
-#### 17.3.10 codec.compression.compress
+##### 17.3.3.2 codec.compression.compress
 
 ```
 compress(algo: string, data: string | Uint8Array | ArrayBuffer): Promise<Uint8Array>
@@ -11022,7 +11030,7 @@ Compress data with the named algorithm. Returns Uint8Array. Async.
 const packed = await codec.compression.compress("gzip", "hello world");
 ```
 
-#### 17.3.11 codec.compression.decompress
+##### 17.3.3.3 codec.compression.decompress
 
 ```
 decompress(algo: string, data: string | Uint8Array | ArrayBuffer, opts?: { maxBytes?: number }): Promise<Uint8Array>
@@ -11047,7 +11055,9 @@ const text = new TextDecoder().decode(raw);
 const capped = await codec.compression.decompress("gzip", packed, { maxBytes: 1 << 20 });
 ```
 
-#### 17.3.12 codec.doc.formats
+#### 17.3.4 codec.doc
+
+##### 17.3.4.1 codec.doc.formats
 
 ```
 formats(): { [format: string]: { read: boolean; write: boolean } }
@@ -11063,7 +11073,7 @@ Report the read/write capability of every document format codec.doc supports. Re
 if (!codec.doc.formats().pdf.write) console.log("pdf is read-only");
 ```
 
-#### 17.3.13 codec.doc.read
+##### 17.3.4.2 codec.doc.read
 
 ```
 read(src: string | Uint8Array, opts?: { format?: "pdf" | "docx" | "doc" | "rtf" | "odt" }): { format: string; text: string; paragraphs: string[] }
@@ -11084,7 +11094,7 @@ Extract text from a document: PDF, DOCX, DOC (Word 97–2003), RTF, or ODT. Retu
 const d = codec.doc.read("report.pdf"); runtime.log(d.paragraphs.length, "paragraphs");
 ```
 
-#### 17.3.14 codec.doc.write
+##### 17.3.4.3 codec.doc.write
 
 ```
 write(model: { paragraphs?: string[]; text?: string } | string, opts?: { format?: "docx" | "rtf" | "odt"; dest?: string }): { bytes: Uint8Array } | { path: string }
@@ -11105,7 +11115,9 @@ Write a document to DOCX, RTF, or ODT from { paragraphs } / { text } / a bare st
 const out = codec.doc.write({ paragraphs: ["Hello", "World"] }, { format: "docx" });
 ```
 
-#### 17.3.15 codec.dotenv.parse
+#### 17.3.5 codec.dotenv
+
+##### 17.3.5.1 codec.dotenv.parse
 
 ```
 parse(text: string): { [key: string]: string }
@@ -11125,7 +11137,7 @@ Parse dotenv-format text into an object. Handles KEY=VALUE lines, # comments, bl
 const cfg = codec.dotenv.parse('PORT=8080\n# note\nHOST="0.0.0.0"');
 ```
 
-#### 17.3.16 codec.dotenv.stringify
+##### 17.3.5.2 codec.dotenv.stringify
 
 ```
 stringify(obj: { [key: string]: string | number | boolean }): string
@@ -11145,7 +11157,9 @@ Serialize an object of string/number/boolean values to dotenv-format text (one K
 const text = codec.dotenv.stringify({ PORT: 8080, HOST: "0.0.0.0", DEBUG: true });
 ```
 
-#### 17.3.17 codec.perl.dumper
+#### 17.3.6 codec.perl
+
+##### 17.3.6.1 codec.perl.dumper
 
 ```
 dumper(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -11166,7 +11180,7 @@ Perl Data::Dumper-style dump ($VAR1 = … ;), normalized indentation. JS boolean
 const d = codec.perl.dumper({ ok: true });
 ```
 
-#### 17.3.18 codec.perl.parseDumper
+##### 17.3.6.2 codec.perl.parseDumper
 
 ```
 parseDumper(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -11187,7 +11201,9 @@ Read Data::Dumper output back. Blessed scalar refs in the JSON bool family decod
 const v = codec.perl.parseDumper("$VAR1 = [1, 2];"); // [1, 2]
 ```
 
-#### 17.3.19 codec.php.parseVarDump
+#### 17.3.7 codec.php
+
+##### 17.3.7.1 codec.php.parseVarDump
 
 ```
 parseVarDump(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -11208,7 +11224,7 @@ Best-effort read of var_dump() output. Throws on lossy markers (*RECURSION*, tru
 const v = codec.php.parseVarDump('int(42)'); // 42
 ```
 
-#### 17.3.20 codec.php.parseVarExport
+##### 17.3.7.2 codec.php.parseVarExport
 
 ```
 parseVarExport(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -11229,7 +11245,7 @@ Read a var_export() literal (arrays, scalars, NULL, \Cls::__set_state) back to a
 const v = codec.php.parseVarExport("array (\n  0 => 1,\n)");
 ```
 
-#### 17.3.21 codec.php.serialize
+##### 17.3.7.3 codec.php.serialize
 
 ```
 serialize(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -11250,7 +11266,7 @@ PHP serialize(): encode a value to PHP's canonical serialization string. Objects
 const s = codec.php.serialize({ a: 1, b: [2, 3] });
 ```
 
-#### 17.3.22 codec.php.unserialize
+##### 17.3.7.4 codec.php.unserialize
 
 ```
 unserialize(input: string, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): unknown
@@ -11271,7 +11287,7 @@ PHP unserialize(): decode a serialize() string back to a value. r:/R: references
 const v = codec.php.unserialize('a:2:{i:0;i:1;i:1;i:2;}'); // [1, 2]
 ```
 
-#### 17.3.23 codec.php.varDump
+##### 17.3.7.5 codec.php.varDump
 
 ```
 varDump(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -11292,7 +11308,7 @@ PHP var_dump(): human-readable debug output. String lengths are byte counts.
 const dump = codec.php.varDump({ name: "ok" });
 ```
 
-#### 17.3.24 codec.php.varExport
+##### 17.3.7.6 codec.php.varExport
 
 ```
 varExport(value: unknown, opts?: { classKey?: string, perlBoolClass?: string, indent?: string }): string
@@ -11313,7 +11329,9 @@ PHP var_export(): emit valid PHP code for a value. opts.indent overrides the 2-s
 const code = codec.php.varExport({ x: 1 }, { indent: "    " });
 ```
 
-#### 17.3.25 codec.sheet.formats
+#### 17.3.8 codec.sheet
+
+##### 17.3.8.1 codec.sheet.formats
 
 ```
 formats(): { [format: string]: { read: boolean; write: boolean } }
@@ -11329,7 +11347,7 @@ Report the read/write capability of every spreadsheet format codec.sheet support
 const f = codec.sheet.formats(); if (!f.xls.write) console.log("xls is read-only");
 ```
 
-#### 17.3.26 codec.sheet.read
+##### 17.3.8.2 codec.sheet.read
 
 ```
 read(src: string | Uint8Array, opts?: { format?: "csv" | "tsv" | "xlsx" | "ods" | "xls" | "slk" | "dif" }): { format: string; sheets: { name: string; rows: (string | number | boolean | null)[][] }[] }
@@ -11351,7 +11369,7 @@ const wb = codec.sheet.read("data.ods");
 runtime.log(wb.sheets[0].name, wb.sheets[0].rows.length);
 ```
 
-#### 17.3.27 codec.sheet.write
+##### 17.3.8.3 codec.sheet.write
 
 ```
 write(model: { sheets: { name?: string; rows: (string | number | boolean | null)[][] }[] } | (string | number | boolean | null)[][], opts: { format: "csv" | "tsv" | "xlsx" | "ods"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
@@ -11373,7 +11391,9 @@ const out = codec.sheet.write([["a", 1, true]], { format: "ods" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.3.28 codec.toml.parse
+#### 17.3.9 codec.toml
+
+##### 17.3.9.1 codec.toml.parse
 
 ```
 parse(text: string): Record<string, unknown>
@@ -11393,7 +11413,7 @@ Parse a TOML document string into a JS object. Tables become nested objects, arr
 const cfg = codec.toml.parse('port = 8080\n[db]\nhost = "localhost"');
 ```
 
-#### 17.3.29 codec.toml.stringify
+##### 17.3.9.2 codec.toml.stringify
 
 ```
 stringify(value: Record<string, unknown>): string
@@ -11413,7 +11433,9 @@ Serialize a JS value to a TOML document string. The top-level value must be an o
 const text = codec.toml.stringify({ port: 8080, db: { host: "localhost" } });
 ```
 
-#### 17.3.30 codec.xml.decode
+#### 17.3.10 codec.xml
+
+##### 17.3.10.1 codec.xml.decode
 
 ```
 decode(xml: string): unknown
@@ -11434,7 +11456,7 @@ const v = codec.xml.decode("<note id=\"5\">hi</note>");
 // { note: { "@id": "5", "#text": "hi" } }
 ```
 
-#### 17.3.31 codec.xml.encode
+##### 17.3.10.2 codec.xml.encode
 
 ```
 encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string
@@ -11564,7 +11586,9 @@ console.warn("retrying in", 5, "seconds");
 
 Hashing, JWT, age encryption — anything that produces a digest, signature, or ciphertext.
 
-#### 17.5.1 crypto.encrypt.decrypt
+#### 17.5.1 crypto.encrypt
+
+##### 17.5.1.1 crypto.encrypt.decrypt
 
 ```
 decrypt(ciphertext: string | Uint8Array | ArrayBuffer, identities: string | string[]): Uint8Array
@@ -11586,7 +11610,7 @@ const pt = crypto.encrypt.decrypt(ct, privateKey);
 const text = new TextDecoder().decode(pt);
 ```
 
-#### 17.5.2 crypto.encrypt.detectBackend
+##### 17.5.1.2 crypto.encrypt.detectBackend
 
 ```
 detectBackend(input: string): { backend: string; kind?: string }
@@ -11606,7 +11630,7 @@ Classify a recipient / identity string. Returns { backend: 'age'|'pgp'|'unknown'
 const info = crypto.encrypt.detectBackend("age1abc..."); // { backend: "age", kind: "public" }
 ```
 
-#### 17.5.3 crypto.encrypt.encrypt
+##### 17.5.1.3 crypto.encrypt.encrypt
 
 ```
 encrypt(data: string | Uint8Array | ArrayBuffer, recipients: string | string[], opts?: { armored?: boolean }): Uint8Array
@@ -11628,7 +11652,7 @@ Seal data to recipients. age public keys (age1...) → age backend (opts.armored
 const ct = crypto.encrypt.encrypt("secret", publicKey, { armored: true });
 ```
 
-#### 17.5.4 crypto.encrypt.keygen
+##### 17.5.1.4 crypto.encrypt.keygen
 
 ```
 keygen(): { publicKey: string; privateKey: string }
@@ -11644,7 +11668,7 @@ Generate a fresh age X25519 keypair. Returns { publicKey: 'age1...', privateKey:
 const { publicKey, privateKey } = crypto.encrypt.keygen();
 ```
 
-#### 17.5.5 crypto.encrypt.keygenPgp
+##### 17.5.1.5 crypto.encrypt.keygenPgp
 
 ```
 keygenPgp(opts?: { name?: string, email?: string }): { publicKey: string; privateKey: string }
@@ -11664,7 +11688,7 @@ Generate a PGP keypair (RSA 2048). opts.name / opts.email populate the user ID. 
 const { publicKey, privateKey } = crypto.encrypt.keygenPgp({ name: "Test", email: "t@example.com" });
 ```
 
-#### 17.5.6 crypto.encrypt.rekey
+##### 17.5.1.6 crypto.encrypt.rekey
 
 ```
 rekey(ciphertext: string | Uint8Array | ArrayBuffer, oldIdentities: string | string[], newRecipients: string | string[], opts?: { armored?: boolean }): Uint8Array
@@ -11687,7 +11711,9 @@ Re-encrypt for a new recipient set without exposing plaintext to JS. Output form
 const rotated = crypto.encrypt.rekey(ct, oldKey, newPublicKey);
 ```
 
-#### 17.5.7 crypto.hash.blake3
+#### 17.5.2 crypto.hash
+
+##### 17.5.2.1 crypto.hash.blake3
 
 ```
 blake3(input: string): string
@@ -11707,7 +11733,7 @@ BLAKE3 hex digest (32-byte output, lukechampine.com/blake3).
 const d = crypto.hash.blake3("hello");
 ```
 
-#### 17.5.8 crypto.hash.crc32
+##### 17.5.2.2 crypto.hash.crc32
 
 ```
 crc32(input: string): string
@@ -11727,7 +11753,7 @@ CRC-32 (IEEE polynomial), zero-padded to 8 hex chars.
 const c = crypto.hash.crc32("hello"); // "3610a686"
 ```
 
-#### 17.5.9 crypto.hash.md5
+##### 17.5.2.3 crypto.hash.md5
 
 ```
 md5(input: string): string
@@ -11747,7 +11773,7 @@ MD5 hex digest of a UTF-8 input. Avoid for security purposes — exposed for com
 const d = crypto.hash.md5("hello"); // "5d41402abc4b2a76b9719d911017c592"
 ```
 
-#### 17.5.10 crypto.hash.sha1
+##### 17.5.2.4 crypto.hash.sha1
 
 ```
 sha1(input: string): string
@@ -11767,7 +11793,7 @@ SHA-1 hex digest of a UTF-8 input. Avoid for security purposes.
 const d = crypto.hash.sha1("hello");
 ```
 
-#### 17.5.11 crypto.hash.sha256
+##### 17.5.2.5 crypto.hash.sha256
 
 ```
 sha256(input: string): string
@@ -11787,7 +11813,7 @@ SHA-256 hex digest of a UTF-8 input.
 const d = crypto.hash.sha256("hello");
 ```
 
-#### 17.5.12 crypto.hash.sha384
+##### 17.5.2.6 crypto.hash.sha384
 
 ```
 sha384(input: string): string
@@ -11807,7 +11833,7 @@ SHA-384 hex digest of a UTF-8 input.
 const d = crypto.hash.sha384("hello");
 ```
 
-#### 17.5.13 crypto.hash.sha3_256
+##### 17.5.2.7 crypto.hash.sha3_256
 
 ```
 sha3_256(input: string): string
@@ -11827,7 +11853,7 @@ SHA-3 256-bit hex digest. The underscore in the name matches recon's binding.
 const d = crypto.hash.sha3_256("hello");
 ```
 
-#### 17.5.14 crypto.hash.sha3_512
+##### 17.5.2.8 crypto.hash.sha3_512
 
 ```
 sha3_512(input: string): string
@@ -11847,7 +11873,7 @@ SHA-3 512-bit hex digest.
 const d = crypto.hash.sha3_512("hello");
 ```
 
-#### 17.5.15 crypto.hash.sha512
+##### 17.5.2.9 crypto.hash.sha512
 
 ```
 sha512(input: string): string
@@ -11867,7 +11893,9 @@ SHA-512 hex digest of a UTF-8 input.
 const d = crypto.hash.sha512("hello");
 ```
 
-#### 17.5.16 crypto.jwt.sign
+#### 17.5.3 crypto.jwt
+
+##### 17.5.3.1 crypto.jwt.sign
 
 ```
 sign(claims: Record<string, unknown>, secret: string, opts?: { algorithm?: string }): string
@@ -11889,7 +11917,7 @@ Sign a claims object. secret is raw bytes for HS*; PEM-encoded private key for R
 const tok = crypto.jwt.sign({ sub: "u1" }, "topsecret", { algorithm: "HS256" });
 ```
 
-#### 17.5.17 crypto.jwt.validate
+##### 17.5.3.2 crypto.jwt.validate
 
 ```
 validate(token: string, secret: string, opts?: { algorithm?: string, audience?: string, issuer?: string }): { valid: boolean; claims?: object; reason?: string }
@@ -11912,7 +11940,7 @@ const r = crypto.jwt.validate(tok, "topsecret", { algorithm: "HS256" });
 if (r.valid) runtime.log(r.claims.sub);
 ```
 
-#### 17.5.18 crypto.jwt.view
+##### 17.5.3.3 crypto.jwt.view
 
 ```
 view(token: string): { header: object; payload: object; signature: string }
@@ -11936,7 +11964,9 @@ const { header, payload } = crypto.jwt.view(tok);
 
 Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, Valkey, memcached, LDAP, dict.
 
-#### 17.6.1 db.clickhouse.open
+#### 17.6.1 db.clickhouse
+
+##### 17.6.1.1 db.clickhouse.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, secure?: boolean }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -11958,7 +11988,9 @@ const rows = await db.query("SELECT name, value FROM stats WHERE host = ?", "web
 await db.close();
 ```
 
-#### 17.6.2 db.dict.define
+#### 17.6.2 db.dict
+
+##### 17.6.2.1 db.dict.define
 
 ```
 define(host: string, word: string, opts?: { database?: string, port?: string, timeout?: number }): Promise<{ word: string, found: boolean, definitions: { db: string, dbName: string, text: string }[] }>
@@ -11981,7 +12013,7 @@ const r = await db.dict.define("dict.org", "serendipity");
 if (r.found) runtime.log(r.definitions[0].text);
 ```
 
-#### 17.6.3 db.dict.match
+##### 17.6.2.2 db.dict.match
 
 ```
 match(host: string, word: string, opts?: { strategy?: string, database?: string, port?: string, timeout?: number }): Promise<{ word: string, matches: { db: string, word: string }[] }>
@@ -12004,7 +12036,9 @@ const r = await db.dict.match("dict.org", "seren", { strategy: "prefix" });
 runtime.log(r.matches.map(m => m.word));
 ```
 
-#### 17.6.4 db.ldap.open
+#### 17.6.3 db.ldap
+
+##### 17.6.3.1 db.ldap.open
 
 ```
 open(url: string, opts?: { bindDN?: string, password?: string }): Promise<{ rootDSE(): Promise<Record<string, unknown>>; search(baseDN: string, filter?: string, attrs?: string[]): Promise<Record<string, unknown>[]>; close(): Promise<void> }>
@@ -12028,7 +12062,9 @@ const people = await dir.search("ou=people,dc=example,dc=com", "(uid=alice)", ["
 await dir.close();
 ```
 
-#### 17.6.5 db.memcached.open
+#### 17.6.4 db.memcached
+
+##### 17.6.4.1 db.memcached.open
 
 ```
 open(addr: string): Promise<{ get(key: string): Promise<string | null>; set(key: string, value: unknown, expirySeconds?: number): Promise<void>; delete(key: string): Promise<boolean> }>
@@ -12051,7 +12087,9 @@ const v = await mc.get("session:42"); // "active" or null
 const existed = await mc.delete("session:42"); // true
 ```
 
-#### 17.6.6 db.mssql.open
+#### 17.6.5 db.mssql
+
+##### 17.6.5.1 db.mssql.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -12073,7 +12111,9 @@ const rows = await db.query("SELECT TOP 5 id, name FROM users WHERE region = @p1
 await db.close();
 ```
 
-#### 17.6.7 db.mysql.open
+#### 17.6.6 db.mysql
+
+##### 17.6.6.1 db.mysql.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -12095,7 +12135,9 @@ const n = await db.queryValue("SELECT COUNT(*) FROM orders WHERE status = ?", "p
 await db.close();
 ```
 
-#### 17.6.8 db.oracle.open
+#### 17.6.7 db.oracle
+
+##### 17.6.7.1 db.oracle.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -12117,7 +12159,9 @@ const rows = await db.query("SELECT id, name FROM users WHERE id = :1", 42);
 await db.close();
 ```
 
-#### 17.6.9 db.postgres.open
+#### 17.6.8 db.postgres
+
+##### 17.6.8.1 db.postgres.open
 
 ```
 open(dsn: string | { host?: string, port?: number, user?: string, password?: string, database?: string, sslmode?: string }): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -12139,7 +12183,9 @@ const rows = await db.query("SELECT id, name FROM users WHERE id = $1", 42);
 await db.close();
 ```
 
-#### 17.6.10 db.redis.open
+#### 17.6.9 db.redis
+
+##### 17.6.9.1 db.redis.open
 
 ```
 open(url: string): Promise<{ do(cmd: string, ...args: unknown[]): Promise<unknown>; ping(): Promise<string>; close(): Promise<void> }>
@@ -12163,7 +12209,9 @@ const missing = await r.do("GET", "nope"); // null
 await r.close();
 ```
 
-#### 17.6.11 db.sqlite.open
+#### 17.6.10 db.sqlite
+
+##### 17.6.10.1 db.sqlite.open
 
 ```
 open(path: string): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; begin(): Promise<{ exec(sql: string, ...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(sql: string, ...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(sql: string, ...params: unknown[]): Promise<unknown>; commit(): Promise<void>; rollback(): Promise<void> }>; prepare(sql: string): Promise<{ exec(...params: unknown[]): Promise<{ rowsAffected: number, lastInsertId: number }>; query(...params: unknown[]): Promise<Record<string, unknown>[]>; queryValue(...params: unknown[]): Promise<unknown>; close(): Promise<void> }>; close(): Promise<void> }>
@@ -12187,7 +12235,9 @@ const rows = await conn.query("SELECT * FROM t WHERE name = ?", "alice");
 await conn.close();
 ```
 
-#### 17.6.12 db.valkey.open
+#### 17.6.11 db.valkey
+
+##### 17.6.11.1 db.valkey.open
 
 ```
 open(url: string): Promise<{ do(cmd: string, ...args: unknown[]): Promise<unknown>; ping(): Promise<string>; close(): Promise<void> }>
@@ -12214,7 +12264,9 @@ await r.close();
 
 Filesystem operations: path manipulation and archive create/extract.
 
-#### 17.7.1 fs.archive.create
+#### 17.7.1 fs.archive
+
+##### 17.7.1.1 fs.archive.create
 
 ```
 create(destPath: string, sources: (string | { path: string, name?: string })[]): Promise<{ path: string; format: string; entries: string[]; bytes?: number }>
@@ -12236,7 +12288,7 @@ const r = await fs.archive.create("out.tar.gz", ["dist", { path: "README.md", na
 runtime.log(r.format, r.entries.length);
 ```
 
-#### 17.7.2 fs.archive.extract
+##### 17.7.1.2 fs.archive.extract
 
 ```
 extract(archivePath: string, destDir: string, opts?: { overwrite?: boolean, maxTotalBytes?: number, maxEntries?: number }): Promise<{ path: string; format: string; dest: string; entries: string[] }>
@@ -12259,7 +12311,7 @@ const r = await fs.archive.extract("out.tar.gz", "./unpacked", { overwrite: true
 runtime.log(r.entries.length, "files extracted");
 ```
 
-#### 17.7.3 fs.exists
+#### 17.7.2 fs.exists
 
 ```
 exists(path: string): Promise<boolean>
@@ -12279,7 +12331,7 @@ Report whether a path exists. Never throws for a missing path.
 if (!(await fs.exists("report"))) await fs.mkdir("report");
 ```
 
-#### 17.7.4 fs.mkdir
+#### 17.7.3 fs.mkdir
 
 ```
 mkdir(path: string): Promise<{ path: string }>
@@ -12299,7 +12351,9 @@ Create a directory, including any missing parents (mkdir -p). Idempotent.
 await fs.mkdir("report/assets");
 ```
 
-#### 17.7.5 fs.path.basename
+#### 17.7.4 fs.path
+
+##### 17.7.4.1 fs.path.basename
 
 ```
 basename(path: string, suffix?: string): string
@@ -12320,7 +12374,7 @@ Final segment of a path; optional suffix is stripped if it matches.
 const b = fs.path.basename("/var/log/app.log", ".log"); // "app"
 ```
 
-#### 17.7.6 fs.path.dirname
+##### 17.7.4.2 fs.path.dirname
 
 ```
 dirname(path: string): string
@@ -12340,7 +12394,7 @@ Directory portion of a path. POSIX-style; trailing slashes are stripped.
 const d = fs.path.dirname("/var/log/app.log"); // "/var/log"
 ```
 
-#### 17.7.7 fs.readBytes
+#### 17.7.5 fs.readBytes
 
 ```
 readBytes(path: string): Promise<Uint8Array>
@@ -12360,7 +12414,7 @@ Read an entire file as bytes.
 const bytes = await fs.readBytes("shot.png");
 ```
 
-#### 17.7.8 fs.readText
+#### 17.7.6 fs.readText
 
 ```
 readText(path: string): Promise<string>
@@ -12380,7 +12434,7 @@ Read an entire file as a UTF-8 string.
 const html = await fs.readText("report/index.html");
 ```
 
-#### 17.7.9 fs.remove
+#### 17.7.7 fs.remove
 
 ```
 remove(path: string): Promise<{ path: string }>
@@ -12400,7 +12454,7 @@ Remove a file or a directory tree (recursive). No error if the path is already a
 await fs.remove("report"); // clean slate
 ```
 
-#### 17.7.10 fs.stat
+#### 17.7.8 fs.stat
 
 ```
 stat(path: string): Promise<{ size: number; isDir: boolean; modifiedMs: number }>
@@ -12421,7 +12475,7 @@ const st = await fs.stat("report/index.html");
 runtime.log(st.size, st.isDir, st.modifiedMs);
 ```
 
-#### 17.7.11 fs.writeBytes
+#### 17.7.9 fs.writeBytes
 
 ```
 writeBytes(path: string, data: Uint8Array): Promise<{ path: string; bytes: number }>
@@ -12443,7 +12497,7 @@ const shot = await d.screenshot();
 await fs.writeBytes("shot.png", new Uint8Array(shot.bytes));
 ```
 
-#### 17.7.12 fs.writeText
+#### 17.7.10 fs.writeText
 
 ```
 writeText(path: string, text: string): Promise<{ path: string; bytes: number }>
@@ -12469,7 +12523,111 @@ await fs.writeText("report/index.html", "<h1>Hi</h1>");
 
 Image decode/encode (PNG/JPEG/GIF/TIFF/BMP/WebP, SVG rasterize-in) and a chainable Image handle: resize/crop/rotate/flip/adjust/filter/compose.
 
-#### 17.8.1 image.decode
+#### 17.8.1 image.blur
+
+```
+blur(sigma: number): Image
+```
+
+Gaussian blur with the given sigma (larger sigma → softer). Returns a fresh Image.
+
+**Parameters**
+
+- `sigma` *(number)* — Gaussian blur sigma; larger blurs more.
+
+**Returns:** Image — blurred.
+
+**Throws:** Does not throw; a sigma <= 0 leaves the image effectively unchanged.
+
+```ts
+const soft = im.blur(2.0);
+```
+
+#### 17.8.2 image.brightness
+
+```
+brightness(percent: number): Image
+```
+
+Adjust brightness by a percentage in [-100, 100]; positive brightens, negative darkens, 0 is a no-op. Returns a fresh Image.
+
+**Parameters**
+
+- `percent` *(number)* — Brightness change in percent, -100 (black) .. 100 (white).
+
+**Returns:** Image — brightness-adjusted.
+
+**Throws:** Does not throw; values outside [-100, 100] are clamped to the boundary (e.g. 150 behaves identically to 100).
+
+```ts
+const b = im.brightness(20);
+```
+
+#### 17.8.3 image.bytes
+
+```
+bytes(format: 'png' | 'jpeg' | 'gif' | 'tiff' | 'bmp' | 'webp', opts?: { quality?: number }): Uint8Array
+```
+
+Encode the image to bytes in the given format. quality (jpeg) is 1..100, default 90. WebP encode is lossless — the quality option is accepted but ignored.
+
+**Parameters**
+
+- `format` *('png' | 'jpeg' | 'gif' | 'tiff' | 'bmp' | 'webp')* — Target encode format.
+- `opts` *({ quality?: number }, optional)* — Optional encode options. quality (1..100, default 90) applies to jpeg; ignored for png/gif/tiff/bmp and for the lossless webp encoder.
+
+**Returns:** Uint8Array — the encoded image bytes.
+
+**Throws:** Throws ("image: unsupported encode format …") for an unknown format, or ("image: webp encode: …") if WebP encoding fails.
+
+```ts
+const png = im.bytes("png");
+```
+
+#### 17.8.4 image.contrast
+
+```
+contrast(percent: number): Image
+```
+
+Adjust contrast by a percentage in [-100, 100]; positive increases, negative flattens. Returns a fresh Image.
+
+**Parameters**
+
+- `percent` *(number)* — Contrast change in percent, -100 .. 100.
+
+**Returns:** Image — contrast-adjusted.
+
+**Throws:** Does not throw; values outside [-100, 100] are clamped to the boundary (e.g. 150 behaves identically to 100).
+
+```ts
+const c = im.contrast(15);
+```
+
+#### 17.8.5 image.crop
+
+```
+crop(x: number, y: number, w: number, h: number): Image
+```
+
+Crop a rectangular region at (x, y) of size w × h. Coordinates are validated against the image bounds. Returns a fresh Image.
+
+**Parameters**
+
+- `x` *(number)* — Left edge of the crop rectangle, in pixels.
+- `y` *(number)* — Top edge of the crop rectangle, in pixels.
+- `w` *(number)* — Crop width in pixels (> 0).
+- `h` *(number)* — Crop height in pixels (> 0).
+
+**Returns:** Image — the cropped region.
+
+**Throws:** Throws a TypeError when w/h are non-positive or the rectangle falls outside the image bounds.
+
+```ts
+const region = im.crop(10, 10, 100, 100);
+```
+
+#### 17.8.6 image.decode
 
 ```
 decode(data: Uint8Array, opts?: { autoOrient?: boolean }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -12490,7 +12648,7 @@ Decode in-memory image bytes into a chainable Image handle. The format is sniffe
 const im = image.decode(pngBytes, { autoOrient: true });
 ```
 
-#### 17.8.2 image.decodeFrames
+#### 17.8.7 image.decodeFrames
 
 ```
 decodeFrames(src: string | Uint8Array): { format: string; width: number; height: number; loopCount: number; frames: { image: { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }; delayMs: number; xOffset: number; yOffset: number; disposal: "none" | "background" | "previous"; blend?: "source" | "over" }[] }
@@ -12511,7 +12669,7 @@ const a = image.decodeFrames("anim.gif");
 runtime.log(a.format, a.frames.length, a.frames[0].delayMs);
 ```
 
-#### 17.8.3 image.encodeFrames
+#### 17.8.8 image.encodeFrames
 
 ```
 encodeFrames(spec: { width?: number; height?: number; loopCount?: number; frames: { image: Image; delayMs?: number; xOffset?: number; yOffset?: number; disposal?: "none" | "background" | "previous"; blend?: "source" | "over" }[] }, opts?: { format?: "gif" | "apng"; dest?: string }): { format: string; bytes?: Uint8Array; path?: string }
@@ -12534,7 +12692,9 @@ const out = image.encodeFrames(a, { format: "apng" });
 runtime.log(out.format, out.bytes.length);
 ```
 
-#### 17.8.4 image.exif.clear
+#### 17.8.9 image.exif
+
+##### 17.8.9.1 image.exif.clear
 
 ```
 clear(src: string | Uint8Array, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -12556,7 +12716,7 @@ const out = image.exif.clear(jpegBytes);
 const e = image.exif.read(out.bytes); // e === {}
 ```
 
-#### 17.8.5 image.exif.read
+##### 17.8.9.2 image.exif.read
 
 ```
 read(src: string | Uint8Array): { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }
@@ -12577,7 +12737,7 @@ const e = image.exif.read("photo.jpg");
 runtime.log(e.image?.Make, e.gps?.GPSLatitude);
 ```
 
-#### 17.8.6 image.exif.replace
+##### 17.8.9.3 image.exif.replace
 
 ```
 replace(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -12600,7 +12760,7 @@ const out = image.exif.replace(jpegBytes, { image: { Make: "sercon" } });
 const e = image.exif.read(out.bytes); // e.image.Make === "sercon"
 ```
 
-#### 17.8.7 image.exif.write
+##### 17.8.9.4 image.exif.write
 
 ```
 write(src: string | Uint8Array, data: { image?: Record<string, unknown>; exif?: Record<string, unknown>; gps?: Record<string, unknown>; thumbnail?: Record<string, unknown> }, opts?: { dest?: string }): { format: string; bytes: Uint8Array } | { format: string; path: string }
@@ -12623,7 +12783,112 @@ const out = image.exif.write(jpegBytes, { image: { Artist: "Alice" } });
 // out.bytes is the updated JPEG
 ```
 
-#### 17.8.8 image.open
+#### 17.8.10 image.fit
+
+```
+fit(width: number, height: number): Image
+```
+
+Scale the image down to fit entirely within a width × height box, preserving aspect ratio (no cropping; may letterbox conceptually). Returns a fresh Image.
+
+**Parameters**
+
+- `width` *(number)* — Maximum width of the bounding box, in pixels.
+- `height` *(number)* — Maximum height of the bounding box, in pixels.
+
+**Returns:** Image — the largest image that fits within the box at the original aspect ratio.
+
+**Throws:** Does not throw; non-positive or zero dimensions produce a degenerate (possibly empty) image rather than an error.
+
+```ts
+const fitted = im.fit(800, 600);
+```
+
+#### 17.8.11 image.flipH
+
+```
+flipH(): Image
+```
+
+Flip horizontally (mirror left↔right). Returns a fresh Image.
+
+**Returns:** Image — horizontally mirrored.
+
+**Throws:** Does not throw.
+
+```ts
+const m = im.flipH();
+```
+
+#### 17.8.12 image.flipV
+
+```
+flipV(): Image
+```
+
+Flip vertically (mirror top↔bottom). Returns a fresh Image.
+
+**Returns:** Image — vertically mirrored.
+
+**Throws:** Does not throw.
+
+```ts
+const m = im.flipV();
+```
+
+#### 17.8.13 image.gamma
+
+```
+gamma(gamma: number): Image
+```
+
+Apply gamma correction. gamma < 1 darkens, gamma > 1 brightens, 1.0 is a no-op. Returns a fresh Image.
+
+**Parameters**
+
+- `gamma` *(number)* — Gamma factor (> 0). 1.0 leaves the image unchanged.
+
+**Returns:** Image — gamma-corrected.
+
+**Throws:** Does not throw; pass a positive gamma (a non-positive value yields an all-black or undefined result rather than an error).
+
+```ts
+const g = im.gamma(1.2);
+```
+
+#### 17.8.14 image.grayscale
+
+```
+grayscale(): Image
+```
+
+Convert to grayscale (luminance). Returns a fresh Image.
+
+**Returns:** Image — grayscale.
+
+**Throws:** Does not throw.
+
+```ts
+const g = im.grayscale();
+```
+
+#### 17.8.15 image.invert
+
+```
+invert(): Image
+```
+
+Invert colours (photographic negative). Returns a fresh Image.
+
+**Returns:** Image — colour-inverted.
+
+**Throws:** Does not throw.
+
+```ts
+const n = im.invert();
+```
+
+#### 17.8.16 image.open
 
 ```
 open(path: string, opts?: { autoOrient?: boolean }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -12644,7 +12909,72 @@ Read an image file from disk and decode it into a chainable Image handle. The fo
 const im = image.open("avatar.jpg", { autoOrient: true });
 ```
 
-#### 17.8.9 image.rasterizeSVG
+#### 17.8.17 image.orient
+
+```
+orient(n: number): Image
+```
+
+Apply one of the 8 EXIF orientations to the raster pixels and return a fresh Image. n is the EXIF Orientation value (1=normal, 2=mirror-H, 3=180°, 4=mirror-V, 5/7=transpose/transverse, 6=90°CW, 8=90°CCW). 1 is a no-op copy. Pure raster — no EXIF is read (use open/decode { autoOrient: true } to drive this from a file's tag).
+
+**Parameters**
+
+- `n` *(number)* — EXIF orientation value, an integer 1..8.
+
+**Returns:** Image — the reoriented raster (dimensions swap for n in 5..8).
+
+**Throws:** Throws a TypeError if n is not an integer in 1..8.
+
+```ts
+const up = image.decode(bytes).orient(6); // 90° clockwise
+```
+
+#### 17.8.18 image.overlay
+
+```
+overlay(other: Image, x: number, y: number, opacity?: number): Image
+```
+
+Composite another Image on top of this one at (x, y) with an optional opacity (alpha-blended). Returns a fresh Image the size of the base.
+
+**Parameters**
+
+- `other` *(Image)* — The overlay Image handle to draw on top.
+- `x` *(number)* — Left offset of the overlay within the base, in pixels.
+- `y` *(number)* — Top offset of the overlay within the base, in pixels.
+- `opacity` *(number, optional)* — Blend opacity 0..1 (default 1.0 = fully opaque).
+
+**Returns:** Image — the base with the overlay alpha-blended on top.
+
+**Throws:** Throws a TypeError if other is not an Image handle.
+
+```ts
+const composed = base.overlay(watermark, 10, 10, 0.5);
+```
+
+#### 17.8.19 image.paste
+
+```
+paste(other: Image, x: number, y: number): Image
+```
+
+Paste another Image at (x, y), replacing the base pixels (no blending). Returns a fresh Image the size of the base.
+
+**Parameters**
+
+- `other` *(Image)* — The Image handle to paste in.
+- `x` *(number)* — Left offset of the paste, in pixels.
+- `y` *(number)* — Top offset of the paste, in pixels.
+
+**Returns:** Image — the base with other pasted over it (opaque).
+
+**Throws:** Throws a TypeError if other is not an Image handle.
+
+```ts
+const stamped = base.paste(logo, 0, 0);
+```
+
+#### 17.8.20 image.rasterizeSVG
 
 ```
 rasterizeSVG(src: string | Uint8Array, opts: { width: number; height: number }): { readonly width: number; readonly height: number; readonly format: string; resize(width: number, height: number, opts?: { filter?: "lanczos" | "nearest" | "linear" | "box" | "catmullrom" }): unknown; fit(width: number, height: number): unknown; thumbnail(width: number, height: number): unknown; crop(x: number, y: number, w: number, h: number): unknown; rotate(degrees: number): unknown; rotate90(): unknown; rotate180(): unknown; rotate270(): unknown; flipH(): unknown; flipV(): unknown; orient(n: number): unknown; brightness(percent: number): unknown; contrast(percent: number): unknown; gamma(gamma: number): unknown; saturation(percent: number): unknown; sharpen(sigma: number): unknown; blur(sigma: number): unknown; grayscale(): unknown; invert(): unknown; overlay(other: unknown, x: number, y: number, opacity?: number): unknown; paste(other: unknown, x: number, y: number): unknown; bytes(format: "png" | "jpeg" | "gif" | "tiff" | "bmp" | "webp", opts?: { quality?: number }): Uint8Array; save(path: string, opts?: { format?: string; quality?: number }): void }
@@ -12665,7 +12995,160 @@ Rasterize an SVG (a supported subset) to a raster Image at the requested pixel s
 const im = image.rasterizeSVG("logo.svg", { width: 256, height: 256 });
 ```
 
-#### 17.8.10 image.stego.analyze
+#### 17.8.21 image.resize
+
+```
+resize(width: number, height: number, opts?: { filter?: 'lanczos' | 'nearest' | 'linear' | 'box' | 'catmullrom' }): Image
+```
+
+Resize to width × height with a resampling filter (default Lanczos). Passing 0 for one dimension preserves the aspect ratio (the other dimension is computed). Returns a fresh Image (immutable chaining).
+
+**Parameters**
+
+- `width` *(number)* — Target width in pixels. 0 means "derive from height to preserve aspect".
+- `height` *(number)* — Target height in pixels. 0 means "derive from width to preserve aspect".
+- `opts` *({ filter?: 'lanczos' | 'nearest' | 'linear' | 'box' | 'catmullrom' }, optional)* — Optional resampling filter; defaults to lanczos.
+
+**Returns:** Image — the resized image.
+
+**Throws:** Does not throw on dimension; an unknown filter name falls back to lanczos.
+
+```ts
+const thumb = im.resize(200, 0); // width 200, height auto
+```
+
+#### 17.8.22 image.rotate
+
+```
+rotate(degrees: number): Image
+```
+
+Rotate counter-clockwise by an arbitrary angle (degrees) about the centre, filling exposed corners with transparency. Returns a fresh Image (its bounds grow to contain the rotation).
+
+**Parameters**
+
+- `degrees` *(number)* — Rotation angle in degrees, counter-clockwise.
+
+**Returns:** Image — the rotated image with transparent fill in the new corners.
+
+**Throws:** Does not throw; any finite angle is accepted (multiples of 360 are a no-op).
+
+```ts
+const tilted = im.rotate(15);
+```
+
+#### 17.8.23 image.rotate180
+
+```
+rotate180(): Image
+```
+
+Rotate 180° (lossless). Returns a fresh Image.
+
+**Returns:** Image — rotated 180°.
+
+**Throws:** Does not throw.
+
+```ts
+const r = im.rotate180();
+```
+
+#### 17.8.24 image.rotate270
+
+```
+rotate270(): Image
+```
+
+Rotate 270° counter-clockwise / 90° clockwise (lossless). Returns a fresh Image.
+
+**Returns:** Image — rotated 270° CCW.
+
+**Throws:** Does not throw.
+
+```ts
+const r = im.rotate270();
+```
+
+#### 17.8.25 image.rotate90
+
+```
+rotate90(): Image
+```
+
+Rotate 90° counter-clockwise (lossless, no resampling). Returns a fresh Image.
+
+**Returns:** Image — rotated 90° CCW.
+
+**Throws:** Does not throw.
+
+```ts
+const r = im.rotate90();
+```
+
+#### 17.8.26 image.saturation
+
+```
+saturation(percent: number): Image
+```
+
+Adjust colour saturation by a percentage in [-100, 100]; -100 is fully desaturated (grayscale), positive boosts. Returns a fresh Image.
+
+**Parameters**
+
+- `percent` *(number)* — Saturation change in percent, -100 (gray) .. 100.
+
+**Returns:** Image — saturation-adjusted.
+
+**Throws:** Does not throw; values outside [-100, 100] are clamped to the boundary (e.g. 150 behaves identically to 100).
+
+```ts
+const s = im.saturation(30);
+```
+
+#### 17.8.27 image.save
+
+```
+save(path: string, opts?: { format?: string; quality?: number }): void
+```
+
+Encode and write the image to a file. The format is inferred from the path extension unless opts.format overrides it. quality (jpeg) is 1..100, default 90; WebP is lossless (quality ignored).
+
+**Parameters**
+
+- `path` *(string)* — Destination file path; its extension drives the format unless opts.format is set.
+- `opts` *({ format?: string; quality?: number }, optional)* — Optional: override the encode format and/or set jpeg quality (1..100).
+
+**Returns:** void — writes the encoded image to disk.
+
+**Throws:** Throws ("image: cannot infer format from path …") when the extension is unknown and no opts.format is given, or ("image.save: …") if the file cannot be written.
+
+```ts
+im.resize(64, 64).save("out.png");
+```
+
+#### 17.8.28 image.sharpen
+
+```
+sharpen(sigma: number): Image
+```
+
+Sharpen via an unsharp-mask whose strength is the sigma of the underlying Gaussian. Returns a fresh Image.
+
+**Parameters**
+
+- `sigma` *(number)* — Sharpening strength (Gaussian sigma); larger is stronger.
+
+**Returns:** Image — sharpened.
+
+**Throws:** Does not throw; a sigma <= 0 leaves the image effectively unchanged.
+
+```ts
+const s = im.sharpen(1.0);
+```
+
+#### 17.8.29 image.stego
+
+##### 17.8.29.1 image.stego.analyze
 
 ```
 analyze(carrier: string | Uint8Array): { width: number; height: number; capacity: number; estimatedBits: number; sercon: { present: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; bits?: number }; channels: { channel: string; chiSquare: number; lsbEntropy: number; rsEstimate: number; chiSquareByBits: number[]; entropyByPlane: number[] }[]; verdict: { suspicious: boolean; confidence: number; reasons: string[] } }
@@ -12685,7 +13168,7 @@ Run a full LSB-steganalysis report on an image: per-channel chi-square (pairs-of
 const r = image.stego.analyze("suspect.png"); console.log(r.verdict.suspicious, r.verdict.reasons);
 ```
 
-#### 17.8.11 image.stego.bitplane
+##### 17.8.29.2 image.stego.bitplane
 
 ```
 bitplane(carrier: string | Uint8Array, opts?: { channel?: "r" | "g" | "b" | "rgb"; plane?: number; dest?: string }): { bytes: Uint8Array } | { path: string }
@@ -12706,7 +13189,7 @@ Render one bit-plane of an image as a PNG for visual inspection. Hidden LSB data
 const lsb = image.stego.bitplane("photo.png", { plane: 0 });
 ```
 
-#### 17.8.12 image.stego.capacity
+##### 17.8.29.3 image.stego.capacity
 
 ```
 capacity(carrier: string | Uint8Array, opts?: { bits?: number }): { bytes: number; bits: number }
@@ -12727,7 +13210,7 @@ Report the maximum payload size (in bytes) a carrier can hold, after the fixed 1
 const room = image.stego.capacity("cover.png", { bits: 4 }).bytes;
 ```
 
-#### 17.8.13 image.stego.detect
+##### 17.8.29.4 image.stego.detect
 
 ```
 detect(carrier: string | Uint8Array): { sercon: boolean; encrypted?: boolean; text?: boolean; payloadBytes?: number; bits?: number; suspicious: boolean; confidence: number }
@@ -12747,7 +13230,7 @@ Quickly check whether an image carries hidden data. Returns a definitive flag fo
 if (image.stego.detect("photo.png").sercon) console.log("hidden payload!");
 ```
 
-#### 17.8.14 image.stego.embed
+##### 17.8.29.5 image.stego.embed
 
 ```
 embed(carrier: string | Uint8Array, payload: string | Uint8Array, opts?: { password?: string; dest?: string; bits?: number }): { bytes: Uint8Array } | { path: string }
@@ -12769,7 +13252,7 @@ Hide a payload inside a lossless image using least-significant-bit (LSB) stegano
 const out = image.stego.embed("cover.png", "meet at noon", { password: "s3cret" });
 ```
 
-#### 17.8.15 image.stego.extract
+##### 17.8.29.6 image.stego.extract
 
 ```
 extract(carrier: string | Uint8Array, opts?: { password?: string }): string | Uint8Array
@@ -12790,11 +13273,34 @@ Recover a payload previously hidden by image.stego.embed. Reads the LSB stream, 
 const msg = image.stego.extract("cover.png", { password: "s3cret" });
 ```
 
+#### 17.8.30 image.thumbnail
+
+```
+thumbnail(width: number, height: number): Image
+```
+
+Produce an exactly width × height thumbnail by scaling and centre-cropping to fill the box (aspect ratio preserved, overflow cropped). Returns a fresh Image.
+
+**Parameters**
+
+- `width` *(number)* — Output width in pixels.
+- `height` *(number)* — Output height in pixels.
+
+**Returns:** Image — a width × height thumbnail, centre-cropped to fill.
+
+**Throws:** Does not throw; non-positive dimensions produce a degenerate image rather than an error.
+
+```ts
+const sq = im.thumbnail(128, 128);
+```
+
 ### 17.9 net
 
 Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions.
 
-#### 17.9.1 net.browser.open
+#### 17.9.1 net.browser
+
+##### 17.9.1.1 net.browser.open
 
 ```
 open(...args: unknown[]): Promise<{ setUserAgent(ua: string): void, setHeader(name: string, value: string): void, get(url: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, post(url: string, body?: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, cookies(url: string): Promise<{ name: string, value: string }[]> }>
@@ -12814,7 +13320,9 @@ const home = await b.get("https://site/home");
 runtime.log(await b.cookies("https://site/"));
 ```
 
-#### 17.9.2 net.capture.interfaces
+#### 17.9.2 net.capture
+
+##### 17.9.2.1 net.capture.interfaces
 
 ```
 interfaces(): { name: string; addresses: string[]; up: boolean; loopback: boolean }[]
@@ -12830,7 +13338,7 @@ List the host's network interfaces synchronously: net.capture.interfaces() → a
 for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);
 ```
 
-#### 17.9.3 net.capture.open
+##### 17.9.2.2 net.capture.open
 
 ```
 open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, vlan?: { id: number, priority: number, drop: boolean, type: string }, arp?: { operation: string, senderMac: string, senderIp: string, targetMac: string, targetIp: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, window: number, checksum: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean }, options?: { mss?: number, windowScale?: number, sackPermitted?: boolean, timestamps?: { val: number, ecr: number } } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, dns?: { id: number, qr: boolean, opcode: string, rcode: string, questions: { name: string, type: string }[], answers: { name: string, type: string, data: string }[] }, payload?: Uint8Array, bytes: Uint8Array }) => void): Promise<{ iface: string, link: string, close(): Promise<void> }>
@@ -12854,7 +13362,7 @@ const cap = await net.capture.open({ iface: "en0", filter: "tcp and port 443" },
 await cap.close();
 ```
 
-#### 17.9.4 net.capture.openFile
+##### 17.9.2.3 net.capture.openFile
 
 ```
 openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, vlan?: object, arp?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, dns?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): Promise<void>
@@ -12876,7 +13384,7 @@ Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) →
 await net.capture.openFile("/tmp/dump.pcap", pkt => runtime.log(pkt.tcp?.dstPort), { filter: "tcp" });
 ```
 
-#### 17.9.5 net.capture.routes
+##### 17.9.2.4 net.capture.routes
 
 ```
 routes(): { destination: string; gateway: string; interface: string; family: "ip" | "ip6"; metric: number }[]
@@ -12892,7 +13400,7 @@ List the host's IP routing table synchronously: net.capture.routes() → array o
 const def = net.capture.routes().find(r => r.destination === "0.0.0.0/0");\nruntime.log("default via", def?.gateway, "on", def?.interface);
 ```
 
-#### 17.9.6 net.capture.toFile
+##### 17.9.2.5 net.capture.toFile
 
 ```
 toFile(path: string, opts?: { snaplen?: number, linkType?: number }): { write(bytes: string | Uint8Array, opts?: { ts?: number }): void; close(): Promise<void> }
@@ -12915,7 +13423,9 @@ w.write(frameBytes, { ts: Date.now() });
 await w.close();
 ```
 
-#### 17.9.7 net.email.all
+#### 17.9.3 net.email
+
+##### 17.9.3.1 net.email.all
 
 ```
 all(domain: string): Promise<{ domain: string, spf: object, dmarc: object, mtaSts: object, tlsRpt: object, bimi: object }>
@@ -12935,7 +13445,7 @@ Run all five email probes in parallel — five-way handshake aggregate.
 const a = await net.email.all("example.com"); runtime.log(a.spf, a.dmarc);
 ```
 
-#### 17.9.8 net.email.bimi
+##### 17.9.3.2 net.email.bimi
 
 ```
 bimi(domain: string, opts?: { selector?: string }): Promise<{ present: false, selector: string } | { present: true, selector: string, record: string, tags: Record<string, string>, l: string, a: string }>
@@ -12956,7 +13466,7 @@ Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'.
 const r = await net.email.bimi("example.com", { selector: "v1" }); runtime.log(r.present && r.l);
 ```
 
-#### 17.9.9 net.email.dmarc
+##### 17.9.3.3 net.email.dmarc
 
 ```
 dmarc(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, policy: string, subdomain: string, percent: string, rua: string, ruf: string }>
@@ -12976,7 +13486,7 @@ Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.
 const r = await net.email.dmarc("example.com"); runtime.log(r.present && r.policy);
 ```
 
-#### 17.9.10 net.email.mtaSts
+##### 17.9.3.4 net.email.mtaSts
 
 ```
 mtaSts(domain: string): Promise<{ present: false } | { present: true, record: string, txt: { v: string, id: string }, policy?: { version?: string, mode?: string, mx?: string[], maxAge?: number | string }, policyError?: string }>
@@ -12996,7 +13506,7 @@ Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file.
 const r = await net.email.mtaSts("example.com"); runtime.log(r.present && r.policy?.mode);
 ```
 
-#### 17.9.11 net.email.send
+##### 17.9.3.5 net.email.send
 
 ```
 send(opts: { to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number }): Promise<{ accepted: string[], rejected: { address: string, reason: string }[] }>
@@ -13020,7 +13530,7 @@ const r = await net.email.send({
 runtime.log(r.accepted, r.rejected);
 ```
 
-#### 17.9.12 net.email.spf
+##### 17.9.3.6 net.email.spf
 
 ```
 spf(domain: string): Promise<{ present: false } | { present: true, record: string, mechanisms: string[], allPolicy: string }>
@@ -13040,7 +13550,7 @@ Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.
 const r = await net.email.spf("example.com"); if (r.present) runtime.log(r.allPolicy);
 ```
 
-#### 17.9.13 net.email.tlsRpt
+##### 17.9.3.7 net.email.tlsRpt
 
 ```
 tlsRpt(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, rua: string }>
@@ -13060,7 +13570,9 @@ Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua.
 const r = await net.email.tlsRpt("example.com"); runtime.log(r.present && r.rua);
 ```
 
-#### 17.9.14 net.http.get
+#### 17.9.4 net.http
+
+##### 17.9.4.1 net.http.get
 
 ```
 get(url: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
@@ -13080,7 +13592,7 @@ Perform an HTTP GET with a 5-second default timeout. Returns { status, body, bod
 const r = await net.http.get("https://example.com"); runtime.log(r.status);
 ```
 
-#### 17.9.15 net.http.post
+##### 17.9.4.2 net.http.post
 
 ```
 post(url: string, body?: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
@@ -13101,7 +13613,7 @@ Perform an HTTP POST with a 5-second default timeout. Returns { status, body, bo
 const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1 }));
 ```
 
-#### 17.9.16 net.http.request
+##### 17.9.4.3 net.http.request
 
 ```
 request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string, maxBytes?: number }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
@@ -13127,7 +13639,9 @@ const r = await net.http.request("POST", "https://api.example.com/upload", { mul
 ] });
 ```
 
-#### 17.9.17 net.icmp.open
+#### 17.9.5 net.icmp
+
+##### 17.9.5.1 net.icmp.open
 
 ```
 open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array, body?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -13151,7 +13665,9 @@ await p.send({ to: "8.8.8.8", id: 1, seq: 1, payload: "ping" });
 await p.send({ to: "8.8.8.8", type: 3, code: 1, body: new Uint8Array([0, 0, 0, 0]) });
 ```
 
-#### 17.9.18 net.load.http
+#### 17.9.6 net.load
+
+##### 17.9.6.1 net.load.http
 
 ```
 http(opts: { url: string, method?: string, headers?: Record<string, string>, body?: string, concurrency?: number, requests?: number, duration?: number, rps?: number, timeout?: number, confirm?: boolean }): Promise<{ target: string, method: string, concurrency: number, durationMs: number, sent: number, completed: number, failed: number, rps: number, errorRate: number, latency: { min: number, mean: number, p50: number, p90: number, p95: number, p99: number, max: number }, statusCounts: Record<string, number>, errors: Record<string, number> }>
@@ -13171,7 +13687,9 @@ Authorized HTTP load / resilience self-test: drive a target with a worker pool a
 const r = await net.load.http({ url: "http://127.0.0.1:8080/", requests: 200, concurrency: 10 }); runtime.log(r.rps, r.latency.p95, r.errorRate);
 ```
 
-#### 17.9.19 net.netstatus.check
+#### 17.9.7 net.netstatus
+
+##### 17.9.7.1 net.netstatus.check
 
 ```
 check(host: string, opts?: { port?: string, timeout?: number }): Promise<{ host: string, port: string, elapsedMs: number, reachable: boolean, dns: { ok: boolean, ips: string[], error?: string }, tcp: { ok: boolean, latencyMs: number, error?: string }, tls: { ok: boolean, daysRemaining: number, error?: string }, http: { ok: boolean, status: number, error?: string } }>
@@ -13192,7 +13710,9 @@ Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, d
 const s = await net.netstatus.check("example.com"); runtime.log(s.reachable);
 ```
 
-#### 17.9.20 net.probe.dns
+#### 17.9.8 net.probe
+
+##### 17.9.8.1 net.probe.dns
 
 ```
 dns(host: string, opts?: { types?: string[] }): Promise<{ a?: string[], aaaa?: string[], mx?: { preference: number, host: string }[], txt?: string[], cname?: string, ns?: string[] }>
@@ -13213,7 +13733,7 @@ Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five.
 const r = await net.probe.dns("example.com", { types: ["a", "mx"] });
 ```
 
-#### 17.9.21 net.probe.ntp
+##### 17.9.8.2 net.probe.ntp
 
 ```
 ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<{ serverTime: string, offsetMs: number, rttMs: number, stratum: number, referenceTime: string, rootDelayMs: number, rootDispersionMs: number }>
@@ -13234,7 +13754,7 @@ Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / di
 const r = await net.probe.ntp("pool.ntp.org"); runtime.log(r.offsetMs);
 ```
 
-#### 17.9.22 net.probe.ping
+##### 17.9.8.3 net.probe.ping
 
 ```
 ping(host: string, opts?: { mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }): Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }>
@@ -13255,7 +13775,7 @@ Reachability probe. mode tcp (default; dials host:port), icmp (real ICMP echo, n
 const p = await net.probe.ping("example.com", { count: 3 }); runtime.log(p.lossPercent);
 ```
 
-#### 17.9.23 net.probe.smtp
+##### 17.9.8.4 net.probe.smtp
 
 ```
 smtp(host: string, opts?: { port?: string, timeout?: number, ehloName?: string }): Promise<{ host: string, port: string, banner: string, ehloDomain: string, extensions: string[], starttls: boolean, authMechanisms: string[], sizeLimit: number }>
@@ -13276,7 +13796,7 @@ SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner,
 const s = await net.probe.smtp("mail.example.com"); runtime.log(s.starttls, s.authMechanisms);
 ```
 
-#### 17.9.24 net.probe.tcp
+##### 17.9.8.5 net.probe.tcp
 
 ```
 tcp(target: string, opts?: { timeout?: number, port?: string }): Promise<{ host: string, port: number, ip: string, latencyMs: number }>
@@ -13297,7 +13817,7 @@ Dial a TCP target and report latency + resolved IP. Default timeout 5s.
 const r = await net.probe.tcp("example.com:443"); runtime.log(r.latencyMs);
 ```
 
-#### 17.9.25 net.probe.tls
+##### 17.9.8.6 net.probe.tls
 
 ```
 tls(target: string, opts?: { timeout?: number }): Promise<{ cn: string, issuer: string, notBefore: string, notAfter: string, daysRemaining: number, dnsNames: string[], serialNumber: string, fingerprintSha256: string }>
@@ -13318,7 +13838,7 @@ Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert
 const c = await net.probe.tls("example.com:443"); runtime.log(c.daysRemaining);
 ```
 
-#### 17.9.26 net.probe.traceroute
+##### 17.9.8.7 net.probe.traceroute
 
 ```
 traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string | null; rttsMs: number[]; reached: boolean }[]>
@@ -13341,7 +13861,7 @@ const hops = await net.probe.traceroute("1.1.1.1", { protocol: "icmp", maxHops: 
 for (const h of hops) runtime.log(h.ttl, h.address ?? "*", h.rttsMs);
 ```
 
-#### 17.9.27 net.probe.whois
+##### 17.9.8.8 net.probe.whois
 
 ```
 whois(domain: string, opts?: { timeout?: number }): Promise<{ raw: string, domain?: { name: string, punycode: string, whoisServer: string, nameServers: string[], status: string[], dnssec: boolean, createdDate: string, updatedDate: string, expirationDate: string }, registrar?: { name: string } }>
@@ -13362,7 +13882,7 @@ Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw re
 const w = await net.probe.whois("example.com"); runtime.log(w.domain?.expirationDate);
 ```
 
-#### 17.9.28 net.probe.wss
+##### 17.9.8.9 net.probe.wss
 
 ```
 wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string, connected: boolean, subprotocol: string, status: number, handshakeMs: number, pingMs: number }>
@@ -13383,7 +13903,9 @@ WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT.
 const w = await net.probe.wss("wss://echo.websocket.org"); runtime.log(w.handshakeMs);
 ```
 
-#### 17.9.29 net.raw.open
+#### 17.9.9 net.raw
+
+##### 17.9.9.1 net.raw.open
 
 ```
 open(opts?: { iface?: string, filter?: string, readBuffer?: number }): Promise<{ link: string; send(spec: object | Uint8Array): Promise<{ bytesSent: number }>; onPacket(cb: (pkt: any) => void): void; onClose(cb: () => void): void; onError(cb: (msg: string) => void): void; close(): Promise<void> }>
@@ -13408,7 +13930,7 @@ await new Promise(r => setTimeout(r, 1000));
 await h.close();
 ```
 
-#### 17.9.30 net.raw.tcp
+##### 17.9.9.2 net.raw.tcp
 
 ```
 tcp(host: string, port: number, opts?: { flags?: string[], srcPort?: number, src?: string, seq?: number, ttl?: number, payload?: Uint8Array | string, timeout?: number, iface?: string }): Promise<{ ts: number; link: string; ip: { src: string; dst: string; protocol: string; ttl: number }; tcp: { srcPort: number; dstPort: number; seq: number; ack: number; flags: { syn: boolean; ack: boolean; fin: boolean; rst: boolean; psh: boolean; urg: boolean } }; payload?: Uint8Array; bytes: Uint8Array } | null>
@@ -13434,7 +13956,9 @@ else if (reply && reply.tcp.flags.rst) runtime.log("closed");
 else runtime.log("filtered / no answer");
 ```
 
-#### 17.9.31 net.tcp.connect
+#### 17.9.10 net.tcp
+
+##### 17.9.10.1 net.tcp.connect
 
 ```
 connect(host: string, port: string | number, opts?: { timeout?: number, readBuffer?: number }): Promise<{ remote: string, local: string, write(data: string | Uint8Array): Promise<void>, onData(cb: (ev: { bytes: Uint8Array, text: string }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -13458,7 +13982,9 @@ sock.onData(ev => runtime.log(ev.text));
 await sock.write("GET / HTTP/1.0\r\n\r\n");
 ```
 
-#### 17.9.32 net.udp.open
+#### 17.9.11 net.udp
+
+##### 17.9.11.1 net.udp.open
 
 ```
 open(opts: { host?: string, port?: string | number, bind?: string, readBuffer?: number }): Promise<{ local: string, send(data: string | Uint8Array): Promise<void>, sendTo(data: string | Uint8Array, host: string, port: string | number): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address?: string, port?: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -13500,7 +14026,9 @@ Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is t
 const target = runtime.argv[2] ?? "default-host";
 ```
 
-#### 17.10.2 runtime.assert.equal
+#### 17.10.2 runtime.assert
+
+##### 17.10.2.1 runtime.assert.equal
 
 ```
 equal(actual: unknown, expected: unknown, msg?: string): void
@@ -13522,7 +14050,7 @@ Throw when actual != expected (strict equality on primitives, deep equality on o
 runtime.assert.equal(1 + 1, 2, "math still works");
 ```
 
-#### 17.10.3 runtime.assert.ok
+##### 17.10.2.2 runtime.assert.ok
 
 ```
 ok(cond: unknown, msg?: string): void
@@ -13543,7 +14071,7 @@ Throw when cond is falsy. Optional msg appears in the error.
 runtime.assert.ok(user.id, "user must have an id");
 ```
 
-#### 17.10.4 runtime.clearDeadline
+#### 17.10.3 runtime.clearDeadline
 
 ```
 clearDeadline(): void
@@ -13559,7 +14087,9 @@ Remove the running script's wall-clock kill deadline entirely (equivalent to -ti
 runtime.clearDeadline(); // run without a timeout
 ```
 
-#### 17.10.5 runtime.clipboard.available
+#### 17.10.4 runtime.clipboard
+
+##### 17.10.4.1 runtime.clipboard.available
 
 ```
 available: boolean
@@ -13575,7 +14105,7 @@ True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-cl
 if (!runtime.clipboard.available) runtime.log("no clipboard — skipping");
 ```
 
-#### 17.10.6 runtime.clipboard.imageAvailable
+##### 17.10.4.2 runtime.clipboard.imageAvailable
 
 ```
 imageAvailable: boolean
@@ -13591,7 +14121,7 @@ True when a PNG image clipboard backend is usable on this host (macOS pngpaste; 
 if (runtime.clipboard.imageAvailable) { /* … */ }
 ```
 
-#### 17.10.7 runtime.clipboard.read
+##### 17.10.4.3 runtime.clipboard.read
 
 ```
 read(...args: unknown[]): Promise<string>
@@ -13607,7 +14137,7 @@ Read the host OS system clipboard as UTF-8 text. Async (shells out to the platfo
 const text = await runtime.clipboard.read();
 ```
 
-#### 17.10.8 runtime.clipboard.readImage
+##### 17.10.4.4 runtime.clipboard.readImage
 
 ```
 readImage(...args: unknown[]): Promise<Uint8Array | null>
@@ -13623,7 +14153,7 @@ Read the host clipboard image as PNG bytes. Async (shells out). Resolves null wh
 const png = await runtime.clipboard.readImage();
 ```
 
-#### 17.10.9 runtime.clipboard.write
+##### 17.10.4.5 runtime.clipboard.write
 
 ```
 write(text: string): Promise<void>
@@ -13643,7 +14173,7 @@ Replace the host OS system clipboard with the given text. Async (shells out to t
 await runtime.clipboard.write("copied from sercon");
 ```
 
-#### 17.10.10 runtime.clipboard.writeImage
+##### 17.10.4.6 runtime.clipboard.writeImage
 
 ```
 writeImage(png: Uint8Array): Promise<void>
@@ -13663,7 +14193,9 @@ Set the host clipboard image from PNG bytes. Async (shells out). The input must 
 await runtime.clipboard.writeImage(pngBytes);
 ```
 
-#### 17.10.11 runtime.env.get
+#### 17.10.5 runtime.env
+
+##### 17.10.5.1 runtime.env.get
 
 ```
 get(name: string): string | undefined
@@ -13683,7 +14215,7 @@ Read an environment variable. Returns undefined when unset (not empty string).
 const home = runtime.env.get("HOME") ?? "/tmp";
 ```
 
-#### 17.10.12 runtime.env.load
+##### 17.10.5.2 runtime.env.load
 
 ```
 load(path: string, opts?: { override?: boolean }): Promise<{ [key: string]: string }>
@@ -13705,7 +14237,7 @@ await runtime.env.load(".env");
 const url = runtime.env.get("DATABASE_URL");
 ```
 
-#### 17.10.13 runtime.getDeadline
+#### 17.10.6 runtime.getDeadline
 
 ```
 getDeadline(): number | null
@@ -13721,7 +14253,7 @@ Return the milliseconds remaining until the running script's kill deadline, or n
 const left = runtime.getDeadline(); // e.g. 9871, or null
 ```
 
-#### 17.10.14 runtime.log
+#### 17.10.7 runtime.log
 
 ```
 log(args: unknown[]): void
@@ -13741,7 +14273,9 @@ Print one space-separated line of the arguments to stdout. Primitives print raw;
 runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}
 ```
 
-#### 17.10.15 runtime.secrets.available
+#### 17.10.8 runtime.secrets
+
+##### 17.10.8.1 runtime.secrets.available
 
 ```
 available: boolean
@@ -13757,7 +14291,7 @@ True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows 
 if (!runtime.secrets.available) runtime.log("no keystore — skipping");
 ```
 
-#### 17.10.16 runtime.secrets.delete
+##### 17.10.8.2 runtime.secrets.delete
 
 ```
 delete(name: string, account: string): Promise<boolean>
@@ -13778,7 +14312,7 @@ Remove a secret from the OS keystore under prefix + name / account. Async (keyst
 const removed = await runtime.secrets.delete("devshop", "tess@example.com");
 ```
 
-#### 17.10.17 runtime.secrets.get
+##### 17.10.8.3 runtime.secrets.get
 
 ```
 get(name: string, account: string): Promise<string | null>
@@ -13799,7 +14333,7 @@ Read a string secret from the OS keystore. The keystore service is the configure
 const pw = await runtime.secrets.get("devshop", "tess@example.com");
 ```
 
-#### 17.10.18 runtime.secrets.set
+##### 17.10.8.4 runtime.secrets.set
 
 ```
 set(name: string, account: string, secret: string): Promise<void>
@@ -13821,7 +14355,7 @@ Store or overwrite a string secret in the OS keystore under prefix + name / acco
 await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
 ```
 
-#### 17.10.19 runtime.setDeadline
+#### 17.10.9 runtime.setDeadline
 
 ```
 setDeadline(ms: number): void
@@ -13841,7 +14375,9 @@ Set the running script's wall-clock kill deadline to now + ms (replacing any pri
 runtime.setDeadline(30000); // give this run 30s from now
 ```
 
-#### 17.10.20 runtime.time.format
+#### 17.10.10 runtime.time
+
+##### 17.10.10.1 runtime.time.format
 
 ```
 format(ms: number, layout: string, tz?: string): string
@@ -13863,7 +14399,7 @@ Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Euro
 const s = runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC");
 ```
 
-#### 17.10.21 runtime.time.nowMs
+##### 17.10.10.2 runtime.time.nowMs
 
 ```
 nowMs(): number
@@ -13879,7 +14415,7 @@ Wall-clock milliseconds since the Unix epoch.
 const t0 = runtime.time.nowMs();
 ```
 
-#### 17.10.22 runtime.time.sleep
+##### 17.10.10.3 runtime.time.sleep
 
 ```
 sleep(ms: number): Promise<void>
@@ -13903,7 +14439,9 @@ await runtime.time.sleep(250);
 
 Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.
 
-#### 17.11.1 server.http.listen
+#### 17.11.1 server.http
+
+##### 17.11.1.1 server.http.listen
 
 ```
 listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown; maxBodyBytes?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -13928,7 +14466,7 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### 17.11.2 server.http.static
+##### 17.11.1.2 server.http.static
 
 ```
 static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
@@ -13951,7 +14489,9 @@ server.http.listen({
 });
 ```
 
-#### 17.11.3 server.https.listen
+#### 17.11.2 server.https
+
+##### 17.11.2.1 server.https.listen
 
 ```
 listen(opts: { port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; maxBodyBytes?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -13976,7 +14516,7 @@ const srv = server.https.listen({
 });
 ```
 
-#### 17.11.4 server.https.static
+##### 17.11.2.2 server.https.static
 
 ```
 static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
@@ -13999,7 +14539,9 @@ server.https.listen({
 });
 ```
 
-#### 17.11.5 server.icmp.listen
+#### 17.11.3 server.icmp
+
+##### 17.11.3.1 server.icmp.listen
 
 ```
 listen(opts?: { network?: "ip4" | "ip6" }, handler?: (msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void): { address: string; close(): Promise<void> }
@@ -14025,7 +14567,9 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### 17.11.6 server.smtp.listen
+#### 17.11.4 server.smtp
+
+##### 17.11.4.1 server.smtp.listen
 
 ```
 listen(opts: { port: number; host?: string; hostname?: string; handlers: { onMail: (env: Envelope) => boolean | string | void | Promise<boolean | string | void>; onRcpt: (env: Envelope, to: string) => boolean | string | void | Promise<boolean | string | void>; onData: (env: Envelope, msg: Message) => boolean | string | void | Promise<boolean | string | void> }; auth?: (user: string, pass: string, env: Envelope) => boolean | Promise<boolean>; starttls?: { cert: string; key: string }; allowInsecureAuth?: boolean; maxMessageBytes?: number; maxRecipients?: number; sessionTimeout?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -14052,7 +14596,9 @@ const srv = server.smtp.listen({
 });
 ```
 
-#### 17.11.7 server.tcp.listen
+#### 17.11.5 server.tcp
+
+##### 17.11.5.1 server.tcp.listen
 
 ```
 listen(opts: { port: number; host?: string; readBuffer?: number }, handler: (conn: { remote: string; local: string; write(data: string | Uint8Array): Promise<void>; onData(cb: (msg: { bytes: Uint8Array; text: string }) => void): void; onClose(cb: () => void): void; onError(cb: (err: unknown) => void): void; close(): void }) => void): { address: string; close(): Promise<void> }
@@ -14077,7 +14623,9 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### 17.11.8 server.udp.listen
+#### 17.11.6 server.udp
+
+##### 17.11.6.1 server.udp.listen
 
 ```
 listen(opts: { port: number; host?: string }, handler: (msg: { bytes: Uint8Array; text: string; address: string; port: number }, reply: (data: string | Uint8Array) => Promise<void>) => void): { address: string; close(): Promise<void> }
@@ -14106,35 +14654,62 @@ await srv.close();
 
 Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, poppler-backed PDF render/extract, external-requirement diagnostics (doctor).
 
-#### 17.12.1 services.agentBrowser.auth
+#### 17.12.1 services.agentBrowser
+
+##### 17.12.1.1 services.agentBrowser.auth
 
 Namespace object for the auth vault (session-independent): auth.save, auth.list, auth.show, auth.delete. Passwords are never placed in argv — auth.save sends the password via stdin (--password-stdin).
 
-#### 17.12.2 services.agentBrowser.auth.delete
+**Returns:** object — the auth namespace (not callable itself; use sub-methods). auth.list returns an array of profile names; auth.show/delete return an envelope; auth.save returns an envelope. Handle-level auth.login(name) is a separate method on the session handle.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH, or required fields (name, url, username, password) are missing.
+
+```ts
+// Save a login profile (password sent via stdin, never via argv).
+await services.agentBrowser.auth.save("prod", {
+  url: "https://app.example.com/login",
+  username: "admin",
+  password: "s3cret",
+  usernameSelector: "#user",
+  passwordSelector: "#pass",
+});
+
+// List all saved profiles.
+const profiles = await services.agentBrowser.auth.list();
+runtime.log(JSON.stringify(profiles.data));
+
+// Log in using a saved profile (handle method — requires an open session).
+const b = services.agentBrowser.launch();
+await b.open("https://app.example.com/login");
+await b.auth.login("prod");
+await b.close();
+```
+
+###### 17.12.1.1.1 services.agentBrowser.auth.delete
 
 ```
 delete(...args: unknown[])
 ```
 
-#### 17.12.3 services.agentBrowser.auth.list
+###### 17.12.1.1.2 services.agentBrowser.auth.list
 
 ```
 list(...args: unknown[])
 ```
 
-#### 17.12.4 services.agentBrowser.auth.save
+###### 17.12.1.1.3 services.agentBrowser.auth.save
 
 ```
 save(...args: unknown[])
 ```
 
-#### 17.12.5 services.agentBrowser.auth.show
+###### 17.12.1.1.4 services.agentBrowser.auth.show
 
 ```
 show(...args: unknown[])
 ```
 
-#### 17.12.6 services.agentBrowser.available
+##### 17.12.1.2 services.agentBrowser.available
 
 ```
 available: boolean
@@ -14150,7 +14725,52 @@ True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run.
 if (!services.agentBrowser.available) runtime.log("install agent-browser first");
 ```
 
-#### 17.12.7 services.agentBrowser.clearDefaultOptions
+##### 17.12.1.3 services.agentBrowser.batch
+
+```
+batch(cmds: string[], opts?: { bail?: boolean }): Promise<Array<{ success: boolean, data: object, error: string | null }>>
+```
+
+Run multiple agent-browser command strings in a single round-trip. Each element of cmds is a full command string (e.g. 'get title'). Returns a JSON array of per-command results, not the usual envelope.
+
+**Parameters**
+
+- `cmds` *(string[])* — Array of full command strings to execute sequentially. Required.
+- `opts` *({ bail?: boolean }, optional)* — bail: stop on the first failed command and return results up to that point.
+
+**Returns:** Promise<Array<{ success: boolean, data: object, error: string|null }>> — a JSON array of per-command result envelopes (not the usual single envelope).
+
+**Throws:** Throws if cmds is missing/not an array or agent-browser is not on PATH.
+
+```ts
+const results = await b.batch(["get title", "get url"], { bail: false });
+for (const r of results) runtime.log(r.success, r.data);
+```
+
+##### 17.12.1.4 services.agentBrowser.chat
+
+```
+chat(message: string, opts?: { model?: string }): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Send a single natural-language instruction to the browser session's AI gateway. The AI interprets the message and drives the page. Requires an AI gateway configured in agent-browser; errors cleanly if not configured.
+
+**Parameters**
+
+- `message` *(string)* — Natural-language instruction for the AI to execute. Required.
+- `opts` *({ model?: string }, optional)* — model selects the AI model (uses the agent-browser default when omitted).
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.
+
+**Throws:** Throws if message is missing, if agent-browser is not on PATH, or if no AI gateway is configured.
+
+```ts
+// Requires agent-browser to have an AI gateway configured.
+const r = await b.chat("Click the Login button");
+runtime.log("chat ok:", r.success);
+```
+
+##### 17.12.1.5 services.agentBrowser.clearDefaultOptions
 
 ```
 clearDefaultOptions(): void
@@ -14167,7 +14787,110 @@ services.agentBrowser.clearDefaultOptions();
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {}
 ```
 
-#### 17.12.8 services.agentBrowser.defaultOptions
+##### 17.12.1.6 services.agentBrowser.click
+
+```
+click(selector: string): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Click an element matching a CSS selector.
+
+**Parameters**
+
+- `selector` *(string)* — CSS selector for the element to click. Required.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.
+
+**Throws:** Throws if selector is missing, element not found, or agent-browser is not on PATH.
+
+```ts
+await b.click("#submit-btn");
+```
+
+##### 17.12.1.7 services.agentBrowser.clipboard
+
+```
+clipboard(op: "read" | "write" | "copy" | "paste", text?: string): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Read from or write to the system clipboard. op is one of 'read', 'write', 'copy', 'paste'.
+
+**Parameters**
+
+- `op` *("read" | "write" | "copy" | "paste")* — Clipboard operation. Required.
+- `text` *(string, optional)* — Text to write (only used when op is 'write').
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.
+
+**Throws:** Throws if op is missing or agent-browser is not on PATH.
+
+```ts
+await b.clipboard("write", "hello");
+const r = await b.clipboard("read");
+runtime.log(r.data?.text);
+```
+
+##### 17.12.1.8 services.agentBrowser.close
+
+```
+close(): Promise<{ closed: boolean }>
+```
+
+Close the browser session. Idempotent: a second close is a no-op.
+
+**Returns:** Promise<{ closed: boolean }> — { closed: true } on the first call; an empty object on subsequent calls.
+
+**Throws:** Throws if the close command fails (e.g. agent-browser error).
+
+```ts
+await b.close();
+```
+
+##### 17.12.1.9 services.agentBrowser.cmd
+
+```
+cmd(command: string, args: string[]): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Generic escape hatch: run any agent-browser command with the current session context and return the parsed envelope. Use this for subcommands sercon doesn't model yet.
+
+**Parameters**
+
+- `command` *(string)* — The agent-browser subcommand to run (e.g. 'get', 'scroll'). Required.
+- `args` *(string[])* — Additional arguments to pass to the subcommand (spread after the command).
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.
+
+**Throws:** Throws if command is missing or agent-browser is not on PATH.
+
+```ts
+const r = await b.cmd("get", "title");
+runtime.log("title via cmd:", r.data?.title);
+```
+
+##### 17.12.1.10 services.agentBrowser.cookies
+
+```
+cookies(): object
+```
+
+Handle sub-object for cookie management: cookies.get(), cookies.set(name, value, opts?), cookies.clear().
+
+**Returns:** object — the cookies namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>hi</h1>");
+await b.cookies.set("sid", "abc123", { sameSite: "Lax", httpOnly: true });
+const jar = await b.cookies.get();
+runtime.log("cookies:", JSON.stringify(jar.data));
+await b.cookies.clear();
+await b.close();
+```
+
+##### 17.12.1.11 services.agentBrowser.defaultOptions
 
 ```
 defaultOptions(): object
@@ -14184,7 +14907,30 @@ services.agentBrowser.setDefaultOptions({ headed: false });
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed":false}
 ```
 
-#### 17.12.9 services.agentBrowser.eval
+##### 17.12.1.12 services.agentBrowser.diff
+
+```
+diff(): object
+```
+
+Handle sub-object for page diffing: diff.snapshot(opts?), diff.screenshot(opts), diff.url(url1, url2).
+
+**Returns:** object — the diff namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or a required option (e.g. baseline) is missing.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>hello</h1>");
+const snap = await b.diff.snapshot();
+runtime.log("diff.snapshot ok:", snap.success);
+// Compare two URLs side-by-side (no open() needed for diff.url):
+const cmp = await b.diff.url("data:text/html,<h1>a</h1>", "data:text/html,<h1>b</h1>");
+runtime.log("diff.url ok:", cmp.success);
+await b.close();
+```
+
+##### 17.12.1.13 services.agentBrowser.eval
 
 ```
 eval(url: string, js: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14206,7 +14952,119 @@ const r = await services.agentBrowser.eval("data:text/html,<title>Hi</title>", "
 runtime.log(r.data?.result); // "Hi"
 ```
 
-#### 17.12.10 services.agentBrowser.launch
+##### 17.12.1.14 services.agentBrowser.fill
+
+```
+fill(selector: string, text: string): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Fill an input element with text.
+
+**Parameters**
+
+- `selector` *(string)* — CSS selector for the input element. Required.
+- `text` *(string)* — Text to fill into the element.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.
+
+**Throws:** Throws if selector is missing, element not found, or agent-browser is not on PATH.
+
+```ts
+await b.fill("#search", "typescript");
+```
+
+##### 17.12.1.15 services.agentBrowser.find
+
+```
+find(locator: string, value: string, opts: { action: string, text?: string }): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Locate an element using a semantic locator (role, text, label, etc.) and perform an action in one shot.
+
+**Parameters**
+
+- `locator` *(string)* — Locator type: role, text, label, placeholder, alt, title, testid. Required.
+- `value` *(string)* — Value to match for the given locator type. Required.
+- `opts` *({ action: string, text?: string })* — action is required (e.g. click, fill, hover, check). text is passed as the fill text when action is 'fill' or 'type'.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.
+
+**Throws:** Throws if locator, value, or opts.action is missing, or if agent-browser is not on PATH.
+
+```ts
+await b.find("role", "button", { action: "click" });
+await b.find("text", "Search", { action: "fill", text: "query" });
+```
+
+##### 17.12.1.16 services.agentBrowser.get
+
+```
+get(what: string, selector?: string): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Get a page property. what is one of: text, html, value, attr, title, url, count, box, styles, cdp-url. Pass selector as the second argument for element-scoped queries.
+
+**Parameters**
+
+- `what` *(string)* — Property name: text, html, value, attr, title, url, count, box, styles, cdp-url. Required.
+- `selector` *(string, optional)* — CSS selector to scope the query to a specific element.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser wraps results in this envelope; the requested value lives under data (e.g. get("title") → { success, data: { title }, error }, get("value", "#sel") → { success, data: { value }, error }).
+
+**Throws:** Throws if what is missing, the selector finds no element, or agent-browser is not on PATH.
+
+```ts
+const r = await b.get("title");
+runtime.log(r.data?.title);
+
+const t = await b.get("text", "#main");
+runtime.log(t.data?.text);
+```
+
+##### 17.12.1.17 services.agentBrowser.handle
+
+###### 17.12.1.17.1 services.agentBrowser.handle.snapshot
+
+```
+snapshot(opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Return an accessibility tree snapshot of the current page. Useful for reading page structure without CSS selectors.
+
+**Parameters**
+
+- `opts` *({ interactive?: boolean, compact?: boolean, depth?: number, selector?: string }, optional)* — interactive: include interactive-only elements (-i). compact: compact output (-c). depth: max tree depth (-d). selector: scope to a subtree (-s selector).
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the accessibility tree.
+
+**Throws:** Throws if agent-browser is not on PATH or the snapshot fails.
+
+```ts
+const snap = await b.snapshot({ interactive: true });
+runtime.log("snapshot keys:", Object.keys(snap).join(", "));
+```
+
+##### 17.12.1.18 services.agentBrowser.inspect
+
+```
+inspect(): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Open the Chrome DevTools inspector on the current session and return the DevTools URL.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data typically contains { url } for the DevTools connection.
+
+**Throws:** Throws if agent-browser is not on PATH or the session is closed.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("https://example.com");
+const r = await b.inspect();
+runtime.log("DevTools:", r.data?.url);
+await b.close();
+```
+
+##### 17.12.1.19 services.agentBrowser.launch
 
 ```
 launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string, timeout?: number }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; frame(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: "Strict" | "Lax" | "None", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; trace: { start(): Promise<any>; stop(path?: string): Promise<any> }; profiler: { start(opts?: { categories?: string }): Promise<any>; stop(path?: string): Promise<any> }; inspect(): Promise<any>; clipboard(op: "read" | "write" | "copy" | "paste", text?: string): Promise<any>; vitals(url?: string): Promise<any>; pushstate(url: string): Promise<any>; react: { tree(): Promise<any>; inspect(id: string): Promise<any>; renders: { start(): Promise<any>; stop(): Promise<any> }; suspense(opts?: { onlyDynamic?: boolean }): Promise<any> }; stream: { enable(opts?: { port?: number }): Promise<any>; disable(): Promise<any>; status(): Promise<any> }; chat(message: string, opts?: { model?: string }): Promise<any>; cmd(command: string, ...args: string[]): Promise<any>; batch(cmds: string[], opts?: { bail?: boolean }): Promise<any>; auth: { login(name: string): Promise<any> }; close(): Promise<any> }
@@ -14230,7 +15088,50 @@ runtime.log(r.data?.title);
 await b.close();
 ```
 
-#### 17.12.11 services.agentBrowser.pdf
+##### 17.12.1.20 services.agentBrowser.network
+
+```
+network(): object
+```
+
+Handle sub-object for network interception and monitoring: network.route, network.unroute, network.requests, network.request, network.har.start, network.har.stop.
+
+**Returns:** object — the network namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>hi</h1>");
+await b.network.route("**/api/*", { abort: true });
+const reqs = await b.network.requests({ clear: true });
+runtime.log("requests:", JSON.stringify(reqs.data));
+await b.close();
+```
+
+##### 17.12.1.21 services.agentBrowser.open
+
+```
+open(url: string): Promise<{ success: boolean; data: object; error: string | null }>
+```
+
+Navigate the browser session to a URL. The URL may be http/https, a data: URI, or any scheme the browser supports.
+
+**Parameters**
+
+- `url` *(string)* — The URL to navigate to. Required.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data typically contains { url, title } after navigation.
+
+**Throws:** Throws if url is missing, if agent-browser is not on PATH, or if navigation fails.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("https://example.com");
+await b.close();
+```
+
+##### 17.12.1.22 services.agentBrowser.pdf
 
 ```
 pdf(url: string, path?: string): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
@@ -14252,7 +15153,95 @@ const pdf = await services.agentBrowser.pdf("data:text/html,<h1>Hi</h1>");
 runtime.log(new Uint8Array(pdf.bytes).length, pdf.format); // e.g. 5678 pdf
 ```
 
-#### 17.12.12 services.agentBrowser.screenshot
+##### 17.12.1.23 services.agentBrowser.profiler
+
+```
+profiler(opts?: { categories?: string }): object
+```
+
+Handle sub-object for V8 CPU profiling: profiler.start(opts?) begins profiling (opts.categories narrows the V8/Blink categories), profiler.stop(path?) stops it.
+
+**Parameters**
+
+- `opts` *({ categories?: string }, optional)* — categories is a comma-separated list of V8/Blink profiling categories (e.g. 'v8,blink').
+
+**Returns:** object — the profiler namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>hi</h1>");
+await b.profiler.start({ categories: "v8,blink" });
+// ... interact ...
+await b.profiler.stop("/tmp/profile.json");
+await b.close();
+```
+
+##### 17.12.1.24 services.agentBrowser.pushstate
+
+```
+pushstate(url: string): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Perform a client-side SPA navigation using history.pushState without a full page reload.
+
+**Parameters**
+
+- `url` *(string)* — The URL to push into the browser history. Required.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope.
+
+**Throws:** Throws if url is missing or agent-browser is not on PATH.
+
+```ts
+await b.pushstate("/app/dashboard");
+```
+
+##### 17.12.1.25 services.agentBrowser.react
+
+```
+react(): object
+```
+
+Handle sub-object for React DevTools integration: react.tree(), react.inspect(id), react.renders.start/stop(), react.suspense(opts?). Requires the session launched with launch({ enable: 'react-devtools' }).
+
+**Returns:** object — the react namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>. agent-browser returns a clear error when react-devtools was not enabled at launch time.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or react-devtools was not enabled at launch.
+
+```ts
+const b = services.agentBrowser.launch({ enable: "react-devtools" });
+await b.open("https://react-app.example.com");
+const tree = await b.react.tree();
+runtime.log(JSON.stringify(tree.data).slice(0, 200));
+const suspense = await b.react.suspense({ onlyDynamic: true });
+runtime.log("suspense ok:", suspense.success);
+await b.close();
+```
+
+##### 17.12.1.26 services.agentBrowser.record
+
+```
+record(): object
+```
+
+Namespace object for video recording on an open handle: record.start(path, url?) and record.stop().
+
+**Returns:** object — the record namespace (not callable itself; use sub-methods).
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("https://example.com");
+await b.record.start("/tmp/clip.webm");
+// ... interact ...
+await b.record.stop();
+await b.close();
+```
+
+##### 17.12.1.27 services.agentBrowser.screenshot
 
 ```
 screenshot(url: string, path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
@@ -14275,7 +15264,27 @@ const shot = await services.agentBrowser.screenshot("data:text/html,<h1>Hi</h1>"
 runtime.log(new Uint8Array(shot.bytes).length, shot.format); // e.g. 12345 png
 ```
 
-#### 17.12.13 services.agentBrowser.setDefaultOptions
+##### 17.12.1.28 services.agentBrowser.set
+
+```
+set(): object
+```
+
+Namespace object with browser-settings sub-methods on an open handle: set.viewport, set.device, set.geo, set.offline, set.headers, set.credentials, set.media.
+
+**Returns:** object — the set namespace (not callable itself; use sub-methods).
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>Test</h1>");
+await b.set.viewport(1920, 1080);
+await b.set.device("iPhone 12");
+await b.close();
+```
+
+##### 17.12.1.29 services.agentBrowser.setDefaultOptions
 
 ```
 setDefaultOptions(opts: object): void
@@ -14296,7 +15305,7 @@ services.agentBrowser.setDefaultOptions({ headed: false, proxy: "http://proxy:31
 const b = services.agentBrowser.launch(); // headed:false + proxy inherited
 ```
 
-#### 17.12.14 services.agentBrowser.snapshot
+##### 17.12.1.30 services.agentBrowser.snapshot
 
 ```
 snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14318,7 +15327,96 @@ const snap = await services.agentBrowser.snapshot("data:text/html,<h1>Hi</h1>", 
 runtime.log(JSON.stringify(snap.data).slice(0, 100));
 ```
 
-#### 17.12.15 services.agentBrowser.version
+##### 17.12.1.31 services.agentBrowser.storage
+
+```
+storage(): object
+```
+
+Handle sub-object for web storage: storage.local.{get,set,clear} and storage.session.{get,set,clear}.
+
+**Returns:** object — the storage namespace with local and session sub-objects. Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>hi</h1>");
+await b.storage.local.set("theme", "dark");
+const theme = await b.storage.local.get("theme");
+runtime.log("theme:", JSON.stringify(theme.data));
+await b.storage.session.set("token", "xyz");
+await b.close();
+```
+
+##### 17.12.1.32 services.agentBrowser.stream
+
+```
+stream(opts?: { port?: number }): object
+```
+
+Handle sub-object for live streaming of browser events: stream.enable(opts?), stream.disable(), stream.status(). Streaming makes page events available over a local WebSocket.
+
+**Parameters**
+
+- `opts` *({ port?: number }, optional)* — port selects the streaming port (default chosen by agent-browser).
+
+**Returns:** object — the stream namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.
+
+```ts
+await b.stream.enable({ port: 9229 });
+const status = await b.stream.status();
+runtime.log("streaming:", status.data?.enabled);
+await b.stream.disable();
+```
+
+##### 17.12.1.33 services.agentBrowser.tabs
+
+```
+tabs(): object
+```
+
+Handle sub-object for tab management: tabs.list(), tabs.new(url?, opts?), tabs.close(ref?), tabs.select(ref). Tab refs are t1/t2/… or user labels.
+
+**Returns:** object — the tabs namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH, the session is closed, or a tab ref is required but missing.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>tab1</h1>");
+await b.tabs.new("data:text/html,<h1>tab2</h1>", { label: "second" });
+const list = await b.tabs.list();
+runtime.log("tabs:", JSON.stringify(list.data));
+await b.tabs.select("t1");
+await b.tabs.close("second");
+await b.close();
+```
+
+##### 17.12.1.34 services.agentBrowser.trace
+
+```
+trace(): object
+```
+
+Handle sub-object for Chrome DevTools tracing: trace.start() begins a trace, trace.stop(path?) stops it and optionally saves to a file.
+
+**Returns:** object — the trace namespace (not callable itself; use sub-methods). Each sub-method returns Promise<{ success: boolean, data: object, error: string|null }>.
+
+**Throws:** Never throws directly; sub-methods throw if agent-browser is not on PATH or the session is closed.
+
+```ts
+const b = services.agentBrowser.launch();
+await b.open("data:text/html,<h1>hi</h1>");
+await b.trace.start();
+// ... interact ...
+await b.trace.stop("/tmp/trace.json");
+await b.close();
+```
+
+##### 17.12.1.35 services.agentBrowser.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -14334,7 +15432,30 @@ The agent-browser CLI version string.
 runtime.log(await services.agentBrowser.version());
 ```
 
-#### 17.12.16 services.ai.providers
+##### 17.12.1.36 services.agentBrowser.vitals
+
+```
+vitals(url?: string): Promise<{ success: boolean, data: object, error: string | null }>
+```
+
+Collect Core Web Vitals (LCP, FID, CLS, TTFB, etc.) for the current page or a given URL.
+
+**Parameters**
+
+- `url` *(string, optional)* — URL to navigate to before measuring. When omitted, vitals are measured on the currently loaded page.
+
+**Returns:** Promise<{ success: boolean, data: object, error: string|null }> — agent-browser envelope; data contains the Core Web Vitals metrics.
+
+**Throws:** Throws if agent-browser is not on PATH or the session is closed.
+
+```ts
+const v = await b.vitals();
+runtime.log("LCP:", v.data?.lcp);
+```
+
+#### 17.12.2 services.ai
+
+##### 17.12.2.1 services.ai.providers
 
 ```
 providers(): string[]
@@ -14350,7 +15471,7 @@ Which of claude / codex / copilot / gemini are on PATH, in preference order.
 const ps = services.ai.providers(); // e.g. ["claude", "gemini"]
 ```
 
-#### 17.12.17 services.ai.send
+##### 17.12.2.2 services.ai.send
 
 ```
 send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<{ provider: string; output: string; exitCode: number }>
@@ -14371,7 +15492,7 @@ const r = await services.ai.send({ prompt: "Say hi", provider: "claude" });
 runtime.log(r.output);
 ```
 
-#### 17.12.18 services.doctor
+#### 17.12.3 services.doctor
 
 ```
 doctor(requires?: string[]): Promise<{ ok: boolean; satisfied: boolean; unmet: string[]; tools: { name: string; category: string; purpose: string; installed: boolean; version: string | null; ok: boolean; detail?: string }[] }>
@@ -14394,7 +15515,9 @@ const opt = await services.doctor(["typst", "webdriver"]);
 runtime.log("unmet optional features:", JSON.stringify(opt.unmet));
 ```
 
-#### 17.12.19 services.exec.http
+#### 17.12.4 services.exec
+
+##### 17.12.4.1 services.exec.http
 
 ```
 http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<{ status: number; headers: Record<string, string>; body: string; durationMs: number; backend: "recon" | "curl" }>
@@ -14417,7 +15540,7 @@ const r = await services.exec.http("GET", "https://example.com");
 runtime.log(r.status, r.backend);
 ```
 
-#### 17.12.20 services.exec.shell
+##### 17.12.4.2 services.exec.shell
 
 ```
 shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<{ stdout: string; stderr: string; exitCode: number; success: boolean; durationMs: number }>
@@ -14439,7 +15562,7 @@ const r = await services.exec.shell("echo hi");
 if (r.success) runtime.log(r.stdout.trim());
 ```
 
-#### 17.12.21 services.exec.stream
+##### 17.12.4.3 services.exec.stream
 
 ```
 stream(cmd: string | string[], onLine: (line: string, stream: "stdout" | "stderr") => void, opts?: { cwd?: string, env?: Record<string, string>, stdin?: string, timeout?: number }): Promise<{ exitCode: number; success: boolean; durationMs: number }>
@@ -14464,7 +15587,9 @@ const r = await services.exec.stream("echo one; echo two", (line, stream) => {
 runtime.log("exit", r.exitCode);
 ```
 
-#### 17.12.22 services.gh.authStatus
+#### 17.12.5 services.gh
+
+##### 17.12.5.1 services.gh.authStatus
 
 ```
 authStatus(...args: unknown[]): Promise<{ authenticated: boolean; user: string; raw: string }>
@@ -14481,7 +15606,7 @@ const a = await services.gh.authStatus();
 if (a.authenticated) runtime.log("logged in as", a.user);
 ```
 
-#### 17.12.23 services.gh.prList
+##### 17.12.5.2 services.gh.prList
 
 ```
 prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Array<{ number: number; title: string; state: string; author: string; headRefName: string; baseRefName: string; url: string; createdAt: string; updatedAt: string }>>
@@ -14502,7 +15627,7 @@ const prs = await services.gh.prList({ state: "open", limit: 5 });
 for (const pr of prs) runtime.log(pr.number, pr.title);
 ```
 
-#### 17.12.24 services.gh.repoView
+##### 17.12.5.3 services.gh.repoView
 
 ```
 repoView(repo?: string, opts?: { cwd?: string }): Promise<{ name: string; owner: string; description: string; url: string; defaultBranch: string; visibility: string }>
@@ -14524,7 +15649,9 @@ const r = await services.gh.repoView("cli/cli");
 runtime.log(r.owner, r.defaultBranch);
 ```
 
-#### 17.12.25 services.git.add
+#### 17.12.6 services.git
+
+##### 17.12.6.1 services.git.add
 
 ```
 add(paths: string | string[], opts?: { cwd?: string }): Promise<{ paths: string[] }>
@@ -14545,7 +15672,7 @@ Stage one path (string) or several (string[]).
 await services.git.add(["src/a.ts", "src/b.ts"]);
 ```
 
-#### 17.12.26 services.git.branch
+##### 17.12.6.2 services.git.branch
 
 ```
 branch(opts?: { cwd?: string }): Promise<{ current: string; detached: boolean; all: string[] }>
@@ -14566,7 +15693,7 @@ const b = await services.git.branch();
 runtime.log(b.detached ? "(detached)" : b.current);
 ```
 
-#### 17.12.27 services.git.commit
+##### 17.12.6.3 services.git.commit
 
 ```
 commit(message: string, opts?: { cwd?: string, allowEmpty?: boolean }): Promise<{ sha: string }>
@@ -14587,7 +15714,7 @@ Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --all
 const c = await services.git.commit("chore: bump", { allowEmpty: true });
 ```
 
-#### 17.12.28 services.git.diffStat
+##### 17.12.6.4 services.git.diffStat
 
 ```
 diffStat(opts?: { cwd?: string, revRange?: string }): Promise<{ files: number; insertions: number; deletions: number }>
@@ -14608,7 +15735,7 @@ const d = await services.git.diffStat();
 runtime.log(d.files, d.insertions, d.deletions);
 ```
 
-#### 17.12.29 services.git.isClean
+##### 17.12.6.5 services.git.isClean
 
 ```
 isClean(opts?: { cwd?: string }): Promise<boolean>
@@ -14628,7 +15755,7 @@ True iff `git status --porcelain` is empty.
 if (await services.git.isClean()) runtime.log("clean");
 ```
 
-#### 17.12.30 services.git.log
+##### 17.12.6.6 services.git.log
 
 ```
 log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<Array<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }>>
@@ -14649,7 +15776,7 @@ const log = await services.git.log({ limit: 5 });
 runtime.log(log[0].subject);
 ```
 
-#### 17.12.31 services.git.revParse
+##### 17.12.6.7 services.git.revParse
 
 ```
 revParse(rev: string, opts?: { cwd?: string }): Promise<string>
@@ -14670,7 +15797,7 @@ Full 40-char SHA for the given rev. Invalid refs throw.
 const sha = await services.git.revParse("HEAD");
 ```
 
-#### 17.12.32 services.git.runText
+##### 17.12.6.8 services.git.runText
 
 ```
 runText(args: string | string[], opts?: { cwd?: string }): Promise<{ stdout: string; stderr: string; exitCode: number }>
@@ -14692,7 +15819,7 @@ const r = await services.git.runText(["tag", "--list"]);
 if (r.exitCode === 0) runtime.log(r.stdout);
 ```
 
-#### 17.12.33 services.git.status
+##### 17.12.6.9 services.git.status
 
 ```
 status(opts?: { cwd?: string }): Promise<Array<{ path: string; indexStatus: string; workingStatus: string }>>
@@ -14713,7 +15840,9 @@ for (const e of await services.git.status())
   runtime.log(e.indexStatus + e.workingStatus, e.path);
 ```
 
-#### 17.12.34 services.pdf.available
+#### 17.12.7 services.pdf
+
+##### 17.12.7.1 services.pdf.available
 
 ```
 available: boolean
@@ -14731,7 +15860,7 @@ if (!services.pdf.available) {
 }
 ```
 
-#### 17.12.35 services.pdf.backend
+##### 17.12.7.2 services.pdf.backend
 
 ```
 backend: string | null
@@ -14747,7 +15876,7 @@ The active PDF backend name, or null when no backend is available. Currently "po
 runtime.log("pdf backend:", services.pdf.backend ?? "none");
 ```
 
-#### 17.12.36 services.pdf.info
+##### 17.12.7.3 services.pdf.info
 
 ```
 info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; creationDate?: string; modDate?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>
@@ -14768,7 +15897,7 @@ const meta = await services.pdf.info("report.pdf");
 runtime.log("pages:", meta.pages, "encrypted:", meta.encrypted);
 ```
 
-#### 17.12.37 services.pdf.toHtml
+##### 17.12.7.4 services.pdf.toHtml
 
 ```
 toHtml(src: string, opts?: { pages?: string, dest?: string }): Promise<string | { path: string }>
@@ -14790,7 +15919,7 @@ const html = await services.pdf.toHtml("report.pdf", { pages: "1" });
 runtime.log(html.length, "bytes of HTML");
 ```
 
-#### 17.12.38 services.pdf.toImage
+##### 17.12.7.5 services.pdf.toImage
 
 ```
 toImage(src: string, opts?: { page?: number, firstPage?: number, lastPage?: number, format?: "png" | "jpeg" | "tiff", dpi?: number, dest?: string }): Promise<{ format: string; page?: number; bytes?: Uint8Array; paths?: string[] }>
@@ -14816,7 +15945,7 @@ const all = await services.pdf.toImage("report.pdf", { dest: "/tmp/page" });
 runtime.log("wrote", all.paths.length, "images");
 ```
 
-#### 17.12.39 services.pdf.toText
+##### 17.12.7.6 services.pdf.toText
 
 ```
 toText(src: string, opts?: { pages?: string, layout?: boolean, dest?: string }): Promise<string | { path: string }>
@@ -14838,35 +15967,43 @@ const txt = await services.pdf.toText("report.pdf", { pages: "1-2" });
 runtime.log(txt.slice(0, 80));
 ```
 
-#### 17.12.40 services.pdf.tools
+##### 17.12.7.7 services.pdf.tools
 
 Per-binary availability for the poppler tools sercon uses, so a partial install can still serve the operations it covers.
 
-#### 17.12.41 services.pdf.tools.pdfinfo
+**Returns:** object — each poppler binary mapped to whether it is on PATH.
+
+**Throws:** Never throws.
+
+```ts
+if (!services.pdf.tools.pdftotext) runtime.log("text extraction unavailable");
+```
+
+###### 17.12.7.7.1 services.pdf.tools.pdfinfo
 
 ```
 pdfinfo
 ```
 
-#### 17.12.42 services.pdf.tools.pdftohtml
+###### 17.12.7.7.2 services.pdf.tools.pdftohtml
 
 ```
 pdftohtml
 ```
 
-#### 17.12.43 services.pdf.tools.pdftoppm
+###### 17.12.7.7.3 services.pdf.tools.pdftoppm
 
 ```
 pdftoppm
 ```
 
-#### 17.12.44 services.pdf.tools.pdftotext
+###### 17.12.7.7.4 services.pdf.tools.pdftotext
 
 ```
 pdftotext
 ```
 
-#### 17.12.45 services.pdf.version
+##### 17.12.7.8 services.pdf.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -14882,7 +16019,9 @@ The poppler version string (from `pdftoppm -v`, falling back to `pdfinfo -v`).
 runtime.log(await services.pdf.version());
 ```
 
-#### 17.12.46 services.typst.available
+#### 17.12.8 services.typst
+
+##### 17.12.8.1 services.typst.available
 
 ```
 available: boolean
@@ -14900,7 +16039,7 @@ if (!services.typst.available) {
 }
 ```
 
-#### 17.12.47 services.typst.compile
+##### 17.12.8.2 services.typst.compile
 
 ```
 compile(opts: { input?: string, source?: string, output?: string, format?: "pdf" | "png" | "svg", root?: string, inputs?: Record<string, string>, ppi?: number, fontPaths?: string[], timeout?: number }): Promise<{ format: string; bytes?: Uint8Array; path?: string }>
@@ -14925,7 +16064,7 @@ runtime.log(pdf.format, pdf.bytes.length);
 await services.typst.compile({ input: "report.typ", output: "/tmp/report.png", ppi: 144 });
 ```
 
-#### 17.12.48 services.typst.fonts
+##### 17.12.8.3 services.typst.fonts
 
 ```
 fonts(...args: unknown[]): Promise<string[]>
@@ -14942,7 +16081,7 @@ const families = await services.typst.fonts();
 runtime.log("fonts:", families.length);
 ```
 
-#### 17.12.49 services.typst.query
+##### 17.12.8.4 services.typst.query
 
 ```
 query(opts: { selector: string, input?: string, source?: string, field?: string, one?: boolean, root?: string, inputs?: Record<string, string>, timeout?: number }): Promise<unknown>
@@ -14966,7 +16105,7 @@ const v = await services.typst.query({
 runtime.log(v); // 42
 ```
 
-#### 17.12.50 services.typst.version
+##### 17.12.8.5 services.typst.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -14982,7 +16121,9 @@ The typst CLI version string (from `typst --version`).
 runtime.log(await services.typst.version());
 ```
 
-#### 17.12.51 services.webdriver.available
+#### 17.12.9 services.webdriver
+
+##### 17.12.9.1 services.webdriver.available
 
 ```
 available: boolean
@@ -15000,7 +16141,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-#### 17.12.52 services.webdriver.connect
+##### 17.12.9.2 services.webdriver.connect
 
 ```
 connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<{ get(url: string): Promise<{ ok: true }>; url(): Promise<string>; title(): Promise<string>; back(): Promise<{ ok: true }>; forward(): Promise<{ ok: true }>; refresh(): Promise<{ ok: true }>; find(by: string, value: string): Promise<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>; findAll(by: string, value: string): Promise<Array<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>>; source(): Promise<string>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }>; executeScript(js: string, args?: unknown[]): Promise<unknown>; executeScriptAsync(js: string, args?: unknown[]): Promise<unknown>; cookies(): Promise<object[]>; setCookie(c: { name: string; value: string; path?: string; domain?: string; secure?: boolean; httpOnly?: boolean; expiry?: number }): Promise<{ ok: true }>; deleteCookie(name: string): Promise<{ ok: true }>; deleteAllCookies(): Promise<{ ok: true }>; setImplicitWait(ms: number): Promise<{ ok: true }>; waitFor(by: string, value: string, opts?: { timeout?: number; visible?: boolean; enabled?: boolean }): Promise<any>; clickWhenReady(by: string, value: string, opts?: { timeout?: number; visible?: boolean; enabled?: boolean; poll?: number }): Promise<{ ok: true }>; windowHandles(): Promise<string[]>; currentWindow(): Promise<string>; switchToWindow(handle: string): Promise<{ ok: true }>; newWindow(type?: "tab" | "window"): Promise<{ handle: string; type: string }>; closeWindow(): Promise<string[]>; switchToFrame(target: number | string | object): Promise<{ ok: true }>; frameChain(targets: (number | string | object)[]): Promise<{ ok: true }>; switchToParentFrame(): Promise<{ ok: true }>; switchToDefaultContent(): Promise<{ ok: true }>; acceptAlert(): Promise<{ ok: true }>; dismissAlert(): Promise<{ ok: true }>; alertText(): Promise<string>; sendAlertText(text: string): Promise<{ ok: true }>; maximize(): Promise<{ x: number; y: number; width: number; height: number }>; minimize(): Promise<{ x: number; y: number; width: number; height: number }>; fullscreen(): Promise<{ x: number; y: number; width: number; height: number }>; setWindowRect(rect: { width?: number; height?: number; x?: number; y?: number }): Promise<{ x: number; y: number; width: number; height: number }>; getWindowRect(): Promise<{ x: number; y: number; width: number; height: number }>; hover(el: object): Promise<{ ok: true }>; dragAndDrop(src: object, dst: object): Promise<{ ok: true }>; keyChord(...keys: string[]): Promise<{ ok: true }>; performActions(sequence: unknown[]): Promise<{ ok: true }>; releaseActions(): Promise<{ ok: true }>; cdp(command: string, params?: object): Promise<unknown>; cdpClick(by: string, value: string, opts?: { timeout?: number; poll?: number; button?: "left" | "right" | "middle"; scrollIntoView?: boolean; offsetX?: number; offsetY?: number }): Promise<{ clicked: true; x: number; y: number; targetId?: string }>; targets(): Promise<Array<{ targetId: string; type: string; url: string; title: string }>>; attach(target: string | { targetId: string }): Promise<{ targetId: string; sessionId: string; cdp(method: string, params?: object): Promise<unknown>; detach(): Promise<{ detached: true }> }>; quit(): Promise<{ closed: true }> }>
@@ -15033,7 +16174,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-#### 17.12.53 services.webdriver.probe
+##### 17.12.9.3 services.webdriver.probe
 
 ```
 probe(opts: { url: string }): Promise<{ ready: boolean; status?: number; error?: string }>
@@ -15058,7 +16199,9 @@ runtime.log("ready:", r.ready);
 
 String / regex / charset / data manipulation — all text-shaped transforms.
 
-#### 17.13.1 text.charset.decode
+#### 17.13.1 text.charset
+
+##### 17.13.1.1 text.charset.decode
 
 ```
 decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>
@@ -15079,7 +16222,7 @@ Decode bytes in a named charset to a UTF-8 string.
 const s = await text.charset.decode(bytes, "Windows-1252");
 ```
 
-#### 17.13.2 text.charset.detect
+##### 17.13.1.2 text.charset.detect
 
 ```
 detect(input: string | Uint8Array | ArrayBuffer): Promise<{ charset: string; confidence: number; language?: string; candidates: { charset: string; confidence: number; language?: string }[] }>
@@ -15100,7 +16243,7 @@ const r = await text.charset.detect(bytes);
 runtime.log(r.charset, r.confidence);
 ```
 
-#### 17.13.3 text.charset.encode
+##### 17.13.1.3 text.charset.encode
 
 ```
 encode(input: string, charset: string): Promise<Uint8Array>
@@ -15121,7 +16264,9 @@ Encode a UTF-8 string to bytes in the named charset.
 const bytes = await text.charset.encode("café", "ISO-8859-1");
 ```
 
-#### 17.13.4 text.diff.compare
+#### 17.13.2 text.diff
+
+##### 17.13.2.1 text.diff.compare
 
 ```
 compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number; fromFile?: string; toFile?: string }): Promise<{ identical: boolean; binary: boolean; added: number; removed: number; diff: string; format: "unified" }>
@@ -15144,7 +16289,9 @@ const d = await text.diff.compare("a\n", "b\n");
 runtime.log(d.diff, d.added, d.removed);
 ```
 
-#### 17.13.5 text.jq.query
+#### 17.13.3 text.jq
+
+##### 17.13.3.1 text.jq.query
 
 ```
 query(data: unknown, filter: string): Promise<unknown>
@@ -15165,7 +16312,7 @@ Run a jq filter over data and return the first emitted value (or null).
 const name = await text.jq.query(obj, ".users[0].name");
 ```
 
-#### 17.13.6 text.jq.queryAll
+##### 17.13.3.2 text.jq.queryAll
 
 ```
 queryAll(data: unknown, filter: string): Promise<unknown[]>
@@ -15186,7 +16333,9 @@ Run a jq filter and drain the iterator into an array.
 const ids = await text.jq.queryAll(obj, ".users[].id");
 ```
 
-#### 17.13.7 text.preg.match
+#### 17.13.4 text.preg
+
+##### 17.13.4.1 text.preg.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -15207,7 +16356,7 @@ First hit of /pattern/flags against subject, or null. Returns { match, groups, i
 const m = text.preg.match("/(\\d+)/", "x42"); // { match: "42", groups: ["42"], index: 1 }
 ```
 
-#### 17.13.8 text.preg.matchAll
+##### 17.13.4.2 text.preg.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -15228,7 +16377,7 @@ Every hit of /pattern/flags against subject, as an array of { match, groups, ind
 const all = text.preg.matchAll("/\\d+/", "1 22 333"); // 3 matches
 ```
 
-#### 17.13.9 text.preg.replace
+##### 17.13.4.3 text.preg.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -15250,7 +16399,9 @@ Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / 
 text.preg.replace("/(\\w+)@/", "${1}_at_", "a@b"); // "a_at_b"
 ```
 
-#### 17.13.10 text.preg2.match
+#### 17.13.5 text.preg2
+
+##### 17.13.5.1 text.preg2.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -15271,7 +16422,7 @@ First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/ba
 const m = text.preg2.match("/(?<=@)\\w+/", "a@host"); // { match: "host", ... }
 ```
 
-#### 17.13.11 text.preg2.matchAll
+##### 17.13.5.2 text.preg2.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -15292,7 +16443,7 @@ Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, 
 const all = text.preg2.matchAll("/\\w+/", "a b c"); // 3 matches
 ```
 
-#### 17.13.12 text.preg2.replace
+##### 17.13.5.3 text.preg2.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -15314,7 +16465,9 @@ Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 /
 text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 ```
 
-#### 17.13.13 text.stego.embed
+#### 17.13.6 text.stego
+
+##### 17.13.6.1 text.stego.embed
 
 ```
 embed(cover: string, payload: string | Uint8Array, opts?: { password?: string }): string
@@ -15336,7 +16489,7 @@ Hide a payload inside cover text using zero-width characters (U+200B / U+200C), 
 const out = text.stego.embed("Hello there.", "meet at noon", { password: "s3cret" });
 ```
 
-#### 17.13.14 text.stego.extract
+##### 17.13.6.2 text.stego.extract
 
 ```
 extract(stegoText: string, opts?: { password?: string }): string | Uint8Array
@@ -15357,7 +16510,9 @@ Recover a payload hidden by text.stego.embed. Scans the string for zero-width ca
 const msg = text.stego.extract(out, { password: "s3cret" });
 ```
 
-#### 17.13.15 text.str.base64Decode
+#### 17.13.7 text.str
+
+##### 17.13.7.1 text.str.base64Decode
 
 ```
 base64Decode(input: string): string
@@ -15377,7 +16532,7 @@ Decode standard (RFC 4648) base64 with padding. The standard alphabet only — U
 text.str.base64Decode("aGk="); // "hi"
 ```
 
-#### 17.13.16 text.str.base64Encode
+##### 17.13.7.2 text.str.base64Encode
 
 ```
 base64Encode(input: string): string
@@ -15397,7 +16552,7 @@ Standard base64 (with padding).
 text.str.base64Encode("hi"); // "aGk="
 ```
 
-#### 17.13.17 text.str.base64UrlDecode
+##### 17.13.7.3 text.str.base64UrlDecode
 
 ```
 base64UrlDecode(input: string): string
@@ -15417,7 +16572,7 @@ Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded inpu
 text.str.base64UrlDecode("YT9i"); // "a?b"
 ```
 
-#### 17.13.18 text.str.base64UrlEncode
+##### 17.13.7.4 text.str.base64UrlEncode
 
 ```
 base64UrlEncode(input: string): string
@@ -15437,7 +16592,7 @@ URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe t
 text.str.base64UrlEncode("a?b"); // "YT9i"
 ```
 
-#### 17.13.19 text.str.br2nl
+##### 17.13.7.5 text.str.br2nl
 
 ```
 br2nl(input: string): string
@@ -15457,7 +16612,7 @@ Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
 text.str.br2nl("a<br/>b"); // "a\nb"
 ```
 
-#### 17.13.20 text.str.htmlEntityDecode
+##### 17.13.7.6 text.str.htmlEntityDecode
 
 ```
 htmlEntityDecode(input: string): string
@@ -15477,7 +16632,7 @@ Decode named and numeric HTML entities to their UTF-8 equivalents.
 text.str.htmlEntityDecode("a &amp; b"); // "a & b"
 ```
 
-#### 17.13.21 text.str.lpad
+##### 17.13.7.7 text.str.lpad
 
 ```
 lpad(input: string, len: number, padChar?: string): string
@@ -15499,7 +16654,7 @@ Shortcut for pad(side: 'left').
 text.str.lpad("7", 3, "0"); // "007"
 ```
 
-#### 17.13.22 text.str.ltrim
+##### 17.13.7.8 text.str.ltrim
 
 ```
 ltrim(input: string, mask?: string): string
@@ -15520,7 +16675,7 @@ Like trim, left side only.
 text.str.ltrim("--x", "-"); // "x"
 ```
 
-#### 17.13.23 text.str.nl2br
+##### 17.13.7.9 text.str.nl2br
 
 ```
 nl2br(input: string, xhtml?: boolean): string
@@ -15541,7 +16696,7 @@ Replace newlines with <br> (or <br/> when xhtml=true).
 text.str.nl2br("a\nb"); // "a<br>\nb"
 ```
 
-#### 17.13.24 text.str.normalizeNewlines
+##### 17.13.7.10 text.str.normalizeNewlines
 
 ```
 normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string
@@ -15562,7 +16717,7 @@ Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr
 text.str.normalizeNewlines("a\r\nb", "lf"); // "a\nb"
 ```
 
-#### 17.13.25 text.str.pad
+##### 17.13.7.11 text.str.pad
 
 ```
 pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string
@@ -15585,7 +16740,7 @@ Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', 
 text.str.pad("7", 3, "0", "left"); // "007"
 ```
 
-#### 17.13.26 text.str.printf
+##### 17.13.7.12 text.str.printf
 
 ```
 printf(format: string, ...args: unknown[]): void
@@ -15606,7 +16761,7 @@ sprintf + write to stdout.
 text.str.printf("%d items\n", 3);
 ```
 
-#### 17.13.27 text.str.reverse
+##### 17.13.7.13 text.str.reverse
 
 ```
 reverse(input: string): string
@@ -15626,7 +16781,7 @@ Rune-aware reversal — `reverse('café')` is `'éfac'`.
 text.str.reverse("café"); // "éfac"
 ```
 
-#### 17.13.28 text.str.rpad
+##### 17.13.7.14 text.str.rpad
 
 ```
 rpad(input: string, len: number, padChar?: string): string
@@ -15648,7 +16803,7 @@ Shortcut for pad(side: 'right').
 text.str.rpad("7", 3, "."); // "7.."
 ```
 
-#### 17.13.29 text.str.rtrim
+##### 17.13.7.15 text.str.rtrim
 
 ```
 rtrim(input: string, mask?: string): string
@@ -15669,7 +16824,7 @@ Like trim, right side only.
 text.str.rtrim("x...", "."); // "x"
 ```
 
-#### 17.13.30 text.str.sprintf
+##### 17.13.7.16 text.str.sprintf
 
 ```
 sprintf(format: string, ...args: unknown[]): string
@@ -15690,7 +16845,7 @@ Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 text.str.sprintf("%s=%d", "n", 5); // "n=5"
 ```
 
-#### 17.13.31 text.str.stripHtml
+##### 17.13.7.17 text.str.stripHtml
 
 ```
 stripHtml(input: string): string
@@ -15710,7 +16865,7 @@ Remove HTML tags and decode common entities.
 text.str.stripHtml("<b>hi</b>"); // "hi"
 ```
 
-#### 17.13.32 text.str.trim
+##### 17.13.7.18 text.str.trim
 
 ```
 trim(input: string, mask?: string): string
@@ -15731,7 +16886,7 @@ Strip whitespace (or any char in the optional mask string) from both ends.
 text.str.trim("  hi  "); // "hi"
 ```
 
-#### 17.13.33 text.str.urlDecode
+##### 17.13.7.19 text.str.urlDecode
 
 ```
 urlDecode(input: string): string
@@ -15751,7 +16906,7 @@ Inverse of urlEncode.
 text.str.urlDecode("a+b%26c"); // "a b&c"
 ```
 
-#### 17.13.34 text.str.urlEncode
+##### 17.13.7.20 text.str.urlEncode
 
 ```
 urlEncode(input: string): string
@@ -15861,7 +17016,9 @@ await tui.waitKey();
 
 Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).
 
-#### 17.15.1 web.feed.load
+#### 17.15.1 web.feed
+
+##### 17.15.1.1 web.feed.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>
@@ -15882,7 +17039,7 @@ Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option 
 const f = await web.feed.load("https://example.com/feed.xml");
 ```
 
-#### 17.15.2 web.feed.parse
+##### 17.15.1.2 web.feed.parse
 
 ```
 parse(source: string): { feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }
@@ -15902,7 +17059,9 @@ Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-
 const f = web.feed.parse(xml); f.items[0].title;
 ```
 
-#### 17.15.3 web.html.load
+#### 17.15.2 web.html
+
+##### 17.15.2.1 web.html.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>
@@ -15923,7 +17082,7 @@ Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the 
 const doc = await web.html.load("https://example.com"); doc.findAll("a").map(a => a.attr("href"));
 ```
 
-#### 17.15.4 web.html.parse
+##### 17.15.2.2 web.html.parse
 
 ```
 parse(source: string): { find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }
@@ -15943,7 +17102,9 @@ Parse HTML leniently (real-world tag soup is accepted, never throws on bad marku
 const doc = web.html.parse(html); doc.find("h1").text();
 ```
 
-#### 17.15.5 web.sitemap.load
+#### 17.15.3 web.sitemap
+
+##### 17.15.3.1 web.sitemap.load
 
 ```
 load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>
@@ -15964,7 +17125,7 @@ Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic
 const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });
 ```
 
-#### 17.15.6 web.sitemap.parse
+##### 17.15.3.2 web.sitemap.parse
 
 ```
 parse(source: string): { type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }
