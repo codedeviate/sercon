@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.90.1] — 2026-07-13
+
 ### Changed
 - **MANUAL: new in-depth `cloud` guide (§5.14).** The `cloud` namespace now has a
   full narrative guide alongside the generated §17.2 reference — per-provider
@@ -15,6 +17,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   inline examples, a Concepts subsection (credentials, scoping, error shape,
   result-key casing, escape hatches), and cross-provider Recipes, aimed at script
   authors new to these clouds. `cloud.azure` guidance is marked PROVISIONAL.
+- **MANUAL: §17.2 `cloud` reference restructured for navigation.** The generated
+  binding reference now breaks each provider into per-service and per-method
+  entries (provider → service-group → method, sorted so `cloud.aws` leads), each
+  with its own signature and a line of description, instead of one large
+  composite-type block per provider. The composite is kept as an at-a-glance
+  overview on the provider entry (and still drives the `.d.ts`). This is backed by
+  an additive reference-generator change (`writeReferenceMembers` now renders
+  documented members of runtime-built handles) that leaves every other namespace's
+  generated output byte-for-byte identical. Also corrects several
+  `cloud.aws`/`cloud.azure` doc-string inaccuracies — notably that `cloud.azure`
+  `call()` does **not** require a configured subscription (it targets
+  `management.azure.com` with the subscription embedded in the caller's path).
 
 ## [0.90.0] — 2026-07-12
 
