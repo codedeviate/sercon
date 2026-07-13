@@ -18,3 +18,4 @@ examples/scripts/sws6/.env
 
 # Tracked despite a global ignore rule in ~/.gitignore_global.
 !CLAUDE.md
+reviews
