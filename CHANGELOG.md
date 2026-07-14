@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.91.0] — 2026-07-14
+
 ### Added
 - **`mcp` namespace — MCP (Model Context Protocol) server.** `mcp.serve({name, version,
   instructions?, pageSize?})` returns a handle for registering `tool()`/`resource()`/

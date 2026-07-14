@@ -6,4 +6,4 @@ package scriptengine
 // marker below is a leftover from the release-please era, kept only because
 // `make release-prep` still locates this line by it. The git tag (with `v`
 // prefix) is created and pushed manually by the maintainer after the cut.
-const Version = "0.90.2" // x-release-please-version
+const Version = "0.91.0" // x-release-please-version

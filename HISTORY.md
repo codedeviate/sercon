@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.90.2 (2026-07-13).
+covered is v0.1.0 (2026-05-25) through v0.91.0 (2026-07-14).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -1019,6 +1019,45 @@ counterparts it is excluded from `make demo`/CI, which stays fully offline
 via the `httptest`-mocked Go unit tests — but unlike them, **this script has
 never actually been run against live Azure**, so its first real run is the
 actual validation of the `cloud.azure` surface, not this document.
+
+## 10. MCP server (`mcp.*`)
+
+### `mcp` namespace — server, Phase 1 (v0.91.0)
+
+A new reserved global, `mcp`, lets a script author a Model Context Protocol
+server — the standard tools/resources/prompts surface that LLM apps (Claude
+Desktop, IDEs) consume. `mcp.serve({name, version})` returns a handle on which
+`tool()`/`resource()`/`prompt()` register primitives with async JS handlers,
+served over two transports: **stdio** (the classic subprocess transport clients
+launch — Unix-only this phase; Windows throws a clean error and uses HTTP) and
+**Streamable HTTP** (`listen({port})`, cross-platform). Built on the official
+pure-Go `github.com/modelcontextprotocol/go-sdk` (pinned v1.6.1).
+
+The engine work is the bridge, not the protocol. The SDK invokes handlers on its
+own goroutines while goja is single-threaded, so `callJSHandler` funnels every
+handler through the event loop — converting args/results **on-loop** and carrying
+only native Go data across the goroutine boundary — mirroring `server_http`'s
+Promise-settlement pattern (with a `defer recover()` so a marshalling panic
+becomes a rejected call rather than a process crash). stdio's hard rule (stdout
+carries JSON-RPC only) is met with an fd-level redirect (`dup2` fd 1 → stderr,
+armed at `serve()` time) while JSON-RPC is written to the saved real stdout via
+the SDK's `IOTransport` — necessary because goja_nodejs's console captures
+`os.Stdout` at init, so a Go-level swap can't move it. Tool-handler errors
+surface as `isError` results; resource/prompt errors are protocol errors.
+
+### `mcp` server — Phase 2 (v0.91.0)
+
+The runtime niceties. Primitives can now be added/removed after serving (auto
+`list-changed` via `removeTool`/`removeResource`/`removePrompt`); the request
+`ctx` gained `progress(p, total?)` and `log(level, msg, data?)` (progress-token-
+correlated; `log` reaches only clients that called `SetLoggingLevel`);
+`resourceTemplate()` (RFC-6570 templates), resource subscriptions
+(`resourceUpdated()` + lazy-watch `onSubscribe`/`onUnsubscribe`), a single
+`completion()` dispatcher, and a `pageSize` option. Server→client sends route
+through a shared `asyncSettle` helper that holds the loop (`HoldRun`) for the
+round-trip so a top-level `await` can't have its settlement silently dropped when
+the loop would otherwise go idle. Sampling/elicitation/roots and HTTP OAuth are
+the planned Phase 3; a client (`mcp.connect`) is a separate effort.
 
 ## Bundled libraries
 
