@@ -31,11 +31,11 @@ type mcpServer struct {
 	reqSeq  atomic.Int64 // monotonic counter backing newRequestContext's requestId
 }
 
-// newRequestContext builds the Phase-1 `ctx` object passed as the 2nd
-// argument to every tool/resource/prompt JS handler: { requestId,
-// clientInfo: { name, version } }. Phase 2/3 (progress/log/sample/elicit)
-// hook in here later, holding onto sess for the SDK calls that need it
-// (NotifyProgress, Log, CreateMessage, Elicit) — none of that exists yet.
+// newRequestContext builds the `ctx` object passed as the 2nd argument to
+// every tool/resource/prompt JS handler: { requestId, clientInfo: { name,
+// version }, progress(progress, total?), log(level, message, data?) }.
+// Phase 3 (sample/elicit) hooks in here later, holding onto sess for the SDK
+// calls that need it (CreateMessage, Elicit) — none of that exists yet.
 //
 // requestId: the go-sdk does carry a JSON-RPC request id per call, but it's
 // stashed in an unexported context key (idContextKey, see server.go/
@@ -55,9 +55,15 @@ type mcpServer struct {
 // when the transport happens to provide one for extra traceability.
 // Revisit if a future go-sdk version exposes the real per-call JSON-RPC id.
 //
+// tok is the request's progress token (req.Params.GetProgressToken()),
+// captured by the caller off-loop before invoking the JS handler — it's nil
+// when the client didn't attach one to this call.
+//
 // This must be called ON the event loop (from a buildArgs callback, which
-// callJSHandler always invokes on-loop) since it allocates goja values.
-func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession) goja.Value {
+// callJSHandler always invokes on-loop) since it allocates goja values. The
+// progress/log closures built here only do their actual SDK I/O later, off
+// the loop, when the script calls them — see jsCtxProgress/jsCtxLog.
+func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession, tok any) goja.Value {
 	ctxObj := vm.NewObject()
 
 	seq := ms.reqSeq.Add(1)
@@ -81,7 +87,128 @@ func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession
 	_ = clientInfo.Set("version", version)
 	_ = ctxObj.Set("clientInfo", clientInfo)
 
+	_ = ctxObj.Set("progress", ms.jsCtxProgress(sess, tok))
+	_ = ctxObj.Set("log", ms.jsCtxLog(sess))
+
 	return ctxObj
+}
+
+// jsCtxProgress builds ctx.progress(progress: number, total?: number):
+// Promise<void> for the request context: sends a notifications/progress
+// message to the client, correlated to this request via tok (the progress
+// token the client attached to its call, captured by the caller before
+// invoking the JS handler). Per the MCP spec, a progress notification only
+// makes sense when the request carried a token to correlate it to — if the
+// client didn't set one, tok is nil and this resolves immediately without
+// calling the SDK (same for a nil sess, which shouldn't happen in practice
+// but is guarded defensively).
+//
+// progress/total are read synchronously here (the function itself runs
+// on-loop, like any goja call), but the SDK call happens in a goroutine —
+// sess.NotifyProgress does its own network/pipe I/O and must never block
+// goja. The spawned goroutine settles the returned Promise back on the loop
+// via RunOnLoop, mirroring jsStdio/jsListen's async-settle pattern elsewhere
+// in this file (resolve/reject from a goroutine-owned RunOnLoop callback). A
+// deferred recover in that callback turns a settle-time panic into a
+// rejection instead of crashing the eventloop's job runner (which has no
+// recover of its own), matching callJSHandler's precedent in mcp_bridge.go.
+func (ms *mcpServer) jsCtxProgress(sess *mcp.ServerSession, tok any) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		p, resolve, reject := ms.vm.NewPromise()
+
+		if tok == nil || sess == nil {
+			_ = resolve(goja.Undefined())
+			return ms.vm.ToValue(p)
+		}
+
+		progress := call.Argument(0).ToFloat()
+		var total float64
+		if tv := call.Argument(1); tv != nil && !goja.IsUndefined(tv) && !goja.IsNull(tv) {
+			total = tv.ToFloat()
+		}
+
+		go func() {
+			notifyErr := sess.NotifyProgress(context.Background(), &mcp.ProgressNotificationParams{
+				ProgressToken: tok,
+				Progress:      progress,
+				Total:         total,
+			})
+			ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+				defer func() {
+					if r := recover(); r != nil {
+						_ = reject(vm.NewGoError(fmt.Errorf("mcp: ctx.progress settle panicked: %v", r)))
+					}
+				}()
+				if notifyErr != nil {
+					_ = reject(vm.NewGoError(notifyErr))
+					return
+				}
+				_ = resolve(goja.Undefined())
+			})
+		}()
+
+		return ms.vm.ToValue(p)
+	}
+}
+
+// jsCtxLog builds ctx.log(level: string, message: string, data?: unknown):
+// Promise<void> for the request context: sends a notifications/message log
+// entry to the client via sess.Log.
+//
+// GOTCHA (confirmed by the Task-1 API spike, mcp_spike2_test.go): the go-sdk
+// silently no-ops sess.Log until the client has called
+// session.SetLoggingLevel — see (*ServerSession).Log in server.go ("The
+// spec is unclear, but seems to imply that no log messages are sent until
+// the client sets the level"). Callers/tests must call SetLoggingLevel
+// first or a log assertion is vacuous (the Promise still resolves — Log
+// returns nil in that case — but nothing reaches the client).
+//
+// mcp.LoggingMessageParams.Data is `any` (documented as "any JSON
+// serializable type"), so message and the optional data argument are
+// combined into a single object: { message, data } — data is omitted
+// entirely when the script didn't pass a third argument, keeping the
+// payload minimal when there's nothing beyond the message.
+//
+// Same off-loop-I/O / on-loop-settle shape as jsCtxProgress: the SDK call
+// runs in a goroutine, and the goroutine settles the Promise back on the
+// loop via RunOnLoop with a deferred recover guarding the settle callback.
+func (ms *mcpServer) jsCtxLog(sess *mcp.ServerSession) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		p, resolve, reject := ms.vm.NewPromise()
+
+		if sess == nil {
+			_ = resolve(goja.Undefined())
+			return ms.vm.ToValue(p)
+		}
+
+		level := call.Argument(0).String()
+		message := call.Argument(1).String()
+		payload := map[string]any{"message": message}
+		if dv := call.Argument(2); dv != nil && !goja.IsUndefined(dv) {
+			payload["data"] = dv.Export()
+		}
+
+		go func() {
+			logErr := sess.Log(context.Background(), &mcp.LoggingMessageParams{
+				Level: mcp.LoggingLevel(level),
+				Data:  payload,
+			})
+			ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+				defer func() {
+					if r := recover(); r != nil {
+						_ = reject(vm.NewGoError(fmt.Errorf("mcp: ctx.log settle panicked: %v", r)))
+					}
+				}()
+				if logErr != nil {
+					_ = reject(vm.NewGoError(logErr))
+					return
+				}
+				_ = resolve(goja.Undefined())
+			})
+		}()
+
+		return ms.vm.ToValue(p)
+	}
 }
 
 // jsTool implements srv.tool({ name, description?, inputSchema, outputSchema?,
@@ -126,6 +253,7 @@ func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
 		// Captured off-loop (native Go field access); newRequestContext itself
 		// runs on-loop inside buildArgs below, since it allocates goja values.
 		sess := req.Session
+		tok := req.Params.GetProgressToken()
 		// Server-side Arguments is json.RawMessage, not `any` — unmarshal to a
 		// native Go value before it reaches goja (which vm.ToValue can convert).
 		var args any
@@ -136,7 +264,7 @@ func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
 		}
 		out, err := ms.callJSHandler(lc,
 			func(vm *goja.Runtime) []goja.Value {
-				return []goja.Value{vm.ToValue(args), ms.newRequestContext(vm, sess)}
+				return []goja.Value{vm.ToValue(args), ms.newRequestContext(vm, sess, tok)}
 			},
 			func(vm *goja.Runtime, v goja.Value) (any, error) {
 				return toToolResult(vm, v), nil
@@ -201,10 +329,11 @@ func (ms *mcpServer) jsResource(call goja.FunctionCall) goja.Value {
 
 	ms.srv.AddResource(&mcp.Resource{URI: uri, Name: name, MIMEType: mimeType}, func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		sess := req.Session
+		tok := req.Params.GetProgressToken()
 		requestedURI := req.Params.URI
 		out, err := ms.callJSHandler(lc,
 			func(vm *goja.Runtime) []goja.Value {
-				return []goja.Value{vm.ToValue(requestedURI), ms.newRequestContext(vm, sess)}
+				return []goja.Value{vm.ToValue(requestedURI), ms.newRequestContext(vm, sess, tok)}
 			},
 			func(vm *goja.Runtime, v goja.Value) (any, error) {
 				return toReadResourceResult(vm, requestedURI, mimeType, v)
@@ -283,10 +412,11 @@ func (ms *mcpServer) jsPrompt(call goja.FunctionCall) goja.Value {
 
 	ms.srv.AddPrompt(&mcp.Prompt{Name: name, Description: desc, Arguments: args}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		sess := req.Session
+		tok := req.Params.GetProgressToken()
 		requestedArgs := req.Params.Arguments
 		out, err := ms.callJSHandler(lc,
 			func(vm *goja.Runtime) []goja.Value {
-				return []goja.Value{vm.ToValue(requestedArgs), ms.newRequestContext(vm, sess)}
+				return []goja.Value{vm.ToValue(requestedArgs), ms.newRequestContext(vm, sess, tok)}
 			},
 			func(vm *goja.Runtime, v goja.Value) (any, error) {
 				return toGetPromptResult(vm, v)

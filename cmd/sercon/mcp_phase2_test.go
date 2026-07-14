@@ -340,3 +340,246 @@ func TestMCPPhase2Remove_ValidatesArgs(t *testing.T) {
 		}
 	}
 }
+
+// TestMCPProgressAndLog drives Task 3's ctx.progress/ctx.log end to end: a
+// script registers a tool whose async handler awaits ctx.progress(1, 2) then
+// ctx.log("warning", "hi", {a: 1}) before returning. The Go side connects an
+// in-memory client with ProgressNotificationHandler + LoggingMessageHandler
+// wired up, calls SetLoggingLevel BEFORE invoking the tool (see the GOTCHA
+// below), and calls the tool WITH a progress token attached via
+// CallToolParams.Meta["progressToken"] (same mechanism mcp_spike2_test.go
+// pinned) so the notification can correlate back to this call.
+//
+// GOTCHA (confirmed by the Task-1 spike, mcp_spike2_test.go): sess.Log
+// silently no-ops until the client has called session.SetLoggingLevel — see
+// (*ServerSession).Log in the go-sdk's server.go. Skipping SetLoggingLevel
+// here would make the log assertion vacuous (ctx.log's Promise still
+// resolves — Log returns nil in that case — but nothing would ever reach
+// loggingCh, and the test would hang until its timeout instead of failing
+// meaningfully). Calling it first is what makes this a real assertion.
+func TestMCPProgressAndLog(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	ready := make(chan struct{})
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{
+					eng: eng, vm: vm, loop: loop,
+					srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil),
+				}
+				return ms.handle(vm)
+			},
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-progress-log")
+				go func() {
+					defer release()
+					<-done
+				}()
+				close(ready)
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "progress-log.ts", `
+const srv = test.serve();
+srv.tool({
+	name: "progressLog",
+	inputSchema: { type: "object" },
+	handler: async (args, ctx) => {
+		await ctx.progress(1, 2);
+		await ctx.log("warning", "hi", { a: 1 });
+		return "done";
+	},
+});
+test.ready();
+`)
+		runErr <- err
+	}()
+
+	<-ready
+
+	progressCh := make(chan *mcp.ProgressNotificationParams, 4)
+	loggingCh := make(chan *mcp.LoggingMessageParams, 4)
+	sess, err := connectInMemoryWithOptions(ctx, ms.srv, &mcp.ClientOptions{
+		ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+			progressCh <- req.Params
+		},
+		LoggingMessageHandler: func(_ context.Context, req *mcp.LoggingMessageRequest) {
+			loggingCh <- req.Params
+		},
+	})
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	// See the GOTCHA in the doc comment: without this, ctx.log's notification
+	// never reaches the client and loggingCh would time out below.
+	if err := sess.SetLoggingLevel(ctx, &mcp.SetLoggingLevelParams{Level: "info"}); err != nil {
+		close(done)
+		t.Fatalf("SetLoggingLevel: %v", err)
+	}
+
+	res, err := sess.CallTool(ctx, &mcp.CallToolParams{
+		Name: "progressLog",
+		Meta: mcp.Meta{"progressToken": "tok-progress-log"},
+	})
+	if err != nil {
+		close(done)
+		t.Fatalf("call progressLog: %v", err)
+	}
+	if res.IsError {
+		close(done)
+		t.Fatalf("progressLog reported an error result: %+v", res)
+	}
+
+	select {
+	case p := <-progressCh:
+		if p.ProgressToken != "tok-progress-log" {
+			t.Errorf("progress token = %v, want %q", p.ProgressToken, "tok-progress-log")
+		}
+		if p.Progress != 1 || p.Total != 2 {
+			t.Errorf("progress params = %+v, want Progress=1 Total=2", p)
+		}
+	case <-time.After(notifyWait):
+		close(done)
+		t.Fatal("timed out waiting for progress notification")
+	}
+
+	select {
+	case l := <-loggingCh:
+		if l.Level != "warning" {
+			t.Errorf("logging level = %q, want %q", l.Level, "warning")
+		}
+		data, ok := l.Data.(map[string]any)
+		if !ok {
+			t.Fatalf("logging data = %#v, want map[string]any", l.Data)
+		}
+		if data["message"] != "hi" {
+			t.Errorf("logging data.message = %v, want %q", data["message"], "hi")
+		}
+		extra, ok := data["data"].(map[string]any)
+		if !ok {
+			t.Fatalf("logging data.data = %#v, want map[string]any", data["data"])
+		}
+		if a, _ := extra["a"].(float64); a != 1 {
+			t.Errorf("logging data.data.a = %v, want 1", extra["a"])
+		}
+	case <-time.After(notifyWait):
+		close(done)
+		t.Fatal("timed out waiting for logging message")
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPProgress_NoTokenResolvesWithoutNotifying asserts ctx.progress
+// resolves cleanly (does not hang, does not reject) when the client didn't
+// attach a progress token to its call — jsCtxProgress's documented no-op
+// path. There is nothing to correlate a progress notification to without a
+// token, so this must not call the SDK at all; a connected client with a
+// ProgressNotificationHandler confirms nothing arrives.
+func TestMCPProgress_NoTokenResolvesWithoutNotifying(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	ready := make(chan struct{})
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{
+					eng: eng, vm: vm, loop: loop,
+					srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil),
+				}
+				return ms.handle(vm)
+			},
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-progress-no-token")
+				go func() {
+					defer release()
+					<-done
+				}()
+				close(ready)
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "progress-no-token.ts", `
+const srv = test.serve();
+srv.tool({
+	name: "progressNoToken",
+	inputSchema: { type: "object" },
+	handler: async (args, ctx) => {
+		await ctx.progress(1, 2);
+		return "done";
+	},
+});
+test.ready();
+`)
+		runErr <- err
+	}()
+
+	<-ready
+
+	progressCh := make(chan *mcp.ProgressNotificationParams, 4)
+	sess, err := connectInMemoryWithOptions(ctx, ms.srv, &mcp.ClientOptions{
+		ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+			progressCh <- req.Params
+		},
+	})
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	// No Meta/progressToken on this call, unlike TestMCPProgressAndLog.
+	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "progressNoToken"})
+	if err != nil {
+		close(done)
+		t.Fatalf("call progressNoToken: %v", err)
+	}
+	if res.IsError {
+		close(done)
+		t.Fatalf("progressNoToken reported an error result (ctx.progress should resolve, not reject, with no token): %+v", res)
+	}
+
+	select {
+	case p := <-progressCh:
+		close(done)
+		t.Fatalf("received unexpected progress notification with no token attached: %+v", p)
+	case <-time.After(300 * time.Millisecond):
+		// expected: nothing arrives
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
