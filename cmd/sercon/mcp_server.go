@@ -92,13 +92,12 @@ func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession
 // toToolResult) before it crosses back — so no goja.Value ever escapes the
 // loop goroutine.
 //
-// Registration must happen before the server is serving: adding a tool after a
-// transport has started would need a list-changed notification, which is a
-// later phase, so a post-start call throws.
+// Registration is allowed at any time, including after a transport has
+// started: the SDK's AddTool fires a tools/list_changed notification to
+// connected clients when called post-connect, so a script can grow its tool
+// set at runtime (e.g. from within another handler). See jsRemoveTool for the
+// inverse operation.
 func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
-	if ms.started {
-		panic(ms.vm.NewGoError(errAlreadyStarted))
-	}
 	spec, ok := call.Argument(0).Export().(map[string]any)
 	if !ok {
 		panic(ms.vm.NewTypeError("mcp.tool: a spec object is required"))
@@ -175,12 +174,10 @@ func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
 // resource read error is a protocol-level failure: the handler below returns
 // (nil, err) straight to the SDK rather than wrapping it in a result value.
 //
-// Registration must happen before the server is serving, for the same
-// list-changed-notification reason documented on jsTool.
+// Registration is allowed at any time, for the same runtime-add /
+// list-changed-notification reason documented on jsTool. See jsRemoveResource
+// for the inverse operation.
 func (ms *mcpServer) jsResource(call goja.FunctionCall) goja.Value {
-	if ms.started {
-		panic(ms.vm.NewGoError(errAlreadyStarted))
-	}
 	spec, ok := call.Argument(0).Export().(map[string]any)
 	if !ok {
 		panic(ms.vm.NewTypeError("mcp.resource: a spec object is required"))
@@ -242,12 +239,10 @@ func (ms *mcpServer) jsResource(call goja.FunctionCall) goja.Value {
 // than wrapping it in a result value (there's no isError-equivalent shape
 // for prompts/get, same as resources/read).
 //
-// Registration must happen before the server is serving, for the same
-// list-changed-notification reason documented on jsTool.
+// Registration is allowed at any time, for the same runtime-add /
+// list-changed-notification reason documented on jsTool. See jsRemovePrompt
+// for the inverse operation.
 func (ms *mcpServer) jsPrompt(call goja.FunctionCall) goja.Value {
-	if ms.started {
-		panic(ms.vm.NewGoError(errAlreadyStarted))
-	}
 	spec, ok := call.Argument(0).Export().(map[string]any)
 	if !ok {
 		panic(ms.vm.NewTypeError("mcp.prompt: a spec object is required"))
@@ -311,6 +306,64 @@ func (ms *mcpServer) jsPrompt(call goja.FunctionCall) goja.Value {
 		}
 		return result, nil
 	})
+	return goja.Undefined()
+}
+
+// requireNonEmptyStringArg validates that call's first argument is a present,
+// non-null, non-empty string, panicking with a goja TypeError (labelled with
+// `who`, e.g. "mcp.removeTool") otherwise. Shared by jsRemoveTool/
+// jsRemoveResource/jsRemovePrompt, whose single-string-arg shape doesn't go
+// through the map[string]any spec-object validation jsTool/jsResource/
+// jsPrompt use.
+func (ms *mcpServer) requireNonEmptyStringArg(who string, call goja.FunctionCall) string {
+	arg := call.Argument(0)
+	if goja.IsUndefined(arg) || goja.IsNull(arg) {
+		panic(ms.vm.NewTypeError(fmt.Sprintf("%s: a name is required", who)))
+	}
+	name := arg.String()
+	if name == "" {
+		panic(ms.vm.NewTypeError(fmt.Sprintf("%s: a non-empty name is required", who)))
+	}
+	return name
+}
+
+// jsRemoveTool implements srv.removeTool(name): unregisters a previously
+// added tool by name. Like jsTool, this may be called at any time — before or
+// after a transport has started — and the SDK's RemoveTools fires a
+// tools/list_changed notification to connected clients when called
+// post-connect. Removing a name that was never registered (or already
+// removed) is a silent no-op, matching (*mcp.Server).RemoveTools' own
+// contract.
+//
+// No event-loop hop is needed around the ms.srv.RemoveTools call itself: the
+// go-sdk source (mcp/server.go, changeAndNotify) guards every Add*/Remove*
+// mutation with the Server's own internal mutex, so it's safe to call from
+// whichever goroutine reaches this line — the main script (already on-loop,
+// since goja execution only ever happens on the loop) or a JS handler
+// invoked via callJSHandler (also hopped onto the loop by the time it runs
+// JS). The mutex is what actually serializes concurrent mutation/notify
+// against the SDK's own request-dispatch goroutines, not anything on our side.
+func (ms *mcpServer) jsRemoveTool(call goja.FunctionCall) goja.Value {
+	name := ms.requireNonEmptyStringArg("mcp.removeTool", call)
+	ms.srv.RemoveTools(name)
+	return goja.Undefined()
+}
+
+// jsRemoveResource implements srv.removeResource(uri): unregisters a
+// previously added resource by URI. Same runtime/concurrency contract as
+// jsRemoveTool, backed by (*mcp.Server).RemoveResources.
+func (ms *mcpServer) jsRemoveResource(call goja.FunctionCall) goja.Value {
+	uri := ms.requireNonEmptyStringArg("mcp.removeResource", call)
+	ms.srv.RemoveResources(uri)
+	return goja.Undefined()
+}
+
+// jsRemovePrompt implements srv.removePrompt(name): unregisters a previously
+// added prompt by name. Same runtime/concurrency contract as jsRemoveTool,
+// backed by (*mcp.Server).RemovePrompts.
+func (ms *mcpServer) jsRemovePrompt(call goja.FunctionCall) goja.Value {
+	name := ms.requireNonEmptyStringArg("mcp.removePrompt", call)
+	ms.srv.RemovePrompts(name)
 	return goja.Undefined()
 }
 

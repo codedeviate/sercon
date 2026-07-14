@@ -136,8 +136,10 @@ await h.close();
 }
 
 // TestMCPHTTP_AlreadyStartedThrows asserts the one-transport-per-handle guard:
-// calling listen() a second time (or after stdio()/a tool add) throws, per
-// the same errAlreadyStarted contract jsTool/jsResource/jsPrompt/jsStdio use.
+// calling listen() a second time throws, per the errAlreadyStarted contract
+// jsStdio/jsListen share (tool/resource/prompt registration is exempt from
+// this guard as of the runtime-mutation task — see errAlreadyStarted's doc
+// comment in mcp.go).
 func TestMCPHTTP_AlreadyStartedThrows(t *testing.T) {
 	out, err := runScript(t, `
 		const srv = mcp.serve({ name: "t", version: "1.0.0" });

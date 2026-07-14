@@ -45,24 +45,29 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 }
 
 // handle builds the goja object returned to the script: tool/resource/prompt
-// (capability registration), stdio/listen (the two transports), and close
-// (currently a no-op placeholder — see jsClose's doc comment). All six are
-// implemented in mcp_server.go.
+// (capability registration, runtime-mutable — see jsTool's doc comment) and
+// their removeTool/removeResource/removePrompt counterparts, stdio/listen
+// (the two transports, still one-per-handle), and close (currently a no-op
+// placeholder — see jsClose's doc comment). All nine are implemented in
+// mcp_server.go.
 func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 	h := vm.NewObject()
 	must := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = h.Set(name, fn) }
 	must("tool", ms.jsTool)
 	must("resource", ms.jsResource)
 	must("prompt", ms.jsPrompt)
+	must("removeTool", ms.jsRemoveTool)
+	must("removeResource", ms.jsRemoveResource)
+	must("removePrompt", ms.jsRemovePrompt)
 	must("stdio", ms.jsStdio)
 	must("listen", ms.jsListen)
 	must("close", ms.jsClose)
 	return h
 }
 
-// errAlreadyStarted is thrown when a tool/resource/prompt is registered after
-// the server has started serving, or when a second transport (stdio()/
-// listen()) is started on a handle that already has one running — a
-// list-changed notification for late capability registration, and support
-// for concurrent transports on one handle, are both later-phase work.
-var errAlreadyStarted = errors.New("mcp: server already started; a transport is already running or capabilities must be registered before serving")
+// errAlreadyStarted is thrown when a second transport (stdio()/listen()) is
+// started on a handle that already has one running — support for concurrent
+// transports on one handle is later-phase (if ever) work. It is NOT used for
+// tool/resource/prompt registration: those may run at any time, including
+// after a transport has started (see jsTool's doc comment in mcp_server.go).
+var errAlreadyStarted = errors.New("mcp: server already started; a transport is already running")
