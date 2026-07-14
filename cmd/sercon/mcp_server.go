@@ -31,47 +31,31 @@ type mcpServer struct {
 	release func()       // HoldRun release, set when a transport starts; cleared when that transport's serve loop ends (jsStdio's/jsListen's own goroutine clears it — jsClose is currently a no-op and does NOT clear it)
 	reqSeq  atomic.Int64 // monotonic counter backing newRequestContext's requestId
 
-	// Resource-subscription state (Task 5). subscribeMu guards all three
-	// fields below: subscribed, onSubscribeCB, onUnsubscribeCB. They are
-	// touched from both the main script goroutine (on-loop, via
-	// jsOnSubscribe/jsOnUnsubscribe registering a callback) and the go-sdk's
-	// own request-handling goroutines (via the SubscribeHandler/
-	// UnsubscribeHandler dispatchers set in mcp.serve, which record into
-	// `subscribed` and read the callbacks) — hence the mutex rather than
+	// Resource-subscription state (Task 5). subscribeMu guards both fields
+	// below: onSubscribeCB, onUnsubscribeCB. They are touched from both the
+	// main script goroutine (on-loop, via jsOnSubscribe/jsOnUnsubscribe
+	// registering a callback) and the go-sdk's own request-handling
+	// goroutines (via the SubscribeHandler/UnsubscribeHandler dispatchers set
+	// in mcp.serve, which read the callbacks) — hence the mutex rather than
 	// relying on the event loop's single-threadedness the way most of this
 	// file's goja access does.
+	//
+	// There is deliberately no `subscribed` set here: the go-sdk already
+	// tracks per-session subscriptions itself (resourceSubscriptions in
+	// server.go) and filters ResourceUpdated's notification fan-out by it,
+	// and capability advertisement is gated on SubscribeHandler != nil, not
+	// on any bookkeeping of ours — a prior write-only `subscribed` map (and
+	// its recordSubscribe/recordUnsubscribe helpers) was removed as dead
+	// weight; see the code review that flagged it.
 	subscribeMu     sync.Mutex
-	subscribed      map[string]struct{}
 	onSubscribeCB   *scriptengine.LoopCallable
 	onUnsubscribeCB *scriptengine.LoopCallable
 }
 
-// recordSubscribe marks uri as subscribed in ms's own tracking set. Called
-// from the SDK's SubscribeHandler dispatcher (an SDK goroutine, not the
-// loop) — mutex-guarded because it races jsOnSubscribe/jsOnUnsubscribe
-// registering a callback from the main script. Note the go-sdk already
-// tracks per-session subscriptions itself (resourceSubscriptions in
-// server.go) and filters ResourceUpdated's notification fan-out by it; this
-// set is purely ms's own bookkeeping, independent of that internal state.
-func (ms *mcpServer) recordSubscribe(uri string) {
-	ms.subscribeMu.Lock()
-	defer ms.subscribeMu.Unlock()
-	if ms.subscribed == nil {
-		ms.subscribed = make(map[string]struct{})
-	}
-	ms.subscribed[uri] = struct{}{}
-}
-
-// recordUnsubscribe removes uri from ms's tracking set. See recordSubscribe.
-func (ms *mcpServer) recordUnsubscribe(uri string) {
-	ms.subscribeMu.Lock()
-	defer ms.subscribeMu.Unlock()
-	delete(ms.subscribed, uri)
-}
-
 // getOnSubscribe/getOnUnsubscribe return the currently-registered JS
 // callback (nil if none was ever set via jsOnSubscribe/jsOnUnsubscribe),
-// mutex-guarded for the same cross-goroutine reason as recordSubscribe.
+// mutex-guarded for the same cross-goroutine reason documented on
+// mcpServer's subscribeMu field.
 func (ms *mcpServer) getOnSubscribe() *scriptengine.LoopCallable {
 	ms.subscribeMu.Lock()
 	defer ms.subscribeMu.Unlock()
@@ -175,17 +159,14 @@ func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession
 // progress/total are read synchronously here (the function itself runs
 // on-loop, like any goja call), but the SDK call happens in a goroutine —
 // sess.NotifyProgress does its own network/pipe I/O and must never block
-// goja. The spawned goroutine settles the returned Promise back on the loop
-// via RunOnLoop, mirroring jsStdio/jsListen's async-settle pattern elsewhere
-// in this file (resolve/reject from a goroutine-owned RunOnLoop callback). A
-// deferred recover in that callback turns a settle-time panic into a
-// rejection instead of crashing the eventloop's job runner (which has no
-// recover of its own), matching callJSHandler's precedent in mcp_bridge.go.
+// goja. Settling is delegated to asyncSettle (see its doc comment), which
+// holds the event loop open for the duration of the call — the fast path
+// above (tok == nil || sess == nil) resolves synchronously and skips the
+// hold entirely since there's no async tail to protect.
 func (ms *mcpServer) jsCtxProgress(sess *mcp.ServerSession, tok any) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
-		p, resolve, reject := ms.vm.NewPromise()
-
 		if tok == nil || sess == nil {
+			p, resolve, _ := ms.vm.NewPromise()
 			_ = resolve(goja.Undefined())
 			return ms.vm.ToValue(p)
 		}
@@ -196,27 +177,13 @@ func (ms *mcpServer) jsCtxProgress(sess *mcp.ServerSession, tok any) func(goja.F
 			total = tv.ToFloat()
 		}
 
-		go func() {
-			notifyErr := sess.NotifyProgress(context.Background(), &mcp.ProgressNotificationParams{
+		return ms.asyncSettle("mcp:ctx.progress", func() error {
+			return sess.NotifyProgress(context.Background(), &mcp.ProgressNotificationParams{
 				ProgressToken: tok,
 				Progress:      progress,
 				Total:         total,
 			})
-			ms.loop.RunOnLoop(func(vm *goja.Runtime) {
-				defer func() {
-					if r := recover(); r != nil {
-						_ = reject(vm.NewGoError(fmt.Errorf("mcp: ctx.progress settle panicked: %v", r)))
-					}
-				}()
-				if notifyErr != nil {
-					_ = reject(vm.NewGoError(notifyErr))
-					return
-				}
-				_ = resolve(goja.Undefined())
-			})
-		}()
-
-		return ms.vm.ToValue(p)
+		})
 	}
 }
 
@@ -239,13 +206,14 @@ func (ms *mcpServer) jsCtxProgress(sess *mcp.ServerSession, tok any) func(goja.F
 // payload minimal when there's nothing beyond the message.
 //
 // Same off-loop-I/O / on-loop-settle shape as jsCtxProgress: the SDK call
-// runs in a goroutine, and the goroutine settles the Promise back on the
-// loop via RunOnLoop with a deferred recover guarding the settle callback.
+// runs in a goroutine and settling is delegated to asyncSettle, which holds
+// the event loop open for the duration of the call. The fast path above
+// (sess == nil) resolves synchronously and skips the hold entirely since
+// there's no async tail to protect.
 func (ms *mcpServer) jsCtxLog(sess *mcp.ServerSession) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
-		p, resolve, reject := ms.vm.NewPromise()
-
 		if sess == nil {
+			p, resolve, _ := ms.vm.NewPromise()
 			_ = resolve(goja.Undefined())
 			return ms.vm.ToValue(p)
 		}
@@ -257,26 +225,12 @@ func (ms *mcpServer) jsCtxLog(sess *mcp.ServerSession) func(goja.FunctionCall) g
 			payload["data"] = dv.Export()
 		}
 
-		go func() {
-			logErr := sess.Log(context.Background(), &mcp.LoggingMessageParams{
+		return ms.asyncSettle("mcp:ctx.log", func() error {
+			return sess.Log(context.Background(), &mcp.LoggingMessageParams{
 				Level: mcp.LoggingLevel(level),
 				Data:  payload,
 			})
-			ms.loop.RunOnLoop(func(vm *goja.Runtime) {
-				defer func() {
-					if r := recover(); r != nil {
-						_ = reject(vm.NewGoError(fmt.Errorf("mcp: ctx.log settle panicked: %v", r)))
-					}
-				}()
-				if logErr != nil {
-					_ = reject(vm.NewGoError(logErr))
-					return
-				}
-				_ = resolve(goja.Undefined())
-			})
-		}()
-
-		return ms.vm.ToValue(p)
+		})
 	}
 }
 
@@ -669,16 +623,14 @@ func (ms *mcpServer) jsOnUnsubscribe(call goja.FunctionCall) goja.Value {
 // notifying every client currently subscribed to uri that the resource has
 // changed. This is the primary way a script signals a resource update — the
 // go-sdk's Server.ResourceUpdated does the actual subscriber lookup and
-// notification fan-out (see recordSubscribe's doc comment: the SDK tracks
-// per-session subscriptions itself, independent of ms's own bookkeeping
-// set).
+// notification fan-out (the SDK tracks per-session subscriptions itself,
+// independent of anything on our side — see mcpServer's subscribeMu doc
+// comment).
 //
-// Same off-loop-I/O / on-loop-settle shape as jsCtxProgress/jsCtxLog: the
-// SDK call runs in a goroutine (ResourceUpdated does network/pipe I/O and
-// must never block goja), and the goroutine settles the returned Promise
-// back on the loop via RunOnLoop, with a deferred recover guarding the
-// settle callback so a panic there rejects instead of crashing the
-// eventloop's job runner.
+// resourceUpdated is callable immediately after mcp.serve(), before (or
+// without) any .stdio()/.listen() transport ever starting — there is no
+// requirement that a transport be active. That matters for how this settles:
+// see asyncSettle's doc comment for why the call is wrapped in a HoldRun.
 func (ms *mcpServer) jsResourceUpdated(call goja.FunctionCall) goja.Value {
 	arg := call.Argument(0)
 	if goja.IsUndefined(arg) || goja.IsNull(arg) {
@@ -689,18 +641,51 @@ func (ms *mcpServer) jsResourceUpdated(call goja.FunctionCall) goja.Value {
 		panic(ms.vm.NewTypeError("mcp.resourceUpdated: a non-empty uri is required"))
 	}
 
+	return ms.asyncSettle("mcp:resourceUpdated", func() error {
+		return ms.srv.ResourceUpdated(context.Background(), &mcp.ResourceUpdatedNotificationParams{URI: uri})
+	})
+}
+
+// asyncSettle is the shared shape behind jsResourceUpdated/jsCtxProgress/
+// jsCtxLog: it builds a Promise, runs work off the event loop in a
+// goroutine (work does blocking SDK I/O — network/pipe writes — and must
+// never run on-loop), and settles the Promise back on the loop via
+// RunOnLoop once work returns.
+//
+// Crucially, it holds the loop open (eng.HoldRun) for the duration of the
+// call. Without the hold, a caller with no other outstanding work keeping
+// the loop's jobCount above zero — e.g. srv.resourceUpdated() called at
+// top level right after mcp.serve(), before any transport has started —
+// can lose the race: loop.Run sees jobCount hit zero and returns before the
+// goroutine reaches RunOnLoop, and eventloop.EventLoop silently drops a
+// RunOnLoop job queued after the loop has stopped (RunOnLoop, unlike
+// setTimeout/setInterval/setImmediate, never counted toward jobCount in the
+// first place — see the "Keeping the event loop alive across async work"
+// note in CLAUDE.md). The Promise then never settles and the script exits
+// 0 without ever resuming past the `await`. Reviewed-and-fixed: this was
+// exactly reproducible for jsResourceUpdated before this hold was added.
+//
+// The hold is released exactly once, inside the on-loop settle callback,
+// on both the success and error path (the single deferred func below runs
+// release() unconditionally, then checks recover() so a panic during
+// resolve/reject still rejects instead of crashing the eventloop's job
+// runner, mirroring the recover-then-reject precedent already used
+// elsewhere in this file).
+func (ms *mcpServer) asyncSettle(reason string, work func() error) goja.Value {
 	p, resolve, reject := ms.vm.NewPromise()
+	release := ms.eng.HoldRun(reason)
 
 	go func() {
-		notifyErr := ms.srv.ResourceUpdated(context.Background(), &mcp.ResourceUpdatedNotificationParams{URI: uri})
+		workErr := work()
 		ms.loop.RunOnLoop(func(vm *goja.Runtime) {
 			defer func() {
+				release()
 				if r := recover(); r != nil {
-					_ = reject(vm.NewGoError(fmt.Errorf("mcp: resourceUpdated settle panicked: %v", r)))
+					_ = reject(vm.NewGoError(fmt.Errorf("mcp: %s settle panicked: %v", reason, r)))
 				}
 			}()
-			if notifyErr != nil {
-				_ = reject(vm.NewGoError(notifyErr))
+			if workErr != nil {
+				_ = reject(vm.NewGoError(workErr))
 				return
 			}
 			_ = resolve(goja.Undefined())

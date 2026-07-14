@@ -36,9 +36,12 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 			// the SDK advertise the resources.subscribe capability during
 			// initialize — a script that never calls
 			// srv.onSubscribe/onUnsubscribe still gets working subscribe/
-			// unsubscribe plumbing (ms.recordSubscribe/recordUnsubscribe
-			// always run; the JS callback dispatch is simply skipped when
-			// nil, see getOnSubscribe/getOnUnsubscribe in mcp_server.go).
+			// unsubscribe plumbing; the JS callback dispatch is simply skipped
+			// when nil, see getOnSubscribe/getOnUnsubscribe in mcp_server.go).
+			// The go-sdk tracks the actual subscriber set itself (see
+			// mcpServer's subscribeMu doc comment in mcp_server.go); these
+			// dispatchers only forward to the JS hook, they don't record
+			// anything of their own.
 			//
 			// Both handlers run on an SDK goroutine (never the loop), so the
 			// JS callback is invoked via LoopCallable.Call (which schedules
@@ -54,7 +57,6 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 					Instructions: instructions,
 					SubscribeHandler: func(_ context.Context, req *mcp.SubscribeRequest) error {
 						uri := req.Params.URI
-						ms.recordSubscribe(uri)
 						if cb := ms.getOnSubscribe(); cb != nil {
 							_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
 								return []goja.Value{vm.ToValue(uri)}, nil
@@ -64,7 +66,6 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 					},
 					UnsubscribeHandler: func(_ context.Context, req *mcp.UnsubscribeRequest) error {
 						uri := req.Params.URI
-						ms.recordUnsubscribe(uri)
 						if cb := ms.getOnUnsubscribe(); cb != nil {
 							_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
 								return []goja.Value{vm.ToValue(uri)}, nil

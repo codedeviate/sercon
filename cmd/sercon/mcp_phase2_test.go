@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -755,7 +756,6 @@ func TestMCPSubscriptions(t *testing.T) {
 				// subscriptions).
 				ms.srv = mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, &mcp.ServerOptions{
 					SubscribeHandler: func(_ context.Context, req *mcp.SubscribeRequest) error {
-						ms.recordSubscribe(req.Params.URI)
 						if cb := ms.getOnSubscribe(); cb != nil {
 							uri := req.Params.URI
 							_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
@@ -765,7 +765,6 @@ func TestMCPSubscriptions(t *testing.T) {
 						return nil
 					},
 					UnsubscribeHandler: func(_ context.Context, req *mcp.UnsubscribeRequest) error {
-						ms.recordUnsubscribe(req.Params.URI)
 						if cb := ms.getOnUnsubscribe(); cb != nil {
 							uri := req.Params.URI
 							_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
@@ -870,5 +869,39 @@ await srv.resourceUpdated("`+uri+`");
 	close(done)
 	if err := <-runErr; err != nil {
 		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPPhase2ResourceUpdated_NoTransport_ResolvesWithoutHang is the regression
+// test for the reviewed bug in jsResourceUpdated (and, by the same fix, its
+// jsCtxProgress/jsCtxLog siblings — see asyncSettle in mcp_server.go):
+// srv.resourceUpdated(uri) is callable immediately after mcp.serve(), BEFORE
+// (or without) any .stdio()/.listen() transport ever starting.
+//
+// Before asyncSettle's HoldRun was added, nothing kept the event loop's
+// jobCount above zero while ms.srv.ResourceUpdated ran in its goroutine:
+// loop.Run could observe jobCount == 0 and return before the goroutine
+// reached loop.RunOnLoop, silently dropping the queued settle job (RunOnLoop
+// doesn't itself count toward jobCount — see the "Keeping the event loop
+// alive across async work" note in CLAUDE.md). The returned Promise then
+// never settled, and the script exited 0 without ever running the line
+// after the `await` — reproduced by this exact shape prior to the fix.
+//
+// This uses runScript (mcp_server_test.go), which registers the real `mcp`
+// global via registerSurface — not a test-only stand-in — so the assertion
+// exercises the production jsResourceUpdated binding. A post-await
+// runtime.log call is the sentinel: it only reaches captured stdout if the
+// await actually resumed, proving the settle wasn't dropped.
+func TestMCPPhase2ResourceUpdated_NoTransport_ResolvesWithoutHang(t *testing.T) {
+	out, err := runScript(t, `
+		const srv = mcp.serve({ name: "t", version: "1.0.0" });
+		await srv.resourceUpdated("res://x");
+		runtime.log("resourceUpdated:resolved");
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out, "resourceUpdated:resolved") {
+		t.Fatalf("post-await marker not observed (Promise settle likely dropped); got %q", out)
 	}
 }
