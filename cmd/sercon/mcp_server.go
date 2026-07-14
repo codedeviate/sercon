@@ -171,6 +171,7 @@ func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession
 
 	_ = ctxObj.Set("progress", ms.jsCtxProgress(sess, tok))
 	_ = ctxObj.Set("log", ms.jsCtxLog(sess))
+	_ = ctxObj.Set("sample", ms.jsCtxSample(sess))
 
 	return ctxObj
 }
@@ -259,6 +260,169 @@ func (ms *mcpServer) jsCtxLog(sess *mcp.ServerSession) func(goja.FunctionCall) g
 				Level: mcp.LoggingLevel(level),
 				Data:  payload,
 			})
+		})
+	}
+}
+
+// jsCtxSample builds ctx.sample(opts): Promise<{content, model, stopReason,
+// role}> for the request context — the Phase-3 exemplar this task exists to
+// establish: a mid-handler server->client call asking the client to run a
+// completion through its own LLM (the MCP "sampling" capability), via
+// sess.CreateMessage.
+//
+// opts is parsed on-loop (this function itself runs on-loop, like any goja
+// call, before any SDK I/O happens) into a *mcp.CreateMessageParams:
+//   - messages (required, non-empty array of {role, content}) ->
+//     []*mcp.SamplingMessage, each Content built via toContentItem — the
+//     same JS-content-object -> mcp.Content dispatch toContentList/
+//     toGetPromptResult already use (mcp_content.go), not duplicated here.
+//   - maxTokens/systemPrompt/temperature/stopSequences/includeContext map
+//     straight onto the matching CreateMessageParams field.
+//   - modelPreferences is a partial pass-through: only the three numeric
+//     priorities (costPriority/intelligencePriority/speedPriority) are
+//     wired onto *mcp.ModelPreferences. Hints ([]*mcp.ModelHint, matching
+//     models by name) is deliberately omitted for now — no test or example
+//     needs it yet, and the brief allows dropping an "awkward" field rather
+//     than half-implementing it. Revisit if a script needs to steer model
+//     choice by name/family.
+//
+// Capability check: unlike Elicit (which the go-sdk itself gates on
+// InitializeParams().Capabilities.Elicitation before ever sending anything,
+// see (*ServerSession).Elicit in server.go), CreateMessage has NO such
+// guard — a client with no CreateMessageHandler/CreateMessageWithToolsHandler
+// registered simply answers the wire round trip with a raw jsonrpc "client
+// does not support CreateMessage" error (confirmed against go-sdk@v1.6.1's
+// (*Client).createMessage source). Rather than pattern-matching that string,
+// this mirrors the SDK's own Elicit precedent and checks the negotiated
+// ClientCapabilities.Sampling up front instead: the client package sets it
+// automatically (to a non-nil &SamplingCapabilities{}) exactly when
+// CreateMessageHandler/CreateMessageWithToolsHandler is non-nil (see
+// (*Client) construction in client.go), so absence of that field is a
+// reliable, pre-flight signal — and this rejects with a clear
+// "mcp: client does not support sampling" message before ever calling the
+// SDK, rather than surfacing the SDK's own less-obvious wording. A nil sess
+// (shouldn't happen in practice, guarded defensively like
+// jsCtxProgress/jsCtxLog) takes the same synchronous-reject fast path.
+//
+// The actual CreateMessage call is delegated to asyncSettleResult: it's a
+// server->client round trip (blocking network/pipe I/O) that must run off
+// the loop, exactly like jsCtxProgress/jsCtxLog's SDK calls via asyncSettle —
+// the difference is a result value crosses back (the client's sampled
+// message), not just an error.
+func (ms *mcpServer) jsCtxSample(sess *mcp.ServerSession) func(goja.FunctionCall) goja.Value {
+	rejectSync := func(err error) goja.Value {
+		p, _, reject := ms.vm.NewPromise()
+		_ = reject(ms.vm.NewGoError(err))
+		return ms.vm.ToValue(p)
+	}
+
+	asFloat := func(who string, v any) float64 {
+		switch n := v.(type) {
+		case int64:
+			return float64(n)
+		case float64:
+			return n
+		default:
+			panic(ms.vm.NewTypeError(fmt.Sprintf("mcp: ctx.sample: `%s` must be a number", who)))
+		}
+	}
+
+	return func(call goja.FunctionCall) goja.Value {
+		opts, ok := call.Argument(0).Export().(map[string]any)
+		if !ok {
+			panic(ms.vm.NewTypeError("mcp: ctx.sample: an options object is required"))
+		}
+
+		rawMessages, ok := opts["messages"].([]any)
+		if !ok || len(rawMessages) == 0 {
+			panic(ms.vm.NewTypeError("mcp: ctx.sample: `messages` must be a non-empty array"))
+		}
+
+		messages := make([]*mcp.SamplingMessage, 0, len(rawMessages))
+		for i, item := range rawMessages {
+			mm, ok := item.(map[string]any)
+			if !ok {
+				panic(ms.vm.NewTypeError(fmt.Sprintf("mcp: ctx.sample: messages[%d] must be an object", i)))
+			}
+			role, _ := mm["role"].(string)
+			if role == "" {
+				panic(ms.vm.NewTypeError(fmt.Sprintf("mcp: ctx.sample: messages[%d].role is required", i)))
+			}
+			cm, ok := mm["content"].(map[string]any)
+			if !ok {
+				panic(ms.vm.NewTypeError(fmt.Sprintf("mcp: ctx.sample: messages[%d].content must be an object", i)))
+			}
+			content, err := toContentItem(cm)
+			if err != nil {
+				panic(ms.vm.NewTypeError(fmt.Sprintf("mcp: ctx.sample: messages[%d].content: %s", i, err.Error())))
+			}
+			messages = append(messages, &mcp.SamplingMessage{Role: mcp.Role(role), Content: content})
+		}
+
+		params := &mcp.CreateMessageParams{Messages: messages}
+
+		if v, has := opts["maxTokens"]; has {
+			params.MaxTokens = int64(asFloat("maxTokens", v))
+		}
+		if v, has := opts["systemPrompt"]; has {
+			s, ok := v.(string)
+			if !ok {
+				panic(ms.vm.NewTypeError("mcp: ctx.sample: `systemPrompt` must be a string"))
+			}
+			params.SystemPrompt = s
+		}
+		if v, has := opts["temperature"]; has {
+			params.Temperature = asFloat("temperature", v)
+		}
+		if v, has := opts["includeContext"]; has {
+			s, ok := v.(string)
+			if !ok {
+				panic(ms.vm.NewTypeError("mcp: ctx.sample: `includeContext` must be a string"))
+			}
+			params.IncludeContext = s
+		}
+		if v, has := opts["stopSequences"]; has {
+			list, ok := v.([]any)
+			if !ok {
+				panic(ms.vm.NewTypeError("mcp: ctx.sample: `stopSequences` must be an array of strings"))
+			}
+			seqs := make([]string, 0, len(list))
+			for i, s := range list {
+				str, ok := s.(string)
+				if !ok {
+					panic(ms.vm.NewTypeError(fmt.Sprintf("mcp: ctx.sample: stopSequences[%d] must be a string", i)))
+				}
+				seqs = append(seqs, str)
+			}
+			params.StopSequences = seqs
+		}
+		if v, has := opts["modelPreferences"]; has {
+			mp, ok := v.(map[string]any)
+			if !ok {
+				panic(ms.vm.NewTypeError("mcp: ctx.sample: `modelPreferences` must be an object"))
+			}
+			prefs := &mcp.ModelPreferences{}
+			if raw, has := mp["costPriority"]; has {
+				prefs.CostPriority = asFloat("modelPreferences.costPriority", raw)
+			}
+			if raw, has := mp["intelligencePriority"]; has {
+				prefs.IntelligencePriority = asFloat("modelPreferences.intelligencePriority", raw)
+			}
+			if raw, has := mp["speedPriority"]; has {
+				prefs.SpeedPriority = asFloat("modelPreferences.speedPriority", raw)
+			}
+			params.ModelPreferences = prefs
+		}
+
+		if sess == nil {
+			return rejectSync(errors.New("mcp: ctx.sample: no client session"))
+		}
+		if ip := sess.InitializeParams(); ip == nil || ip.Capabilities == nil || ip.Capabilities.Sampling == nil {
+			return rejectSync(errors.New("mcp: client does not support sampling"))
+		}
+
+		return ms.asyncSettleResult(ms.vm, "mcp:ctx.sample", func() (any, error) {
+			return sess.CreateMessage(context.Background(), params)
 		})
 	}
 }
@@ -816,6 +980,52 @@ func (ms *mcpServer) asyncSettle(reason string, work func() error) goja.Value {
 	}()
 
 	return ms.vm.ToValue(p)
+}
+
+// asyncSettleResult is asyncSettle's sibling for SDK calls that hand back a
+// result value alongside the error (CreateMessage today; Elicit/ListRoots
+// will reuse it in Tasks 3-4) — same HoldRun + off-loop work + on-loop
+// settle shape, except the success path resolves to the SDK result rather
+// than undefined. `val` is exported through toPlain (cloud_google_storage.go,
+// a JSON marshal/unmarshal round trip) before crossing to goja, mirroring
+// how the cloud namespace already surfaces SDK response structs as plain
+// objects — no goja.Value is built off-loop, and no *mcp.CreateMessageResult
+// (or future Elicit/ListRoots result) needs a bespoke converter the way
+// toToolResult/toReadResourceResult/toGetPromptResult do for JS-authored
+// shapes.
+//
+// See asyncSettle's doc comment for why the HoldRun is mandatory (without
+// it, a caller with no other outstanding work can let loop.Run exit before
+// the goroutine's RunOnLoop reaches the loop, per the eventloop's jobCount
+// contract) and for the exactly-once release + defer recover() shape, both
+// reproduced here unchanged.
+func (ms *mcpServer) asyncSettleResult(vm *goja.Runtime, reason string, work func() (any, error)) goja.Value {
+	p, resolve, reject := vm.NewPromise()
+	release := ms.eng.HoldRun(reason)
+
+	go func() {
+		val, workErr := work()
+		ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+			defer func() {
+				release()
+				if r := recover(); r != nil {
+					_ = reject(vm.NewGoError(fmt.Errorf("mcp: %s settle panicked: %v", reason, r)))
+				}
+			}()
+			if workErr != nil {
+				_ = reject(vm.NewGoError(workErr))
+				return
+			}
+			plain, err := toPlain(val)
+			if err != nil {
+				_ = reject(vm.NewGoError(err))
+				return
+			}
+			_ = resolve(vm.ToValue(plain))
+		})
+	}()
+
+	return vm.ToValue(p)
 }
 
 // jsStdio implements srv.stdio(): serve the MCP server over stdin/stdout using
