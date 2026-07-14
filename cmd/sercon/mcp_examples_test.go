@@ -295,10 +295,7 @@ func testMCPExampleRoots(t *testing.T, bin string) {
 	client.AddRoots(&mcp.Root{URI: "file:///changed"})
 
 	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if strings.Contains(stderr.String(), "file:///changed") {
-			break
-		}
+	for !strings.Contains(stderr.String(), "file:///changed") {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for onRootsChanged log line; stderr so far:\n%s", stderr.String())
 		}
