@@ -175,6 +175,88 @@ func toEmbeddedResource(v any) (*mcp.EmbeddedResource, error) {
 	return &mcp.EmbeddedResource{Resource: rc}, nil
 }
 
+// toCompleteResult converts a JS `srv.completion` handler's settled return
+// value into an SDK *mcp.CompleteResult, mirroring toReadResourceResult/
+// toGetPromptResult's on-the-loop conversion contract (v is exported
+// immediately; no goja.Value is retained past this call).
+//
+// Two accepted shapes:
+//   - a plain string[] -> Completion.Values, Total/HasMore left zero.
+//   - an object { values?: string[], total?: number, hasMore?: boolean } ->
+//     each field mapped directly; `values` defaults to an empty slice when
+//     omitted.
+//
+// undefined/null/nil (a handler that declines to complete) is not an error
+// here — it converts to an empty CompleteResult{}, the same "no matches"
+// shape the mcp.serve dispatcher already returns when no JS completion
+// handler is registered at all (see CompletionHandler in mcp.go). A
+// malformed non-nil return (wrong element/field types, or a shape that's
+// neither an array nor an object) IS an error: unlike toToolResult, there's
+// no isError-equivalent field on CompleteResult, so it propagates as a
+// protocol error via the CompletionHandler dispatcher's convert path.
+func toCompleteResult(_ *goja.Runtime, v goja.Value) (*mcp.CompleteResult, error) {
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return &mcp.CompleteResult{}, nil
+	}
+
+	toStringSlice := func(raw any) ([]string, error) {
+		list, ok := raw.([]any)
+		if !ok {
+			return nil, fmt.Errorf("mcp completion result: `values` must be an array of strings, got %T", raw)
+		}
+		values := make([]string, 0, len(list))
+		for i, item := range list {
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("mcp completion result: values[%d] must be a string, got %T", i, item)
+			}
+			values = append(values, s)
+		}
+		return values, nil
+	}
+
+	if arr, ok := v.Export().([]any); ok {
+		values, err := toStringSlice(arr)
+		if err != nil {
+			return nil, err
+		}
+		return &mcp.CompleteResult{Completion: mcp.CompletionResultDetails{Values: values}}, nil
+	}
+
+	m, ok := v.Export().(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("mcp completion result: want a string array or an object with `values`, got %T", v.Export())
+	}
+
+	details := mcp.CompletionResultDetails{}
+	if rawValues, has := m["values"]; has {
+		values, err := toStringSlice(rawValues)
+		if err != nil {
+			return nil, err
+		}
+		details.Values = values
+	}
+	if rawTotal, has := m["total"]; has {
+		switch t := rawTotal.(type) {
+		case int64:
+			details.Total = int(t)
+		case float64:
+			details.Total = int(t)
+		default:
+			return nil, fmt.Errorf("mcp completion result: `total` must be a number, got %T", rawTotal)
+		}
+	}
+	if rawHasMore, has := m["hasMore"]; has {
+		b, ok := rawHasMore.(bool)
+		if !ok {
+			return nil, fmt.Errorf("mcp completion result: `hasMore` must be a boolean, got %T", rawHasMore)
+		}
+		details.HasMore = b
+	}
+
+	return &mcp.CompleteResult{Completion: details}, nil
+}
+
 // toReadResourceResult converts a JS resource `read` handler's settled return
 // value into an SDK *mcp.ReadResourceResult, mirroring toToolResult's
 // on-the-loop conversion contract (v is exported immediately; no goja.Value

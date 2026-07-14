@@ -50,6 +50,16 @@ type mcpServer struct {
 	subscribeMu     sync.Mutex
 	onSubscribeCB   *scriptengine.LoopCallable
 	onUnsubscribeCB *scriptengine.LoopCallable
+
+	// completionMu guards completionCB (Task 6), the JS handler registered via
+	// srv.completion(fn). Same cross-goroutine reason as subscribeMu: it's set
+	// on the main script goroutine (jsCompletion, on-loop) and read from the
+	// go-sdk's own request-handling goroutines (the CompletionHandler
+	// dispatcher set in mcp.serve). A separate mutex rather than reusing
+	// subscribeMu since completion is an unrelated feature with its own
+	// single field — no reason to serialize the two against each other.
+	completionMu sync.Mutex
+	completionCB *scriptengine.LoopCallable
 }
 
 // getOnSubscribe/getOnUnsubscribe return the currently-registered JS
@@ -82,6 +92,25 @@ func (ms *mcpServer) setOnUnsubscribe(lc *scriptengine.LoopCallable) {
 	ms.subscribeMu.Lock()
 	defer ms.subscribeMu.Unlock()
 	ms.onUnsubscribeCB = lc
+}
+
+// getCompletionCB returns the currently-registered srv.completion callback
+// (nil if none was ever set via jsCompletion), mutex-guarded for the same
+// cross-goroutine reason documented on mcpServer's completionMu field.
+func (ms *mcpServer) getCompletionCB() *scriptengine.LoopCallable {
+	ms.completionMu.Lock()
+	defer ms.completionMu.Unlock()
+	return ms.completionCB
+}
+
+// setCompletionCB stores the JS callback registered via srv.completion(fn).
+// Called on-loop (jsCompletion runs as a goja binding), but still
+// mutex-guarded since the SDK's CompletionHandler dispatcher goroutines read
+// the same field concurrently.
+func (ms *mcpServer) setCompletionCB(lc *scriptengine.LoopCallable) {
+	ms.completionMu.Lock()
+	defer ms.completionMu.Unlock()
+	ms.completionCB = lc
 }
 
 // newRequestContext builds the `ctx` object passed as the 2nd argument to
@@ -617,6 +646,100 @@ func (ms *mcpServer) jsOnUnsubscribe(call goja.FunctionCall) goja.Value {
 	fn := ms.requireFunctionArg("mcp.onUnsubscribe", call)
 	ms.setOnUnsubscribe(scriptengine.NewLoopCallable(ms.loop, fn))
 	return goja.Undefined()
+}
+
+// jsCompletion implements srv.completion(fn): registers the JS handler
+// invoked for a client's "completion/complete" request (argument
+// autocompletion for a prompt argument or a resource-template URI variable).
+// fn receives (ref, argName, partial): ref is a normalized
+// { type: "prompt"|"resource", name, uri } object (name is set for
+// type:"prompt", uri for type:"resource" — see the CompletionHandler
+// dispatcher in mcp.go, which builds it from the SDK's
+// *mcp.CompleteReference), argName is the argument being completed, and
+// partial is the text typed so far. fn may return a string[] or an object
+// { values?, total?, hasMore? } (converted by toCompleteResult), a Promise
+// of either, or nothing/null/undefined (treated as no matches).
+//
+// Only one completion callback is held at a time; a later call to
+// srv.completion replaces the earlier registration (last-writer-wins, same
+// as this handle's other single-slot registrations like onSubscribe).
+func (ms *mcpServer) jsCompletion(call goja.FunctionCall) goja.Value {
+	fn := ms.requireFunctionArg("mcp.completion", call)
+	ms.setCompletionCB(scriptengine.NewLoopCallable(ms.loop, fn))
+	return goja.Undefined()
+}
+
+// mcpCompletionHandler is the ServerOptions.CompletionHandler wired up in
+// mcp.serve (mcp.go): it's what the go-sdk invokes for every
+// "completion/complete" request, on one of its own request-handling
+// goroutines (never the loop) — the same shape SubscribeHandler/
+// UnsubscribeHandler use in mcp.go, just returning a real result instead of
+// a fire-and-forget nil.
+//
+// If no JS handler was ever registered (srv.completion was never called),
+// this returns an empty, non-error *mcp.CompleteResult{} — "no
+// suggestions", not a protocol failure, since completion is inherently
+// optional/best-effort from a client's point of view (many servers won't
+// implement it for every ref). Otherwise it dispatches through
+// callJSHandler exactly like jsTool/jsResource/jsPrompt: buildArgs runs
+// on-loop and constructs (ref, argName, partial) — ref is a normalized
+// { type: "prompt"|"resource", name, uri } object built from the SDK's
+// *mcp.CompleteReference (Type is either "ref/prompt" or "ref/resource" on
+// the wire; both name and uri are set on the JS object regardless of type,
+// since setting the unused one is harmless and saves the JS side an
+// extra branch) — and convert (toCompleteResult) runs on-loop too, turning
+// the handler's return into an *mcp.CompleteResult before it crosses back
+// to this goroutine.
+//
+// Unlike jsTool (whose handler errors become an isError result, since a
+// tool call is meant to report failures to the model) a broken/throwing
+// completion handler is surfaced as a real protocol-level error here,
+// mirroring jsResource/jsPrompt's choice: there's no isError-equivalent
+// shape for completion/complete, and a script bug in an autocomplete
+// handler is more useful visible to the client (and to whoever's debugging
+// the server) than silently downgraded to "no suggestions" — which would
+// make the bug indistinguishable from a handler that legitimately has
+// nothing to suggest.
+func (ms *mcpServer) mcpCompletionHandler(_ context.Context, req *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
+	cb := ms.getCompletionCB()
+	if cb == nil {
+		return &mcp.CompleteResult{}, nil
+	}
+
+	ref := req.Params.Ref
+	argName := req.Params.Argument.Name
+	partial := req.Params.Argument.Value
+
+	out, err := ms.callJSHandler(cb,
+		func(vm *goja.Runtime) []goja.Value {
+			refType := "resource"
+			var name, uri string
+			if ref != nil {
+				if ref.Type == "ref/prompt" {
+					refType = "prompt"
+				}
+				name, uri = ref.Name, ref.URI
+			}
+			refObj := vm.NewObject()
+			_ = refObj.Set("type", refType)
+			_ = refObj.Set("name", name)
+			_ = refObj.Set("uri", uri)
+			return []goja.Value{refObj, vm.ToValue(argName), vm.ToValue(partial)}
+		},
+		func(vm *goja.Runtime, v goja.Value) (any, error) {
+			return toCompleteResult(vm, v)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	// convert always yields *mcp.CompleteResult on the success path; the
+	// comma-ok guard keeps a future convert change from panicking here.
+	result, ok := out.(*mcp.CompleteResult)
+	if !ok {
+		return nil, errors.New("mcp: internal completion result conversion failed")
+	}
+	return result, nil
 }
 
 // jsResourceUpdated implements srv.resourceUpdated(uri): Promise<void>,

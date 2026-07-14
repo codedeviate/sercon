@@ -73,6 +73,15 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 						}
 						return nil
 					},
+					// CompletionHandler is likewise set unconditionally (see the
+					// Subscribe/UnsubscribeHandler comment above for the same
+					// reasoning): this is what makes the SDK advertise the
+					// `completions` capability during initialize, and a script
+					// that never calls srv.completion still gets a working
+					// (empty) completion/complete response instead of the SDK
+					// rejecting the method outright — see mcpCompletionHandler's
+					// doc comment below.
+					CompletionHandler: ms.mcpCompletionHandler,
 				},
 			)
 			// Arm the stdout->stderr redirect now (real CLI runs only), so any
@@ -90,9 +99,10 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 // runtime-mutable — see jsTool's doc comment) and their
 // removeTool/removeResource/removePrompt counterparts, onSubscribe/
 // onUnsubscribe/resourceUpdated (resource-subscription hooks, Task 5),
-// stdio/listen (the two transports, still one-per-handle), and close
-// (currently a no-op placeholder — see jsClose's doc comment). All are
-// implemented in mcp_server.go.
+// completion (argument-completion hook, Task 6), stdio/listen (the two
+// transports, still one-per-handle), and close (currently a no-op
+// placeholder — see jsClose's doc comment). All are implemented in
+// mcp_server.go.
 func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 	h := vm.NewObject()
 	must := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = h.Set(name, fn) }
@@ -106,6 +116,7 @@ func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 	must("onSubscribe", ms.jsOnSubscribe)
 	must("onUnsubscribe", ms.jsOnUnsubscribe)
 	must("resourceUpdated", ms.jsResourceUpdated)
+	must("completion", ms.jsCompletion)
 	must("stdio", ms.jsStdio)
 	must("listen", ms.jsListen)
 	must("close", ms.jsClose)

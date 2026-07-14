@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -903,5 +904,209 @@ func TestMCPPhase2ResourceUpdated_NoTransport_ResolvesWithoutHang(t *testing.T) 
 	}
 	if !strings.Contains(out, "resourceUpdated:resolved") {
 		t.Fatalf("post-await marker not observed (Promise settle likely dropped); got %q", out)
+	}
+}
+
+// TestMCPCompletion drives srv.completion(fn) (Task 6) end to end: a script
+// registers a prompt and a resource template, then registers a completion
+// handler that filters candidate values differently depending on the
+// normalized ref it's given. The Go side connects an in-memory client and
+// issues completion/complete requests for both a ref/prompt argument and a
+// ref/resource (template) argument, asserting the routed/filtered values
+// reach the client — i.e. mcpCompletionHandler's ref normalization
+// ({type,name,uri}) and toCompleteResult's array/object conversion both
+// round-trip correctly.
+//
+// Uses the same hand-rolled `test` namespace (mirroring mcp.serve's
+// construction) as TestMCPSubscriptions/TestMCPPhase2Tool so the Go side can
+// capture *mcpServer and thus *mcp.Server directly, and the same
+// ready()/done HoldRun gate so the event loop stays alive while the Go side
+// issues requests — required here because, unlike jsResourceUpdated's
+// no-transport regression case, dispatching to the registered JS handler
+// hops back onto the loop via callJSHandler and would hang forever if the
+// loop had already exited.
+func TestMCPCompletion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	served := make(chan struct{})
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				// Two-step assignment (ms first, then ms.srv): mcp.serve
+				// takes ms.mcpCompletionHandler as a method value, which
+				// needs `ms` to already be a valid, addressable pointer —
+				// mirrors the same two-step TestMCPSubscriptions uses for
+				// Subscribe/UnsubscribeHandler.
+				ms = &mcpServer{eng: eng, vm: vm, loop: loop}
+				ms.srv = mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, &mcp.ServerOptions{
+					CompletionHandler: ms.mcpCompletionHandler,
+				})
+				close(served)
+				return ms.handle(vm)
+			},
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-completion-ready")
+				go func() {
+					defer release()
+					<-done
+				}()
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "completion.ts", `
+const srv = test.serve();
+srv.prompt({
+	name: "greet",
+	arguments: [{ name: "name" }],
+	get: () => ({ messages: [{ role: "user", content: { type: "text", text: "hi" } }] }),
+});
+srv.resourceTemplate({
+	uriTemplate: "db:///{table}/{id}",
+	name: "db-row",
+	read: () => ({ text: "{}" }),
+});
+
+const names = ["alice", "alicia", "bob"];
+const tables = ["users", "orders", "user_sessions"];
+
+srv.completion((ref, argName, partial) => {
+	if (ref.type === "prompt" && ref.name === "greet" && argName === "name") {
+		return { values: names.filter((n) => n.startsWith(partial)), hasMore: false };
+	}
+	if (ref.type === "resource" && ref.uri === "db:///{table}/{id}" && argName === "table") {
+		return tables.filter((t) => t.startsWith(partial));
+	}
+	return [];
+});
+
+test.ready();
+`)
+		runErr <- err
+	}()
+
+	<-served
+
+	sess, err := connectInMemory(ctx, ms.srv)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	promptRes, err := sess.Complete(ctx, &mcp.CompleteParams{
+		Ref:      &mcp.CompleteReference{Type: "ref/prompt", Name: "greet"},
+		Argument: mcp.CompleteParamsArgument{Name: "name", Value: "ali"},
+	})
+	if err != nil {
+		close(done)
+		t.Fatalf("Complete (prompt ref): %v", err)
+	}
+	if want := []string{"alice", "alicia"}; !reflect.DeepEqual(promptRes.Completion.Values, want) {
+		t.Errorf("prompt completion values = %#v, want %#v", promptRes.Completion.Values, want)
+	}
+	if promptRes.Completion.HasMore {
+		t.Errorf("prompt completion HasMore = true, want false")
+	}
+
+	resourceRes, err := sess.Complete(ctx, &mcp.CompleteParams{
+		Ref:      &mcp.CompleteReference{Type: "ref/resource", URI: "db:///{table}/{id}"},
+		Argument: mcp.CompleteParamsArgument{Name: "table", Value: "user"},
+	})
+	if err != nil {
+		close(done)
+		t.Fatalf("Complete (resource ref): %v", err)
+	}
+	if want := []string{"users", "user_sessions"}; !reflect.DeepEqual(resourceRes.Completion.Values, want) {
+		t.Errorf("resource completion values = %#v, want %#v", resourceRes.Completion.Values, want)
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPCompletionUnregistered asserts the no-handler case the brief calls
+// out explicitly: a server that never calls srv.completion still answers
+// completion/complete with an empty (not an error) result — see
+// mcpCompletionHandler's nil-getCompletionCB branch in mcp_server.go.
+//
+// Unlike TestMCPCompletion, the nil-callback branch returns immediately
+// without ever hopping onto the event loop (there's no JS handler to call),
+// so this doesn't need a ready()/done keep-alive gate: the script can finish
+// and the loop can exit before the Go side even connects, exactly like
+// TestMCPPhase2ResourceUpdated_NoTransport_ResolvesWithoutHang's already-
+// exited-loop shape — the in-memory transport goroutine (started by
+// connectInMemory against the captured *mcp.Server) is independent of the
+// script's own event loop lifetime.
+func TestMCPCompletionUnregistered(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	served := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{eng: eng, vm: vm, loop: loop}
+				ms.srv = mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, &mcp.ServerOptions{
+					CompletionHandler: ms.mcpCompletionHandler,
+				})
+				close(served)
+				return ms.handle(vm)
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		// Deliberately never calls srv.completion(...).
+		_, err := eng.Run(ctx, "completion-unregistered.ts", `const srv = test.serve();`)
+		runErr <- err
+	}()
+
+	<-served
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	sess, err := connectInMemory(ctx, ms.srv)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	res, err := sess.Complete(ctx, &mcp.CompleteParams{
+		Ref:      &mcp.CompleteReference{Type: "ref/prompt", Name: "whatever"},
+		Argument: mcp.CompleteParamsArgument{Name: "name", Value: "a"},
+	})
+	if err != nil {
+		t.Fatalf("Complete: unexpected error for unregistered handler: %v", err)
+	}
+	if len(res.Completion.Values) != 0 {
+		t.Errorf("Completion.Values = %#v, want empty", res.Completion.Values)
+	}
+	if res.Completion.HasMore {
+		t.Errorf("Completion.HasMore = true, want false")
+	}
+	if res.Completion.Total != 0 {
+		t.Errorf("Completion.Total = %d, want 0", res.Completion.Total)
 	}
 }
