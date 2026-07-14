@@ -75,12 +75,7 @@ func errorResult(err error) *mcp.CallToolResult {
 
 // toContentList converts a goja value representing a JS array of content
 // items (e.g. the `content` field of a tool result) into []mcp.Content.
-// Each item is dispatched on its `type` field:
-//
-//	"text"     -> &mcp.TextContent{Text}
-//	"image"    -> &mcp.ImageContent{Data, MIMEType}
-//	"audio"    -> &mcp.AudioContent{Data, MIMEType}
-//	"resource" -> &mcp.EmbeddedResource{Resource}
+// Each item is dispatched by toContentItem on its `type` field.
 //
 // An unrecognised `type` (or a malformed item) returns an error; the caller
 // (toToolResult here, the Task 5 tool binding for handler-level results)
@@ -101,41 +96,59 @@ func toContentList(vm *goja.Runtime, v goja.Value) ([]mcp.Content, error) {
 		if !ok {
 			return nil, fmt.Errorf("mcp content[%d]: expected an object, got %T", i, item)
 		}
-
-		typ, _ := m["type"].(string)
-		switch typ {
-		case "text":
-			text, _ := m["text"].(string)
-			out = append(out, &mcp.TextContent{Text: text})
-
-		case "image":
-			data, err := decodeContentData(m["data"])
-			if err != nil {
-				return nil, fmt.Errorf("mcp content[%d] (image): %w", i, err)
-			}
-			mimeType, _ := m["mimeType"].(string)
-			out = append(out, &mcp.ImageContent{Data: data, MIMEType: mimeType})
-
-		case "audio":
-			data, err := decodeContentData(m["data"])
-			if err != nil {
-				return nil, fmt.Errorf("mcp content[%d] (audio): %w", i, err)
-			}
-			mimeType, _ := m["mimeType"].(string)
-			out = append(out, &mcp.AudioContent{Data: data, MIMEType: mimeType})
-
-		case "resource":
-			res, err := toEmbeddedResource(m["resource"])
-			if err != nil {
-				return nil, fmt.Errorf("mcp content[%d] (resource): %w", i, err)
-			}
-			out = append(out, res)
-
-		default:
-			return nil, fmt.Errorf("mcp content[%d]: unknown content type %q", i, typ)
+		c, err := toContentItem(m)
+		if err != nil {
+			return nil, fmt.Errorf("mcp content[%d]: %w", i, err)
 		}
+		out = append(out, c)
 	}
 	return out, nil
+}
+
+// toContentItem converts a single already-exported JS content object
+// ({type, ...}) into an mcp.Content, dispatched on its `type` field:
+//
+//	"text"     -> &mcp.TextContent{Text}
+//	"image"    -> &mcp.ImageContent{Data, MIMEType}
+//	"audio"    -> &mcp.AudioContent{Data, MIMEType}
+//	"resource" -> &mcp.EmbeddedResource{Resource}
+//
+// Shared by toContentList (each element of a tool/embedded-resource content
+// array) and toGetPromptResult (a prompt message's `content` is a single
+// object, not an array) — deliberately not duplicated between them.
+func toContentItem(m map[string]any) (mcp.Content, error) {
+	typ, _ := m["type"].(string)
+	switch typ {
+	case "text":
+		text, _ := m["text"].(string)
+		return &mcp.TextContent{Text: text}, nil
+
+	case "image":
+		data, err := decodeContentData(m["data"])
+		if err != nil {
+			return nil, fmt.Errorf("(image): %w", err)
+		}
+		mimeType, _ := m["mimeType"].(string)
+		return &mcp.ImageContent{Data: data, MIMEType: mimeType}, nil
+
+	case "audio":
+		data, err := decodeContentData(m["data"])
+		if err != nil {
+			return nil, fmt.Errorf("(audio): %w", err)
+		}
+		mimeType, _ := m["mimeType"].(string)
+		return &mcp.AudioContent{Data: data, MIMEType: mimeType}, nil
+
+	case "resource":
+		res, err := toEmbeddedResource(m["resource"])
+		if err != nil {
+			return nil, fmt.Errorf("(resource): %w", err)
+		}
+		return res, nil
+
+	default:
+		return nil, fmt.Errorf("unknown content type %q", typ)
+	}
 }
 
 // toEmbeddedResource converts an already-exported JS `resource` object
@@ -211,6 +224,78 @@ func toReadResourceResult(_ *goja.Runtime, uri, mimeType string, v goja.Value) (
 	}
 
 	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{rc}}, nil
+}
+
+// toGetPromptResult converts a JS prompt `get` handler's settled return
+// value into an SDK *mcp.GetPromptResult, mirroring toReadResourceResult's
+// on-the-loop conversion contract (v is exported immediately; no goja.Value
+// is retained past this call).
+//
+// Expected shape: { description?: string, messages: [{ role, content }] }.
+// Each message's `content` is a single MCP content object (e.g.
+// {type:"text", text}), converted via toContentItem — the same per-item
+// dispatch toContentList uses for tool/embedded-resource content arrays,
+// deliberately not duplicated here.
+//
+// Unlike toToolResult, an unrecognised shape is a Go error (not an isError
+// result): there's no isError-equivalent field on GetPromptResult, so a
+// malformed handler return is indistinguishable from any other prompt-get
+// failure and propagates as a protocol error via jsPrompt's convert path.
+func toGetPromptResult(_ *goja.Runtime, v goja.Value) (*mcp.GetPromptResult, error) {
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return nil, fmt.Errorf("mcp prompt result: get handler returned no value")
+	}
+
+	m, ok := v.Export().(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("mcp prompt result: want an object with `messages`, got %T", v.Export())
+	}
+
+	result := &mcp.GetPromptResult{}
+	if desc, has := m["description"]; has {
+		s, ok := desc.(string)
+		if !ok {
+			return nil, fmt.Errorf("mcp prompt result: `description` must be a string, got %T", desc)
+		}
+		result.Description = s
+	}
+
+	rawMessages, has := m["messages"]
+	if !has {
+		return nil, fmt.Errorf("mcp prompt result: object must have `messages`")
+	}
+	items, ok := rawMessages.([]any)
+	if !ok {
+		return nil, fmt.Errorf("mcp prompt result: `messages` must be an array, got %T", rawMessages)
+	}
+
+	messages := make([]*mcp.PromptMessage, 0, len(items))
+	for i, item := range items {
+		mm, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("mcp prompt result: messages[%d]: expected an object, got %T", i, item)
+		}
+		role, _ := mm["role"].(string)
+		if role == "" {
+			return nil, fmt.Errorf("mcp prompt result: messages[%d]: `role` is required", i)
+		}
+		contentVal, has := mm["content"]
+		if !has {
+			return nil, fmt.Errorf("mcp prompt result: messages[%d]: `content` is required", i)
+		}
+		cm, ok := contentVal.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("mcp prompt result: messages[%d]: `content` must be an object, got %T", i, contentVal)
+		}
+		content, err := toContentItem(cm)
+		if err != nil {
+			return nil, fmt.Errorf("mcp prompt result: messages[%d]: %w", i, err)
+		}
+		messages = append(messages, &mcp.PromptMessage{Role: mcp.Role(role), Content: content})
+	}
+	result.Messages = messages
+
+	return result, nil
 }
 
 // decodeContentData coerces an already-exported JS `data` value into raw

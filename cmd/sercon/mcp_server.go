@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -169,12 +170,95 @@ func (ms *mcpServer) jsResource(call goja.FunctionCall) goja.Value {
 	return goja.Undefined()
 }
 
-// The methods below are intentional stubs: prompt registration and the
-// stdio/listen transports are filled in by later tasks. close() is a no-op
-// until a transport (and therefore a HoldRun) exists to release.
+// jsPrompt implements srv.prompt({ name, description?, arguments?, get }). It
+// registers a real SDK prompt whose PromptHandler bridges into the JS `get`
+// function through callJSHandler — the same mechanism jsTool/jsResource use,
+// swapping the SDK call (AddPrompt instead of AddTool/AddResource) and the
+// result converter (toGetPromptResult instead of toToolResult/
+// toReadResourceResult).
+//
+// Like a resource read error, a prompt get error is a protocol-level
+// failure: the handler below returns (nil, err) straight to the SDK rather
+// than wrapping it in a result value (there's no isError-equivalent shape
+// for prompts/get, same as resources/read).
+//
+// Registration must happen before the server is serving, for the same
+// list-changed-notification reason documented on jsTool.
 func (ms *mcpServer) jsPrompt(call goja.FunctionCall) goja.Value {
-	panic(ms.vm.NewTypeError("mcp: prompt() not yet implemented"))
+	if ms.started {
+		panic(ms.vm.NewGoError(errAlreadyStarted))
+	}
+	spec, ok := call.Argument(0).Export().(map[string]any)
+	if !ok {
+		panic(ms.vm.NewTypeError("mcp.prompt: a spec object is required"))
+	}
+	name, _ := spec["name"].(string)
+	if name == "" {
+		panic(ms.vm.NewTypeError("mcp.prompt: `name` is required"))
+	}
+	desc, _ := spec["description"].(string)
+
+	var args []*mcp.PromptArgument
+	if rawArgs, has := spec["arguments"]; has {
+		list, ok := rawArgs.([]any)
+		if !ok {
+			panic(ms.vm.NewTypeError("mcp.prompt: `arguments` must be an array"))
+		}
+		for i, item := range list {
+			am, ok := item.(map[string]any)
+			if !ok {
+				panic(ms.vm.NewTypeError(fmt.Sprintf("mcp.prompt: arguments[%d] must be an object", i)))
+			}
+			argName, _ := am["name"].(string)
+			if argName == "" {
+				panic(ms.vm.NewTypeError(fmt.Sprintf("mcp.prompt: arguments[%d].name is required", i)))
+			}
+			argDesc, _ := am["description"].(string)
+			required, _ := am["required"].(bool)
+			args = append(args, &mcp.PromptArgument{Name: argName, Description: argDesc, Required: required})
+		}
+	}
+
+	hv := ms.vm.ToValue(spec["get"])
+	fn, isFn := goja.AssertFunction(hv)
+	if !isFn {
+		panic(ms.vm.NewTypeError("mcp.prompt: `get` must be a function"))
+	}
+	lc := scriptengine.NewLoopCallable(ms.loop, fn)
+
+	ms.srv.AddPrompt(&mcp.Prompt{Name: name, Description: desc, Arguments: args}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		requestedArgs := req.Params.Arguments
+		out, err := ms.callJSHandler(lc,
+			func(vm *goja.Runtime) []goja.Value {
+				// Second arg is the request-context placeholder (filled by a
+				// later task); the two-arg JS get(args, ctx) signature is
+				// stable now, matching jsTool/jsResource's handler shape.
+				return []goja.Value{vm.ToValue(requestedArgs), goja.Undefined()}
+			},
+			func(vm *goja.Runtime, v goja.Value) (any, error) {
+				return toGetPromptResult(vm, v)
+			},
+		)
+		if err != nil {
+			// A prompt get failure is a protocol-level error, not an isError
+			// result (there's no such shape for prompts/get) — it propagates
+			// straight to the SDK's error response.
+			return nil, err
+		}
+		// convert always yields *mcp.GetPromptResult on the success path; the
+		// comma-ok guard keeps a future convert change from panicking here.
+		result, ok := out.(*mcp.GetPromptResult)
+		if !ok {
+			return nil, errors.New("mcp: internal prompt result conversion failed")
+		}
+		return result, nil
+	})
+	return goja.Undefined()
 }
+
+// The methods below are intentional stubs: the stdio/listen transports are
+// filled in by later tasks. close() is a no-op until a transport (and
+// therefore a HoldRun) exists to release.
 func (ms *mcpServer) jsStdio(call goja.FunctionCall) goja.Value {
 	panic(ms.vm.NewTypeError("mcp: stdio() not yet implemented"))
 }

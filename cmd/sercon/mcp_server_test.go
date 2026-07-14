@@ -291,3 +291,102 @@ test.ready();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPPrompt drives a JS-defined prompt end to end: a script builds an
+// mcpServer, registers a prompt (with one argument) via srv.prompt(...), and
+// signals readiness; the Go side then connects an in-memory client and calls
+// GetPrompt, asserting the bridge (callJSHandler + toGetPromptResult)
+// round-trips the argument into the returned message's role/text content.
+//
+// Mirrors TestMCPResource's harness; everything under srv.prompt — jsPrompt,
+// the SDK PromptHandler, callJSHandler's on-loop conversion, and
+// toGetPromptResult — is the real production code path.
+func TestMCPPrompt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	ready := make(chan struct{})
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{
+					eng: eng, vm: vm, loop: loop,
+					srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil),
+				}
+				return ms.handle(vm)
+			},
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-prompt")
+				go func() {
+					defer release()
+					<-done
+				}()
+				close(ready)
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "prompt.ts", `
+const srv = test.serve();
+srv.prompt({
+	name: "greet",
+	description: "Greets someone",
+	arguments: [{ name: "who", description: "who to greet", required: true }],
+	get: (args) => ({
+		description: "a greeting",
+		messages: [{ role: "user", content: { type: "text", text: "hello-" + args.who } }],
+	}),
+});
+test.ready();
+`)
+		runErr <- err
+	}()
+
+	<-ready
+
+	sess, err := connectInMemory(ctx, ms.srv)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	res, err := sess.GetPrompt(ctx, &mcp.GetPromptParams{Name: "greet", Arguments: map[string]string{"who": "world"}})
+	if err != nil {
+		close(done)
+		t.Fatalf("get greet: %v", err)
+	}
+	if res.Description != "a greeting" {
+		close(done)
+		t.Fatalf("greet: want description %q, got %q", "a greeting", res.Description)
+	}
+	if len(res.Messages) != 1 {
+		close(done)
+		t.Fatalf("greet: want 1 message, got %d", len(res.Messages))
+	}
+	msg := res.Messages[0]
+	if msg.Role != "user" {
+		close(done)
+		t.Fatalf("greet: want role %q, got %q", "user", msg.Role)
+	}
+	tc, ok := msg.Content.(*mcp.TextContent)
+	if !ok || tc.Text != "hello-world" {
+		close(done)
+		t.Fatalf("greet: want text 'hello-world', got %#v", msg.Content)
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
