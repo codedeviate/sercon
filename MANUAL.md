@@ -6447,9 +6447,13 @@ srv.completion((ref, argName, partial) => {
 ```
 
 **Notes**
-- `ref` is normalized regardless of what's being completed: `{ type:
-  "prompt", name }` for a prompt argument, `{ type: "resource", uri }` for
-  a resource-template URI variable — check `ref.type` first.
+- `ref` is normalized regardless of what's being completed, but `name`
+  and `uri` are **both always present** on the object — for a prompt
+  argument `ref.type` is `"prompt"` and `ref.name` is set (`ref.uri` is
+  `""`); for a resource-template URI variable `ref.type` is `"resource"`
+  and `ref.uri` is set (`ref.name` is `""`). The unused field is an empty
+  string, never `undefined`/omitted, so always branch on `ref.type` —
+  don't discriminate by checking a field for `undefined`.
 - Only one completion callback is registered per handle; if your server
   has both prompts and resource templates that want completion, branch on
   `ref.type`/`ref.name`/`ref.uri` inside the single callback.
@@ -13826,14 +13830,14 @@ srv.close(); // currently a no-op; use the listen() handle's close(), or let std
 ##### 17.9.1.2 mcp.serve.completion
 
 ```
-completion(fn: (ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined): void
+completion(fn: (ref: { type: "prompt" | "resource"; name: string; uri: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined): void
 ```
 
 Register the handler invoked for a client's argument-autocompletion request (completion/complete) — suggesting values for a prompt argument or a resource-template URI variable as the user types. Only one completion callback is held at a time — a later call replaces the earlier registration. If never called, the server still advertises the completions capability and answers every request with an empty ("no suggestions") result rather than rejecting it.
 
 **Parameters**
 
-- `fn` *((ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined)* — ref identifies what's being completed: type "prompt" with name set (the prompt registered via serve.prompt) or type "resource" with uri set (the resource-template URI registered via serve.resourceTemplate). argName is the argument/variable name being completed and partial is the text typed so far. fn may return a plain string[] (the suggestions, in order), an object { values?, total?, hasMore? } for pagination hints, a Promise of either, or null/undefined/nothing to mean no suggestions.
+- `fn` *((ref: { type: "prompt" | "resource"; name: string; uri: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined)* — ref identifies what's being completed: type "prompt" (the prompt registered via serve.prompt, in name) or type "resource" (the resource-template URI registered via serve.resourceTemplate, in uri). Both name and uri are always set on ref — whichever one doesn't apply to the current type is set to the empty string "", never omitted or undefined — so discriminate on ref.type, not on checking a field for undefined. argName is the argument/variable name being completed and partial is the text typed so far. fn may return a plain string[] (the suggestions, in order), an object { values?, total?, hasMore? } for pagination hints, a Promise of either, or null/undefined/nothing to mean no suggestions.
 
 **Returns:** Nothing — replaces any previously registered completion callback.
 
