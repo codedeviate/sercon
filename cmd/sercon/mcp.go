@@ -85,6 +85,15 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 					// rejecting the method outright — see mcpCompletionHandler's
 					// doc comment below.
 					CompletionHandler: ms.mcpCompletionHandler,
+					// RootsListChangedHandler is likewise set unconditionally: the
+					// go-sdk's own signature for this notification has no
+					// return value at all (see mcpRootsListChangedHandler's doc
+					// comment in mcp_server.go), so — unlike Subscribe/
+					// Unsubscribe/CompletionHandler — there is no capability this
+					// wiring gates; it simply dispatches to the JS
+					// srv.onRootsChanged hook when one is registered, and is a
+					// no-op otherwise.
+					RootsListChangedHandler: ms.mcpRootsListChangedHandler,
 				},
 			)
 			// Arm the stdout->stderr redirect now (real CLI runs only), so any
@@ -102,8 +111,10 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 // runtime-mutable — see jsTool's doc comment) and their
 // removeTool/removeResource/removePrompt counterparts, onSubscribe/
 // onUnsubscribe/resourceUpdated (resource-subscription hooks, Task 5),
-// completion (argument-completion hook, Task 6), stdio/listen (the two
-// transports, still one-per-handle), and close (currently a no-op
+// completion (argument-completion hook, Task 6), onRootsChanged
+// (client-roots-changed hook, Task 4 — its sibling ctx.roots() lives on the
+// per-request ctx object built by newRequestContext, not here), stdio/listen
+// (the two transports, still one-per-handle), and close (currently a no-op
 // placeholder — see jsClose's doc comment). All are implemented in
 // mcp_server.go.
 func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
@@ -118,6 +129,7 @@ func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 	must("removePrompt", ms.jsRemovePrompt)
 	must("onSubscribe", ms.jsOnSubscribe)
 	must("onUnsubscribe", ms.jsOnUnsubscribe)
+	must("onRootsChanged", ms.jsOnRootsChanged)
 	must("resourceUpdated", ms.jsResourceUpdated)
 	must("completion", ms.jsCompletion)
 	must("stdio", ms.jsStdio)

@@ -60,6 +60,16 @@ type mcpServer struct {
 	// single field — no reason to serialize the two against each other.
 	completionMu sync.Mutex
 	completionCB *scriptengine.LoopCallable
+
+	// rootsMu guards onRootsChangedCB (Task 4), the JS handler registered via
+	// srv.onRootsChanged(fn). Same cross-goroutine reason as subscribeMu/
+	// completionMu: set on the main script goroutine (jsOnRootsChanged,
+	// on-loop) but read from the go-sdk's own request-handling goroutines
+	// (the RootsListChangedHandler dispatcher set in mcp.serve). A separate
+	// mutex rather than reusing subscribeMu/completionMu — unrelated feature
+	// with its own single field, no reason to serialize it against them.
+	rootsMu          sync.Mutex
+	onRootsChangedCB *scriptengine.LoopCallable
 }
 
 // getOnSubscribe/getOnUnsubscribe return the currently-registered JS
@@ -111,6 +121,26 @@ func (ms *mcpServer) setCompletionCB(lc *scriptengine.LoopCallable) {
 	ms.completionMu.Lock()
 	defer ms.completionMu.Unlock()
 	ms.completionCB = lc
+}
+
+// getOnRootsChanged returns the currently-registered srv.onRootsChanged(fn)
+// callback (nil if none was ever set via jsOnRootsChanged), mutex-guarded
+// for the same cross-goroutine reason documented on mcpServer's rootsMu
+// field.
+func (ms *mcpServer) getOnRootsChanged() *scriptengine.LoopCallable {
+	ms.rootsMu.Lock()
+	defer ms.rootsMu.Unlock()
+	return ms.onRootsChangedCB
+}
+
+// setOnRootsChanged stores the JS callback registered via
+// srv.onRootsChanged(fn). Called on-loop (jsOnRootsChanged runs as a goja
+// binding), but still mutex-guarded since the SDK's RootsListChangedHandler
+// dispatcher goroutine reads the same field concurrently.
+func (ms *mcpServer) setOnRootsChanged(lc *scriptengine.LoopCallable) {
+	ms.rootsMu.Lock()
+	defer ms.rootsMu.Unlock()
+	ms.onRootsChangedCB = lc
 }
 
 // newRequestContext builds the `ctx` object passed as the 2nd argument to
@@ -173,6 +203,7 @@ func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession
 	_ = ctxObj.Set("log", ms.jsCtxLog(sess))
 	_ = ctxObj.Set("sample", ms.jsCtxSample(sess))
 	_ = ctxObj.Set("elicit", ms.jsCtxElicit(sess))
+	_ = ctxObj.Set("roots", ms.jsCtxRoots(sess))
 
 	return ctxObj
 }
@@ -503,6 +534,60 @@ func (ms *mcpServer) jsCtxElicit(sess *mcp.ServerSession) func(goja.FunctionCall
 
 		return ms.asyncSettleResult(ms.vm, "mcp:ctx.elicit", func() (any, error) {
 			return sess.Elicit(context.Background(), params)
+		})
+	}
+}
+
+// jsCtxRoots builds ctx.roots(): Promise<Array<{uri, name?}>> for the
+// request context — ctx.sample/ctx.elicit's sibling exemplar, but a
+// no-argument server->client round trip: it asks the client for its current
+// list of filesystem roots (the MCP "roots" capability) via sess.ListRoots.
+//
+// Capability check: like Elicit (and unlike CreateMessage, see jsCtxSample's
+// doc comment), (*ServerSession).ListRoots has no SDK-side capability guard
+// of its own — it just sends the roots/list request and lets the wire round
+// trip fail if the client doesn't implement it. Rather than surface that
+// less-obvious failure, this checks the negotiated
+// ClientCapabilities.RootsV2 up front, mirroring jsCtxSample/jsCtxElicit's
+// own precedent. RootsV2 (not the deprecated value-typed Roots field) is the
+// right field to nil-check: Roots is a plain struct (not a pointer), so it
+// can never distinguish "absent" from "present but false", whereas RootsV2
+// is a pointer the SDK only sets when the client actually advertises the
+// capability — see ClientCapabilities' doc comment (protocol.go) and
+// (*Client).capabilities in the go-sdk, which defaults RootsV2 to
+// &RootCapabilities{ListChanged:true} unless the client explicitly opts out
+// via ClientOptions.Capabilities. A nil sess (shouldn't happen in practice,
+// guarded defensively like jsCtxSample/jsCtxElicit) takes the same
+// synchronous-reject fast path.
+//
+// The actual ListRoots call is delegated to asyncSettleResult: it's a
+// server->client round trip (blocking network/pipe I/O) that must run off
+// the loop, exactly like jsCtxSample/jsCtxElicit — the result ([]*mcp.Root)
+// crosses back through the same toPlain conversion asyncSettleResult
+// already performs, yielding a plain [{uri, name}, ...] array in JS (name is
+// "" when the client didn't set one, since mcp.Root.Name has no pointer to
+// distinguish absent from empty).
+func (ms *mcpServer) jsCtxRoots(sess *mcp.ServerSession) func(goja.FunctionCall) goja.Value {
+	rejectSync := func(err error) goja.Value {
+		p, _, reject := ms.vm.NewPromise()
+		_ = reject(ms.vm.NewGoError(err))
+		return ms.vm.ToValue(p)
+	}
+
+	return func(call goja.FunctionCall) goja.Value {
+		if sess == nil {
+			return rejectSync(errors.New("mcp: ctx.roots: no client session"))
+		}
+		if ip := sess.InitializeParams(); ip == nil || ip.Capabilities == nil || ip.Capabilities.RootsV2 == nil {
+			return rejectSync(errors.New("mcp: client does not support roots"))
+		}
+
+		return ms.asyncSettleResult(ms.vm, "mcp:ctx.roots", func() (any, error) {
+			r, err := sess.ListRoots(context.Background(), nil)
+			if err != nil {
+				return nil, err
+			}
+			return r.Roots, nil
 		})
 	}
 }
@@ -892,6 +977,26 @@ func (ms *mcpServer) jsOnUnsubscribe(call goja.FunctionCall) goja.Value {
 	return goja.Undefined()
 }
 
+// jsOnRootsChanged implements srv.onRootsChanged(fn): registers a
+// best-effort JS hook invoked whenever the client's filesystem-roots list
+// changes (via the RootsListChangedHandler dispatcher set in mcp.serve). fn
+// receives the fresh roots array (the same [{uri, name?}] shape ctx.roots()
+// resolves to) as its sole argument; its return value (and any
+// error/rejection) is ignored, and the go-sdk's own handler signature
+// (func(context.Context, *RootsListChangedRequest), no return value) has no
+// way to fail the notification anyway — see mcpRootsListChangedHandler's doc
+// comment.
+//
+// Only one onRootsChanged callback is held at a time; a later call to
+// srv.onRootsChanged replaces the earlier registration (last-writer-wins,
+// same as this handle's other single-slot registrations like onSubscribe/
+// completion).
+func (ms *mcpServer) jsOnRootsChanged(call goja.FunctionCall) goja.Value {
+	fn := ms.requireFunctionArg("mcp.onRootsChanged", call)
+	ms.setOnRootsChanged(scriptengine.NewLoopCallable(ms.loop, fn))
+	return goja.Undefined()
+}
+
 // jsCompletion implements srv.completion(fn): registers the JS handler
 // invoked for a client's "completion/complete" request (argument
 // autocompletion for a prompt argument or a resource-template URI variable).
@@ -984,6 +1089,56 @@ func (ms *mcpServer) mcpCompletionHandler(_ context.Context, req *mcp.CompleteRe
 		return nil, errors.New("mcp: internal completion result conversion failed")
 	}
 	return result, nil
+}
+
+// mcpRootsListChangedHandler is the ServerOptions.RootsListChangedHandler
+// wired up in mcp.serve (mcp.go): it's what the go-sdk invokes whenever the
+// client sends a notifications/roots/list_changed notification, on one of
+// its own request-handling goroutines (never the loop) — the same
+// never-on-loop shape as SubscribeHandler/UnsubscribeHandler/
+// CompletionHandler. Unlike those, though, the SDK's own signature here
+// returns nothing at all (func(context.Context, *RootsListChangedRequest)):
+// this notification is truly fire-and-forget from the SDK's point of view,
+// there is no result to report back even on the wire.
+//
+// If no JS handler was ever registered (srv.onRootsChanged was never
+// called), this is a silent no-op — same best-effort-hook contract as
+// onSubscribe/onUnsubscribe when unset.
+//
+// Otherwise it fetches the fresh roots list off-loop via
+// req.Session.ListRoots: this handler already runs off-loop (on an SDK
+// goroutine, per the go-sdk's dispatch), so the blocking round trip is safe
+// to make directly here — unlike ctx.roots()/ctx.sample()/ctx.elicit(),
+// there is no goja Promise to settle and therefore no need for
+// asyncSettleResult's HoldRun+RunOnLoop dance. Once the fresh list is in
+// hand, the JS callback is invoked via LoopCallable.Call (which itself
+// schedules the call onto the loop), passing the roots — converted to plain
+// via toPlain inside buildArgs, on-loop, mirroring
+// mcpCompletionHandler's on-loop conversion pattern — as the sole argument.
+// A ListRoots failure (e.g. the client errors on this reverse round trip)
+// is swallowed: same as the rest of this handler family, a failed
+// best-effort notification has nowhere useful to report to.
+func (ms *mcpServer) mcpRootsListChangedHandler(ctx context.Context, req *mcp.RootsListChangedRequest) {
+	cb := ms.getOnRootsChanged()
+	if cb == nil {
+		return
+	}
+	sess := req.Session
+	if sess == nil {
+		return
+	}
+	res, err := sess.ListRoots(ctx, nil)
+	if err != nil {
+		return
+	}
+	roots := res.Roots
+	_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+		plain, err := toPlain(roots)
+		if err != nil {
+			return nil, err
+		}
+		return []goja.Value{vm.ToValue(plain)}, nil
+	})
 }
 
 // jsResourceUpdated implements srv.resourceUpdated(uri): Promise<void>,
