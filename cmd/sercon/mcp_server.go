@@ -172,6 +172,7 @@ func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession
 	_ = ctxObj.Set("progress", ms.jsCtxProgress(sess, tok))
 	_ = ctxObj.Set("log", ms.jsCtxLog(sess))
 	_ = ctxObj.Set("sample", ms.jsCtxSample(sess))
+	_ = ctxObj.Set("elicit", ms.jsCtxElicit(sess))
 
 	return ctxObj
 }
@@ -423,6 +424,85 @@ func (ms *mcpServer) jsCtxSample(sess *mcp.ServerSession) func(goja.FunctionCall
 
 		return ms.asyncSettleResult(ms.vm, "mcp:ctx.sample", func() (any, error) {
 			return sess.CreateMessage(context.Background(), params)
+		})
+	}
+}
+
+// jsCtxElicit builds ctx.elicit(opts): Promise<{action, content?}> for the
+// request context — ctx.sample's sibling exemplar: a mid-handler
+// server->client call asking the user (via the client) to confirm an
+// action or fill in a small form (the MCP "elicitation" capability), via
+// sess.Elicit.
+//
+// opts is parsed on-loop (this function itself runs on-loop, like any goja
+// call, before any SDK I/O happens) into a *mcp.ElicitParams:
+//   - message (required, non-empty string) -> Message.
+//   - schema (an object) -> RequestedSchema, passed through as-is (the SDK
+//     marshals it as-is on the wire, same as jsTool's InputSchema/
+//     OutputSchema handling).
+//   - mode (optional string) -> Mode ("form"/"url"; left empty lets the SDK
+//     infer it from the other fields, per (*ServerSession).Elicit).
+//
+// Capability check: unlike CreateMessage (which has no SDK-side guard, see
+// jsCtxSample's doc comment), (*ServerSession).Elicit in server.go DOES
+// gate itself on InitializeParams().Capabilities.Elicitation being non-nil,
+// rejecting with the plain "client does not support elicitation" if not.
+// This still duplicates that check up front — mirroring jsCtxSample's own
+// precedent for a consistent, prefixed "mcp: ..." error surfaced to the
+// script before any SDK call is attempted, rather than relying on the SDK's
+// (here, adequate but unprefixed) wording. A nil sess (shouldn't happen in
+// practice, guarded defensively like jsCtxProgress/jsCtxLog/jsCtxSample)
+// takes the same synchronous-reject fast path.
+//
+// The actual Elicit call is delegated to asyncSettleResult: it's a
+// server->client round trip (blocking network/pipe I/O) that must run off
+// the loop, exactly like jsCtxSample's CreateMessage call — the result
+// (*mcp.ElicitResult, holding Action and Content) crosses back through the
+// same toPlain conversion asyncSettleResult already performs.
+func (ms *mcpServer) jsCtxElicit(sess *mcp.ServerSession) func(goja.FunctionCall) goja.Value {
+	rejectSync := func(err error) goja.Value {
+		p, _, reject := ms.vm.NewPromise()
+		_ = reject(ms.vm.NewGoError(err))
+		return ms.vm.ToValue(p)
+	}
+
+	return func(call goja.FunctionCall) goja.Value {
+		opts, ok := call.Argument(0).Export().(map[string]any)
+		if !ok {
+			panic(ms.vm.NewTypeError("mcp: ctx.elicit: an options object is required"))
+		}
+
+		message, ok := opts["message"].(string)
+		if !ok || message == "" {
+			panic(ms.vm.NewTypeError("mcp: ctx.elicit: `message` is required"))
+		}
+
+		params := &mcp.ElicitParams{Message: message}
+
+		if v, has := opts["schema"]; has {
+			schema, ok := v.(map[string]any)
+			if !ok {
+				panic(ms.vm.NewTypeError("mcp: ctx.elicit: `schema` must be an object"))
+			}
+			params.RequestedSchema = schema
+		}
+		if v, has := opts["mode"]; has {
+			s, ok := v.(string)
+			if !ok {
+				panic(ms.vm.NewTypeError("mcp: ctx.elicit: `mode` must be a string"))
+			}
+			params.Mode = s
+		}
+
+		if sess == nil {
+			return rejectSync(errors.New("mcp: ctx.elicit: no client session"))
+		}
+		if ip := sess.InitializeParams(); ip == nil || ip.Capabilities == nil || ip.Capabilities.Elicitation == nil {
+			return rejectSync(errors.New("mcp: client does not support elicitation"))
+		}
+
+		return ms.asyncSettleResult(ms.vm, "mcp:ctx.elicit", func() (any, error) {
+			return sess.Elicit(context.Background(), params)
 		})
 	}
 }

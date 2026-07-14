@@ -205,3 +205,149 @@ test.ready();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPElicit drives ctx.elicit end to end against an in-memory client
+// that advertises the elicitation capability (via ElicitationHandler — see
+// client.go: "Setting ElicitationHandler to a non-nil value automatically
+// causes the client to advertise" the elicitation capability). The script's
+// tool handler awaits ctx.elicit({message, schema}) and returns
+// JSON.stringify({action, confirm: content.confirm}), proving the full
+// round trip: opts parsing -> *mcp.ElicitParams -> sess.Elicit (held
+// off-loop via asyncSettleResult) -> toPlain conversion -> back into JS as
+// a plain object, mirroring TestMCPSample.
+func TestMCPElicit(t *testing.T) {
+	_, ms, ready, done, runErr := newSampleTestServer(t, `
+const srv = test.serve();
+srv.tool({
+	name: "confirm",
+	inputSchema: { type: "object" },
+	handler: async (args, ctx) => {
+		const e = await ctx.elicit({
+			message: "Confirm?",
+			schema: { type: "object", properties: { confirm: { type: "boolean" } } },
+		});
+		return JSON.stringify({ action: e.action, confirm: e.content.confirm });
+	},
+});
+test.ready();
+`)
+
+	ctx := context.Background()
+	<-ready
+
+	ct, st := mcp.NewInMemoryTransports()
+	go func() { _ = (*ms).srv.Run(ctx, st) }()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.0"}, &mcp.ClientOptions{
+		ElicitationHandler: func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			return &mcp.ElicitResult{
+				Action:  "accept",
+				Content: map[string]any{"confirm": true},
+			}, nil
+		},
+	})
+	sess, err := client.Connect(ctx, ct, nil)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "confirm"})
+	if err != nil {
+		close(done)
+		t.Fatalf("call confirm: %v", err)
+	}
+	if res.IsError {
+		close(done)
+		t.Fatalf("confirm reported an error result: %+v", res)
+	}
+	if len(res.Content) != 1 {
+		close(done)
+		t.Fatalf("want 1 content item, got %d", len(res.Content))
+	}
+	tc, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		close(done)
+		t.Fatalf("want TextContent, got %#v", res.Content[0])
+	}
+	if !strings.Contains(tc.Text, `"action":"accept"`) {
+		t.Errorf("confirm result = %q, want it to contain %q", tc.Text, `"action":"accept"`)
+	}
+	if !strings.Contains(tc.Text, `"confirm":true`) {
+		t.Errorf("confirm result = %q, want it to contain %q", tc.Text, `"confirm":true`)
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPElicit_CapabilityAbsent connects an in-memory client with NO
+// ElicitationHandler — the client package only sets
+// ClientCapabilities.Elicitation when one is non-nil (client.go's
+// NewClient), so this client negotiates without the elicitation
+// capability. ctx.elicit must reject before ever attempting the SDK round
+// trip (see jsCtxElicit's capability-check doc comment); the script's tool
+// handler catches the rejection and returns the error message as an
+// isError tool result, and the assertion below checks it mentions
+// "elicitation" — mirroring TestMCPSample_CapabilityAbsent.
+func TestMCPElicit_CapabilityAbsent(t *testing.T) {
+	_, ms, ready, done, runErr := newSampleTestServer(t, `
+const srv = test.serve();
+srv.tool({
+	name: "confirm",
+	inputSchema: { type: "object" },
+	handler: async (args, ctx) => {
+		try {
+			await ctx.elicit({
+				message: "Confirm?",
+				schema: { type: "object", properties: { confirm: { type: "boolean" } } },
+			});
+			return "unexpectedly resolved";
+		} catch (e) {
+			throw new Error("elicit rejected: " + e.message);
+		}
+	},
+});
+test.ready();
+`)
+
+	ctx := context.Background()
+	<-ready
+
+	ct, st := mcp.NewInMemoryTransports()
+	go func() { _ = (*ms).srv.Run(ctx, st) }()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0.0.0"}, nil)
+	sess, err := client.Connect(ctx, ct, nil)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "confirm"})
+	if err != nil {
+		close(done)
+		t.Fatalf("call confirm: %v", err)
+	}
+	if !res.IsError {
+		close(done)
+		t.Fatalf("confirm: want isError result (elicitation unsupported), got %+v", res)
+	}
+	tc, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		close(done)
+		t.Fatalf("want TextContent, got %#v", res.Content[0])
+	}
+	if !strings.Contains(tc.Text, "elicitation") {
+		t.Errorf("error text = %q, want it to contain %q", tc.Text, "elicitation")
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
