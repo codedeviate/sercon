@@ -109,6 +109,72 @@ test.fire();
 	}
 }
 
+// TestMCPBridge_BuildArgsPanic verifies that a panic in buildArgs — which
+// runs as a plain Go call inside the RunOnLoop callback, BEFORE goja's
+// protected CallOnLoop — is recovered and surfaced as a Go error instead
+// of crashing the eventloop's job() runner (and the test process with
+// it). This exercises the exact hazard the recover guard in
+// callJSHandler was added for.
+func TestMCPBridge_BuildArgsPanic(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var (
+		ms      *mcpServer
+		handler *scriptengine.LoopCallable
+	)
+	var gotVal goja.Value
+	var gotErr error
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		ms = &mcpServer{eng: eng, vm: vm, loop: loop}
+		return map[string]any{
+			"setHandler": func(call goja.FunctionCall) goja.Value {
+				fn, ok := goja.AssertFunction(call.Argument(0))
+				if !ok {
+					panic(vm.NewTypeError("setHandler: expected function"))
+				}
+				handler = scriptengine.NewLoopCallable(loop, fn)
+				return goja.Undefined()
+			},
+			"fire": func() goja.Value {
+				release := eng.HoldRun("test-mcp-bridge-panic")
+				go func() {
+					defer release()
+					val, err := ms.callJSHandler(handler, func(vm *goja.Runtime) []goja.Value {
+						panic("boom")
+					})
+					gotVal, gotErr = val, err
+					close(done)
+				}()
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := eng.Run(context.Background(), "bridge_panic.ts", `
+test.setHandler((x) => x);
+test.fire();
+`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	<-done
+
+	if gotErr == nil {
+		t.Fatal("callJSHandler: expected error from panicking buildArgs, got nil")
+	}
+	if !strings.Contains(gotErr.Error(), "boom") {
+		t.Fatalf("error = %q, want it to contain %q", gotErr.Error(), "boom")
+	}
+	if gotVal != nil && !goja.IsUndefined(gotVal) {
+		t.Fatalf("expected no value, got %v", gotVal)
+	}
+	// Reaching this line at all proves the panic was recovered rather
+	// than crashing the test process.
+}
+
 // TestMCPBridge_SyncPassthrough verifies that a handler returning a plain
 // (non-Promise) value passes straight through without any Promise bridge.
 func TestMCPBridge_SyncPassthrough(t *testing.T) {

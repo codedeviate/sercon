@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/dop251/goja"
 
@@ -45,10 +46,25 @@ type mcpSettled struct {
 // never blocks trying to send: whichever of the "no result" / "sync
 // result" / "settle" / "reject" branches runs, it sends exactly once and
 // returns immediately, keeping the loop free to process other work.
+//
+// The whole callback body is wrapped in a deferred recover (mirroring
+// scriptengine.LoopCallable.Call and server_http.go's loopSchedule): a
+// panic anywhere before a branch's send — most notably in buildArgs(vm),
+// which runs as a plain Go call before goja's protected CallOnLoop —
+// would otherwise escape into the eventloop's job() runner, which has no
+// recover of its own, crashing the process instead of failing the one
+// request. Every branch returns immediately after its send, so normal
+// completion and the recover path are mutually exclusive — exactly one
+// send per invocation either way.
 func (ms *mcpServer) callJSHandler(fn *scriptengine.LoopCallable, buildArgs func(vm *goja.Runtime) []goja.Value) (goja.Value, error) {
 	done := make(chan mcpSettled, 1)
 
 	if !ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+		defer func() {
+			if r := recover(); r != nil {
+				done <- mcpSettled{err: fmt.Errorf("mcp handler panicked: %v", r)}
+			}
+		}()
 		res, err := fn.CallOnLoop(vm, buildArgs(vm)...)
 		if err != nil {
 			done <- mcpSettled{err: err}
