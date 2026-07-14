@@ -10,10 +10,10 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// TestTopLevelGlobals_Shape asserts the script-facing surface is exactly
-// the ten reserved top-level globals — and crucially that `api` is
-// NOT present. Guards against accidental re-introduction of the old
-// wrapper or drift adding an 11th reserved name.
+// TestTopLevelGlobals_Shape asserts a representative subset of the (now
+// fifteen) reserved top-level globals are present — and crucially that
+// `api` is NOT present. Guards against accidental re-introduction of the
+// old wrapper.
 func TestTopLevelGlobals_Shape(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := registerSurface(eng); err != nil {

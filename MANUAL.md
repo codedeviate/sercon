@@ -1663,7 +1663,7 @@ method names differ per family:
 - **`codec.xml`** — `decode(xml)` / `encode(value, opts?)`, using the
   `@`-attribute / `#text` convention (§5.5 above has the full rules).
 - **`codec.dotenv`** — `parse(text)` / `stringify(obj)`, pure (never
-  touches the process environment — see `runtime.env.load` in §17.9 to
+  touches the process environment — see `runtime.env.load` in §17.11.5.2 to
   apply a file).
 - **`codec.sheet`** — `read(src, opts?)` / `write(model, opts)` for
   tabular data; **CSV lives here**, not as its own namespace — pass
@@ -1775,7 +1775,7 @@ const text = codec.dotenv.stringify({ A: "1", B: "two words", FLAG: true });
 runtime.assert.equal(codec.dotenv.parse(text).B, "two words", "stringify round-trips");
 
 // Load a real file AND apply it to the process environment (a `runtime`
-// binding, not `codec` — see §17.9.12).
+// binding, not `codec` — see §17.11.5.2).
 await fs.writeText("/tmp/demo.env", 'DEMO_KEY="from file"\n');
 const loaded = await runtime.env.load("/tmp/demo.env");
 runtime.assert.equal(runtime.env.get("DEMO_KEY"), "from file", "load applied to env");
@@ -1783,8 +1783,8 @@ runtime.assert.equal(runtime.env.get("DEMO_KEY"), "from file", "load applied to 
 
 `codec.dotenv.parse`/`stringify` never touch the process environment —
 reach for `runtime.env.load` when a script needs the values applied, not
-just parsed. Signatures: §17.2.15 (`codec.dotenv.parse`), §17.2.16
-(`codec.dotenv.stringify`), §17.9.12 (`runtime.env.load`).
+just parsed. Signatures: §17.3.5.1 (`codec.dotenv.parse`), §17.3.5.2
+(`codec.dotenv.stringify`), §17.11.5.2 (`runtime.env.load`).
 runnable: `examples/scripts/env.ts`
 
 ##### 5.5.9.5 Round-trip PHP and Perl dump formats
