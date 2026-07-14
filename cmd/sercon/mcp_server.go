@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sync/atomic"
 
 	"github.com/dop251/goja"
@@ -21,7 +23,7 @@ type mcpServer struct {
 	loop    *eventloop.EventLoop
 	srv     *mcp.Server
 	started bool
-	release func()       //nolint:unused // HoldRun release, set when a transport starts; called by a later task's close()
+	release func()       // HoldRun release, set when a transport starts; cleared on serve end (and by close())
 	reqSeq  atomic.Int64 // monotonic counter backing newRequestContext's requestId
 }
 
@@ -308,12 +310,87 @@ func (ms *mcpServer) jsPrompt(call goja.FunctionCall) goja.Value {
 	return goja.Undefined()
 }
 
-// The methods below are intentional stubs: the stdio/listen transports are
-// filled in by later tasks. close() is a no-op until a transport (and
-// therefore a HoldRun) exists to release.
-func (ms *mcpServer) jsStdio(call goja.FunctionCall) goja.Value {
-	panic(ms.vm.NewTypeError("mcp: stdio() not yet implemented"))
+// jsStdio implements srv.stdio(): serve the MCP server over stdin/stdout using
+// newline-delimited JSON-RPC, returning a Promise that resolves when the peer
+// disconnects (stdin closes / the session ends).
+//
+// The critical contract is that stdout carries ONLY JSON-RPC — any of sercon's
+// own output (console.log, runtime.log, stray writes) leaking onto stdout would
+// corrupt the framing and break every client. Because goja_nodejs's console
+// captured the original stdout at package-init time, a Go-level `os.Stdout`
+// swap is not enough; installStdoutRedirect remaps fd 1 to stderr (unix) and
+// hands back an *os.File bound to the real stdout, which we give to the SDK's
+// IOTransport as the JSON-RPC writer. StdioTransport can't be used here — it
+// hard-wires os.Stdin/os.Stdout and offers no seam to separate the two streams
+// after the redirect, so we build an IOTransport explicitly.
+//
+// The hold keeps loop.Run alive for the serve duration; srv.Run blocks on its
+// own goroutine and the settlement (restore fd, release hold, resolve/reject)
+// is marshalled back onto the loop.
+func (ms *mcpServer) jsStdio(_ goja.FunctionCall) goja.Value {
+	if ms.started {
+		panic(ms.vm.NewGoError(errAlreadyStarted))
+	}
+	ms.started = true
+
+	p, resolve, reject := ms.vm.NewPromise()
+	ms.release = ms.eng.HoldRun("mcp:stdio")
+
+	// Normal CLI path: mcp.serve() already armed+installed the redirect (so any
+	// output written between serve() and here already went to stderr), and the
+	// CLI's disarm owns the restore — reuse the saved real stdout. Fallback path
+	// (guard not armed, e.g. an in-process caller): install a redirect here and
+	// restore it ourselves when the serve loop ends.
+	realStdout := mcpStdioGuard.real
+	var localRestore func() error
+	if realStdout == nil {
+		r, restore, err := installStdoutRedirect()
+		if err != nil {
+			if ms.release != nil {
+				ms.release()
+				ms.release = nil
+			}
+			_ = reject(ms.vm.NewGoError(err))
+			return ms.vm.ToValue(p)
+		}
+		realStdout, localRestore = r, restore
+	}
+
+	transport := &mcp.IOTransport{
+		Reader: os.Stdin,
+		// Wrap the saved real stdout so the SDK closing the connection can't
+		// close the fd out from under the restore step; the restore owner
+		// (CLI disarm, or localRestore below) closes it exactly once.
+		Writer: nopWriteCloser{realStdout},
+	}
+
+	go func() {
+		runErr := ms.srv.Run(context.Background(), transport)
+		ms.loop.RunOnLoop(func(*goja.Runtime) {
+			if localRestore != nil {
+				_ = localRestore()
+			}
+			if ms.release != nil {
+				ms.release()
+				ms.release = nil
+			}
+			if runErr != nil {
+				_ = reject(ms.vm.NewGoError(runErr))
+			} else {
+				_ = resolve(goja.Undefined())
+			}
+		})
+	}()
+
+	return ms.vm.ToValue(p)
 }
+
+// nopWriteCloser adapts an io.Writer to io.WriteCloser with a no-op Close, so
+// the MCP transport never closes the underlying real-stdout file (restore()
+// closes it exactly once).
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
 func (ms *mcpServer) jsListen(call goja.FunctionCall) goja.Value {
 	panic(ms.vm.NewTypeError("mcp: listen() not yet implemented"))
 }

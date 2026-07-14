@@ -113,6 +113,7 @@ Or pick individual scripts:
 | `doc.ts` | `codec.doc.write` / `codec.doc.read` / `codec.doc.formats` — author a DOCX in-memory, read it back and assert paragraphs survive, verify the read/write capability matrix (pdf is read-only, docx is read+write). Fully offline and self-contained. |
 | `web-feed.ts` | `web.feed` — RSS/Atom/JSON feeds normalized to one model with a `.raw` escape hatch. Offline always; live `web.feed.load` self-skips without a network. |
 | `web-sitemap.ts` | `web.sitemap` — urlset/sitemapindex parse, gzip, and `{expand:true}` recursion. Offline always; live `web.sitemap.load` self-skips without a network. |
+| `mcp-server-stdio.ts` | `mcp.serve` + `srv.stdio()` — an MCP server over stdio; stdout carries only JSON-RPC (console/runtime output is redirected to stderr). **Not in `make demo`** (like `hang.ts`): it blocks on stdin and is driven by the Go test `cmd/sercon/mcp_stdio_test.go`. |
 
 Helpers under `helpers/` are sibling-imported by the above; they aren't
 runnable on their own.

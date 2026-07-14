@@ -34,6 +34,11 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 					&mcp.ServerOptions{Instructions: instructions},
 				),
 			}
+			// Arm the stdout->stderr redirect now (real CLI runs only), so any
+			// script output between here and srv.stdio() cannot leak onto the
+			// JSON-RPC stream. No-op for in-process engine tests. See
+			// mcp_stdio_guard.go.
+			installMCPStdioRedirectIfArmed()
 			return ms.handle(vm)
 		},
 	}

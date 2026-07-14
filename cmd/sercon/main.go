@@ -225,6 +225,11 @@ func run(args []string) int {
 // stdin. On success it optionally prints a PASS line (only when verbose &&
 // !silent) and returns nil.
 func runOne(eng *scriptengine.Engine, path string, verbose, silent bool, userArgs []string) error {
+	// Arm the MCP stdio stdout->stderr redirect for the duration of this run.
+	// It only engages if the script actually calls mcp.serve() (see
+	// mcp_stdio_guard.go); disarm restores stdout when the run returns.
+	defer armMCPStdioGuard()()
+
 	start := time.Now()
 	var err error
 	var val goja.Value
