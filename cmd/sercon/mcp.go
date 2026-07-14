@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -27,6 +28,7 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 				panic(vm.NewTypeError("mcp.serve: `name` and `version` are required"))
 			}
 			instructions, _ := o["instructions"].(string)
+			pageSize := mcpPageSizeArg(vm, o)
 
 			ms := &mcpServer{eng: eng, vm: vm, loop: loop}
 			// SubscribeHandler/UnsubscribeHandler are set unconditionally
@@ -55,6 +57,7 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 				&mcp.Implementation{Name: name, Version: version},
 				&mcp.ServerOptions{
 					Instructions: instructions,
+					PageSize:     pageSize,
 					SubscribeHandler: func(_ context.Context, req *mcp.SubscribeRequest) error {
 						uri := req.Params.URI
 						if cb := ms.getOnSubscribe(); cb != nil {
@@ -121,6 +124,35 @@ func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 	must("listen", ms.jsListen)
 	must("close", ms.jsClose)
 	return h
+}
+
+// mcpPageSizeArg extracts an optional positive-integer `pageSize` from
+// mcp.serve's config object (already Export()'d to map[string]any by the
+// caller). It returns 0 (leaving ServerOptions.PageSize at the SDK's
+// DefaultPageSize) when the key is absent. goja exports whole-number JS
+// numbers as int64 and non-integer numbers as float64 (see toUint32/toInt32
+// in exif_model.go for the same goja nuance), so both are accepted; anything
+// else present under the key — including a non-integer float, zero,
+// negative, or a non-number value like a string — throws, per the task
+// brief's validation contract.
+func mcpPageSizeArg(vm *goja.Runtime, o map[string]any) int {
+	v, present := o["pageSize"]
+	if !present {
+		return 0
+	}
+	var n float64
+	switch t := v.(type) {
+	case int64:
+		n = float64(t)
+	case float64:
+		n = t
+	default:
+		panic(vm.NewTypeError("mcp.serve: pageSize must be a positive integer"))
+	}
+	if n != math.Trunc(n) || n <= 0 {
+		panic(vm.NewTypeError("mcp.serve: pageSize must be a positive integer"))
+	}
+	return int(n)
 }
 
 // errAlreadyStarted is thrown when a second transport (stdio()/listen()) is

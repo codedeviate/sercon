@@ -1038,6 +1038,147 @@ test.ready();
 	}
 }
 
+// TestMCPPageSize drives Task 7's `pageSize` config option end to end over a
+// real HTTP transport (mirroring TestMCPHTTP's harness): mcp.serve is called
+// with pageSize: 2 (the REAL production binding, via runScript/registerSurface
+// — unlike TestMCPHTTP/TestMCPPhase2Tool, this test needs the real
+// mcp.serve config-parsing path exercised, not a hand-rolled mcp.NewServer,
+// since parsing `pageSize` out of the config object is exactly what Task 7
+// adds), 5 tools are registered, then srv.listen({port:0}) hands back a URL
+// the script forwards to the Go side via a companion `test` namespace (same
+// notifyURL/waitClose shape as TestMCPHTTP). The Go side connects a real SDK
+// client and walks ListTools page by page via NextCursor (same
+// cursor-walking loop mcp_spike2_test.go's "RemoveTools" subtest already
+// pinned against the go-sdk's actual pagination contract), asserting each
+// page holds at most 2 tools (PageSize actually chunks, not just an
+// unenforced hint), more than one page is produced, and all 5 tools are
+// recovered in total (the client aggregates correctly across pages).
+func TestMCPPageSize(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+
+	urlCh := make(chan string, 1)
+	done := make(chan struct{})
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"notifyURL": func(u string) goja.Value {
+				urlCh <- u
+				return goja.Undefined()
+			},
+			"waitClose": func() goja.Value {
+				p, resolve, _ := vm.NewPromise()
+				go func() {
+					<-done
+					loop.RunOnLoop(func(*goja.Runtime) { _ = resolve(goja.Undefined()) })
+				}()
+				return vm.ToValue(p)
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "pagesize.ts", `
+const srv = mcp.serve({ name: "t", version: "1.0.0", pageSize: 2 });
+for (let i = 0; i < 5; i++) {
+	srv.tool({
+		name: "tool" + i,
+		inputSchema: { type: "object" },
+		handler: () => "ok",
+	});
+}
+const h = await srv.listen({ port: 0 });
+test.notifyURL(h.url);
+await test.waitClose();
+await h.close();
+`)
+		runErr <- err
+	}()
+
+	var url string
+	select {
+	case url = <-urlCh:
+	case <-ctx.Done():
+		close(done)
+		t.Fatal("timed out waiting for listen() URL")
+	}
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "pagesize-test-client", Version: "0.0.0"}, nil)
+	transport := &mcp.StreamableClientTransport{Endpoint: url}
+	sess, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+
+	var names []string
+	cursor := ""
+	pages := 0
+	for {
+		page, err := sess.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
+		if err != nil {
+			close(done)
+			t.Fatalf("ListTools (page %d): %v", pages+1, err)
+		}
+		pages++
+		if len(page.Tools) > 2 {
+			close(done)
+			t.Fatalf("page %d: got %d tools, want <= 2 (PageSize)", pages, len(page.Tools))
+		}
+		for _, tl := range page.Tools {
+			names = append(names, tl.Name)
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	if len(names) != 5 {
+		close(done)
+		t.Fatalf("want 5 tools total across pages, got %d: %v", len(names), names)
+	}
+	if pages < 3 {
+		close(done)
+		t.Fatalf("want pagination to actually chunk at PageSize 2 (>=3 pages for 5 tools), got %d pages", pages)
+	}
+
+	if err := sess.Close(); err != nil {
+		close(done)
+		t.Fatalf("session close: %v", err)
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPPageSize_ValidatesArgs asserts mcp.serve rejects a present-but-invalid
+// pageSize synchronously (zero, negative, and non-integer all throw a
+// TypeError) rather than silently clamping or falling through to the SDK's
+// default. Absence of pageSize is exercised implicitly by every other test in
+// this package that calls mcp.serve without it.
+func TestMCPPageSize_ValidatesArgs(t *testing.T) {
+	cases := []string{
+		`mcp.serve({ name: "t", version: "1.0.0", pageSize: 0 });`,
+		`mcp.serve({ name: "t", version: "1.0.0", pageSize: -1 });`,
+		`mcp.serve({ name: "t", version: "1.0.0", pageSize: 1.5 });`,
+		`mcp.serve({ name: "t", version: "1.0.0", pageSize: "2" });`,
+	}
+	for _, script := range cases {
+		if _, err := runScript(t, script); err == nil {
+			t.Fatalf("expected throw for script %q", script)
+		}
+	}
+}
+
 // TestMCPCompletionUnregistered asserts the no-handler case the brief calls
 // out explicitly: a server that never calls srv.completion still answers
 // completion/complete with an empty (not an error) result — see
