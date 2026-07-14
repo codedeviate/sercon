@@ -18,7 +18,7 @@
 // srv.listen's HoldRun keep the process alive after the top-level script
 // body finishes — there's no self-close step, because the whole point is
 // an external client driving it. cmd/sercon/mcp_examples_test.go
-// (TestMCPExamples_OAuth) builds the sercon binary, runs this file as a
+// (TestMCPExamples/OAuth) builds the sercon binary, runs this file as a
 // subprocess, polls the fixed port until the listener accepts connections,
 // then asserts:
 //   - no token   -> 401, with WWW-Authenticate referencing the metadata URL

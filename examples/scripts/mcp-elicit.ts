@@ -11,7 +11,7 @@
 // over stdio and blocks until the peer disconnects, mirroring
 // mcp-sampling.ts / mcp-server-stdio.ts.
 //
-// Driven by cmd/sercon/mcp_examples_test.go (TestMCPExamples_Elicit), which
+// Driven by cmd/sercon/mcp_examples_test.go (TestMCPExamples/Elicit), which
 // runs this file as a subprocess and connects the real SDK client with a
 // canned ElicitationHandler standing in for "the human at the keyboard".
 

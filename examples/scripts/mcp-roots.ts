@@ -8,7 +8,7 @@
 // a plain HTTP POST can't do. NOT a `make demo` script: it serves over
 // stdio and blocks until the peer disconnects.
 //
-// Driven by cmd/sercon/mcp_examples_test.go (TestMCPExamples_Roots), which
+// Driven by cmd/sercon/mcp_examples_test.go (TestMCPExamples/Roots), which
 // runs this file as a subprocess, connects a real SDK client with roots
 // pre-seeded via client.AddRoots, calls the "listRoots" tool, then adds
 // another root post-connect to trigger onRootsChanged. Because stdout must

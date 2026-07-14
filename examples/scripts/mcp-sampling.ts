@@ -13,7 +13,7 @@
 // `make demo` script: it serves over stdio and blocks until the peer
 // disconnects.
 //
-// Driven by cmd/sercon/mcp_examples_test.go (TestMCPExamples_Sampling),
+// Driven by cmd/sercon/mcp_examples_test.go (TestMCPExamples/Sampling),
 // which builds the sercon binary, runs this file as a subprocess over
 // mcp.CommandTransport, and connects the real SDK client with a canned
 // CreateMessageHandler standing in for "the client's LLM".
