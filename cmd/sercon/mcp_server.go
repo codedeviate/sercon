@@ -1390,10 +1390,14 @@ func (ms *mcpServer) jsListen(call goja.FunctionCall) goja.Value {
 		}
 	}
 
+	// Parse the optional OAuth `auth` block before binding, so a malformed
+	// config throws synchronously (no half-bound listener). nil == the
+	// unauthenticated Phase-1 path. See mcp_auth.go.
+	authCfg := ms.parseMCPAuth(optsObj)
+
 	getServer := func(*http.Request) *mcp.Server { return ms.srv }
 	streamableHandler := mcp.NewStreamableHTTPHandler(getServer, nil)
 	mux := http.NewServeMux()
-	mux.Handle(path, streamableHandler)
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	httpSrv := &http.Server{Addr: addr, Handler: mux}
@@ -1418,7 +1422,20 @@ func (ms *mcpServer) jsListen(call goja.FunctionCall) goja.Value {
 	if urlHost == "0.0.0.0" || urlHost == "::" || urlHost == "" {
 		urlHost = "127.0.0.1"
 	}
-	url := fmt.Sprintf("http://%s%s", net.JoinHostPort(urlHost, strconv.Itoa(actualPort)), path)
+	baseURL := fmt.Sprintf("http://%s", net.JoinHostPort(urlHost, strconv.Itoa(actualPort)))
+	url := baseURL + path
+
+	// Mount the handler(s). With auth, wrap the streamable handler in the
+	// bearer-token middleware and expose protected-resource metadata on the
+	// same mux (deferred until here so the metadata URL carries the real bound
+	// port); without auth, mount the streamable handler bare (Phase-1 path).
+	if authCfg != nil {
+		authCfg.finalizeMCPAuthMeta(baseURL)
+		metadataURL := baseURL + mcpProtectedResourcePath
+		applyMCPAuth(mux, streamableHandler, path, authCfg, metadataURL, ms.tokenVerifier(authCfg))
+	} else {
+		mux.Handle(path, streamableHandler)
+	}
 
 	ms.release = ms.eng.HoldRun("mcp:http")
 
