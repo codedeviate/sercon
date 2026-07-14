@@ -10,24 +10,46 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ### Added
 - **`mcp` namespace — MCP (Model Context Protocol) server.** `mcp.serve({name, version,
-  instructions?})` returns a handle for registering `tool()`/`resource()`/`prompt()`
-  capabilities with JS handlers (sync or async, receiving `(args, ctx)` where `ctx`
-  carries `requestId`/`clientInfo`), then serving them over `stdio()` (newline-delimited
-  JSON-RPC on stdin/stdout — the transport clients like Claude Desktop launch as a
-  subprocess; **Unix-only this phase**, rejects with a clear error on Windows) or
-  `listen({port, host?, path?})` (the Streamable HTTP transport — cross-platform, any
-  number of clients). A tool handler's return value can be a plain string, an object
-  shaped `{content?, structuredContent?, isError?}`, or a thrown/rejected value, which
-  surfaces to the client as an `isError` tool result rather than a crash; resource/prompt
-  handler failures propagate as protocol-level errors instead. A stdio server keeps
-  stdout pure JSON-RPC — `console.*`/`runtime.log` output is transparently redirected to
-  stderr for the lifetime of the connection. Built on the official
-  `modelcontextprotocol/go-sdk`, pure-Go. See MANUAL.md §5.15 and the generated §17.9
-  reference; runnable demos at `examples/scripts/mcp-server-stdio.ts` and
+  instructions?, pageSize?})` returns a handle for registering `tool()`/`resource()`/
+  `resourceTemplate()`/`prompt()` capabilities with JS handlers (sync or async, receiving
+  `(args, ctx)` where `ctx` carries `requestId`/`clientInfo`/`progress()`/`log()`), then
+  serving them over `stdio()` (newline-delimited JSON-RPC on stdin/stdout — the transport
+  clients like Claude Desktop launch as a subprocess; **Unix-only this phase**, rejects
+  with a clear error on Windows) or `listen({port, host?, path?})` (the Streamable HTTP
+  transport — cross-platform, any number of clients). A tool handler's return value can be
+  a plain string, an object shaped `{content?, structuredContent?, isError?}`, or a
+  thrown/rejected value, which surfaces to the client as an `isError` tool result rather
+  than a crash; resource/prompt handler failures propagate as protocol-level errors
+  instead. A stdio server keeps stdout pure JSON-RPC — `console.*`/`runtime.log` output is
+  transparently redirected to stderr for the lifetime of the connection. Built on the
+  official `modelcontextprotocol/go-sdk`, pure-Go. See MANUAL.md §5.15 and the generated
+  §17.9 reference; runnable demos at `examples/scripts/mcp-server-stdio.ts` and
   `examples/scripts/mcp-server-http.ts`.
-  Sampling/elicitation, resource subscriptions/list-changed notifications, pagination,
-  progress/logging, resource templates, and Windows stdio support are planned follow-ups,
-  not yet available.
+- **`mcp` Phase 2 — runtime mutation, progress/logging, resource templates, subscriptions,
+  completion, pagination.** `srv.tool()`/`resource()`/`resourceTemplate()`/`prompt()` may
+  now be called at any time, including after a transport has started (fires the matching
+  `*/list_changed` notification to connected clients); `srv.removeTool(name)`/
+  `removeResource(uri)`/`removePrompt(name)` unregister them the same way. Every handler's
+  `ctx` gained `progress(progress, total?)` (sends `notifications/progress`, correlated to
+  the client's call via its progress token — a no-op if the client didn't attach one) and
+  `log(level, message, data?)` (sends `notifications/message`; per the MCP spec, a client
+  only receives log messages after it calls `session.setLoggingLevel(...)` — a client that
+  never opts in gets nothing, silently, which is SDK/spec behavior, not a sercon bug).
+  `srv.resourceTemplate({uriTemplate, name, mimeType?, read})` registers an RFC 6570
+  URI-templated resource family. `srv.onSubscribe(fn)`/`onUnsubscribe(fn)` observe
+  `resources/subscribe`/`unsubscribe`, and `srv.resourceUpdated(uri)` notifies whoever's
+  currently subscribed — enabling a lazy-watch pattern (start watching a resource's backing
+  data only once a client subscribes). `srv.completion(fn)` registers one
+  `completion/complete` handler, given a normalized `ref: {type: "prompt"|"resource",
+  name?, uri?}`, the argument name, and the partial input, returning a `string[]` or
+  `{values?, total?, hasMore?}`. `mcp.serve`'s `pageSize` option (a positive integer,
+  default 1000) caps how many entries one `list` response returns before the client must
+  page with a cursor. Capability advertisement for `logging`/`resources.subscribe`/
+  `completions` is always-on (a script that never calls the corresponding method still
+  advertises the capability; a conditional variant is a noted follow-up). See MANUAL.md
+  §5.15 (Concepts + Recipes 5.15.2.4–5.15.2.9) and the generated §17.9 reference.
+  Sampling/elicitation, roots, an HTTP OAuth flow for `listen()`, and Windows stdio support
+  remain planned follow-ups, not yet available.
 
 ## [0.90.2] — 2026-07-13
 

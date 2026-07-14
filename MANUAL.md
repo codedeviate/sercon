@@ -6031,22 +6031,33 @@ two transports.
 
 #### 5.15.1 Concepts
 
-**The three primitives.** A server exposes any mix of:
+**The four primitives.** A server exposes any mix of:
 
 | Primitive | Registered with | Purpose | Failure surfaces as |
 |---|---|---|---|
 | Tool | `srv.tool({name, description?, inputSchema, outputSchema?, handler})` | A callable action (an LLM invokes it with arguments and gets a result back). | An `isError: true` tool result — a thrown/rejected handler does **not** crash the server or the call. |
 | Resource | `srv.resource({uri, name, mimeType?, read})` | A URI-addressed piece of content a client can fetch (a file, a config blob, a generated report). | A protocol-level `resources/read` error — there is no soft-failure shape for resources. |
+| Resource template | `srv.resourceTemplate({uriTemplate, name, mimeType?, read})` | Like a resource, but for a whole *family* of URIs matching an RFC 6570 pattern (e.g. `db:///{table}/{id}`) instead of one fixed URI. | Same as Resource — a protocol-level `resources/read` error. |
 | Prompt | `srv.prompt({name, description?, arguments?, get})` | A named, parameterized conversation-starter template a client can pull. | A protocol-level `prompts/get` error, same as resources. |
 
-All three handlers receive `(args, ctx)` (resource's `read` receives
-`(uri, ctx)`, prompt's `get` receives `(args, ctx)`), where `ctx` is
-`{ requestId, clientInfo: { name, version } }` — useful for logging or
-per-client behaviour. Handlers may be sync or async. Register every tool/
-resource/prompt **before** starting a transport — registering afterward
-throws (`mcp: server already started …`); adding capabilities to an
-already-serving connection needs a list-changed notification, which is
-planned for a later phase (see below).
+All handlers receive `(args, ctx)` (resource/resource-template `read`
+receives `(uri, ctx)`, prompt's `get` receives `(args, ctx)`), where `ctx`
+is `{ requestId, clientInfo: { name, version }, progress(progress, total?),
+log(level, message, data?) }` — see "Progress and logging" below for the
+last two. Handlers may be sync or async.
+
+**Registering and unregistering at runtime.** Unlike Phase 1, `tool()`/
+`resource()`/`resourceTemplate()`/`prompt()` may be called **at any time**
+— before serving starts, or from inside another handler while clients are
+already connected. Each has a matching remove method
+(`srv.removeTool(name)`, `srv.removeResource(uri)`,
+`srv.removePrompt(name)`) that unregisters by the same name/uri; removing
+something that was never registered (or already removed) is a silent
+no-op. Adding or removing a capability after a transport has started fires
+the matching `list_changed` notification (`tools/list_changed`,
+`resources/list_changed`, `prompts/list_changed`) to every connected
+client, so well-behaved clients re-fetch their list rather than caching a
+stale one. See §5.15.2.5 for a worked example.
 
 **The two transports.** A handle serves over exactly one transport,
 chosen by which method you call:
@@ -6072,20 +6083,71 @@ while a stdio server is running. This constraint doesn't apply to
 `listen()`: HTTP has no shared framing channel to protect.
 
 **Capability negotiation.** During MCP's `initialize` handshake, the SDK
-advertises only the capabilities you actually registered (a server with
-no prompts doesn't claim prompt support, and so on) and reports
-`serverInfo` from your `name`/`version`; `instructions` (optional) is
-surfaced to the client as free-text guidance on how to use the server.
-None of this requires script-side code — it falls out of what you called
-`tool()`/`resource()`/`prompt()` with before serving.
+advertises `tools`/`prompts`/`resources` support based on what's
+registered at connect time (a server with no prompts doesn't claim prompt
+support, and so on), plus `logging` support **unconditionally** (available
+even if a script never calls `ctx.log`) and `resources.subscribe` /
+`completions` support **unconditionally** as well — a script that never
+calls `srv.onSubscribe`/`srv.completion` still advertises those
+capabilities; the underlying handlers simply accept every subscribe
+request or answer "no suggestions" until a script wires up real logic.
+`serverInfo` reports your `name`/`version`, and `instructions` (optional)
+is surfaced to the client as free-text guidance on how to use the server.
+None of this requires script-side code.
 
-**Not yet available.** Sampling (`ctx.sample` — asking the *client's*
-LLM to generate something), elicitation (`ctx.elicit` — asking the user
-a follow-up question mid-call), resource subscriptions and
-`list-changed` notifications, pagination, progress/logging
-notifications, resource templates, and roots are all planned for later
-phases — not present in this release. Build tools/resources/prompts
-around request/response for now; don't reach for these until they ship.
+**Progress and logging.** A handler's `ctx` carries two notification
+helpers alongside `requestId`/`clientInfo`:
+
+| Method | Signature | Sends | Requires |
+|---|---|---|---|
+| `ctx.progress` | `(progress: number, total?: number) => Promise<void>` | A `notifications/progress` message correlated to this call. | The *client's* call must have attached a progress token. If it didn't, `ctx.progress` resolves immediately and sends nothing — this is normal, not an error. |
+| `ctx.log` | `(level: string, message: string, data?: unknown) => Promise<void>` | A `notifications/message` log entry (`level` is one of the standard MCP/syslog levels: `"debug"`, `"info"`, `"notice"`, `"warning"`, `"error"`, `"critical"`, `"alert"`, `"emergency"`). | **The client must have called `session.setLoggingLevel(...)` first.** Per the MCP spec (and confirmed against the go-sdk), a client that never sets a logging level receives *nothing* from `ctx.log` — the call still resolves (it's not an error), the message is just silently dropped. This is client/SDK behaviour, not a sercon bug; don't assume a log line arrived just because `await ctx.log(...)` didn't throw. |
+
+Both are async and both are best-effort — call them freely from inside a
+tool/resource/prompt handler without worrying about breaking the handler's
+own return value. See §5.15.2.4.
+
+**Resource subscriptions.** A client can ask to be notified when a
+specific resource's content changes (`resources/subscribe`), then
+unsubscribe later. sercon exposes this as three pieces you wire together
+yourself:
+
+- `srv.onSubscribe(fn)` — `fn(uri)` fires when any client subscribes to `uri`.
+- `srv.onUnsubscribe(fn)` — `fn(uri)` fires when any client unsubscribes.
+- `srv.resourceUpdated(uri)` — notify every client *currently* subscribed
+  to `uri` that it changed; the SDK tracks the actual subscriber set, this
+  method doesn't.
+
+The common pattern is **lazy watching**: don't start watching a resource's
+backing data (a file, a DB row, a poll loop) until `onSubscribe` says a
+client actually cares, and stop when `onUnsubscribe` says none do anymore
+— see §5.15.2.7.
+
+**Argument completion.** `srv.completion(fn)` registers one handler for
+the client's `completion/complete` request — autocomplete suggestions as
+a user types a prompt argument or a resource-template URI variable.
+`fn(ref, argName, partial)` receives a normalized `ref: { type: "prompt" |
+"resource", name?, uri? }` (which prompt or resource-template is being
+completed), the argument/variable name, and the text typed so far; return
+a `string[]` or `{ values?, total?, hasMore? }`. If you never call
+`srv.completion`, the server still advertises the capability and answers
+every request with "no suggestions" rather than rejecting it. See
+§5.15.2.8.
+
+**List page size.** `mcp.serve({ ..., pageSize })` caps how many
+tools/resources/prompts/resource templates one `list` response returns
+before the client must page with a cursor (defaults to the SDK's built-in
+1000). Useful mainly for exercising a client's pagination handling, or if
+you register a very large capability set. See §5.15.2.9.
+
+**Not yet available.** Sampling (`ctx.sample` — asking the *client's* LLM
+to generate something), elicitation (`ctx.elicit` — asking the user a
+follow-up question mid-call), roots (the client telling the server which
+filesystem/URI roots it may operate on), and an HTTP OAuth flow for
+`listen()` are all planned for later phases — not present in this
+release. Build tools/resources/prompts around request/response, progress/
+logging, subscriptions, and completion for now; don't reach for sampling/
+elicitation/roots/OAuth until they ship.
 
 #### 5.15.2 Recipes
 
@@ -6212,6 +6274,211 @@ await h.close();
   through that handshake by hand.
 - `path` defaults to `/mcp` and `host` to `127.0.0.1`; override either in
   the `listen()` options if you need to bind wider or mount elsewhere.
+
+##### 5.15.2.4 Report progress and stream log lines from a tool
+
+A long-running tool can keep the client informed with periodic progress
+updates and structured log lines while it works.
+
+```ts
+srv.tool({
+  name: "process_batch",
+  description: "process a batch of items, reporting progress as it goes",
+  inputSchema: {
+    type: "object",
+    properties: { items: { type: "array", items: { type: "string" } } },
+    required: ["items"],
+  },
+  async handler(args: any, ctx) {
+    const items: string[] = args.items;
+    for (let i = 0; i < items.length; i++) {
+      await ctx.log("info", `processing ${items[i]}`, { index: i });
+      // ... do the actual work for items[i] ...
+      await ctx.progress(i + 1, items.length);
+    }
+    return `processed ${items.length} items`;
+  },
+});
+```
+
+**Notes**
+- `ctx.progress` only reaches the client if *its* call included a progress
+  token — if not, the promise still resolves, it just sends nothing. Most
+  MCP clients attach one automatically for long tool calls.
+- `ctx.log` reaches the client only after it calls `session.setLoggingLevel(...)`
+  — a client that never opts in receives no log lines at all, silently.
+  Don't rely on `ctx.log` for anything the tool's own return value needs to
+  convey; treat it as an optional debugging/progress channel.
+- Both calls are cheap to await in sequence; there's no need to batch them.
+
+##### 5.15.2.5 Grow or shrink your tool set at runtime
+
+Register or unregister tools/resources/prompts after `stdio()`/`listen()`
+has already started — useful for servers whose capability set depends on
+something discovered at runtime (an auth token, a plugin directory, …).
+
+```ts
+const srv = mcp.serve({ name: "dynamic-tools", version: "1.0.0" });
+await srv.listen({ port: 38090 });
+
+// later, once some condition is met (e.g. a config file appears):
+srv.tool({
+  name: "beta_feature",
+  description: "only available once enabled",
+  inputSchema: { type: "object" },
+  handler: () => "beta feature ran",
+});
+// connected clients receive a tools/list_changed notification here
+
+// and to retract it again:
+srv.removeTool("beta_feature");
+// connected clients receive another tools/list_changed notification
+```
+
+**Notes**
+- The same pattern applies to `srv.resource`/`srv.removeResource` and
+  `srv.prompt`/`srv.removePrompt` — each pair fires its own
+  `list_changed` notification (`resources/list_changed`,
+  `prompts/list_changed`).
+- Removing a name/uri that was never registered (or already removed) is a
+  silent no-op — no need to track what's currently registered yourself.
+- This works whether or not a transport has started; registering before
+  `stdio()`/`listen()` is still the normal case for a static tool set.
+
+##### 5.15.2.6 Expose a family of resources with a URI template
+
+Use `srv.resourceTemplate` instead of `srv.resource` when clients should
+be able to read any of a whole family of URIs (e.g. rows in a table)
+rather than one fixed resource.
+
+```ts
+srv.resourceTemplate({
+  uriTemplate: "db:///{table}/{id}",
+  name: "row",
+  mimeType: "application/json",
+  async read(uri) {
+    // uri is the concrete URI the client asked for, e.g. "db:///users/42"
+    const [, , table, id] = uri.match(/^db:\/\/\/([^/]+)\/([^/]+)$/) ?? [];
+    return { text: JSON.stringify({ table, id }) };
+  },
+});
+```
+
+A client reading `db:///users/42` invokes `read("db:///users/42", ctx)` —
+the template string itself (`db:///{table}/{id}`) is only ever seen during
+`resources/templates/list`, never passed to `read`.
+
+**Notes**
+- `uriTemplate` follows RFC 6570 (the same template syntax the MCP spec
+  uses) — sercon passes it through to the SDK as-is, it isn't parsed or
+  validated by sercon itself.
+- Like `srv.resource`, a `read` that throws or returns something other
+  than `{text}`/`{blob}` is a protocol-level error, not a soft `isError`
+  result.
+
+##### 5.15.2.7 Push updates to subscribed clients (lazy-watch pattern)
+
+Combine `srv.onSubscribe`/`srv.onUnsubscribe` with `srv.resourceUpdated`
+to watch a resource's backing data only while at least one client cares
+about it.
+
+```ts
+const watchers = new Map<string, () => void>();
+
+function startWatching(uri: string) {
+  // stand-in for "start polling a file/DB row/etc for changes"
+  const interval = setInterval(() => {
+    srv.resourceUpdated(uri); // notify every currently-subscribed client
+  }, 5000);
+  watchers.set(uri, () => clearInterval(interval));
+}
+
+srv.onSubscribe((uri) => {
+  if (!watchers.has(uri)) startWatching(uri);
+});
+
+srv.onUnsubscribe((uri) => {
+  watchers.get(uri)?.();
+  watchers.delete(uri);
+});
+
+srv.resource({
+  uri: "config://app",
+  name: "App config",
+  mimeType: "application/json",
+  read: async () => ({ text: JSON.stringify({ debug: true }) }),
+});
+```
+
+**Notes**
+- `onSubscribe`/`onUnsubscribe` are fire-and-forget: their return value
+  (and any thrown error) is ignored — a subscribe/unsubscribe request
+  always succeeds from the client's point of view, this hook just observes
+  it.
+- `srv.resourceUpdated(uri)` is safe to call even if no client is
+  currently subscribed to `uri` (it's a no-op fan-out to an empty set) —
+  no need to track the subscriber count yourself, the SDK already does.
+- Only one `onSubscribe` and one `onUnsubscribe` callback are held at a
+  time; registering again replaces the previous one.
+
+##### 5.15.2.8 Autocomplete a prompt argument
+
+Suggest values for a prompt's argument as a client's user types, via
+`srv.completion`.
+
+```ts
+const users = ["alice", "alicia", "bob", "carol"];
+
+srv.prompt({
+  name: "greet",
+  description: "greet a user by name",
+  arguments: [{ name: "user", required: true }],
+  get: async (args) => ({
+    messages: [{ role: "user", content: { type: "text", text: `Say hello to ${args.user}.` } }],
+  }),
+});
+
+srv.completion((ref, argName, partial) => {
+  if (ref.type === "prompt" && ref.name === "greet" && argName === "user") {
+    return users.filter((u) => u.startsWith(partial));
+  }
+  return [];
+});
+```
+
+**Notes**
+- `ref` is normalized regardless of what's being completed: `{ type:
+  "prompt", name }` for a prompt argument, `{ type: "resource", uri }` for
+  a resource-template URI variable — check `ref.type` first.
+- Only one completion callback is registered per handle; if your server
+  has both prompts and resource templates that want completion, branch on
+  `ref.type`/`ref.name`/`ref.uri` inside the single callback.
+- Returning `{ values, total?, hasMore? }` instead of a plain array lets
+  you hint at pagination for a large suggestion set; most clients are fine
+  with a plain `string[]` for a short list.
+
+##### 5.15.2.9 Cap list-page size for large tool sets
+
+Pass `pageSize` to `mcp.serve` to make `tools/list` (and the other list
+methods) paginate sooner — mainly useful for testing a client's cursor
+handling, or when a server genuinely registers hundreds of capabilities.
+
+```ts
+const srv = mcp.serve({ name: "many-tools", version: "1.0.0", pageSize: 50 });
+
+for (const name of discoverToolNames()) {
+  srv.tool({ name, inputSchema: { type: "object" }, handler: () => "ok" });
+}
+
+await srv.stdio();
+```
+
+**Notes**
+- `pageSize` must be a positive integer if present; `mcp.serve` throws
+  synchronously otherwise (zero, negative, and non-integer are all
+  rejected).
+- Omitting it uses the SDK's default (1000) — most servers with a modest,
+  fixed tool set never need to set this.
 
 ## 6. Servers
 
@@ -13500,25 +13767,33 @@ Model Context Protocol server: mcp.serve({name, version, instructions?}) returns
 #### 17.9.1 mcp.serve
 
 ```
-serve(config: { name: string; version: string; instructions?: string }): {
-  tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void;
-  resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void;
-  prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void;
+serve(config: { name: string; version: string; instructions?: string; pageSize?: number }): {
+  tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void;
+  resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void;
+  resourceTemplate(spec: { uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void;
+  prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void;
+  removeTool(name: string): void;
+  removeResource(uri: string): void;
+  removePrompt(name: string): void;
+  onSubscribe(fn: (uri: string) => void): void;
+  onUnsubscribe(fn: (uri: string) => void): void;
+  resourceUpdated(uri: string): Promise<void>;
+  completion(fn: (ref: { type: "prompt" | "resource"; name: string; uri: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined): void;
   stdio(): Promise<void>;
   listen(opts: { port: number; host?: string; path?: string }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>;
   close(): void;
 }
 ```
 
-Create an MCP (Model Context Protocol) server. Register zero or more tools/resources/prompts on the returned handle, then serve them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk; only one transport may be started per handle, and registering a capability after a transport has started throws.
+Create an MCP (Model Context Protocol) server. Register zero or more tools/resources/prompts/resource templates on the returned handle — at any time, including after a transport has started, since registering them fires a list-changed notification to already-connected clients — then serve them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk; only one transport may be started per handle — starting a second one throws.
 
 **Parameters**
 
-- `config` *({ name: string; version: string; instructions?: string })* — name/version identify this server to clients during MCP's initialize handshake (surfaced to the client as serverInfo). instructions is an optional free-text hint about how to use this server (tone, expected workflow), surfaced to clients/LLMs during capability negotiation.
+- `config` *({ name: string; version: string; instructions?: string; pageSize?: number })* — name/version identify this server to clients during MCP's initialize handshake (surfaced to the client as serverInfo). instructions is an optional free-text hint about how to use this server (tone, expected workflow), surfaced to clients/LLMs during capability negotiation. pageSize is an optional positive integer capping how many tools/resources/prompts/resource templates a single list response returns before the client must page with a cursor; defaults to the SDK's built-in page size (1000) when omitted. Present-but-invalid (zero, negative, or non-integer) throws synchronously.
 
-**Returns:** A handle for registering capabilities and starting a transport: tool()/resource()/prompt() register handlers (only before a transport starts); stdio()/listen() start serving — mutually exclusive, starting a second transport on the same handle throws; close() is currently an inert placeholder (see serve.close).
+**Returns:** A handle for registering capabilities and starting a transport: tool()/resource()/resourceTemplate()/prompt() register handlers and removeTool()/removeResource()/removePrompt() unregister them — all callable at any time; onSubscribe()/onUnsubscribe() register resource-subscription hooks and resourceUpdated() notifies subscribers; completion() registers an argument-autocompletion handler; stdio()/listen() start serving — mutually exclusive, starting a second transport on the same handle throws; close() is currently an inert placeholder (see serve.close).
 
-**Throws:** Throws synchronously (not a rejected promise) if config is missing/not an object, or name/version is missing or empty.
+**Throws:** Throws synchronously if config is missing/not an object, name/version is missing or empty, or pageSize is present but not a positive integer.
 
 ```ts
 const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
@@ -13548,7 +13823,39 @@ const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
 srv.close(); // currently a no-op; use the listen() handle's close(), or let stdio() resolve on disconnect
 ```
 
-##### 17.9.1.2 mcp.serve.listen
+##### 17.9.1.2 mcp.serve.completion
+
+```
+completion(fn: (ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined): void
+```
+
+Register the handler invoked for a client's argument-autocompletion request (completion/complete) — suggesting values for a prompt argument or a resource-template URI variable as the user types. Only one completion callback is held at a time — a later call replaces the earlier registration. If never called, the server still advertises the completions capability and answers every request with an empty ("no suggestions") result rather than rejecting it.
+
+**Parameters**
+
+- `fn` *((ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined)* — ref identifies what's being completed: type "prompt" with name set (the prompt registered via serve.prompt) or type "resource" with uri set (the resource-template URI registered via serve.resourceTemplate). argName is the argument/variable name being completed and partial is the text typed so far. fn may return a plain string[] (the suggestions, in order), an object { values?, total?, hasMore? } for pagination hints, a Promise of either, or null/undefined/nothing to mean no suggestions.
+
+**Returns:** Nothing — replaces any previously registered completion callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function. Unlike a tool handler, a completion handler that throws or rejects propagates as a real completion/complete protocol error to the client — there is no isError-style soft failure for completion.
+
+```ts
+srv.prompt({
+  name: "greet",
+  arguments: [{ name: "user", required: true }],
+  get: async (args) => ({ messages: [{ role: "user", content: { type: "text", text: "hi " + args.user } }] }),
+});
+
+const users = ["alice", "alicia", "bob"];
+srv.completion((ref, argName, partial) => {
+  if (ref.type === "prompt" && ref.name === "greet" && argName === "user") {
+    return users.filter((u) => u.startsWith(partial));
+  }
+  return [];
+});
+```
+
+##### 17.9.1.3 mcp.serve.listen
 
 ```
 listen(opts: { port: number; host?: string; path?: string }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>
@@ -13573,21 +13880,71 @@ runtime.log("listening at", h.url);
 await h.close();
 ```
 
-##### 17.9.1.3 mcp.serve.prompt
+##### 17.9.1.4 mcp.serve.onSubscribe
 
 ```
-prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void
+onSubscribe(fn: (uri: string) => void): void
 ```
 
-Register a prompt: a named, parameterized template clients can fetch to seed a conversation. Must be called before the server starts serving, for the same list-changed-notification reason as serve.tool.
+Register a best-effort hook invoked whenever a client subscribes to a resource (resources/subscribe). Typically used to start watching a resource's backing data (a file, a DB row, …) only when a client actually cares, pairing with serve.onUnsubscribe to stop watching and serve.resourceUpdated to notify once it changes. Only one onSubscribe callback is held at a time — a later call replaces the earlier registration.
 
 **Parameters**
 
-- `spec` *({ name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> })* — name: unique prompt name. description: shown to clients when listing prompts. arguments: the prompt's declared parameters (name/description/required), advertised so clients know what to supply. get(args, ctx): sync or async; must return { description?: string; messages: Array<{ role: string; content: unknown }> } — each message's content follows the same content-item shape as a tool result's content array (e.g. { type: "text", text }). Any other shape, or a thrown/rejected handler, is a protocol-level error.
+- `fn` *((uri: string) => void)* — invoked with the URI the client subscribed to. Its return value (and any thrown error or rejection) is ignored — the subscribe request always succeeds from the client's point of view; this hook cannot fail it.
 
-**Returns:** Nothing — registers the prompt on the handle.
+**Returns:** Nothing — replaces any previously registered onSubscribe callback.
 
-**Throws:** Throws synchronously if the server has already started serving, spec is not an object, name is missing/empty, arguments is present but not an array (or an entry is missing name), or get is not a function. A get handler that throws, rejects, or returns a malformed result propagates as a prompts/get protocol error to the client — there is no isError-style soft failure for prompts.
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+const watchers = new Map<string, () => void>();
+srv.onSubscribe((uri) => {
+  runtime.log("client subscribed to", uri);
+  // start watching uri's backing data here
+});
+srv.onUnsubscribe((uri) => {
+  runtime.log("client unsubscribed from", uri);
+  // stop watching uri's backing data here
+});
+```
+
+##### 17.9.1.5 mcp.serve.onUnsubscribe
+
+```
+onUnsubscribe(fn: (uri: string) => void): void
+```
+
+Register a best-effort hook invoked whenever a client unsubscribes from a resource (resources/unsubscribe) — the mirror of serve.onSubscribe. Only one onUnsubscribe callback is held at a time — a later call replaces the earlier registration.
+
+**Parameters**
+
+- `fn` *((uri: string) => void)* — invoked with the URI the client unsubscribed from. Its return value (and any thrown error or rejection) is ignored — the unsubscribe request always succeeds from the client's point of view; this hook cannot fail it.
+
+**Returns:** Nothing — replaces any previously registered onUnsubscribe callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+srv.onUnsubscribe((uri) => {
+  runtime.log("no longer watching", uri);
+});
+```
+
+##### 17.9.1.6 mcp.serve.prompt
+
+```
+prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void
+```
+
+Register a prompt: a named, parameterized template clients can fetch to seed a conversation. Callable at any time, including after a transport has started, for the same list-changed-notification reason as serve.tool.
+
+**Parameters**
+
+- `spec` *({ name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> })* — name: unique prompt name. description: shown to clients when listing prompts. arguments: the prompt's declared parameters (name/description/required), advertised so clients know what to supply. get(args, ctx): sync or async; must return { description?: string; messages: Array<{ role: string; content: unknown }> } — each message's content follows the same content-item shape as a tool result's content array (e.g. { type: "text", text }). Any other shape, or a thrown/rejected handler, is a protocol-level error. ctx is the same shape as a tool handler's (see serve.tool).
+
+**Returns:** Nothing — registers the prompt on the handle. Call srv.removePrompt(name) to unregister it.
+
+**Throws:** Throws synchronously if spec is not an object, name is missing/empty, arguments is present but not an array (or an entry is missing name), or get is not a function. A get handler that throws, rejects, or returns a malformed result propagates as a prompts/get protocol error to the client — there is no isError-style soft failure for prompts.
 
 ```ts
 srv.prompt({
@@ -13600,21 +13957,87 @@ srv.prompt({
 });
 ```
 
-##### 17.9.1.4 mcp.serve.resource
+##### 17.9.1.7 mcp.serve.removePrompt
 
 ```
-resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void
+removePrompt(name: string): void
 ```
 
-Register a resource: a URI-addressed piece of content clients can read (e.g. a file, a config blob, a generated report). Must be called before the server starts serving, for the same list-changed-notification reason as serve.tool.
+Unregister a previously added prompt by name. Callable at any time — before or after a transport has started; removing a name post-connect fires a prompts/list_changed notification to connected clients. Removing a name that was never registered (or already removed) is a silent no-op.
 
 **Parameters**
 
-- `spec` *({ uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> })* — uri: the resource's identifier (any URI scheme, e.g. "file:///report.txt" or a custom scheme). name: a human-readable label shown when listing resources. mimeType: optional content-type hint. read(uri, ctx): sync or async; must return { text: string } or { blob: string | Uint8Array | ArrayBuffer } (blob accepts a base64 string or raw bytes) — any other shape, or a thrown/rejected handler, is a protocol-level error, unlike a tool handler's soft isError failure.
+- `name` *(string)* — the prompt name passed to serve.prompt's spec.name.
 
-**Returns:** Nothing — registers the resource on the handle.
+**Returns:** Nothing.
 
-**Throws:** Throws synchronously if the server has already started serving, spec is not an object, uri or name is missing/empty, or read is not a function. A read handler that throws, rejects, or returns a value without text or blob propagates as a resources/read protocol error to the client — there is no isError-style soft failure for resources.
+**Throws:** Throws synchronously (a TypeError) if name is missing, null, or an empty string.
+
+```ts
+srv.prompt({ name: "temp", get: () => ({ messages: [] }) });
+// ... later:
+srv.removePrompt("temp");
+```
+
+##### 17.9.1.8 mcp.serve.removeResource
+
+```
+removeResource(uri: string): void
+```
+
+Unregister a previously added resource by URI. Callable at any time — before or after a transport has started; removing a URI post-connect fires a resources/list_changed notification to connected clients. Removing a URI that was never registered (or already removed) is a silent no-op.
+
+**Parameters**
+
+- `uri` *(string)* — the resource URI passed to serve.resource's spec.uri. There is no equivalent remove method for a resource template registered via serve.resourceTemplate — that's a currently-unbound gap in the script surface, not a missing SDK capability.
+
+**Returns:** Nothing.
+
+**Throws:** Throws synchronously (a TypeError) if uri is missing, null, or an empty string.
+
+```ts
+srv.resource({ uri: "config://temp", name: "temp", read: () => ({ text: "{}" }) });
+// ... later:
+srv.removeResource("config://temp");
+```
+
+##### 17.9.1.9 mcp.serve.removeTool
+
+```
+removeTool(name: string): void
+```
+
+Unregister a previously added tool by name. Callable at any time — before or after a transport has started; removing a name post-connect fires a tools/list_changed notification to connected clients. Removing a name that was never registered (or already removed) is a silent no-op.
+
+**Parameters**
+
+- `name` *(string)* — the tool name passed to serve.tool's spec.name.
+
+**Returns:** Nothing.
+
+**Throws:** Throws synchronously (a TypeError) if name is missing, null, or an empty string.
+
+```ts
+srv.tool({ name: "temp", inputSchema: { type: "object" }, handler: () => "hi" });
+// ... later, once the capability is no longer relevant:
+srv.removeTool("temp");
+```
+
+##### 17.9.1.10 mcp.serve.resource
+
+```
+resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void
+```
+
+Register a resource: a URI-addressed piece of content clients can read (e.g. a file, a config blob, a generated report). Callable at any time, including after a transport has started, for the same list-changed-notification reason as serve.tool.
+
+**Parameters**
+
+- `spec` *({ uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> })* — uri: the resource's identifier (any URI scheme, e.g. "file:///report.txt" or a custom scheme). name: a human-readable label shown when listing resources. mimeType: optional content-type hint. read(uri, ctx): sync or async; must return { text: string } or { blob: string | Uint8Array | ArrayBuffer } (blob accepts a base64 string or raw bytes) — any other shape, or a thrown/rejected handler, is a protocol-level error, unlike a tool handler's soft isError failure. ctx is the same shape as a tool handler's (see serve.tool).
+
+**Returns:** Nothing — registers the resource on the handle. Call srv.removeResource(uri) to unregister it.
+
+**Throws:** Throws synchronously if spec is not an object, uri or name is missing/empty, or read is not a function. A read handler that throws, rejects, or returns a value without text or blob propagates as a resources/read protocol error to the client — there is no isError-style soft failure for resources.
 
 ```ts
 srv.resource({
@@ -13625,7 +14048,53 @@ srv.resource({
 });
 ```
 
-##### 17.9.1.5 mcp.serve.stdio
+##### 17.9.1.11 mcp.serve.resourceTemplate
+
+```
+resourceTemplate(spec: { uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void
+```
+
+Register a resource template: an RFC 6570 URI template (e.g. "db:///{table}/{id}") describing a family of resources a client can read by supplying a concrete URI that matches the pattern, rather than one fixed uri the way serve.resource registers. Callable at any time, including after a transport has started, for the same list-changed-notification reason as serve.tool.
+
+**Parameters**
+
+- `spec` *({ uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> })* — uriTemplate: the RFC 6570 template string advertised to clients (e.g. "db:///{table}/{id}"). name: a human-readable label shown when listing resource templates. mimeType: optional content-type hint. read(uri, ctx): sync or async, invoked with the concrete URI the client actually requested (e.g. "db:///users/42") — not the template string; must return { text: string } or { blob: string | Uint8Array | ArrayBuffer }, same contract as serve.resource's read. ctx is the same shape as a tool handler's (see serve.tool).
+
+**Returns:** Nothing — registers the resource template on the handle.
+
+**Throws:** Throws synchronously if spec is not an object, uriTemplate or name is missing/empty, or read is not a function. A read handler that throws, rejects, or returns a value without text or blob propagates as a resources/read protocol error to the client, same as serve.resource.
+
+```ts
+srv.resourceTemplate({
+  uriTemplate: "db:///{table}/{id}",
+  name: "row",
+  mimeType: "application/json",
+  read: (uri) => ({ text: "row at " + uri }),
+});
+// a client reading "db:///users/42" invokes read("db:///users/42", ctx)
+```
+
+##### 17.9.1.12 mcp.serve.resourceUpdated
+
+```
+resourceUpdated(uri: string): Promise<void>
+```
+
+Notify every client currently subscribed to uri that the resource's content has changed (resources/updated). This is the script's half of the subscription pair: the SDK tracks the actual subscriber set itself (via the subscribe/unsubscribe plumbing backing serve.onSubscribe/onUnsubscribe) and fans this notification out to whoever is subscribed to uri right now — calling it for a URI with no subscribers is a harmless no-op. Callable at any time after mcp.serve(), including before any transport has started.
+
+**Parameters**
+
+- `uri` *(string)* — the resource URI that changed — must match a URI a client may have subscribed to (does not need to be a URI you've registered with serve.resource; it's just an opaque identifier from the notification's point of view).
+
+**Returns:** A promise that resolves once the notification has been sent (or immediately if there is no active transport to send it over).
+
+**Throws:** Throws synchronously (a TypeError) if uri is missing, null, or an empty string. The returned promise rejects if the underlying notification send fails.
+
+```ts
+srv.resourceUpdated("config://app");
+```
+
+##### 17.9.1.13 mcp.serve.stdio
 
 ```
 stdio(): Promise<void>
@@ -13643,21 +14112,21 @@ srv.tool({ name: "ping", inputSchema: { type: "object" }, handler: () => "pong" 
 await srv.stdio();
 ```
 
-##### 17.9.1.6 mcp.serve.tool
+##### 17.9.1.14 mcp.serve.tool
 
 ```
-tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void
+tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void
 ```
 
-Register a tool: a named, schema-described callable that MCP clients (typically an LLM agent) can invoke. Must be called before the server starts serving (stdio()/listen()) — registering after start throws (adding tools to an already-serving connection needs a list-changed notification, a later phase).
+Register a tool: a named, schema-described callable that MCP clients (typically an LLM agent) can invoke. Callable at any time, including after a transport has started — the SDK fires a tools/list_changed notification to already-connected clients when a tool is added post-connect, so a script can grow its tool set at runtime (e.g. from within another handler).
 
 **Parameters**
 
-- `spec` *({ name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> })* — name: unique tool name presented to clients. description: shown to the client/LLM to help it decide when to call this tool. inputSchema: a JSON Schema object describing the call arguments — passed through to the SDK as-is (not validated by sercon itself). outputSchema: optional JSON Schema describing structuredContent. handler(args, ctx): sync or async; may return a plain string (wrapped as a single text content item), an object shaped { content?, structuredContent?, isError? }, or throw/reject — a thrown or rejected handler is NOT a protocol error, it surfaces to the client as a tool result with isError: true.
+- `spec` *({ name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> })* — name: unique tool name presented to clients. description: shown to the client/LLM to help it decide when to call this tool. inputSchema: a JSON Schema object describing the call arguments — passed through to the SDK as-is (not validated by sercon itself). outputSchema: optional JSON Schema describing structuredContent. handler(args, ctx): sync or async; may return a plain string (wrapped as a single text content item), an object shaped { content?, structuredContent?, isError? }, or throw/reject — a thrown or rejected handler is NOT a protocol error, it surfaces to the client as a tool result with isError: true. ctx adds progress(progress, total?) and log(level, message, data?) to the requestId/clientInfo pair — see §5.15.1's progress/logging concepts for the SetLoggingLevel caveat on log().
 
-**Returns:** Nothing — registers the tool on the handle. Call multiple times to register multiple tools.
+**Returns:** Nothing — registers the tool on the handle. Call multiple times to register multiple tools; call srv.removeTool(name) to unregister one.
 
-**Throws:** Throws synchronously if the server has already started serving, spec is not an object, name is missing/empty, or handler is not a function. A handler that throws or returns a rejected promise does not throw here — it surfaces per-call as an { isError: true } tool result seen by the client, not a synchronous or protocol-level error.
+**Throws:** Throws synchronously if spec is not an object, name is missing/empty, or handler is not a function. A handler that throws or returns a rejected promise does not throw here — it surfaces per-call as an { isError: true } tool result seen by the client, not a synchronous or protocol-level error.
 
 ```ts
 srv.tool({

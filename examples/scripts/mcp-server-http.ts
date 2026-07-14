@@ -29,11 +29,42 @@
 // blocker. cmd/sercon/mcp_http_test.go additionally drives the same handle
 // with the real SDK client (mcp.StreamableClientTransport) as the
 // authoritative round-trip.
+//
+// Also exercises two Phase-2 additions end to end, deliberately via plain
+// request/response (not server->client notifications, which would need this
+// hand-rolled client to also read the standalone SSE stream — real MCP
+// clients like the SDK's own do that, but it's unnecessary complexity for a
+// fast, deterministic `make demo` script):
+//   - Runtime mutation: `srv.tool(...)` is called again AFTER `listen()` has
+//     already started (registering a second tool, "multiply"), then
+//     `srv.removeTool("multiply")` retracts it — both allowed at any time
+//     since Phase 2 (each fires a `tools/list_changed` notification to
+//     connected clients, which this script doesn't listen for, but a real
+//     client would). `tools/list` before/after confirms the tool set
+//     actually changed both times.
+//   - Resource templates: `srv.resourceTemplate(...)` registers an RFC 6570
+//     URI-templated resource family; `resources/templates/list` confirms it's
+//     advertised, and `resources/read` against a concrete URI confirms the
+//     `read` handler receives the resolved URI (not the template string).
 
 function parseSSE(body: string): any {
   const dataLine = body.split("\n").find((l) => l.startsWith("data:"));
   if (!dataLine) throw new Error("no SSE data frame in response: " + body);
   return JSON.parse(dataLine.slice(5).trim());
+}
+
+// rpc issues one JSON-RPC call (always with an id, so it always gets a
+// result frame back) against the already-initialized session and returns the
+// parsed message — a small helper for the Phase-2 scenarios below, which
+// issue several more calls than the handshake walkthrough above.
+let nextId = 100;
+async function rpc(url: string, headers: Record<string, string>, method: string, params?: any): Promise<any> {
+  const res = await net.http.request("POST", url, {
+    headers,
+    body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
+  });
+  runtime.assert.equal(res.status, 200, `${method} status`);
+  return parseSSE(res.body);
 }
 
 const port = 38084;
@@ -51,6 +82,13 @@ srv.tool({
   async handler(args: any) {
     return String(args.a + args.b);
   },
+});
+
+srv.resourceTemplate({
+  uriTemplate: "demo:///{table}/{id}",
+  name: "row",
+  mimeType: "application/json",
+  read: (uri: string) => ({ text: JSON.stringify({ uri }) }),
 });
 
 const h = await srv.listen({ port });
@@ -105,6 +143,45 @@ runtime.assert.equal(callRes.status, 200, "tools/call status");
 const callMsg = parseSSE(callRes.body);
 runtime.assert.equal(callMsg.result.content[0].text, "5", "add result");
 runtime.log("tools/call add(2, 3) ->", callMsg.result.content[0].text);
+
+// 4) Phase-2: resource template — list, then read a concrete URI matching
+// the "demo:///{table}/{id}" pattern registered above.
+const templatesMsg = await rpc(h.url, sessionHeaders, "resources/templates/list");
+const templateNames = templatesMsg.result.resourceTemplates.map((t: any) => t.name);
+runtime.assert.ok(templateNames.includes("row"), "resource template 'row' listed");
+
+const readMsg = await rpc(h.url, sessionHeaders, "resources/read", { uri: "demo:///widgets/7" });
+const readContents = JSON.parse(readMsg.result.contents[0].text);
+runtime.assert.equal(readContents.uri, "demo:///widgets/7", "resourceTemplate read receives the resolved URI");
+runtime.log("resources/read demo:///widgets/7 ->", readMsg.result.contents[0].text);
+
+// 5) Phase-2: runtime tool mutation — register "multiply" AFTER listen()
+// has already started, confirm it shows up in tools/list and is callable,
+// then removeTool() it and confirm it's gone again.
+srv.tool({
+  name: "multiply",
+  description: "multiply two numbers",
+  inputSchema: {
+    type: "object",
+    properties: { a: { type: "number" }, b: { type: "number" } },
+    required: ["a", "b"],
+  },
+  handler: (args: any) => String(args.a * args.b),
+});
+
+const afterAddMsg = await rpc(h.url, sessionHeaders, "tools/list");
+const afterAddNames = afterAddMsg.result.tools.map((t: any) => t.name);
+runtime.assert.ok(afterAddNames.includes("multiply"), "'multiply' registered after listen() is listed");
+
+const multiplyMsg = await rpc(h.url, sessionHeaders, "tools/call", { name: "multiply", arguments: { a: 4, b: 5 } });
+runtime.assert.equal(multiplyMsg.result.content[0].text, "20", "multiply result");
+runtime.log("tools/call multiply(4, 5) ->", multiplyMsg.result.content[0].text);
+
+srv.removeTool("multiply");
+const afterRemoveMsg = await rpc(h.url, sessionHeaders, "tools/list");
+const afterRemoveNames = afterRemoveMsg.result.tools.map((t: any) => t.name);
+runtime.assert.ok(!afterRemoveNames.includes("multiply"), "'multiply' no longer listed after removeTool()");
+runtime.log("removeTool('multiply') -> tools/list:", afterRemoveNames.join(", "));
 
 await h.close();
 runtime.log("closed");
