@@ -287,9 +287,12 @@ func classifyErr(err error) int {
 	}
 }
 
-// registerSurface wires sercon's thirteen top-level script-facing globals:
-// runtime, crypto, text, codec, fs, net, db, server, services, tui, image,
-// web, audio.
+// registerSurface wires sercon's fifteen top-level script-facing globals:
+// runtime, crypto, text, codec, fs, net, db, cloud, server, services, tui,
+// image, web, audio, mcp.
+// (The count was already stale at "thirteen" before this edit — `cloud` had
+// been added without updating this comment; both `cloud` and the new `mcp`
+// are folded in here so the count and list are accurate again.)
 // Each is registered via RegisterNamespaceFactory so per-Run
 // constructions that need the loop (Promise-returning bindings, TUI
 // controller, server listeners) get fresh state every run. JSDoc lives
@@ -552,6 +555,11 @@ func registerSurface(e *scriptengine.Engine) error {
 	}
 	if err := e.RegisterNamespaceFactory("server", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return serverNamespace(vm, loop, e)
+	}); err != nil {
+		return err
+	}
+	if err := e.RegisterNamespaceFactory("mcp", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return mcpNamespace(e, vm, loop)
 	}); err != nil {
 		return err
 	}
