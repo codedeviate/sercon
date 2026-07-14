@@ -191,6 +191,109 @@ test.ready();
 	}
 }
 
+// TestMCPContext drives the Phase-1 request-context object (`ctx`, the 2nd
+// handler arg) end to end: a script registers a tool whose handler returns
+// ctx.requestId and ctx.clientInfo.name/version as a delimited string; the Go
+// side calls it via an in-memory client whose mcp.NewClient Implementation
+// name/version are known ("test-client"/"0.0.0"), asserting the client info
+// round-trips and requestId is a non-empty string.
+//
+// Mirrors TestMCPTool's harness; everything under srv.tool this test doesn't
+// already cover is the newRequestContext plumbing added by this task.
+func TestMCPContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	ready := make(chan struct{})
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{
+					eng: eng, vm: vm, loop: loop,
+					srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil),
+				}
+				return ms.handle(vm)
+			},
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-context")
+				go func() {
+					defer release()
+					<-done
+				}()
+				close(ready)
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "context.ts", `
+const srv = test.serve();
+srv.tool({
+	name: "whoami",
+	inputSchema: { type: "object" },
+	handler: (args, ctx) => ctx.requestId + "|" + ctx.clientInfo.name + "|" + ctx.clientInfo.version,
+});
+test.ready();
+`)
+		runErr <- err
+	}()
+
+	<-ready
+
+	sess, err := connectInMemory(ctx, ms.srv)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	res, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: "whoami", Arguments: map[string]any{}})
+	if err != nil {
+		close(done)
+		t.Fatalf("call whoami: %v", err)
+	}
+	if res.IsError {
+		close(done)
+		t.Fatalf("whoami: unexpected isError, content=%v", res.Content)
+	}
+	if len(res.Content) != 1 {
+		close(done)
+		t.Fatalf("whoami: want 1 content item, got %d", len(res.Content))
+	}
+	tc, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		close(done)
+		t.Fatalf("whoami: want TextContent, got %#v", res.Content[0])
+	}
+	parts := strings.SplitN(tc.Text, "|", 3)
+	if len(parts) != 3 {
+		close(done)
+		t.Fatalf("whoami: want 3 pipe-delimited parts, got %q", tc.Text)
+	}
+	if parts[0] == "" {
+		close(done)
+		t.Fatalf("whoami: want non-empty requestId, got %q", tc.Text)
+	}
+	if parts[1] != "test-client" || parts[2] != "0.0.0" {
+		close(done)
+		t.Fatalf("whoami: want clientInfo test-client/0.0.0, got name=%q version=%q", parts[1], parts[2])
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 // TestMCPResource drives JS-defined resources end to end: a script builds an
 // mcpServer, registers a text resource and a blob resource via
 // srv.resource(...), and signals readiness; the Go side then connects an

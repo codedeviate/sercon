@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -20,7 +21,61 @@ type mcpServer struct {
 	loop    *eventloop.EventLoop
 	srv     *mcp.Server
 	started bool
-	release func() //nolint:unused // HoldRun release, set when a transport starts; called by a later task's close()
+	release func()       //nolint:unused // HoldRun release, set when a transport starts; called by a later task's close()
+	reqSeq  atomic.Int64 // monotonic counter backing newRequestContext's requestId
+}
+
+// newRequestContext builds the Phase-1 `ctx` object passed as the 2nd
+// argument to every tool/resource/prompt JS handler: { requestId,
+// clientInfo: { name, version } }. Phase 2/3 (progress/log/sample/elicit)
+// hook in here later, holding onto sess for the SDK calls that need it
+// (NotifyProgress, Log, CreateMessage, Elicit) — none of that exists yet.
+//
+// requestId: the go-sdk does carry a JSON-RPC request id per call, but it's
+// stashed in an unexported context key (idContextKey, see server.go/
+// streamable.go) with no public accessor, and AddTool/AddResource/AddPrompt
+// handlers in this file discard their context.Context argument entirely.
+// sess.ID() looked like the next-best fallback, but it's backed by an
+// SDK-internal hasSessionID interface that only streamableServerConn
+// implements — ioConn (stdio, and the in-memory transport used by this
+// package's own tests) and sseServerConn both hard-code SessionID() to
+// return "" (see transport.go/sse.go), so sess.ID() would be empty for the
+// transports this project actually cares about (stdio is the primary
+// target; stdio()/listen() aren't wired up yet, but in-memory already
+// exercises the same empty-ID path in tests). Genuinely empty ids defeat
+// the point of a request identifier, so instead requestId is built from a
+// per-mcpServer monotonic sequence number (always non-empty, unique across
+// every call this server instance handles), prefixed with the session id
+// when the transport happens to provide one for extra traceability.
+// Revisit if a future go-sdk version exposes the real per-call JSON-RPC id.
+//
+// This must be called ON the event loop (from a buildArgs callback, which
+// callJSHandler always invokes on-loop) since it allocates goja values.
+func (ms *mcpServer) newRequestContext(vm *goja.Runtime, sess *mcp.ServerSession) goja.Value {
+	ctxObj := vm.NewObject()
+
+	seq := ms.reqSeq.Add(1)
+	requestID := fmt.Sprintf("req-%d", seq)
+	if sess != nil {
+		if sid := sess.ID(); sid != "" {
+			requestID = fmt.Sprintf("%s-%d", sid, seq)
+		}
+	}
+	_ = ctxObj.Set("requestId", requestID)
+
+	name, version := "", ""
+	if sess != nil {
+		if ip := sess.InitializeParams(); ip != nil && ip.ClientInfo != nil {
+			name = ip.ClientInfo.Name
+			version = ip.ClientInfo.Version
+		}
+	}
+	clientInfo := vm.NewObject()
+	_ = clientInfo.Set("name", name)
+	_ = clientInfo.Set("version", version)
+	_ = ctxObj.Set("clientInfo", clientInfo)
+
+	return ctxObj
 }
 
 // jsTool implements srv.tool({ name, description?, inputSchema, outputSchema?,
@@ -63,6 +118,9 @@ func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
 	}
 
 	ms.srv.AddTool(tool, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Captured off-loop (native Go field access); newRequestContext itself
+		// runs on-loop inside buildArgs below, since it allocates goja values.
+		sess := req.Session
 		// Server-side Arguments is json.RawMessage, not `any` — unmarshal to a
 		// native Go value before it reaches goja (which vm.ToValue can convert).
 		var args any
@@ -73,9 +131,7 @@ func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
 		}
 		out, err := ms.callJSHandler(lc,
 			func(vm *goja.Runtime) []goja.Value {
-				// Second arg is the request-context placeholder (filled by a
-				// later task); the two-arg JS handler signature is stable now.
-				return []goja.Value{vm.ToValue(args), goja.Undefined()}
+				return []goja.Value{vm.ToValue(args), ms.newRequestContext(vm, sess)}
 			},
 			func(vm *goja.Runtime, v goja.Value) (any, error) {
 				return toToolResult(vm, v), nil
@@ -141,13 +197,11 @@ func (ms *mcpServer) jsResource(call goja.FunctionCall) goja.Value {
 	lc := scriptengine.NewLoopCallable(ms.loop, fn)
 
 	ms.srv.AddResource(&mcp.Resource{URI: uri, Name: name, MIMEType: mimeType}, func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		sess := req.Session
 		requestedURI := req.Params.URI
 		out, err := ms.callJSHandler(lc,
 			func(vm *goja.Runtime) []goja.Value {
-				// Second arg is the request-context placeholder (filled by a
-				// later task); the two-arg JS read(uri, ctx) signature is
-				// stable now, matching jsTool's handler shape.
-				return []goja.Value{vm.ToValue(requestedURI), goja.Undefined()}
+				return []goja.Value{vm.ToValue(requestedURI), ms.newRequestContext(vm, sess)}
 			},
 			func(vm *goja.Runtime, v goja.Value) (any, error) {
 				return toReadResourceResult(vm, requestedURI, mimeType, v)
@@ -227,13 +281,11 @@ func (ms *mcpServer) jsPrompt(call goja.FunctionCall) goja.Value {
 	lc := scriptengine.NewLoopCallable(ms.loop, fn)
 
 	ms.srv.AddPrompt(&mcp.Prompt{Name: name, Description: desc, Arguments: args}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+		sess := req.Session
 		requestedArgs := req.Params.Arguments
 		out, err := ms.callJSHandler(lc,
 			func(vm *goja.Runtime) []goja.Value {
-				// Second arg is the request-context placeholder (filled by a
-				// later task); the two-arg JS get(args, ctx) signature is
-				// stable now, matching jsTool/jsResource's handler shape.
-				return []goja.Value{vm.ToValue(requestedArgs), goja.Undefined()}
+				return []goja.Value{vm.ToValue(requestedArgs), ms.newRequestContext(vm, sess)}
 			},
 			func(vm *goja.Runtime, v goja.Value) (any, error) {
 				return toGetPromptResult(vm, v)
