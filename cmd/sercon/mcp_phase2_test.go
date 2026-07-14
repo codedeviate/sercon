@@ -689,3 +689,186 @@ test.ready();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPSubscriptions drives Task 5's resource-subscription plumbing end to
+// end: a script registers onSubscribe/onUnsubscribe hooks via
+// srv.onSubscribe(fn)/srv.onUnsubscribe(fn), then (once the Go side has
+// subscribed) calls srv.resourceUpdated(uri). The Go side drives an
+// in-memory client through Subscribe → assert onSubscribe fired with that
+// uri → (script calls resourceUpdated) → assert the client's
+// ResourceUpdatedHandler fires a resources/updated notification for that uri
+// → Unsubscribe → assert onUnsubscribe fired.
+//
+// Same staged-gate shape as TestMCPPhase2Tool: the script can't just call
+// srv.onSubscribe/resourceUpdated back-to-back on its own schedule (the Go
+// side needs to connect and subscribe in between), so it awaits
+// test.waitSubscribed(), a Promise the Go side resolves (by closing a
+// channel) once it has subscribed.
+//
+// test.ready() is called FIRST — immediately after registering the hooks,
+// before awaiting anything — establishing a HoldRun that keeps the loop
+// alive for the whole test, same as TestMCPProgressAndLog/TestMCPTemplate.
+// This matters here specifically: jsResourceUpdated (like jsCtxProgress/
+// jsCtxLog) settles its Promise via a bare goroutine + loop.RunOnLoop with
+// no HoldRun of its own (per the documented off-loop-I/O/on-loop-settle
+// pattern in mcp_server.go) — RunOnLoop does not itself keep jobCount
+// nonzero (see engine.go's eventloop contract), so calling test.ready()
+// only at the very end (after resourceUpdated) leaves a window with no
+// active hold where the loop could observe jobCount==0 and stop consuming
+// scheduled jobs entirely, permanently stalling not just resourceUpdated's
+// own settle but also the later onUnsubscribe dispatch — an early failed
+// attempt at this test hit exactly that hang.
+func TestMCPSubscriptions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	served := make(chan struct{})
+	afterSubscribed := make(chan struct{})
+	done := make(chan struct{})
+
+	onSubCh := make(chan string, 4)
+	onUnsubCh := make(chan string, 4)
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		waitOn := func(gate <-chan struct{}) goja.Value {
+			p, resolve, _ := vm.NewPromise()
+			release := eng.HoldRun("test-mcp-subscriptions-wait")
+			go func() {
+				<-gate
+				loop.RunOnLoop(func(*goja.Runtime) {
+					_ = resolve(goja.Undefined())
+					release()
+				})
+			}()
+			return vm.ToValue(p)
+		}
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{eng: eng, vm: vm, loop: loop}
+				// Wire Subscribe/UnsubscribeHandler the same way mcp.serve
+				// (mcp.go) does — required for the SDK to accept
+				// resources/subscribe at all (a nil-options *mcp.Server, as
+				// the other tests in this file construct, doesn't support
+				// subscriptions).
+				ms.srv = mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, &mcp.ServerOptions{
+					SubscribeHandler: func(_ context.Context, req *mcp.SubscribeRequest) error {
+						ms.recordSubscribe(req.Params.URI)
+						if cb := ms.getOnSubscribe(); cb != nil {
+							uri := req.Params.URI
+							_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+								return []goja.Value{vm.ToValue(uri)}, nil
+							})
+						}
+						return nil
+					},
+					UnsubscribeHandler: func(_ context.Context, req *mcp.UnsubscribeRequest) error {
+						ms.recordUnsubscribe(req.Params.URI)
+						if cb := ms.getOnUnsubscribe(); cb != nil {
+							uri := req.Params.URI
+							_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+								return []goja.Value{vm.ToValue(uri)}, nil
+							})
+						}
+						return nil
+					},
+				})
+				close(served)
+				return ms.handle(vm)
+			},
+			"onSub":          func(uri string) { onSubCh <- uri },
+			"onUnsub":        func(uri string) { onUnsubCh <- uri },
+			"waitSubscribed": func() goja.Value { return waitOn(afterSubscribed) },
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-subscriptions-ready")
+				go func() {
+					defer release()
+					<-done
+				}()
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const uri = "res://thing"
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "subscriptions.ts", `
+const srv = test.serve();
+srv.onSubscribe((uri) => { test.onSub(uri); });
+srv.onUnsubscribe((uri) => { test.onUnsub(uri); });
+test.ready();
+await test.waitSubscribed();
+await srv.resourceUpdated("`+uri+`");
+`)
+		runErr <- err
+	}()
+
+	<-served
+
+	updatedCh := make(chan *mcp.ResourceUpdatedNotificationParams, 4)
+	sess, err := connectInMemoryWithOptions(ctx, ms.srv, &mcp.ClientOptions{
+		ResourceUpdatedHandler: func(_ context.Context, req *mcp.ResourceUpdatedNotificationRequest) {
+			updatedCh <- req.Params
+		},
+	})
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	if err := sess.Subscribe(ctx, &mcp.SubscribeParams{URI: uri}); err != nil {
+		close(done)
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	select {
+	case got := <-onSubCh:
+		if got != uri {
+			t.Errorf("onSubscribe uri = %q, want %q", got, uri)
+		}
+	case <-time.After(notifyWait):
+		close(done)
+		t.Fatal("timed out waiting for onSubscribe callback")
+	}
+
+	// Let the script call srv.resourceUpdated(uri) now that the client has
+	// subscribed.
+	close(afterSubscribed)
+
+	select {
+	case params := <-updatedCh:
+		if params.URI != uri {
+			t.Errorf("resources/updated uri = %q, want %q", params.URI, uri)
+		}
+	case <-time.After(notifyWait):
+		close(done)
+		t.Fatal("timed out waiting for resources/updated notification")
+	}
+
+	if err := sess.Unsubscribe(ctx, &mcp.UnsubscribeParams{URI: uri}); err != nil {
+		close(done)
+		t.Fatalf("unsubscribe: %v", err)
+	}
+
+	select {
+	case got := <-onUnsubCh:
+		if got != uri {
+			t.Errorf("onUnsubscribe uri = %q, want %q", got, uri)
+		}
+	case <-time.After(notifyWait):
+		close(done)
+		t.Fatal("timed out waiting for onUnsubscribe callback")
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}

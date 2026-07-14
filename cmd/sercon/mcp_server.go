@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -29,6 +30,74 @@ type mcpServer struct {
 	started bool
 	release func()       // HoldRun release, set when a transport starts; cleared when that transport's serve loop ends (jsStdio's/jsListen's own goroutine clears it — jsClose is currently a no-op and does NOT clear it)
 	reqSeq  atomic.Int64 // monotonic counter backing newRequestContext's requestId
+
+	// Resource-subscription state (Task 5). subscribeMu guards all three
+	// fields below: subscribed, onSubscribeCB, onUnsubscribeCB. They are
+	// touched from both the main script goroutine (on-loop, via
+	// jsOnSubscribe/jsOnUnsubscribe registering a callback) and the go-sdk's
+	// own request-handling goroutines (via the SubscribeHandler/
+	// UnsubscribeHandler dispatchers set in mcp.serve, which record into
+	// `subscribed` and read the callbacks) — hence the mutex rather than
+	// relying on the event loop's single-threadedness the way most of this
+	// file's goja access does.
+	subscribeMu     sync.Mutex
+	subscribed      map[string]struct{}
+	onSubscribeCB   *scriptengine.LoopCallable
+	onUnsubscribeCB *scriptengine.LoopCallable
+}
+
+// recordSubscribe marks uri as subscribed in ms's own tracking set. Called
+// from the SDK's SubscribeHandler dispatcher (an SDK goroutine, not the
+// loop) — mutex-guarded because it races jsOnSubscribe/jsOnUnsubscribe
+// registering a callback from the main script. Note the go-sdk already
+// tracks per-session subscriptions itself (resourceSubscriptions in
+// server.go) and filters ResourceUpdated's notification fan-out by it; this
+// set is purely ms's own bookkeeping, independent of that internal state.
+func (ms *mcpServer) recordSubscribe(uri string) {
+	ms.subscribeMu.Lock()
+	defer ms.subscribeMu.Unlock()
+	if ms.subscribed == nil {
+		ms.subscribed = make(map[string]struct{})
+	}
+	ms.subscribed[uri] = struct{}{}
+}
+
+// recordUnsubscribe removes uri from ms's tracking set. See recordSubscribe.
+func (ms *mcpServer) recordUnsubscribe(uri string) {
+	ms.subscribeMu.Lock()
+	defer ms.subscribeMu.Unlock()
+	delete(ms.subscribed, uri)
+}
+
+// getOnSubscribe/getOnUnsubscribe return the currently-registered JS
+// callback (nil if none was ever set via jsOnSubscribe/jsOnUnsubscribe),
+// mutex-guarded for the same cross-goroutine reason as recordSubscribe.
+func (ms *mcpServer) getOnSubscribe() *scriptengine.LoopCallable {
+	ms.subscribeMu.Lock()
+	defer ms.subscribeMu.Unlock()
+	return ms.onSubscribeCB
+}
+
+func (ms *mcpServer) getOnUnsubscribe() *scriptengine.LoopCallable {
+	ms.subscribeMu.Lock()
+	defer ms.subscribeMu.Unlock()
+	return ms.onUnsubscribeCB
+}
+
+// setOnSubscribe/setOnUnsubscribe store the JS callback registered via
+// srv.onSubscribe(fn)/srv.onUnsubscribe(fn). Called on-loop (jsOnSubscribe/
+// jsOnUnsubscribe run as goja bindings), but still mutex-guarded since the
+// SDK's dispatcher goroutines read the same field concurrently.
+func (ms *mcpServer) setOnSubscribe(lc *scriptengine.LoopCallable) {
+	ms.subscribeMu.Lock()
+	defer ms.subscribeMu.Unlock()
+	ms.onSubscribeCB = lc
+}
+
+func (ms *mcpServer) setOnUnsubscribe(lc *scriptengine.LoopCallable) {
+	ms.subscribeMu.Lock()
+	defer ms.subscribeMu.Unlock()
+	ms.onUnsubscribeCB = lc
 }
 
 // newRequestContext builds the `ctx` object passed as the 2nd argument to
@@ -557,6 +626,88 @@ func (ms *mcpServer) jsRemovePrompt(call goja.FunctionCall) goja.Value {
 	name := ms.requireNonEmptyStringArg("mcp.removePrompt", call)
 	ms.srv.RemovePrompts(name)
 	return goja.Undefined()
+}
+
+// requireFunctionArg validates that call's first argument is a callable JS
+// function, panicking with a goja TypeError (labelled with `who`) otherwise.
+// Shared by jsOnSubscribe/jsOnUnsubscribe.
+func (ms *mcpServer) requireFunctionArg(who string, call goja.FunctionCall) goja.Callable {
+	fn, isFn := goja.AssertFunction(call.Argument(0))
+	if !isFn {
+		panic(ms.vm.NewTypeError(fmt.Sprintf("%s: a function is required", who)))
+	}
+	return fn
+}
+
+// jsOnSubscribe implements srv.onSubscribe(fn): registers a best-effort JS
+// hook invoked whenever a client subscribes to a resource (via the
+// SubscribeHandler dispatcher set in mcp.serve). fn receives the subscribed
+// URI as its sole argument; its return value (and any error/rejection) is
+// ignored — see the SubscribeHandler dispatcher's doc comment for why this
+// is deliberately fire-and-forget rather than able to fail the subscribe.
+//
+// Only one onSubscribe callback is held at a time; a later call to
+// srv.onSubscribe replaces the earlier registration (last-writer-wins,
+// same as this handle's other single-slot registrations).
+func (ms *mcpServer) jsOnSubscribe(call goja.FunctionCall) goja.Value {
+	fn := ms.requireFunctionArg("mcp.onSubscribe", call)
+	ms.setOnSubscribe(scriptengine.NewLoopCallable(ms.loop, fn))
+	return goja.Undefined()
+}
+
+// jsOnUnsubscribe implements srv.onUnsubscribe(fn): the unsubscribe-side
+// mirror of jsOnSubscribe, invoked whenever a client unsubscribes (via the
+// UnsubscribeHandler dispatcher set in mcp.serve). Same fire-and-forget,
+// last-writer-wins contract.
+func (ms *mcpServer) jsOnUnsubscribe(call goja.FunctionCall) goja.Value {
+	fn := ms.requireFunctionArg("mcp.onUnsubscribe", call)
+	ms.setOnUnsubscribe(scriptengine.NewLoopCallable(ms.loop, fn))
+	return goja.Undefined()
+}
+
+// jsResourceUpdated implements srv.resourceUpdated(uri): Promise<void>,
+// notifying every client currently subscribed to uri that the resource has
+// changed. This is the primary way a script signals a resource update — the
+// go-sdk's Server.ResourceUpdated does the actual subscriber lookup and
+// notification fan-out (see recordSubscribe's doc comment: the SDK tracks
+// per-session subscriptions itself, independent of ms's own bookkeeping
+// set).
+//
+// Same off-loop-I/O / on-loop-settle shape as jsCtxProgress/jsCtxLog: the
+// SDK call runs in a goroutine (ResourceUpdated does network/pipe I/O and
+// must never block goja), and the goroutine settles the returned Promise
+// back on the loop via RunOnLoop, with a deferred recover guarding the
+// settle callback so a panic there rejects instead of crashing the
+// eventloop's job runner.
+func (ms *mcpServer) jsResourceUpdated(call goja.FunctionCall) goja.Value {
+	arg := call.Argument(0)
+	if goja.IsUndefined(arg) || goja.IsNull(arg) {
+		panic(ms.vm.NewTypeError("mcp.resourceUpdated: a uri is required"))
+	}
+	uri := arg.String()
+	if uri == "" {
+		panic(ms.vm.NewTypeError("mcp.resourceUpdated: a non-empty uri is required"))
+	}
+
+	p, resolve, reject := ms.vm.NewPromise()
+
+	go func() {
+		notifyErr := ms.srv.ResourceUpdated(context.Background(), &mcp.ResourceUpdatedNotificationParams{URI: uri})
+		ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+			defer func() {
+				if r := recover(); r != nil {
+					_ = reject(vm.NewGoError(fmt.Errorf("mcp: resourceUpdated settle panicked: %v", r)))
+				}
+			}()
+			if notifyErr != nil {
+				_ = reject(vm.NewGoError(notifyErr))
+				return
+			}
+			_ = resolve(goja.Undefined())
+		})
+	}()
+
+	return ms.vm.ToValue(p)
 }
 
 // jsStdio implements srv.stdio(): serve the MCP server over stdin/stdout using
