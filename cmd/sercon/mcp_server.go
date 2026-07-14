@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -100,12 +101,77 @@ func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
 	})
 	return goja.Undefined()
 }
-// The methods below are intentional stubs: resource/prompt registration and
-// the stdio/listen transports are filled in by later tasks. close() is a
-// no-op until a transport (and therefore a HoldRun) exists to release.
+
+// jsResource implements srv.resource({ uri, name, mimeType?, read }). It
+// registers a real SDK resource whose ResourceHandler bridges into the JS
+// `read` function through callJSHandler — the same mechanism jsTool uses,
+// swapping the SDK call (AddResource instead of AddTool) and the result
+// converter (toReadResourceResult instead of toToolResult).
+//
+// Unlike a tool handler's error (surfaced as an isError CallToolResult), a
+// resource read error is a protocol-level failure: the handler below returns
+// (nil, err) straight to the SDK rather than wrapping it in a result value.
+//
+// Registration must happen before the server is serving, for the same
+// list-changed-notification reason documented on jsTool.
 func (ms *mcpServer) jsResource(call goja.FunctionCall) goja.Value {
-	panic(ms.vm.NewTypeError("mcp: resource() not yet implemented"))
+	if ms.started {
+		panic(ms.vm.NewGoError(errAlreadyStarted))
+	}
+	spec, ok := call.Argument(0).Export().(map[string]any)
+	if !ok {
+		panic(ms.vm.NewTypeError("mcp.resource: a spec object is required"))
+	}
+	uri, _ := spec["uri"].(string)
+	if uri == "" {
+		panic(ms.vm.NewTypeError("mcp.resource: `uri` is required"))
+	}
+	name, _ := spec["name"].(string)
+	if name == "" {
+		panic(ms.vm.NewTypeError("mcp.resource: `name` is required"))
+	}
+	mimeType, _ := spec["mimeType"].(string)
+
+	hv := ms.vm.ToValue(spec["read"])
+	fn, isFn := goja.AssertFunction(hv)
+	if !isFn {
+		panic(ms.vm.NewTypeError("mcp.resource: `read` must be a function"))
+	}
+	lc := scriptengine.NewLoopCallable(ms.loop, fn)
+
+	ms.srv.AddResource(&mcp.Resource{URI: uri, Name: name, MIMEType: mimeType}, func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		requestedURI := req.Params.URI
+		out, err := ms.callJSHandler(lc,
+			func(vm *goja.Runtime) []goja.Value {
+				// Second arg is the request-context placeholder (filled by a
+				// later task); the two-arg JS read(uri, ctx) signature is
+				// stable now, matching jsTool's handler shape.
+				return []goja.Value{vm.ToValue(requestedURI), goja.Undefined()}
+			},
+			func(vm *goja.Runtime, v goja.Value) (any, error) {
+				return toReadResourceResult(vm, requestedURI, mimeType, v)
+			},
+		)
+		if err != nil {
+			// A resource read failure is a protocol-level error, not an
+			// isError result (there's no such shape for resources/read) — it
+			// propagates straight to the SDK's error response.
+			return nil, err
+		}
+		// convert always yields *mcp.ReadResourceResult on the success path;
+		// the comma-ok guard keeps a future convert change from panicking.
+		result, ok := out.(*mcp.ReadResourceResult)
+		if !ok {
+			return nil, errors.New("mcp: internal resource result conversion failed")
+		}
+		return result, nil
+	})
+	return goja.Undefined()
 }
+
+// The methods below are intentional stubs: prompt registration and the
+// stdio/listen transports are filled in by later tasks. close() is a no-op
+// until a transport (and therefore a HoldRun) exists to release.
 func (ms *mcpServer) jsPrompt(call goja.FunctionCall) goja.Value {
 	panic(ms.vm.NewTypeError("mcp: prompt() not yet implemented"))
 }

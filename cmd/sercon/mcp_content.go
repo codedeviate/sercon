@@ -162,6 +162,57 @@ func toEmbeddedResource(v any) (*mcp.EmbeddedResource, error) {
 	return &mcp.EmbeddedResource{Resource: rc}, nil
 }
 
+// toReadResourceResult converts a JS resource `read` handler's settled return
+// value into an SDK *mcp.ReadResourceResult, mirroring toToolResult's
+// on-the-loop conversion contract (v is exported immediately; no goja.Value
+// is retained past this call). uri is the requested URI (from
+// ReadResourceRequest.Params.URI, not the handler's return value — the
+// result always echoes back what was asked for) and mimeType is the
+// resource's registered MIMEType; both are stamped onto the single
+// ResourceContents produced.
+//
+// Supported shapes:
+//   - {text: string} -> one ResourceContents with Text set.
+//   - {blob: <base64 string|Uint8Array|ArrayBuffer>} -> one ResourceContents
+//     with Blob set, decoded via decodeContentData (the same helper
+//     toContentList/toEmbeddedResource use for image/audio/resource blobs —
+//     deliberately not duplicated here).
+//
+// Unlike toToolResult, an unrecognised shape is a Go error (not an isError
+// result): there's no isError-equivalent field on ReadResourceResult, so a
+// malformed handler return is indistinguishable from any other resource-read
+// failure and propagates as a protocol error via jsResource's convert path.
+func toReadResourceResult(_ *goja.Runtime, uri, mimeType string, v goja.Value) (*mcp.ReadResourceResult, error) {
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return nil, fmt.Errorf("mcp resource result: read handler for %q returned no value", uri)
+	}
+
+	m, ok := v.Export().(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("mcp resource result: want an object with `text` or `blob`, got %T", v.Export())
+	}
+
+	rc := &mcp.ResourceContents{URI: uri, MIMEType: mimeType}
+
+	if text, has := m["text"]; has {
+		s, ok := text.(string)
+		if !ok {
+			return nil, fmt.Errorf("mcp resource result: `text` must be a string, got %T", text)
+		}
+		rc.Text = s
+	} else if blob, has := m["blob"]; has {
+		b, err := decodeContentData(blob)
+		if err != nil {
+			return nil, fmt.Errorf("mcp resource result: blob: %w", err)
+		}
+		rc.Blob = b
+	} else {
+		return nil, fmt.Errorf("mcp resource result: object must have `text` or `blob`")
+	}
+
+	return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{rc}}, nil
+}
+
 // decodeContentData coerces an already-exported JS `data` value into raw
 // bytes for Image/AudioContent.Data (which the SDK marshals as base64 on
 // the wire, per the `// base64-encoded` comment in the SDK's content.go).

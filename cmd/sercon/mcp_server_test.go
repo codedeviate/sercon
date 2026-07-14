@@ -190,3 +190,104 @@ test.ready();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPResource drives JS-defined resources end to end: a script builds an
+// mcpServer, registers a text resource and a blob resource via
+// srv.resource(...), and signals readiness; the Go side then connects an
+// in-memory client and reads each resource, asserting the bridge
+// (callJSHandler + toReadResourceResult) round-trips a {text} result and a
+// {blob} result (base64 string decoded to bytes).
+//
+// Mirrors TestMCPTool's harness (the `test` namespace replicates mcp.serve's
+// construction so the Go side can capture the *mcpServer); everything under
+// srv.resource — jsResource, the SDK ResourceHandler, callJSHandler's on-loop
+// conversion, and toReadResourceResult — is the real production code path.
+func TestMCPResource(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	ready := make(chan struct{})
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{
+					eng: eng, vm: vm, loop: loop,
+					srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil),
+				}
+				return ms.handle(vm)
+			},
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-resource")
+				go func() {
+					defer release()
+					<-done
+				}()
+				close(ready)
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "resource.ts", `
+const srv = test.serve();
+srv.resource({ uri: "text://greeting", name: "greeting", mimeType: "text/plain", read: (uri) => ({ text: "hello-" + uri }) });
+srv.resource({ uri: "blob://data", name: "data", mimeType: "application/octet-stream", read: (uri) => ({ blob: "aGVsbG8=" }) });
+test.ready();
+`)
+		runErr <- err
+	}()
+
+	<-ready
+
+	sess, err := connectInMemory(ctx, ms.srv)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	// (a) read handler returning {text} -> one ResourceContents with Text set.
+	res, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "text://greeting"})
+	if err != nil {
+		close(done)
+		t.Fatalf("read text://greeting: %v", err)
+	}
+	if len(res.Contents) != 1 {
+		close(done)
+		t.Fatalf("text://greeting: want 1 content, got %d", len(res.Contents))
+	}
+	if c := res.Contents[0]; c.URI != "text://greeting" || c.MIMEType != "text/plain" || c.Text != "hello-text://greeting" {
+		close(done)
+		t.Fatalf("text://greeting: unexpected contents %#v", c)
+	}
+
+	// (b) read handler returning {blob} -> one ResourceContents with the
+	// base64 string decoded to raw bytes.
+	res, err = sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "blob://data"})
+	if err != nil {
+		close(done)
+		t.Fatalf("read blob://data: %v", err)
+	}
+	if len(res.Contents) != 1 {
+		close(done)
+		t.Fatalf("blob://data: want 1 content, got %d", len(res.Contents))
+	}
+	if c := res.Contents[0]; c.URI != "blob://data" || c.MIMEType != "application/octet-stream" || string(c.Blob) != "hello" {
+		close(done)
+		t.Fatalf("blob://data: unexpected contents %#v", c)
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
