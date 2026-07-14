@@ -101,6 +101,7 @@ treatment.
 | `image` | decode/encode/transform images | [§5.11](#511-image) |
 | `web` | fetch + parse: feeds, sitemaps, HTML | [§5.12](#512-web) |
 | `audio` | read/write/convert audio, steganography | [§5.13](#513-audio) |
+| `mcp` | Model Context Protocol server: tools/resources/prompts over stdio or HTTP | [§5.15](#515-mcp) |
 | `console` | browser/Node-compatible logging shim | [§5.1](#51-console-browsernode-compatibility) |
 
 The full per-binding signatures live in the generated
@@ -6013,6 +6014,204 @@ try {
   runtime.log(`ec2 skip: ${e.code || "transport"} — ${e.message}`);
 }
 ```
+
+### 5.15 `mcp`
+
+The `mcp` global turns a sercon script into a **Model Context Protocol
+(MCP) server**: a process that exposes tools, resources, and prompts to
+an MCP *client* — typically an LLM agent such as Claude Desktop, or any
+other MCP-speaking host. `mcp.serve({name, version, instructions?})`
+returns a handle you register capabilities on, then serve over one of
+two transports.
+
+> **Two views of the surface.** This section is the *guide*: what each
+> piece is for and how to use it, with runnable examples. §17.9 is the
+> generated *reference*: the exact TypeScript signature of every method
+> below. Use them together.
+
+#### 5.15.1 Concepts
+
+**The three primitives.** A server exposes any mix of:
+
+| Primitive | Registered with | Purpose | Failure surfaces as |
+|---|---|---|---|
+| Tool | `srv.tool({name, description?, inputSchema, outputSchema?, handler})` | A callable action (an LLM invokes it with arguments and gets a result back). | An `isError: true` tool result — a thrown/rejected handler does **not** crash the server or the call. |
+| Resource | `srv.resource({uri, name, mimeType?, read})` | A URI-addressed piece of content a client can fetch (a file, a config blob, a generated report). | A protocol-level `resources/read` error — there is no soft-failure shape for resources. |
+| Prompt | `srv.prompt({name, description?, arguments?, get})` | A named, parameterized conversation-starter template a client can pull. | A protocol-level `prompts/get` error, same as resources. |
+
+All three handlers receive `(args, ctx)` (resource's `read` receives
+`(uri, ctx)`, prompt's `get` receives `(args, ctx)`), where `ctx` is
+`{ requestId, clientInfo: { name, version } }` — useful for logging or
+per-client behaviour. Handlers may be sync or async. Register every tool/
+resource/prompt **before** starting a transport — registering afterward
+throws (`mcp: server already started …`); adding capabilities to an
+already-serving connection needs a list-changed notification, which is
+planned for a later phase (see below).
+
+**The two transports.** A handle serves over exactly one transport,
+chosen by which method you call:
+
+| Transport | Call | Platform | Shape |
+|---|---|---|---|
+| stdio | `await srv.stdio()` | **Unix-only this phase** — rejects immediately on Windows with a clear error (`mcp: stdio() is not supported on windows …`); use `listen()` there instead. | One peer per process, over stdin/stdout. The shape Claude Desktop and most CLI-launched MCP clients expect. |
+| Streamable HTTP | `const h = await srv.listen({port, host?, path?})` | Cross-platform. | A plain TCP/HTTP endpoint any number of clients can connect to. Resolves as soon as the listener is bound (not when a client connects) to `{ url, stopped, close() }`. |
+
+Calling either a second time on the same handle throws — one handle
+serves one transport. `srv.close()` is currently a no-op placeholder:
+stop an HTTP listener via the `close()` on the handle `listen()`
+returned; a stdio server stops on its own once the peer disconnects.
+
+**The stdout rule (stdio only).** MCP over stdio is a *framing* protocol
+— every byte on stdout must be a JSON-RPC message, or the client's
+parser desyncs and the connection is unusable. From the moment
+`mcp.serve()` is called, sercon transparently redirects `console.*` and
+`runtime.log` output to stderr, so ordinary debug logging in your script
+can't corrupt the stream. Nothing else needs to change in your script —
+just don't try to write to stdout yourself via a lower-level binding
+while a stdio server is running. This constraint doesn't apply to
+`listen()`: HTTP has no shared framing channel to protect.
+
+**Capability negotiation.** During MCP's `initialize` handshake, the SDK
+advertises only the capabilities you actually registered (a server with
+no prompts doesn't claim prompt support, and so on) and reports
+`serverInfo` from your `name`/`version`; `instructions` (optional) is
+surfaced to the client as free-text guidance on how to use the server.
+None of this requires script-side code — it falls out of what you called
+`tool()`/`resource()`/`prompt()` with before serving.
+
+**Not yet available.** Sampling (`ctx.sample` — asking the *client's*
+LLM to generate something), elicitation (`ctx.elicit` — asking the user
+a follow-up question mid-call), resource subscriptions and
+`list-changed` notifications, pagination, progress/logging
+notifications, resource templates, and roots are all planned for later
+phases — not present in this release. Build tools/resources/prompts
+around request/response for now; don't reach for these until they ship.
+
+#### 5.15.2 Recipes
+
+Each recipe assumes `const srv = mcp.serve({ name: "...", version: "1.0.0" });`
+has already registered whatever tools it needs (except where the recipe
+itself is about registration). Full signatures are in §17.9.
+
+##### 5.15.2.1 Expose a sercon capability as an MCP tool
+
+Wrap an existing sercon binding in a tool so an MCP client can invoke it
+directly — here, a DNS-ish lookup via `net.probe`.
+
+```ts
+const srv = mcp.serve({ name: "recon-tools", version: "1.0.0" });
+
+srv.tool({
+  name: "resolve_host",
+  description: "resolve a hostname's DNS records",
+  inputSchema: {
+    type: "object",
+    properties: { host: { type: "string" } },
+    required: ["host"],
+  },
+  async handler(args) {
+    const result = await net.probe.dns(args.host);
+    return { structuredContent: result };
+  },
+});
+```
+
+**Notes**
+- Returning `{ structuredContent }` lets a client consume the result as
+  structured data (validated against `outputSchema`, if you supply one)
+  instead of parsing text.
+- A handler that throws (e.g. the hostname doesn't resolve) becomes an
+  `isError: true` tool result — the client sees a failed call, not a
+  crashed server.
+
+##### 5.15.2.2 Run a stdio MCP server for Claude Desktop
+
+Claude Desktop (and similar hosts) launch an MCP server as a subprocess
+and speak to it over stdio. Point the client config at the script and
+call `srv.stdio()`:
+
+```ts
+// server.ts
+const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
+
+srv.tool({
+  name: "add",
+  description: "add two numbers",
+  inputSchema: {
+    type: "object",
+    properties: { a: { type: "number" }, b: { type: "number" } },
+    required: ["a", "b"],
+  },
+  async handler(args) {
+    return String(args.a + args.b);
+  },
+});
+
+await srv.stdio();
+```
+
+Add it to the client's MCP server config (e.g. Claude Desktop's
+`claude_desktop_config.json`, under `mcpServers`):
+
+```json
+{
+  "mcpServers": {
+    "my-tools": {
+      "command": "sercon",
+      "args": ["server.ts"]
+    }
+  }
+}
+```
+
+**Notes**
+- Unix-only this phase — on Windows, `srv.stdio()`'s promise rejects
+  immediately; use `listen()` there instead.
+- Any `console.log`/`runtime.log` calls in `server.ts` land on stderr,
+  never stdout — safe to leave debug logging in place.
+- The script blocks on `await srv.stdio()` until the client disconnects;
+  that's expected — the client owns the process lifecycle.
+
+##### 5.15.2.3 Serve MCP over HTTP
+
+For a long-running server reachable by more than one client (or on
+Windows), bind the Streamable HTTP transport instead:
+
+```ts
+const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
+
+srv.tool({
+  name: "add",
+  description: "add two numbers",
+  inputSchema: {
+    type: "object",
+    properties: { a: { type: "number" }, b: { type: "number" } },
+    required: ["a", "b"],
+  },
+  async handler(args) {
+    return String(args.a + args.b);
+  },
+});
+
+const h = await srv.listen({ port: 38080 });
+runtime.log("MCP server listening at", h.url); // e.g. http://127.0.0.1:38080/mcp
+
+// ... later, on shutdown:
+await h.close();
+```
+
+**Notes**
+- `listen()`'s promise resolves as soon as the port is bound, not when a
+  client connects; `h.stopped` resolves once the HTTP server has fully
+  stopped, and `h.close()` returns that same promise after starting a
+  graceful shutdown.
+- Point any Streamable-HTTP-capable MCP client at `h.url`; the endpoint
+  speaks the standard `initialize` → `notifications/initialized` →
+  request/response handshake over POST, with SSE-framed responses — see
+  `examples/scripts/mcp-server-http.ts` for a from-scratch client walking
+  through that handshake by hand.
+- `path` defaults to `/mcp` and `host` to `127.0.0.1`; override either in
+  the `listen()` options if you need to bind wider or mount elsewhere.
 
 ## 6. Servers
 
@@ -13294,13 +13493,188 @@ Produce an exactly width × height thumbnail by scaling and centre-cropping to f
 const sq = im.thumbnail(128, 128);
 ```
 
-### 17.9 net
+### 17.9 mcp
+
+Model Context Protocol server: mcp.serve({name, version, instructions?}) returns a handle for registering tools/resources/prompts with JS handlers, then serving them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk.
+
+#### 17.9.1 mcp.serve
+
+```
+serve(config: { name: string; version: string; instructions?: string }): {
+  tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void;
+  resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void;
+  prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void;
+  stdio(): Promise<void>;
+  listen(opts: { port: number; host?: string; path?: string }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>;
+  close(): void;
+}
+```
+
+Create an MCP (Model Context Protocol) server. Register zero or more tools/resources/prompts on the returned handle, then serve them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk; only one transport may be started per handle, and registering a capability after a transport has started throws.
+
+**Parameters**
+
+- `config` *({ name: string; version: string; instructions?: string })* — name/version identify this server to clients during MCP's initialize handshake (surfaced to the client as serverInfo). instructions is an optional free-text hint about how to use this server (tone, expected workflow), surfaced to clients/LLMs during capability negotiation.
+
+**Returns:** A handle for registering capabilities and starting a transport: tool()/resource()/prompt() register handlers (only before a transport starts); stdio()/listen() start serving — mutually exclusive, starting a second transport on the same handle throws; close() is currently an inert placeholder (see serve.close).
+
+**Throws:** Throws synchronously (not a rejected promise) if config is missing/not an object, or name/version is missing or empty.
+
+```ts
+const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
+srv.tool({
+  name: "add",
+  description: "add two numbers",
+  inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] },
+  async handler(args) { return String(args.a + args.b); },
+});
+await srv.stdio();
+```
+
+##### 17.9.1.1 mcp.serve.close
+
+```
+close(): void
+```
+
+Present on the handle for interface symmetry, but currently a no-op — it does not stop a running transport. To stop an HTTP listener, call the close() on the handle returned by listen(); a stdio server stops on its own once the peer disconnects (its stdio() promise settles then). A future phase may wire this into an explicit shutdown path.
+
+**Returns:** Nothing; calling it has no observable effect on a running transport.
+
+**Throws:** Never throws.
+
+```ts
+const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
+srv.close(); // currently a no-op; use the listen() handle's close(), or let stdio() resolve on disconnect
+```
+
+##### 17.9.1.2 mcp.serve.listen
+
+```
+listen(opts: { port: number; host?: string; path?: string }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>
+```
+
+Serve this handle over the Streamable HTTP transport — a cross-platform, multi-client-capable alternative to stdio(): any number of clients can connect to a plain TCP/HTTP endpoint, rather than one client per subprocess.
+
+**Parameters**
+
+- `opts` *({ port: number; host?: string; path?: string })* — port: the TCP port to bind (required). host: bind interface, defaults to "127.0.0.1". path: the HTTP path the MCP endpoint is mounted at, defaults to "/mcp".
+
+**Returns:** A promise that resolves as soon as the listener is bound (not when a client connects) to a handle: url is the full endpoint URL (e.g. "http://127.0.0.1:38080/mcp"); stopped resolves when the HTTP server stops (rejects on a non-close Serve error); close() begins a graceful shutdown and returns the same stopped promise.
+
+**Throws:** Throws synchronously if a transport is already running on this handle, opts is missing/not an object, or port is missing. Throws (wrapping the bind error) if the listener fails to bind (e.g. address already in use) — a bind failure does NOT mark the handle as started, so listen() may be retried with a different port on the same handle.
+
+```ts
+const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
+srv.tool({ name: "ping", inputSchema: { type: "object" }, handler: () => "pong" });
+const h = await srv.listen({ port: 38080 });
+runtime.log("listening at", h.url);
+// ... later
+await h.close();
+```
+
+##### 17.9.1.3 mcp.serve.prompt
+
+```
+prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void
+```
+
+Register a prompt: a named, parameterized template clients can fetch to seed a conversation. Must be called before the server starts serving, for the same list-changed-notification reason as serve.tool.
+
+**Parameters**
+
+- `spec` *({ name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> })* — name: unique prompt name. description: shown to clients when listing prompts. arguments: the prompt's declared parameters (name/description/required), advertised so clients know what to supply. get(args, ctx): sync or async; must return { description?: string; messages: Array<{ role: string; content: unknown }> } — each message's content follows the same content-item shape as a tool result's content array (e.g. { type: "text", text }). Any other shape, or a thrown/rejected handler, is a protocol-level error.
+
+**Returns:** Nothing — registers the prompt on the handle.
+
+**Throws:** Throws synchronously if the server has already started serving, spec is not an object, name is missing/empty, arguments is present but not an array (or an entry is missing name), or get is not a function. A get handler that throws, rejects, or returns a malformed result propagates as a prompts/get protocol error to the client — there is no isError-style soft failure for prompts.
+
+```ts
+srv.prompt({
+  name: "greet",
+  description: "greet a user by name",
+  arguments: [{ name: "user", required: true }],
+  get: async (args) => ({
+    messages: [{ role: "user", content: { type: "text", text: `Say hello to ${args.user}.` } }],
+  }),
+});
+```
+
+##### 17.9.1.4 mcp.serve.resource
+
+```
+resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void
+```
+
+Register a resource: a URI-addressed piece of content clients can read (e.g. a file, a config blob, a generated report). Must be called before the server starts serving, for the same list-changed-notification reason as serve.tool.
+
+**Parameters**
+
+- `spec` *({ uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> })* — uri: the resource's identifier (any URI scheme, e.g. "file:///report.txt" or a custom scheme). name: a human-readable label shown when listing resources. mimeType: optional content-type hint. read(uri, ctx): sync or async; must return { text: string } or { blob: string | Uint8Array | ArrayBuffer } (blob accepts a base64 string or raw bytes) — any other shape, or a thrown/rejected handler, is a protocol-level error, unlike a tool handler's soft isError failure.
+
+**Returns:** Nothing — registers the resource on the handle.
+
+**Throws:** Throws synchronously if the server has already started serving, spec is not an object, uri or name is missing/empty, or read is not a function. A read handler that throws, rejects, or returns a value without text or blob propagates as a resources/read protocol error to the client — there is no isError-style soft failure for resources.
+
+```ts
+srv.resource({
+  uri: "config://app",
+  name: "App config",
+  mimeType: "application/json",
+  read: async () => ({ text: JSON.stringify({ debug: true }) }),
+});
+```
+
+##### 17.9.1.5 mcp.serve.stdio
+
+```
+stdio(): Promise<void>
+```
+
+Serve this handle over stdio (newline-delimited JSON-RPC on stdin/stdout) — the transport clients like Claude Desktop use when they launch this script as a subprocess. Unix-only this phase: on Windows the returned promise rejects immediately with a clear error (stdout can't be safely separated from the JSON-RPC stream there) — use listen() instead. sercon's own output (console.*, runtime.log) is transparently redirected to stderr starting the moment mcp.serve() is called (not just once stdio() begins), so stdout carries only protocol frames for the lifetime of the connection.
+
+**Returns:** A promise that resolves once the client disconnects (stdin closes / the session ends) and rejects if the transport fails to start (e.g. on Windows) or the JSON-RPC session ends with an error.
+
+**Throws:** Throws synchronously if a transport is already running on this handle (stdio()/listen() already called). The returned promise rejects on Windows with "mcp: stdio() is not supported on windows (console output cannot be separated from the JSON-RPC stream); use listen() instead", or if the underlying session ends abnormally.
+
+```ts
+const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
+srv.tool({ name: "ping", inputSchema: { type: "object" }, handler: () => "pong" });
+await srv.stdio();
+```
+
+##### 17.9.1.6 mcp.serve.tool
+
+```
+tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> }): void
+```
+
+Register a tool: a named, schema-described callable that MCP clients (typically an LLM agent) can invoke. Must be called before the server starts serving (stdio()/listen()) — registering after start throws (adding tools to an already-serving connection needs a list-changed notification, a later phase).
+
+**Parameters**
+
+- `spec` *({ name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string } }): unknown | Promise<unknown> })* — name: unique tool name presented to clients. description: shown to the client/LLM to help it decide when to call this tool. inputSchema: a JSON Schema object describing the call arguments — passed through to the SDK as-is (not validated by sercon itself). outputSchema: optional JSON Schema describing structuredContent. handler(args, ctx): sync or async; may return a plain string (wrapped as a single text content item), an object shaped { content?, structuredContent?, isError? }, or throw/reject — a thrown or rejected handler is NOT a protocol error, it surfaces to the client as a tool result with isError: true.
+
+**Returns:** Nothing — registers the tool on the handle. Call multiple times to register multiple tools.
+
+**Throws:** Throws synchronously if the server has already started serving, spec is not an object, name is missing/empty, or handler is not a function. A handler that throws or returns a rejected promise does not throw here — it surfaces per-call as an { isError: true } tool result seen by the client, not a synchronous or protocol-level error.
+
+```ts
+srv.tool({
+  name: "add",
+  description: "add two numbers",
+  inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] },
+  async handler(args) { return String(args.a + args.b); },
+});
+```
+
+### 17.10 net
 
 Network clients and probes: HTTP, TCP/DNS/TLS/NTP/WHOIS probes, netstatus, email auth, browser-style sessions.
 
-#### 17.9.1 net.browser
+#### 17.10.1 net.browser
 
-##### 17.9.1.1 net.browser.open
+##### 17.10.1.1 net.browser.open
 
 ```
 open(...args: unknown[]): Promise<{ setUserAgent(ua: string): void, setHeader(name: string, value: string): void, get(url: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, post(url: string, body?: string): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, url: string }>, cookies(url: string): Promise<{ name: string, value: string }[]> }>
@@ -13320,9 +13694,9 @@ const home = await b.get("https://site/home");
 runtime.log(await b.cookies("https://site/"));
 ```
 
-#### 17.9.2 net.capture
+#### 17.10.2 net.capture
 
-##### 17.9.2.1 net.capture.interfaces
+##### 17.10.2.1 net.capture.interfaces
 
 ```
 interfaces(): { name: string; addresses: string[]; up: boolean; loopback: boolean }[]
@@ -13338,7 +13712,7 @@ List the host's network interfaces synchronously: net.capture.interfaces() → a
 for (const i of net.capture.interfaces()) runtime.log(i.name, i.up);
 ```
 
-##### 17.9.2.2 net.capture.open
+##### 17.10.2.2 net.capture.open
 
 ```
 open(opts: { iface: string, promisc?: boolean, snaplen?: number, filter?: string }, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: { src: string, dst: string, type: string }, vlan?: { id: number, priority: number, drop: boolean, type: string }, arp?: { operation: string, senderMac: string, senderIp: string, targetMac: string, targetIp: string }, ip?: { version: number, src: string, dst: string, protocol: string, ttl: number }, tcp?: { srcPort: number, dstPort: number, seq: number, ack: number, window: number, checksum: number, flags: { syn: boolean, ack: boolean, fin: boolean, rst: boolean, psh: boolean, urg: boolean }, options?: { mss?: number, windowScale?: number, sackPermitted?: boolean, timestamps?: { val: number, ecr: number } } }, udp?: { srcPort: number, dstPort: number, length: number }, icmp?: { type: number, code: number }, dns?: { id: number, qr: boolean, opcode: string, rcode: string, questions: { name: string, type: string }[], answers: { name: string, type: string, data: string }[] }, payload?: Uint8Array, bytes: Uint8Array }) => void): Promise<{ iface: string, link: string, close(): Promise<void> }>
@@ -13362,7 +13736,7 @@ const cap = await net.capture.open({ iface: "en0", filter: "tcp and port 443" },
 await cap.close();
 ```
 
-##### 17.9.2.3 net.capture.openFile
+##### 17.10.2.3 net.capture.openFile
 
 ```
 openFile(path: string, onPacket: (pkt: { ts: number, length: number, captureLength: number, link: string, eth?: object, vlan?: object, arp?: object, ip?: object, tcp?: object, udp?: object, icmp?: object, dns?: object, payload?: Uint8Array, bytes: Uint8Array }) => void, opts?: { filter?: string }): Promise<void>
@@ -13384,7 +13758,7 @@ Read a .pcap / .pcapng file: net.capture.openFile(path, pkt => {…}, opts?) →
 await net.capture.openFile("/tmp/dump.pcap", pkt => runtime.log(pkt.tcp?.dstPort), { filter: "tcp" });
 ```
 
-##### 17.9.2.4 net.capture.routes
+##### 17.10.2.4 net.capture.routes
 
 ```
 routes(): { destination: string; gateway: string; interface: string; family: "ip" | "ip6"; metric: number }[]
@@ -13400,7 +13774,7 @@ List the host's IP routing table synchronously: net.capture.routes() → array o
 const def = net.capture.routes().find(r => r.destination === "0.0.0.0/0");\nruntime.log("default via", def?.gateway, "on", def?.interface);
 ```
 
-##### 17.9.2.5 net.capture.toFile
+##### 17.10.2.5 net.capture.toFile
 
 ```
 toFile(path: string, opts?: { snaplen?: number, linkType?: number }): { write(bytes: string | Uint8Array, opts?: { ts?: number }): void; close(): Promise<void> }
@@ -13423,9 +13797,9 @@ w.write(frameBytes, { ts: Date.now() });
 await w.close();
 ```
 
-#### 17.9.3 net.email
+#### 17.10.3 net.email
 
-##### 17.9.3.1 net.email.all
+##### 17.10.3.1 net.email.all
 
 ```
 all(domain: string): Promise<{ domain: string, spf: object, dmarc: object, mtaSts: object, tlsRpt: object, bimi: object }>
@@ -13445,7 +13819,7 @@ Run all five email probes in parallel — five-way handshake aggregate.
 const a = await net.email.all("example.com"); runtime.log(a.spf, a.dmarc);
 ```
 
-##### 17.9.3.2 net.email.bimi
+##### 17.10.3.2 net.email.bimi
 
 ```
 bimi(domain: string, opts?: { selector?: string }): Promise<{ present: false, selector: string } | { present: true, selector: string, record: string, tags: Record<string, string>, l: string, a: string }>
@@ -13466,7 +13840,7 @@ Probe BIMI: TXT(<selector>._bimi.<domain>); selector defaults to 'default'.
 const r = await net.email.bimi("example.com", { selector: "v1" }); runtime.log(r.present && r.l);
 ```
 
-##### 17.9.3.3 net.email.dmarc
+##### 17.10.3.3 net.email.dmarc
 
 ```
 dmarc(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, policy: string, subdomain: string, percent: string, rua: string, ruf: string }>
@@ -13486,7 +13860,7 @@ Query TXT(_dmarc.<domain>) and parse policy / pct / rua / ruf tags.
 const r = await net.email.dmarc("example.com"); runtime.log(r.present && r.policy);
 ```
 
-##### 17.9.3.4 net.email.mtaSts
+##### 17.10.3.4 net.email.mtaSts
 
 ```
 mtaSts(domain: string): Promise<{ present: false } | { present: true, record: string, txt: { v: string, id: string }, policy?: { version?: string, mode?: string, mx?: string[], maxAge?: number | string }, policyError?: string }>
@@ -13506,7 +13880,7 @@ Probe MTA-STS: TXT(_mta-sts.<domain>) plus the fetched policy file.
 const r = await net.email.mtaSts("example.com"); runtime.log(r.present && r.policy?.mode);
 ```
 
-##### 17.9.3.5 net.email.send
+##### 17.10.3.5 net.email.send
 
 ```
 send(opts: { to: string | string[], from: string, subject?: string, body?: string, html?: string, attachments?: { filename: string, contentType?: string, bytes: Uint8Array | ArrayBuffer }[], headers?: Record<string, string>, server: { host: string, port?: number, auth?: { username: string, password: string }, tls?: "starttls" | "tls" | "none" }, timeout?: number }): Promise<{ accepted: string[], rejected: { address: string, reason: string }[] }>
@@ -13530,7 +13904,7 @@ const r = await net.email.send({
 runtime.log(r.accepted, r.rejected);
 ```
 
-##### 17.9.3.6 net.email.spf
+##### 17.10.3.6 net.email.spf
 
 ```
 spf(domain: string): Promise<{ present: false } | { present: true, record: string, mechanisms: string[], allPolicy: string }>
@@ -13550,7 +13924,7 @@ Query TXT(<domain>) for SPF, return record + parsed mechanisms + all-policy.
 const r = await net.email.spf("example.com"); if (r.present) runtime.log(r.allPolicy);
 ```
 
-##### 17.9.3.7 net.email.tlsRpt
+##### 17.10.3.7 net.email.tlsRpt
 
 ```
 tlsRpt(domain: string): Promise<{ present: false } | { present: true, record: string, tags: Record<string, string>, rua: string }>
@@ -13570,9 +13944,9 @@ Probe TLS-RPT: TXT(_smtp._tls.<domain>) and parse rua.
 const r = await net.email.tlsRpt("example.com"); runtime.log(r.present && r.rua);
 ```
 
-#### 17.9.4 net.http
+#### 17.10.4 net.http
 
-##### 17.9.4.1 net.http.get
+##### 17.10.4.1 net.http.get
 
 ```
 get(url: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
@@ -13592,7 +13966,7 @@ Perform an HTTP GET with a 5-second default timeout. Returns { status, body, bod
 const r = await net.http.get("https://example.com"); runtime.log(r.status);
 ```
 
-##### 17.9.4.2 net.http.post
+##### 17.10.4.2 net.http.post
 
 ```
 post(url: string, body?: string): Promise<{ status: number, body: string, bodyBytes: Uint8Array }>
@@ -13613,7 +13987,7 @@ Perform an HTTP POST with a 5-second default timeout. Returns { status, body, bo
 const r = await net.http.post("https://api.example.com/x", JSON.stringify({ a: 1 }));
 ```
 
-##### 17.9.4.3 net.http.request
+##### 17.10.4.3 net.http.request
 
 ```
 request(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string | Uint8Array | ArrayBuffer, multipart?: Array<{ name: string, value: string } | { name: string, filename: string, content: string | Uint8Array | ArrayBuffer, type?: string }>, timeout?: number, retry?: number, follow?: boolean, username?: string, password?: string, maxBytes?: number }): Promise<{ status: number, ok: boolean, headers: Record<string, string>, body: string, bodyBytes: Uint8Array, url: string }>
@@ -13639,9 +14013,9 @@ const r = await net.http.request("POST", "https://api.example.com/upload", { mul
 ] });
 ```
 
-#### 17.9.5 net.icmp
+#### 17.10.5 net.icmp
 
-##### 17.9.5.1 net.icmp.open
+##### 17.10.5.1 net.icmp.open
 
 ```
 open(opts?: { network?: "ip4" | "ip6", readBuffer?: number }): Promise<{ network: string, local: string, send(opts: { to: string, type?: number, code?: number, id?: number, seq?: number, payload?: string | Uint8Array, body?: string | Uint8Array }): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address: string, type: number, code: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -13665,9 +14039,9 @@ await p.send({ to: "8.8.8.8", id: 1, seq: 1, payload: "ping" });
 await p.send({ to: "8.8.8.8", type: 3, code: 1, body: new Uint8Array([0, 0, 0, 0]) });
 ```
 
-#### 17.9.6 net.load
+#### 17.10.6 net.load
 
-##### 17.9.6.1 net.load.http
+##### 17.10.6.1 net.load.http
 
 ```
 http(opts: { url: string, method?: string, headers?: Record<string, string>, body?: string, concurrency?: number, requests?: number, duration?: number, rps?: number, timeout?: number, confirm?: boolean }): Promise<{ target: string, method: string, concurrency: number, durationMs: number, sent: number, completed: number, failed: number, rps: number, errorRate: number, latency: { min: number, mean: number, p50: number, p90: number, p95: number, p99: number, max: number }, statusCounts: Record<string, number>, errors: Record<string, number> }>
@@ -13687,9 +14061,9 @@ Authorized HTTP load / resilience self-test: drive a target with a worker pool a
 const r = await net.load.http({ url: "http://127.0.0.1:8080/", requests: 200, concurrency: 10 }); runtime.log(r.rps, r.latency.p95, r.errorRate);
 ```
 
-#### 17.9.7 net.netstatus
+#### 17.10.7 net.netstatus
 
-##### 17.9.7.1 net.netstatus.check
+##### 17.10.7.1 net.netstatus.check
 
 ```
 check(host: string, opts?: { port?: string, timeout?: number }): Promise<{ host: string, port: string, elapsedMs: number, reachable: boolean, dns: { ok: boolean, ips: string[], error?: string }, tcp: { ok: boolean, latencyMs: number, error?: string }, tls: { ok: boolean, daysRemaining: number, error?: string }, http: { ok: boolean, status: number, error?: string } }>
@@ -13710,9 +14084,9 @@ Run DNS / TCP / TLS / HTTP against one host concurrently. Returns { reachable, d
 const s = await net.netstatus.check("example.com"); runtime.log(s.reachable);
 ```
 
-#### 17.9.8 net.probe
+#### 17.10.8 net.probe
 
-##### 17.9.8.1 net.probe.dns
+##### 17.10.8.1 net.probe.dns
 
 ```
 dns(host: string, opts?: { types?: string[] }): Promise<{ a?: string[], aaaa?: string[], mx?: { preference: number, host: string }[], txt?: string[], cname?: string, ns?: string[] }>
@@ -13733,7 +14107,7 @@ Look up A / AAAA / MX / TXT / CNAME / NS records. Default: all five.
 const r = await net.probe.dns("example.com", { types: ["a", "mx"] });
 ```
 
-##### 17.9.8.2 net.probe.ntp
+##### 17.10.8.2 net.probe.ntp
 
 ```
 ntp(host: string, opts?: { timeout?: number, port?: number | string }): Promise<{ serverTime: string, offsetMs: number, rttMs: number, stratum: number, referenceTime: string, rootDelayMs: number, rootDispersionMs: number }>
@@ -13754,7 +14128,7 @@ Query an NTPv4 server (UDP 123) and report offset, RTT, stratum, root delay / di
 const r = await net.probe.ntp("pool.ntp.org"); runtime.log(r.offsetMs);
 ```
 
-##### 17.9.8.3 net.probe.ping
+##### 17.10.8.3 net.probe.ping
 
 ```
 ping(host: string, opts?: { mode?: "tcp" | "icmp" | "udp", count?: number, timeout?: number, port?: string }): Promise<{ host: string, ip: string, mode: string, sent: number, received: number, lossPercent: number, minMs: number, avgMs: number, maxMs: number }>
@@ -13775,7 +14149,7 @@ Reachability probe. mode tcp (default; dials host:port), icmp (real ICMP echo, n
 const p = await net.probe.ping("example.com", { count: 3 }); runtime.log(p.lossPercent);
 ```
 
-##### 17.9.8.4 net.probe.smtp
+##### 17.10.8.4 net.probe.smtp
 
 ```
 smtp(host: string, opts?: { port?: string, timeout?: number, ehloName?: string }): Promise<{ host: string, port: string, banner: string, ehloDomain: string, extensions: string[], starttls: boolean, authMechanisms: string[], sizeLimit: number }>
@@ -13796,7 +14170,7 @@ SMTP capability probe (no mail sent). EHLO + parse extensions. Returns { banner,
 const s = await net.probe.smtp("mail.example.com"); runtime.log(s.starttls, s.authMechanisms);
 ```
 
-##### 17.9.8.5 net.probe.tcp
+##### 17.10.8.5 net.probe.tcp
 
 ```
 tcp(target: string, opts?: { timeout?: number, port?: string }): Promise<{ host: string, port: number, ip: string, latencyMs: number }>
@@ -13817,7 +14191,7 @@ Dial a TCP target and report latency + resolved IP. Default timeout 5s.
 const r = await net.probe.tcp("example.com:443"); runtime.log(r.latencyMs);
 ```
 
-##### 17.9.8.6 net.probe.tls
+##### 17.10.8.6 net.probe.tls
 
 ```
 tls(target: string, opts?: { timeout?: number }): Promise<{ cn: string, issuer: string, notBefore: string, notAfter: string, daysRemaining: number, dnsNames: string[], serialNumber: string, fingerprintSha256: string }>
@@ -13838,7 +14212,7 @@ Open a TLS connection (InsecureSkipVerify; for probing only) and return the cert
 const c = await net.probe.tls("example.com:443"); runtime.log(c.daysRemaining);
 ```
 
-##### 17.9.8.7 net.probe.traceroute
+##### 17.10.8.7 net.probe.traceroute
 
 ```
 traceroute(host: string, opts?: { protocol?: "icmp" | "udp" | "tcp", port?: number, maxHops?: number, timeout?: number, probes?: number }): Promise<{ ttl: number; address: string | null; rttsMs: number[]; reached: boolean }[]>
@@ -13861,7 +14235,7 @@ const hops = await net.probe.traceroute("1.1.1.1", { protocol: "icmp", maxHops: 
 for (const h of hops) runtime.log(h.ttl, h.address ?? "*", h.rttsMs);
 ```
 
-##### 17.9.8.8 net.probe.whois
+##### 17.10.8.8 net.probe.whois
 
 ```
 whois(domain: string, opts?: { timeout?: number }): Promise<{ raw: string, domain?: { name: string, punycode: string, whoisServer: string, nameServers: string[], status: string[], dnssec: boolean, createdDate: string, updatedDate: string, expirationDate: string }, registrar?: { name: string } }>
@@ -13882,7 +14256,7 @@ Two-hop WHOIS via the IANA referral, returning the parsed record plus the raw re
 const w = await net.probe.whois("example.com"); runtime.log(w.domain?.expirationDate);
 ```
 
-##### 17.9.8.9 net.probe.wss
+##### 17.10.8.9 net.probe.wss
 
 ```
 wss(url: string, opts?: { timeout?: number, ping?: boolean }): Promise<{ url: string, connected: boolean, subprotocol: string, status: number, handshakeMs: number, pingMs: number }>
@@ -13903,9 +14277,9 @@ WebSocket handshake probe. Opens ws://wss:// connection, optional ping/pong RTT.
 const w = await net.probe.wss("wss://echo.websocket.org"); runtime.log(w.handshakeMs);
 ```
 
-#### 17.9.9 net.raw
+#### 17.10.9 net.raw
 
-##### 17.9.9.1 net.raw.open
+##### 17.10.9.1 net.raw.open
 
 ```
 open(opts?: { iface?: string, filter?: string, readBuffer?: number }): Promise<{ link: string; send(spec: object | Uint8Array): Promise<{ bytesSent: number }>; onPacket(cb: (pkt: any) => void): void; onClose(cb: () => void): void; onError(cb: (msg: string) => void): void; close(): Promise<void> }>
@@ -13930,7 +14304,7 @@ await new Promise(r => setTimeout(r, 1000));
 await h.close();
 ```
 
-##### 17.9.9.2 net.raw.tcp
+##### 17.10.9.2 net.raw.tcp
 
 ```
 tcp(host: string, port: number, opts?: { flags?: string[], srcPort?: number, src?: string, seq?: number, ttl?: number, payload?: Uint8Array | string, timeout?: number, iface?: string }): Promise<{ ts: number; link: string; ip: { src: string; dst: string; protocol: string; ttl: number }; tcp: { srcPort: number; dstPort: number; seq: number; ack: number; flags: { syn: boolean; ack: boolean; fin: boolean; rst: boolean; psh: boolean; urg: boolean } }; payload?: Uint8Array; bytes: Uint8Array } | null>
@@ -13956,9 +14330,9 @@ else if (reply && reply.tcp.flags.rst) runtime.log("closed");
 else runtime.log("filtered / no answer");
 ```
 
-#### 17.9.10 net.tcp
+#### 17.10.10 net.tcp
 
-##### 17.9.10.1 net.tcp.connect
+##### 17.10.10.1 net.tcp.connect
 
 ```
 connect(host: string, port: string | number, opts?: { timeout?: number, readBuffer?: number }): Promise<{ remote: string, local: string, write(data: string | Uint8Array): Promise<void>, onData(cb: (ev: { bytes: Uint8Array, text: string }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -13982,9 +14356,9 @@ sock.onData(ev => runtime.log(ev.text));
 await sock.write("GET / HTTP/1.0\r\n\r\n");
 ```
 
-#### 17.9.11 net.udp
+#### 17.10.11 net.udp
 
-##### 17.9.11.1 net.udp.open
+##### 17.10.11.1 net.udp.open
 
 ```
 open(opts: { host?: string, port?: string | number, bind?: string, readBuffer?: number }): Promise<{ local: string, send(data: string | Uint8Array): Promise<void>, sendTo(data: string | Uint8Array, host: string, port: string | number): Promise<void>, onMessage(cb: (ev: { bytes: Uint8Array, text: string, address?: string, port?: number }) => void): void, onClose(cb: () => void): void, onError(cb: (err: string) => void): void, close(): void }>
@@ -14006,11 +14380,11 @@ u.onMessage(ev => runtime.log(ev.bytes.length));
 await u.send(query);
 ```
 
-### 17.10 runtime
+### 17.11 runtime
 
 Script-host scaffolding: logging, assertions, time, environment, runtime.argv.
 
-#### 17.10.1 runtime.argv
+#### 17.11.1 runtime.argv
 
 ```
 argv: string[]
@@ -14026,9 +14400,9 @@ Per-script argument vector: [programName, scriptPath, ...userArgs]. argv[0] is t
 const target = runtime.argv[2] ?? "default-host";
 ```
 
-#### 17.10.2 runtime.assert
+#### 17.11.2 runtime.assert
 
-##### 17.10.2.1 runtime.assert.equal
+##### 17.11.2.1 runtime.assert.equal
 
 ```
 equal(actual: unknown, expected: unknown, msg?: string): void
@@ -14050,7 +14424,7 @@ Throw when actual != expected (strict equality on primitives, deep equality on o
 runtime.assert.equal(1 + 1, 2, "math still works");
 ```
 
-##### 17.10.2.2 runtime.assert.ok
+##### 17.11.2.2 runtime.assert.ok
 
 ```
 ok(cond: unknown, msg?: string): void
@@ -14071,7 +14445,7 @@ Throw when cond is falsy. Optional msg appears in the error.
 runtime.assert.ok(user.id, "user must have an id");
 ```
 
-#### 17.10.3 runtime.clearDeadline
+#### 17.11.3 runtime.clearDeadline
 
 ```
 clearDeadline(): void
@@ -14087,9 +14461,9 @@ Remove the running script's wall-clock kill deadline entirely (equivalent to -ti
 runtime.clearDeadline(); // run without a timeout
 ```
 
-#### 17.10.4 runtime.clipboard
+#### 17.11.4 runtime.clipboard
 
-##### 17.10.4.1 runtime.clipboard.available
+##### 17.11.4.1 runtime.clipboard.available
 
 ```
 available: boolean
@@ -14105,7 +14479,7 @@ True when a host clipboard backend is on PATH (macOS pbcopy/pbpaste; Linux wl-cl
 if (!runtime.clipboard.available) runtime.log("no clipboard — skipping");
 ```
 
-##### 17.10.4.2 runtime.clipboard.imageAvailable
+##### 17.11.4.2 runtime.clipboard.imageAvailable
 
 ```
 imageAvailable: boolean
@@ -14121,7 +14495,7 @@ True when a PNG image clipboard backend is usable on this host (macOS pngpaste; 
 if (runtime.clipboard.imageAvailable) { /* … */ }
 ```
 
-##### 17.10.4.3 runtime.clipboard.read
+##### 17.11.4.3 runtime.clipboard.read
 
 ```
 read(...args: unknown[]): Promise<string>
@@ -14137,7 +14511,7 @@ Read the host OS system clipboard as UTF-8 text. Async (shells out to the platfo
 const text = await runtime.clipboard.read();
 ```
 
-##### 17.10.4.4 runtime.clipboard.readImage
+##### 17.11.4.4 runtime.clipboard.readImage
 
 ```
 readImage(...args: unknown[]): Promise<Uint8Array | null>
@@ -14153,7 +14527,7 @@ Read the host clipboard image as PNG bytes. Async (shells out). Resolves null wh
 const png = await runtime.clipboard.readImage();
 ```
 
-##### 17.10.4.5 runtime.clipboard.write
+##### 17.11.4.5 runtime.clipboard.write
 
 ```
 write(text: string): Promise<void>
@@ -14173,7 +14547,7 @@ Replace the host OS system clipboard with the given text. Async (shells out to t
 await runtime.clipboard.write("copied from sercon");
 ```
 
-##### 17.10.4.6 runtime.clipboard.writeImage
+##### 17.11.4.6 runtime.clipboard.writeImage
 
 ```
 writeImage(png: Uint8Array): Promise<void>
@@ -14193,9 +14567,9 @@ Set the host clipboard image from PNG bytes. Async (shells out). The input must 
 await runtime.clipboard.writeImage(pngBytes);
 ```
 
-#### 17.10.5 runtime.env
+#### 17.11.5 runtime.env
 
-##### 17.10.5.1 runtime.env.get
+##### 17.11.5.1 runtime.env.get
 
 ```
 get(name: string): string | undefined
@@ -14215,7 +14589,7 @@ Read an environment variable. Returns undefined when unset (not empty string).
 const home = runtime.env.get("HOME") ?? "/tmp";
 ```
 
-##### 17.10.5.2 runtime.env.load
+##### 17.11.5.2 runtime.env.load
 
 ```
 load(path: string, opts?: { override?: boolean }): Promise<{ [key: string]: string }>
@@ -14237,7 +14611,7 @@ await runtime.env.load(".env");
 const url = runtime.env.get("DATABASE_URL");
 ```
 
-#### 17.10.6 runtime.getDeadline
+#### 17.11.6 runtime.getDeadline
 
 ```
 getDeadline(): number | null
@@ -14253,7 +14627,7 @@ Return the milliseconds remaining until the running script's kill deadline, or n
 const left = runtime.getDeadline(); // e.g. 9871, or null
 ```
 
-#### 17.10.7 runtime.log
+#### 17.11.7 runtime.log
 
 ```
 log(args: unknown[]): void
@@ -14273,9 +14647,9 @@ Print one space-separated line of the arguments to stdout. Primitives print raw;
 runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}
 ```
 
-#### 17.10.8 runtime.secrets
+#### 17.11.8 runtime.secrets
 
-##### 17.10.8.1 runtime.secrets.available
+##### 17.11.8.1 runtime.secrets.available
 
 ```
 available: boolean
@@ -14291,7 +14665,7 @@ True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows 
 if (!runtime.secrets.available) runtime.log("no keystore — skipping");
 ```
 
-##### 17.10.8.2 runtime.secrets.delete
+##### 17.11.8.2 runtime.secrets.delete
 
 ```
 delete(name: string, account: string): Promise<boolean>
@@ -14312,7 +14686,7 @@ Remove a secret from the OS keystore under prefix + name / account. Async (keyst
 const removed = await runtime.secrets.delete("devshop", "tess@example.com");
 ```
 
-##### 17.10.8.3 runtime.secrets.get
+##### 17.11.8.3 runtime.secrets.get
 
 ```
 get(name: string, account: string): Promise<string | null>
@@ -14333,7 +14707,7 @@ Read a string secret from the OS keystore. The keystore service is the configure
 const pw = await runtime.secrets.get("devshop", "tess@example.com");
 ```
 
-##### 17.10.8.4 runtime.secrets.set
+##### 17.11.8.4 runtime.secrets.set
 
 ```
 set(name: string, account: string, secret: string): Promise<void>
@@ -14355,7 +14729,7 @@ Store or overwrite a string secret in the OS keystore under prefix + name / acco
 await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
 ```
 
-#### 17.10.9 runtime.setDeadline
+#### 17.11.9 runtime.setDeadline
 
 ```
 setDeadline(ms: number): void
@@ -14375,9 +14749,9 @@ Set the running script's wall-clock kill deadline to now + ms (replacing any pri
 runtime.setDeadline(30000); // give this run 30s from now
 ```
 
-#### 17.10.10 runtime.time
+#### 17.11.10 runtime.time
 
-##### 17.10.10.1 runtime.time.format
+##### 17.11.10.1 runtime.time.format
 
 ```
 format(ms: number, layout: string, tz?: string): string
@@ -14399,7 +14773,7 @@ Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Euro
 const s = runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC");
 ```
 
-##### 17.10.10.2 runtime.time.nowMs
+##### 17.11.10.2 runtime.time.nowMs
 
 ```
 nowMs(): number
@@ -14415,7 +14789,7 @@ Wall-clock milliseconds since the Unix epoch.
 const t0 = runtime.time.nowMs();
 ```
 
-##### 17.10.10.3 runtime.time.sleep
+##### 17.11.10.3 runtime.time.sleep
 
 ```
 sleep(ms: number): Promise<void>
@@ -14435,13 +14809,13 @@ Resolve after `ms` milliseconds. Cancellable via the engine timeout.
 await runtime.time.sleep(250);
 ```
 
-### 17.11 server
+### 17.12 server
 
 Network servers: HTTP/HTTPS listeners with routing, middleware, static files, WebSocket upgrade.
 
-#### 17.11.1 server.http
+#### 17.12.1 server.http
 
-##### 17.11.1.1 server.http.listen
+##### 17.12.1.1 server.http.listen
 
 ```
 listen(opts: { port: number; host?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; onError?: (err: unknown, req: Request, res: Response) => unknown; maxBodyBytes?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -14466,7 +14840,7 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-##### 17.11.1.2 server.http.static
+##### 17.12.1.2 server.http.static
 
 ```
 static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
@@ -14489,9 +14863,9 @@ server.http.listen({
 });
 ```
 
-#### 17.11.2 server.https
+#### 17.12.2 server.https
 
-##### 17.11.2.1 server.https.listen
+##### 17.12.2.1 server.https.listen
 
 ```
 listen(opts: { port: number; host?: string; cert: string | "self-signed"; key?: string; routes: Record<string, ((req: Request, res: Response) => unknown) | { use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; handler: (req: Request, res: Response) => unknown }>; use?: ((req: Request, res: Response, next: () => Promise<void>) => unknown)[]; maxBodyBytes?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -14516,7 +14890,7 @@ const srv = server.https.listen({
 });
 ```
 
-##### 17.11.2.2 server.https.static
+##### 17.12.2.2 server.https.static
 
 ```
 static(opts: { dir: string; stripPrefix?: string; index?: string; etag?: boolean }): (req: Request, res: Response) => void
@@ -14539,9 +14913,9 @@ server.https.listen({
 });
 ```
 
-#### 17.11.3 server.icmp
+#### 17.12.3 server.icmp
 
-##### 17.11.3.1 server.icmp.listen
+##### 17.12.3.1 server.icmp.listen
 
 ```
 listen(opts?: { network?: "ip4" | "ip6" }, handler?: (msg: { bytes: Uint8Array; text: string; address: string; type: number; code: number }, reply: (opts?: { to?: string; type?: number; code?: number; id?: number; seq?: number; payload?: string | Uint8Array; body?: string | Uint8Array }) => Promise<void>) => void): { address: string; close(): Promise<void> }
@@ -14567,9 +14941,9 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### 17.11.4 server.smtp
+#### 17.12.4 server.smtp
 
-##### 17.11.4.1 server.smtp.listen
+##### 17.12.4.1 server.smtp.listen
 
 ```
 listen(opts: { port: number; host?: string; hostname?: string; handlers: { onMail: (env: Envelope) => boolean | string | void | Promise<boolean | string | void>; onRcpt: (env: Envelope, to: string) => boolean | string | void | Promise<boolean | string | void>; onData: (env: Envelope, msg: Message) => boolean | string | void | Promise<boolean | string | void> }; auth?: (user: string, pass: string, env: Envelope) => boolean | Promise<boolean>; starttls?: { cert: string; key: string }; allowInsecureAuth?: boolean; maxMessageBytes?: number; maxRecipients?: number; sessionTimeout?: number }): { address: string; stopped: Promise<void>; close(): Promise<void> }
@@ -14596,9 +14970,9 @@ const srv = server.smtp.listen({
 });
 ```
 
-#### 17.11.5 server.tcp
+#### 17.12.5 server.tcp
 
-##### 17.11.5.1 server.tcp.listen
+##### 17.12.5.1 server.tcp.listen
 
 ```
 listen(opts: { port: number; host?: string; readBuffer?: number }, handler: (conn: { remote: string; local: string; write(data: string | Uint8Array): Promise<void>; onData(cb: (msg: { bytes: Uint8Array; text: string }) => void): void; onClose(cb: () => void): void; onError(cb: (err: unknown) => void): void; close(): void }) => void): { address: string; close(): Promise<void> }
@@ -14623,9 +14997,9 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-#### 17.11.6 server.udp
+#### 17.12.6 server.udp
 
-##### 17.11.6.1 server.udp.listen
+##### 17.12.6.1 server.udp.listen
 
 ```
 listen(opts: { port: number; host?: string }, handler: (msg: { bytes: Uint8Array; text: string; address: string; port: number }, reply: (data: string | Uint8Array) => Promise<void>) => void): { address: string; close(): Promise<void> }
@@ -14650,13 +15024,13 @@ runtime.log(srv.address);
 await srv.close();
 ```
 
-### 17.12 services
+### 17.13 services
 
 Subprocess and external-CLI / service wrappers: shell, git, gh, AI providers, agent-browser automation, W3C WebDriver browser control, Typst typesetting, poppler-backed PDF render/extract, external-requirement diagnostics (doctor).
 
-#### 17.12.1 services.agentBrowser
+#### 17.13.1 services.agentBrowser
 
-##### 17.12.1.1 services.agentBrowser.auth
+##### 17.13.1.1 services.agentBrowser.auth
 
 Namespace object for the auth vault (session-independent): auth.save, auth.list, auth.show, auth.delete. Passwords are never placed in argv — auth.save sends the password via stdin (--password-stdin).
 
@@ -14685,31 +15059,31 @@ await b.auth.login("prod");
 await b.close();
 ```
 
-###### 17.12.1.1.1 services.agentBrowser.auth.delete
+###### 17.13.1.1.1 services.agentBrowser.auth.delete
 
 ```
 delete(...args: unknown[])
 ```
 
-###### 17.12.1.1.2 services.agentBrowser.auth.list
+###### 17.13.1.1.2 services.agentBrowser.auth.list
 
 ```
 list(...args: unknown[])
 ```
 
-###### 17.12.1.1.3 services.agentBrowser.auth.save
+###### 17.13.1.1.3 services.agentBrowser.auth.save
 
 ```
 save(...args: unknown[])
 ```
 
-###### 17.12.1.1.4 services.agentBrowser.auth.show
+###### 17.13.1.1.4 services.agentBrowser.auth.show
 
 ```
 show(...args: unknown[])
 ```
 
-##### 17.12.1.2 services.agentBrowser.available
+##### 17.13.1.2 services.agentBrowser.available
 
 ```
 available: boolean
@@ -14725,7 +15099,7 @@ True when the agent-browser CLI is on PATH. Sync boolean, resolved once per Run.
 if (!services.agentBrowser.available) runtime.log("install agent-browser first");
 ```
 
-##### 17.12.1.3 services.agentBrowser.batch
+##### 17.13.1.3 services.agentBrowser.batch
 
 ```
 batch(cmds: string[], opts?: { bail?: boolean }): Promise<Array<{ success: boolean, data: object, error: string | null }>>
@@ -14747,7 +15121,7 @@ const results = await b.batch(["get title", "get url"], { bail: false });
 for (const r of results) runtime.log(r.success, r.data);
 ```
 
-##### 17.12.1.4 services.agentBrowser.chat
+##### 17.13.1.4 services.agentBrowser.chat
 
 ```
 chat(message: string, opts?: { model?: string }): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14770,7 +15144,7 @@ const r = await b.chat("Click the Login button");
 runtime.log("chat ok:", r.success);
 ```
 
-##### 17.12.1.5 services.agentBrowser.clearDefaultOptions
+##### 17.13.1.5 services.agentBrowser.clearDefaultOptions
 
 ```
 clearDefaultOptions(): void
@@ -14787,7 +15161,7 @@ services.agentBrowser.clearDefaultOptions();
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {}
 ```
 
-##### 17.12.1.6 services.agentBrowser.click
+##### 17.13.1.6 services.agentBrowser.click
 
 ```
 click(selector: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14807,7 +15181,7 @@ Click an element matching a CSS selector.
 await b.click("#submit-btn");
 ```
 
-##### 17.12.1.7 services.agentBrowser.clipboard
+##### 17.13.1.7 services.agentBrowser.clipboard
 
 ```
 clipboard(op: "read" | "write" | "copy" | "paste", text?: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14830,7 +15204,7 @@ const r = await b.clipboard("read");
 runtime.log(r.data?.text);
 ```
 
-##### 17.12.1.8 services.agentBrowser.close
+##### 17.13.1.8 services.agentBrowser.close
 
 ```
 close(): Promise<{ closed: boolean }>
@@ -14846,7 +15220,7 @@ Close the browser session. Idempotent: a second close is a no-op.
 await b.close();
 ```
 
-##### 17.12.1.9 services.agentBrowser.cmd
+##### 17.13.1.9 services.agentBrowser.cmd
 
 ```
 cmd(command: string, args: string[]): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14868,7 +15242,7 @@ const r = await b.cmd("get", "title");
 runtime.log("title via cmd:", r.data?.title);
 ```
 
-##### 17.12.1.10 services.agentBrowser.cookies
+##### 17.13.1.10 services.agentBrowser.cookies
 
 ```
 cookies(): object
@@ -14890,7 +15264,7 @@ await b.cookies.clear();
 await b.close();
 ```
 
-##### 17.12.1.11 services.agentBrowser.defaultOptions
+##### 17.13.1.11 services.agentBrowser.defaultOptions
 
 ```
 defaultOptions(): object
@@ -14907,7 +15281,7 @@ services.agentBrowser.setDefaultOptions({ headed: false });
 runtime.log(JSON.stringify(services.agentBrowser.defaultOptions())); // {"headed":false}
 ```
 
-##### 17.12.1.12 services.agentBrowser.diff
+##### 17.13.1.12 services.agentBrowser.diff
 
 ```
 diff(): object
@@ -14930,7 +15304,7 @@ runtime.log("diff.url ok:", cmp.success);
 await b.close();
 ```
 
-##### 17.12.1.13 services.agentBrowser.eval
+##### 17.13.1.13 services.agentBrowser.eval
 
 ```
 eval(url: string, js: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14952,7 +15326,7 @@ const r = await services.agentBrowser.eval("data:text/html,<title>Hi</title>", "
 runtime.log(r.data?.result); // "Hi"
 ```
 
-##### 17.12.1.14 services.agentBrowser.fill
+##### 17.13.1.14 services.agentBrowser.fill
 
 ```
 fill(selector: string, text: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14973,7 +15347,7 @@ Fill an input element with text.
 await b.fill("#search", "typescript");
 ```
 
-##### 17.12.1.15 services.agentBrowser.find
+##### 17.13.1.15 services.agentBrowser.find
 
 ```
 find(locator: string, value: string, opts: { action: string, text?: string }): Promise<{ success: boolean, data: object, error: string | null }>
@@ -14996,7 +15370,7 @@ await b.find("role", "button", { action: "click" });
 await b.find("text", "Search", { action: "fill", text: "query" });
 ```
 
-##### 17.12.1.16 services.agentBrowser.get
+##### 17.13.1.16 services.agentBrowser.get
 
 ```
 get(what: string, selector?: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -15021,9 +15395,9 @@ const t = await b.get("text", "#main");
 runtime.log(t.data?.text);
 ```
 
-##### 17.12.1.17 services.agentBrowser.handle
+##### 17.13.1.17 services.agentBrowser.handle
 
-###### 17.12.1.17.1 services.agentBrowser.handle.snapshot
+###### 17.13.1.17.1 services.agentBrowser.handle.snapshot
 
 ```
 snapshot(opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): Promise<{ success: boolean, data: object, error: string | null }>
@@ -15044,7 +15418,7 @@ const snap = await b.snapshot({ interactive: true });
 runtime.log("snapshot keys:", Object.keys(snap).join(", "));
 ```
 
-##### 17.12.1.18 services.agentBrowser.inspect
+##### 17.13.1.18 services.agentBrowser.inspect
 
 ```
 inspect(): Promise<{ success: boolean, data: object, error: string | null }>
@@ -15064,7 +15438,7 @@ runtime.log("DevTools:", r.data?.url);
 await b.close();
 ```
 
-##### 17.12.1.19 services.agentBrowser.launch
+##### 17.13.1.19 services.agentBrowser.launch
 
 ```
 launch(opts?: { session?: string, headed?: boolean, profile?: string, proxy?: string, userAgent?: string, device?: string, colorScheme?: string, ignoreHttpsErrors?: boolean, engine?: string, executablePath?: string, enable?: string, args?: string, timeout?: number }): { session: string; open(url: string, opts?: object): Promise<any>; back(): Promise<any>; forward(): Promise<any>; reload(): Promise<any>; wait(selOrMs: string | number): Promise<any>; connect(target: string): Promise<any>; frame(target: string): Promise<any>; click(sel: string): Promise<any>; dblclick(sel: string): Promise<any>; hover(sel: string): Promise<any>; focus(sel: string): Promise<any>; check(sel: string): Promise<any>; uncheck(sel: string): Promise<any>; scrollIntoView(sel: string): Promise<any>; fill(sel: string, text: string): Promise<any>; type(sel: string, text: string): Promise<any>; press(key: string): Promise<any>; select(sel: string, ...values: string[]): Promise<any>; scroll(dir: string, px?: number): Promise<any>; drag(src: string, dst: string): Promise<any>; upload(sel: string, files: string | string[]): Promise<any>; download(sel: string, path: string): Promise<any>; keyboard: { type(text: string): Promise<any>; insertText(text: string): Promise<any> }; mouse: { move(x: number, y: number): Promise<any>; down(button?: string): Promise<any>; up(button?: string): Promise<any>; wheel(dy: number, dx?: number): Promise<any> }; get(what: string, sel?: string): Promise<any>; isVisible(sel: string): Promise<any>; isEnabled(sel: string): Promise<any>; isChecked(sel: string): Promise<any>; eval(code: string): Promise<any>; snapshot(opts?: object): Promise<any>; console(opts?: object): Promise<any>; errors(opts?: object): Promise<any>; highlight(sel: string): Promise<any>; find(locator: string, value: string, opts: { action: string, text?: string }): Promise<any>; locator(spec: object | string, value?: string): object; set: { viewport(w: number, h: number, scale?: number): Promise<any>; device(name: string): Promise<any>; geo(lat: number, lng: number): Promise<any>; offline(on?: boolean): Promise<any>; headers(headers: Record<string, string>): Promise<any>; credentials(user: string, pass: string): Promise<any>; media(scheme?: "dark" | "light", reducedMotion?: boolean): Promise<any> }; record: { start(path: string, url?: string): Promise<any>; stop(): Promise<any> }; screenshot(path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; pdf(path?: string): Promise<{ path?: string, size?: number, bytes?: number[], format: string }>; network: { route(url: string, opts?: { abort?: boolean, body?: unknown, resourceType?: string }): Promise<any>; unroute(url?: string): Promise<any>; requests(opts?: { clear?: boolean, filter?: string, type?: string, method?: string, status?: string }): Promise<any>; request(id: string): Promise<any>; har: { start(path?: string): Promise<any>; stop(path?: string): Promise<any> } }; cookies: { get(): Promise<any>; set(name: string, value: string, opts?: { url?: string, domain?: string, path?: string, httpOnly?: boolean, secure?: boolean, sameSite?: "Strict" | "Lax" | "None", expires?: number }): Promise<any>; clear(): Promise<any> }; storage: { local: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> }; session: { get(key?: string): Promise<any>; set(key: string, value: string): Promise<any>; clear(): Promise<any> } }; tabs: { list(): Promise<any>; new(url?: string, opts?: { label?: string }): Promise<any>; close(ref?: string): Promise<any>; select(ref: string): Promise<any> }; diff: { snapshot(opts?: { baseline?: string, selector?: string, compact?: boolean, depth?: number }): Promise<any>; screenshot(opts: { baseline: string, output?: string, threshold?: number }): Promise<any>; url(url1: string, url2: string): Promise<any> }; trace: { start(): Promise<any>; stop(path?: string): Promise<any> }; profiler: { start(opts?: { categories?: string }): Promise<any>; stop(path?: string): Promise<any> }; inspect(): Promise<any>; clipboard(op: "read" | "write" | "copy" | "paste", text?: string): Promise<any>; vitals(url?: string): Promise<any>; pushstate(url: string): Promise<any>; react: { tree(): Promise<any>; inspect(id: string): Promise<any>; renders: { start(): Promise<any>; stop(): Promise<any> }; suspense(opts?: { onlyDynamic?: boolean }): Promise<any> }; stream: { enable(opts?: { port?: number }): Promise<any>; disable(): Promise<any>; status(): Promise<any> }; chat(message: string, opts?: { model?: string }): Promise<any>; cmd(command: string, ...args: string[]): Promise<any>; batch(cmds: string[], opts?: { bail?: boolean }): Promise<any>; auth: { login(name: string): Promise<any> }; close(): Promise<any> }
@@ -15088,7 +15462,7 @@ runtime.log(r.data?.title);
 await b.close();
 ```
 
-##### 17.12.1.20 services.agentBrowser.network
+##### 17.13.1.20 services.agentBrowser.network
 
 ```
 network(): object
@@ -15109,7 +15483,7 @@ runtime.log("requests:", JSON.stringify(reqs.data));
 await b.close();
 ```
 
-##### 17.12.1.21 services.agentBrowser.open
+##### 17.13.1.21 services.agentBrowser.open
 
 ```
 open(url: string): Promise<{ success: boolean; data: object; error: string | null }>
@@ -15131,7 +15505,7 @@ await b.open("https://example.com");
 await b.close();
 ```
 
-##### 17.12.1.22 services.agentBrowser.pdf
+##### 17.13.1.22 services.agentBrowser.pdf
 
 ```
 pdf(url: string, path?: string): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
@@ -15153,7 +15527,7 @@ const pdf = await services.agentBrowser.pdf("data:text/html,<h1>Hi</h1>");
 runtime.log(new Uint8Array(pdf.bytes).length, pdf.format); // e.g. 5678 pdf
 ```
 
-##### 17.12.1.23 services.agentBrowser.profiler
+##### 17.13.1.23 services.agentBrowser.profiler
 
 ```
 profiler(opts?: { categories?: string }): object
@@ -15178,7 +15552,7 @@ await b.profiler.stop("/tmp/profile.json");
 await b.close();
 ```
 
-##### 17.12.1.24 services.agentBrowser.pushstate
+##### 17.13.1.24 services.agentBrowser.pushstate
 
 ```
 pushstate(url: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -15198,7 +15572,7 @@ Perform a client-side SPA navigation using history.pushState without a full page
 await b.pushstate("/app/dashboard");
 ```
 
-##### 17.12.1.25 services.agentBrowser.react
+##### 17.13.1.25 services.agentBrowser.react
 
 ```
 react(): object
@@ -15220,7 +15594,7 @@ runtime.log("suspense ok:", suspense.success);
 await b.close();
 ```
 
-##### 17.12.1.26 services.agentBrowser.record
+##### 17.13.1.26 services.agentBrowser.record
 
 ```
 record(): object
@@ -15241,7 +15615,7 @@ await b.record.stop();
 await b.close();
 ```
 
-##### 17.12.1.27 services.agentBrowser.screenshot
+##### 17.13.1.27 services.agentBrowser.screenshot
 
 ```
 screenshot(url: string, path?: string, opts?: { selector?: string, full?: boolean, annotate?: boolean, format?: "png" | "jpeg", quality?: number }): Promise<{ path: string, size: number, format: string } | { bytes: number[], format: string }>
@@ -15264,7 +15638,7 @@ const shot = await services.agentBrowser.screenshot("data:text/html,<h1>Hi</h1>"
 runtime.log(new Uint8Array(shot.bytes).length, shot.format); // e.g. 12345 png
 ```
 
-##### 17.12.1.28 services.agentBrowser.set
+##### 17.13.1.28 services.agentBrowser.set
 
 ```
 set(): object
@@ -15284,7 +15658,7 @@ await b.set.device("iPhone 12");
 await b.close();
 ```
 
-##### 17.12.1.29 services.agentBrowser.setDefaultOptions
+##### 17.13.1.29 services.agentBrowser.setDefaultOptions
 
 ```
 setDefaultOptions(opts: object): void
@@ -15305,7 +15679,7 @@ services.agentBrowser.setDefaultOptions({ headed: false, proxy: "http://proxy:31
 const b = services.agentBrowser.launch(); // headed:false + proxy inherited
 ```
 
-##### 17.12.1.30 services.agentBrowser.snapshot
+##### 17.13.1.30 services.agentBrowser.snapshot
 
 ```
 snapshot(url: string, opts?: { interactive?: boolean, compact?: boolean, depth?: number, selector?: string }): Promise<{ success: boolean, data: object, error: string | null }>
@@ -15327,7 +15701,7 @@ const snap = await services.agentBrowser.snapshot("data:text/html,<h1>Hi</h1>", 
 runtime.log(JSON.stringify(snap.data).slice(0, 100));
 ```
 
-##### 17.12.1.31 services.agentBrowser.storage
+##### 17.13.1.31 services.agentBrowser.storage
 
 ```
 storage(): object
@@ -15349,7 +15723,7 @@ await b.storage.session.set("token", "xyz");
 await b.close();
 ```
 
-##### 17.12.1.32 services.agentBrowser.stream
+##### 17.13.1.32 services.agentBrowser.stream
 
 ```
 stream(opts?: { port?: number }): object
@@ -15372,7 +15746,7 @@ runtime.log("streaming:", status.data?.enabled);
 await b.stream.disable();
 ```
 
-##### 17.12.1.33 services.agentBrowser.tabs
+##### 17.13.1.33 services.agentBrowser.tabs
 
 ```
 tabs(): object
@@ -15395,7 +15769,7 @@ await b.tabs.close("second");
 await b.close();
 ```
 
-##### 17.12.1.34 services.agentBrowser.trace
+##### 17.13.1.34 services.agentBrowser.trace
 
 ```
 trace(): object
@@ -15416,7 +15790,7 @@ await b.trace.stop("/tmp/trace.json");
 await b.close();
 ```
 
-##### 17.12.1.35 services.agentBrowser.version
+##### 17.13.1.35 services.agentBrowser.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -15432,7 +15806,7 @@ The agent-browser CLI version string.
 runtime.log(await services.agentBrowser.version());
 ```
 
-##### 17.12.1.36 services.agentBrowser.vitals
+##### 17.13.1.36 services.agentBrowser.vitals
 
 ```
 vitals(url?: string): Promise<{ success: boolean, data: object, error: string | null }>
@@ -15453,9 +15827,9 @@ const v = await b.vitals();
 runtime.log("LCP:", v.data?.lcp);
 ```
 
-#### 17.12.2 services.ai
+#### 17.13.2 services.ai
 
-##### 17.12.2.1 services.ai.providers
+##### 17.13.2.1 services.ai.providers
 
 ```
 providers(): string[]
@@ -15471,7 +15845,7 @@ Which of claude / codex / copilot / gemini are on PATH, in preference order.
 const ps = services.ai.providers(); // e.g. ["claude", "gemini"]
 ```
 
-##### 17.12.2.2 services.ai.send
+##### 17.13.2.2 services.ai.send
 
 ```
 send(opts: { prompt: string, provider?: "claude" | "codex" | "copilot" | "gemini", system?: string, context?: string, timeout?: number }): Promise<{ provider: string; output: string; exitCode: number }>
@@ -15492,7 +15866,7 @@ const r = await services.ai.send({ prompt: "Say hi", provider: "claude" });
 runtime.log(r.output);
 ```
 
-#### 17.12.3 services.doctor
+#### 17.13.3 services.doctor
 
 ```
 doctor(requires?: string[]): Promise<{ ok: boolean; satisfied: boolean; unmet: string[]; tools: { name: string; category: string; purpose: string; installed: boolean; version: string | null; ok: boolean; detail?: string }[] }>
@@ -15515,9 +15889,9 @@ const opt = await services.doctor(["typst", "webdriver"]);
 runtime.log("unmet optional features:", JSON.stringify(opt.unmet));
 ```
 
-#### 17.12.4 services.exec
+#### 17.13.4 services.exec
 
-##### 17.12.4.1 services.exec.http
+##### 17.13.4.1 services.exec.http
 
 ```
 http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<{ status: number; headers: Record<string, string>; body: string; durationMs: number; backend: "recon" | "curl" }>
@@ -15540,7 +15914,7 @@ const r = await services.exec.http("GET", "https://example.com");
 runtime.log(r.status, r.backend);
 ```
 
-##### 17.12.4.2 services.exec.shell
+##### 17.13.4.2 services.exec.shell
 
 ```
 shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<{ stdout: string; stderr: string; exitCode: number; success: boolean; durationMs: number }>
@@ -15562,7 +15936,7 @@ const r = await services.exec.shell("echo hi");
 if (r.success) runtime.log(r.stdout.trim());
 ```
 
-##### 17.12.4.3 services.exec.stream
+##### 17.13.4.3 services.exec.stream
 
 ```
 stream(cmd: string | string[], onLine: (line: string, stream: "stdout" | "stderr") => void, opts?: { cwd?: string, env?: Record<string, string>, stdin?: string, timeout?: number }): Promise<{ exitCode: number; success: boolean; durationMs: number }>
@@ -15587,9 +15961,9 @@ const r = await services.exec.stream("echo one; echo two", (line, stream) => {
 runtime.log("exit", r.exitCode);
 ```
 
-#### 17.12.5 services.gh
+#### 17.13.5 services.gh
 
-##### 17.12.5.1 services.gh.authStatus
+##### 17.13.5.1 services.gh.authStatus
 
 ```
 authStatus(...args: unknown[]): Promise<{ authenticated: boolean; user: string; raw: string }>
@@ -15606,7 +15980,7 @@ const a = await services.gh.authStatus();
 if (a.authenticated) runtime.log("logged in as", a.user);
 ```
 
-##### 17.12.5.2 services.gh.prList
+##### 17.13.5.2 services.gh.prList
 
 ```
 prList(opts?: { cwd?: string, state?: string, limit?: number, author?: string }): Promise<Array<{ number: number; title: string; state: string; author: string; headRefName: string; baseRefName: string; url: string; createdAt: string; updatedAt: string }>>
@@ -15627,7 +16001,7 @@ const prs = await services.gh.prList({ state: "open", limit: 5 });
 for (const pr of prs) runtime.log(pr.number, pr.title);
 ```
 
-##### 17.12.5.3 services.gh.repoView
+##### 17.13.5.3 services.gh.repoView
 
 ```
 repoView(repo?: string, opts?: { cwd?: string }): Promise<{ name: string; owner: string; description: string; url: string; defaultBranch: string; visibility: string }>
@@ -15649,9 +16023,9 @@ const r = await services.gh.repoView("cli/cli");
 runtime.log(r.owner, r.defaultBranch);
 ```
 
-#### 17.12.6 services.git
+#### 17.13.6 services.git
 
-##### 17.12.6.1 services.git.add
+##### 17.13.6.1 services.git.add
 
 ```
 add(paths: string | string[], opts?: { cwd?: string }): Promise<{ paths: string[] }>
@@ -15672,7 +16046,7 @@ Stage one path (string) or several (string[]).
 await services.git.add(["src/a.ts", "src/b.ts"]);
 ```
 
-##### 17.12.6.2 services.git.branch
+##### 17.13.6.2 services.git.branch
 
 ```
 branch(opts?: { cwd?: string }): Promise<{ current: string; detached: boolean; all: string[] }>
@@ -15693,7 +16067,7 @@ const b = await services.git.branch();
 runtime.log(b.detached ? "(detached)" : b.current);
 ```
 
-##### 17.12.6.3 services.git.commit
+##### 17.13.6.3 services.git.commit
 
 ```
 commit(message: string, opts?: { cwd?: string, allowEmpty?: boolean }): Promise<{ sha: string }>
@@ -15714,7 +16088,7 @@ Create a commit; returns the post-commit HEAD SHA. opts.allowEmpty toggles --all
 const c = await services.git.commit("chore: bump", { allowEmpty: true });
 ```
 
-##### 17.12.6.4 services.git.diffStat
+##### 17.13.6.4 services.git.diffStat
 
 ```
 diffStat(opts?: { cwd?: string, revRange?: string }): Promise<{ files: number; insertions: number; deletions: number }>
@@ -15735,7 +16109,7 @@ const d = await services.git.diffStat();
 runtime.log(d.files, d.insertions, d.deletions);
 ```
 
-##### 17.12.6.5 services.git.isClean
+##### 17.13.6.5 services.git.isClean
 
 ```
 isClean(opts?: { cwd?: string }): Promise<boolean>
@@ -15755,7 +16129,7 @@ True iff `git status --porcelain` is empty.
 if (await services.git.isClean()) runtime.log("clean");
 ```
 
-##### 17.12.6.6 services.git.log
+##### 17.13.6.6 services.git.log
 
 ```
 log(opts?: { cwd?: string, limit?: number, revRange?: string }): Promise<Array<{ sha: string; shortSha: string; author: string; email: string; timestamp: number; subject: string }>>
@@ -15776,7 +16150,7 @@ const log = await services.git.log({ limit: 5 });
 runtime.log(log[0].subject);
 ```
 
-##### 17.12.6.7 services.git.revParse
+##### 17.13.6.7 services.git.revParse
 
 ```
 revParse(rev: string, opts?: { cwd?: string }): Promise<string>
@@ -15797,7 +16171,7 @@ Full 40-char SHA for the given rev. Invalid refs throw.
 const sha = await services.git.revParse("HEAD");
 ```
 
-##### 17.12.6.8 services.git.runText
+##### 17.13.6.8 services.git.runText
 
 ```
 runText(args: string | string[], opts?: { cwd?: string }): Promise<{ stdout: string; stderr: string; exitCode: number }>
@@ -15819,7 +16193,7 @@ const r = await services.git.runText(["tag", "--list"]);
 if (r.exitCode === 0) runtime.log(r.stdout);
 ```
 
-##### 17.12.6.9 services.git.status
+##### 17.13.6.9 services.git.status
 
 ```
 status(opts?: { cwd?: string }): Promise<Array<{ path: string; indexStatus: string; workingStatus: string }>>
@@ -15840,9 +16214,9 @@ for (const e of await services.git.status())
   runtime.log(e.indexStatus + e.workingStatus, e.path);
 ```
 
-#### 17.12.7 services.pdf
+#### 17.13.7 services.pdf
 
-##### 17.12.7.1 services.pdf.available
+##### 17.13.7.1 services.pdf.available
 
 ```
 available: boolean
@@ -15860,7 +16234,7 @@ if (!services.pdf.available) {
 }
 ```
 
-##### 17.12.7.2 services.pdf.backend
+##### 17.13.7.2 services.pdf.backend
 
 ```
 backend: string | null
@@ -15876,7 +16250,7 @@ The active PDF backend name, or null when no backend is available. Currently "po
 runtime.log("pdf backend:", services.pdf.backend ?? "none");
 ```
 
-##### 17.12.7.3 services.pdf.info
+##### 17.13.7.3 services.pdf.info
 
 ```
 info(src: string): Promise<{ pages?: number; title?: string; author?: string; creator?: string; producer?: string; creationDate?: string; modDate?: string; encrypted?: boolean; tagged?: boolean; pageSize?: string; fileSize?: string; pdfVersion?: string }>
@@ -15897,7 +16271,7 @@ const meta = await services.pdf.info("report.pdf");
 runtime.log("pages:", meta.pages, "encrypted:", meta.encrypted);
 ```
 
-##### 17.12.7.4 services.pdf.toHtml
+##### 17.13.7.4 services.pdf.toHtml
 
 ```
 toHtml(src: string, opts?: { pages?: string, dest?: string }): Promise<string | { path: string }>
@@ -15919,7 +16293,7 @@ const html = await services.pdf.toHtml("report.pdf", { pages: "1" });
 runtime.log(html.length, "bytes of HTML");
 ```
 
-##### 17.12.7.5 services.pdf.toImage
+##### 17.13.7.5 services.pdf.toImage
 
 ```
 toImage(src: string, opts?: { page?: number, firstPage?: number, lastPage?: number, format?: "png" | "jpeg" | "tiff", dpi?: number, dest?: string }): Promise<{ format: string; page?: number; bytes?: Uint8Array; paths?: string[] }>
@@ -15945,7 +16319,7 @@ const all = await services.pdf.toImage("report.pdf", { dest: "/tmp/page" });
 runtime.log("wrote", all.paths.length, "images");
 ```
 
-##### 17.12.7.6 services.pdf.toText
+##### 17.13.7.6 services.pdf.toText
 
 ```
 toText(src: string, opts?: { pages?: string, layout?: boolean, dest?: string }): Promise<string | { path: string }>
@@ -15967,7 +16341,7 @@ const txt = await services.pdf.toText("report.pdf", { pages: "1-2" });
 runtime.log(txt.slice(0, 80));
 ```
 
-##### 17.12.7.7 services.pdf.tools
+##### 17.13.7.7 services.pdf.tools
 
 Per-binary availability for the poppler tools sercon uses, so a partial install can still serve the operations it covers.
 
@@ -15979,31 +16353,31 @@ Per-binary availability for the poppler tools sercon uses, so a partial install 
 if (!services.pdf.tools.pdftotext) runtime.log("text extraction unavailable");
 ```
 
-###### 17.12.7.7.1 services.pdf.tools.pdfinfo
+###### 17.13.7.7.1 services.pdf.tools.pdfinfo
 
 ```
 pdfinfo
 ```
 
-###### 17.12.7.7.2 services.pdf.tools.pdftohtml
+###### 17.13.7.7.2 services.pdf.tools.pdftohtml
 
 ```
 pdftohtml
 ```
 
-###### 17.12.7.7.3 services.pdf.tools.pdftoppm
+###### 17.13.7.7.3 services.pdf.tools.pdftoppm
 
 ```
 pdftoppm
 ```
 
-###### 17.12.7.7.4 services.pdf.tools.pdftotext
+###### 17.13.7.7.4 services.pdf.tools.pdftotext
 
 ```
 pdftotext
 ```
 
-##### 17.12.7.8 services.pdf.version
+##### 17.13.7.8 services.pdf.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -16019,9 +16393,9 @@ The poppler version string (from `pdftoppm -v`, falling back to `pdfinfo -v`).
 runtime.log(await services.pdf.version());
 ```
 
-#### 17.12.8 services.typst
+#### 17.13.8 services.typst
 
-##### 17.12.8.1 services.typst.available
+##### 17.13.8.1 services.typst.available
 
 ```
 available: boolean
@@ -16039,7 +16413,7 @@ if (!services.typst.available) {
 }
 ```
 
-##### 17.12.8.2 services.typst.compile
+##### 17.13.8.2 services.typst.compile
 
 ```
 compile(opts: { input?: string, source?: string, output?: string, format?: "pdf" | "png" | "svg", root?: string, inputs?: Record<string, string>, ppi?: number, fontPaths?: string[], timeout?: number }): Promise<{ format: string; bytes?: Uint8Array; path?: string }>
@@ -16064,7 +16438,7 @@ runtime.log(pdf.format, pdf.bytes.length);
 await services.typst.compile({ input: "report.typ", output: "/tmp/report.png", ppi: 144 });
 ```
 
-##### 17.12.8.3 services.typst.fonts
+##### 17.13.8.3 services.typst.fonts
 
 ```
 fonts(...args: unknown[]): Promise<string[]>
@@ -16081,7 +16455,7 @@ const families = await services.typst.fonts();
 runtime.log("fonts:", families.length);
 ```
 
-##### 17.12.8.4 services.typst.query
+##### 17.13.8.4 services.typst.query
 
 ```
 query(opts: { selector: string, input?: string, source?: string, field?: string, one?: boolean, root?: string, inputs?: Record<string, string>, timeout?: number }): Promise<unknown>
@@ -16105,7 +16479,7 @@ const v = await services.typst.query({
 runtime.log(v); // 42
 ```
 
-##### 17.12.8.5 services.typst.version
+##### 17.13.8.5 services.typst.version
 
 ```
 version(...args: unknown[]): Promise<string>
@@ -16121,9 +16495,9 @@ The typst CLI version string (from `typst --version`).
 runtime.log(await services.typst.version());
 ```
 
-#### 17.12.9 services.webdriver
+#### 17.13.9 services.webdriver
 
-##### 17.12.9.1 services.webdriver.available
+##### 17.13.9.1 services.webdriver.available
 
 ```
 available: boolean
@@ -16141,7 +16515,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-##### 17.12.9.2 services.webdriver.connect
+##### 17.13.9.2 services.webdriver.connect
 
 ```
 connect(opts?: { browser?: "chrome" | "firefox", headless?: boolean, url?: string, args?: string[], capabilities?: object, commandTimeout?: number }): Promise<{ get(url: string): Promise<{ ok: true }>; url(): Promise<string>; title(): Promise<string>; back(): Promise<{ ok: true }>; forward(): Promise<{ ok: true }>; refresh(): Promise<{ ok: true }>; find(by: string, value: string): Promise<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>; findAll(by: string, value: string): Promise<Array<{ click(): Promise<{ ok: true }>; sendKeys(text: string): Promise<{ ok: true }>; clear(): Promise<{ ok: true }>; submit(): Promise<{ ok: true }>; text(): Promise<string>; getAttribute(name: string): Promise<string>; cssValue(name: string): Promise<string>; tagName(): Promise<string>; isDisplayed(): Promise<boolean>; isEnabled(): Promise<boolean>; isSelected(): Promise<boolean>; find(by: string, value: string): Promise<any>; findAll(by: string, value: string): Promise<any[]>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }> }>>; source(): Promise<string>; screenshot(path?: string): Promise<{ path?: string; size?: number; bytes?: number[]; format: "png" }>; executeScript(js: string, args?: unknown[]): Promise<unknown>; executeScriptAsync(js: string, args?: unknown[]): Promise<unknown>; cookies(): Promise<object[]>; setCookie(c: { name: string; value: string; path?: string; domain?: string; secure?: boolean; httpOnly?: boolean; expiry?: number }): Promise<{ ok: true }>; deleteCookie(name: string): Promise<{ ok: true }>; deleteAllCookies(): Promise<{ ok: true }>; setImplicitWait(ms: number): Promise<{ ok: true }>; waitFor(by: string, value: string, opts?: { timeout?: number; visible?: boolean; enabled?: boolean }): Promise<any>; clickWhenReady(by: string, value: string, opts?: { timeout?: number; visible?: boolean; enabled?: boolean; poll?: number }): Promise<{ ok: true }>; windowHandles(): Promise<string[]>; currentWindow(): Promise<string>; switchToWindow(handle: string): Promise<{ ok: true }>; newWindow(type?: "tab" | "window"): Promise<{ handle: string; type: string }>; closeWindow(): Promise<string[]>; switchToFrame(target: number | string | object): Promise<{ ok: true }>; frameChain(targets: (number | string | object)[]): Promise<{ ok: true }>; switchToParentFrame(): Promise<{ ok: true }>; switchToDefaultContent(): Promise<{ ok: true }>; acceptAlert(): Promise<{ ok: true }>; dismissAlert(): Promise<{ ok: true }>; alertText(): Promise<string>; sendAlertText(text: string): Promise<{ ok: true }>; maximize(): Promise<{ x: number; y: number; width: number; height: number }>; minimize(): Promise<{ x: number; y: number; width: number; height: number }>; fullscreen(): Promise<{ x: number; y: number; width: number; height: number }>; setWindowRect(rect: { width?: number; height?: number; x?: number; y?: number }): Promise<{ x: number; y: number; width: number; height: number }>; getWindowRect(): Promise<{ x: number; y: number; width: number; height: number }>; hover(el: object): Promise<{ ok: true }>; dragAndDrop(src: object, dst: object): Promise<{ ok: true }>; keyChord(...keys: string[]): Promise<{ ok: true }>; performActions(sequence: unknown[]): Promise<{ ok: true }>; releaseActions(): Promise<{ ok: true }>; cdp(command: string, params?: object): Promise<unknown>; cdpClick(by: string, value: string, opts?: { timeout?: number; poll?: number; button?: "left" | "right" | "middle"; scrollIntoView?: boolean; offsetX?: number; offsetY?: number }): Promise<{ clicked: true; x: number; y: number; targetId?: string }>; targets(): Promise<Array<{ targetId: string; type: string; url: string; title: string }>>; attach(target: string | { targetId: string }): Promise<{ targetId: string; sessionId: string; cdp(method: string, params?: object): Promise<unknown>; detach(): Promise<{ detached: true }> }>; quit(): Promise<{ closed: true }> }>
@@ -16174,7 +16548,7 @@ if (!services.webdriver.available) {
 }
 ```
 
-##### 17.12.9.3 services.webdriver.probe
+##### 17.13.9.3 services.webdriver.probe
 
 ```
 probe(opts: { url: string }): Promise<{ ready: boolean; status?: number; error?: string }>
@@ -16195,13 +16569,13 @@ const r = await services.webdriver.probe({ url: "http://127.0.0.1:9515" });
 runtime.log("ready:", r.ready);
 ```
 
-### 17.13 text
+### 17.14 text
 
 String / regex / charset / data manipulation — all text-shaped transforms.
 
-#### 17.13.1 text.charset
+#### 17.14.1 text.charset
 
-##### 17.13.1.1 text.charset.decode
+##### 17.14.1.1 text.charset.decode
 
 ```
 decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>
@@ -16222,7 +16596,7 @@ Decode bytes in a named charset to a UTF-8 string.
 const s = await text.charset.decode(bytes, "Windows-1252");
 ```
 
-##### 17.13.1.2 text.charset.detect
+##### 17.14.1.2 text.charset.detect
 
 ```
 detect(input: string | Uint8Array | ArrayBuffer): Promise<{ charset: string; confidence: number; language?: string; candidates: { charset: string; confidence: number; language?: string }[] }>
@@ -16243,7 +16617,7 @@ const r = await text.charset.detect(bytes);
 runtime.log(r.charset, r.confidence);
 ```
 
-##### 17.13.1.3 text.charset.encode
+##### 17.14.1.3 text.charset.encode
 
 ```
 encode(input: string, charset: string): Promise<Uint8Array>
@@ -16264,9 +16638,9 @@ Encode a UTF-8 string to bytes in the named charset.
 const bytes = await text.charset.encode("café", "ISO-8859-1");
 ```
 
-#### 17.13.2 text.diff
+#### 17.14.2 text.diff
 
-##### 17.13.2.1 text.diff.compare
+##### 17.14.2.1 text.diff.compare
 
 ```
 compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number; fromFile?: string; toFile?: string }): Promise<{ identical: boolean; binary: boolean; added: number; removed: number; diff: string; format: "unified" }>
@@ -16289,9 +16663,9 @@ const d = await text.diff.compare("a\n", "b\n");
 runtime.log(d.diff, d.added, d.removed);
 ```
 
-#### 17.13.3 text.jq
+#### 17.14.3 text.jq
 
-##### 17.13.3.1 text.jq.query
+##### 17.14.3.1 text.jq.query
 
 ```
 query(data: unknown, filter: string): Promise<unknown>
@@ -16312,7 +16686,7 @@ Run a jq filter over data and return the first emitted value (or null).
 const name = await text.jq.query(obj, ".users[0].name");
 ```
 
-##### 17.13.3.2 text.jq.queryAll
+##### 17.14.3.2 text.jq.queryAll
 
 ```
 queryAll(data: unknown, filter: string): Promise<unknown[]>
@@ -16333,9 +16707,9 @@ Run a jq filter and drain the iterator into an array.
 const ids = await text.jq.queryAll(obj, ".users[].id");
 ```
 
-#### 17.13.4 text.preg
+#### 17.14.4 text.preg
 
-##### 17.13.4.1 text.preg.match
+##### 17.14.4.1 text.preg.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -16356,7 +16730,7 @@ First hit of /pattern/flags against subject, or null. Returns { match, groups, i
 const m = text.preg.match("/(\\d+)/", "x42"); // { match: "42", groups: ["42"], index: 1 }
 ```
 
-##### 17.13.4.2 text.preg.matchAll
+##### 17.14.4.2 text.preg.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -16377,7 +16751,7 @@ Every hit of /pattern/flags against subject, as an array of { match, groups, ind
 const all = text.preg.matchAll("/\\d+/", "1 22 333"); // 3 matches
 ```
 
-##### 17.13.4.3 text.preg.replace
+##### 17.14.4.3 text.preg.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -16399,9 +16773,9 @@ Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / 
 text.preg.replace("/(\\w+)@/", "${1}_at_", "a@b"); // "a_at_b"
 ```
 
-#### 17.13.5 text.preg2
+#### 17.14.5 text.preg2
 
-##### 17.13.5.1 text.preg2.match
+##### 17.14.5.1 text.preg2.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -16422,7 +16796,7 @@ First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/ba
 const m = text.preg2.match("/(?<=@)\\w+/", "a@host"); // { match: "host", ... }
 ```
 
-##### 17.13.5.2 text.preg2.matchAll
+##### 17.14.5.2 text.preg2.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -16443,7 +16817,7 @@ Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, 
 const all = text.preg2.matchAll("/\\w+/", "a b c"); // 3 matches
 ```
 
-##### 17.13.5.3 text.preg2.replace
+##### 17.14.5.3 text.preg2.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -16465,9 +16839,9 @@ Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 /
 text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 ```
 
-#### 17.13.6 text.stego
+#### 17.14.6 text.stego
 
-##### 17.13.6.1 text.stego.embed
+##### 17.14.6.1 text.stego.embed
 
 ```
 embed(cover: string, payload: string | Uint8Array, opts?: { password?: string }): string
@@ -16489,7 +16863,7 @@ Hide a payload inside cover text using zero-width characters (U+200B / U+200C), 
 const out = text.stego.embed("Hello there.", "meet at noon", { password: "s3cret" });
 ```
 
-##### 17.13.6.2 text.stego.extract
+##### 17.14.6.2 text.stego.extract
 
 ```
 extract(stegoText: string, opts?: { password?: string }): string | Uint8Array
@@ -16510,9 +16884,9 @@ Recover a payload hidden by text.stego.embed. Scans the string for zero-width ca
 const msg = text.stego.extract(out, { password: "s3cret" });
 ```
 
-#### 17.13.7 text.str
+#### 17.14.7 text.str
 
-##### 17.13.7.1 text.str.base64Decode
+##### 17.14.7.1 text.str.base64Decode
 
 ```
 base64Decode(input: string): string
@@ -16532,7 +16906,7 @@ Decode standard (RFC 4648) base64 with padding. The standard alphabet only — U
 text.str.base64Decode("aGk="); // "hi"
 ```
 
-##### 17.13.7.2 text.str.base64Encode
+##### 17.14.7.2 text.str.base64Encode
 
 ```
 base64Encode(input: string): string
@@ -16552,7 +16926,7 @@ Standard base64 (with padding).
 text.str.base64Encode("hi"); // "aGk="
 ```
 
-##### 17.13.7.3 text.str.base64UrlDecode
+##### 17.14.7.3 text.str.base64UrlDecode
 
 ```
 base64UrlDecode(input: string): string
@@ -16572,7 +16946,7 @@ Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded inpu
 text.str.base64UrlDecode("YT9i"); // "a?b"
 ```
 
-##### 17.13.7.4 text.str.base64UrlEncode
+##### 17.14.7.4 text.str.base64UrlEncode
 
 ```
 base64UrlEncode(input: string): string
@@ -16592,7 +16966,7 @@ URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe t
 text.str.base64UrlEncode("a?b"); // "YT9i"
 ```
 
-##### 17.13.7.5 text.str.br2nl
+##### 17.14.7.5 text.str.br2nl
 
 ```
 br2nl(input: string): string
@@ -16612,7 +16986,7 @@ Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
 text.str.br2nl("a<br/>b"); // "a\nb"
 ```
 
-##### 17.13.7.6 text.str.htmlEntityDecode
+##### 17.14.7.6 text.str.htmlEntityDecode
 
 ```
 htmlEntityDecode(input: string): string
@@ -16632,7 +17006,7 @@ Decode named and numeric HTML entities to their UTF-8 equivalents.
 text.str.htmlEntityDecode("a &amp; b"); // "a & b"
 ```
 
-##### 17.13.7.7 text.str.lpad
+##### 17.14.7.7 text.str.lpad
 
 ```
 lpad(input: string, len: number, padChar?: string): string
@@ -16654,7 +17028,7 @@ Shortcut for pad(side: 'left').
 text.str.lpad("7", 3, "0"); // "007"
 ```
 
-##### 17.13.7.8 text.str.ltrim
+##### 17.14.7.8 text.str.ltrim
 
 ```
 ltrim(input: string, mask?: string): string
@@ -16675,7 +17049,7 @@ Like trim, left side only.
 text.str.ltrim("--x", "-"); // "x"
 ```
 
-##### 17.13.7.9 text.str.nl2br
+##### 17.14.7.9 text.str.nl2br
 
 ```
 nl2br(input: string, xhtml?: boolean): string
@@ -16696,7 +17070,7 @@ Replace newlines with <br> (or <br/> when xhtml=true).
 text.str.nl2br("a\nb"); // "a<br>\nb"
 ```
 
-##### 17.13.7.10 text.str.normalizeNewlines
+##### 17.14.7.10 text.str.normalizeNewlines
 
 ```
 normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string
@@ -16717,7 +17091,7 @@ Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr
 text.str.normalizeNewlines("a\r\nb", "lf"); // "a\nb"
 ```
 
-##### 17.13.7.11 text.str.pad
+##### 17.14.7.11 text.str.pad
 
 ```
 pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string
@@ -16740,7 +17114,7 @@ Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', 
 text.str.pad("7", 3, "0", "left"); // "007"
 ```
 
-##### 17.13.7.12 text.str.printf
+##### 17.14.7.12 text.str.printf
 
 ```
 printf(format: string, ...args: unknown[]): void
@@ -16761,7 +17135,7 @@ sprintf + write to stdout.
 text.str.printf("%d items\n", 3);
 ```
 
-##### 17.13.7.13 text.str.reverse
+##### 17.14.7.13 text.str.reverse
 
 ```
 reverse(input: string): string
@@ -16781,7 +17155,7 @@ Rune-aware reversal — `reverse('café')` is `'éfac'`.
 text.str.reverse("café"); // "éfac"
 ```
 
-##### 17.13.7.14 text.str.rpad
+##### 17.14.7.14 text.str.rpad
 
 ```
 rpad(input: string, len: number, padChar?: string): string
@@ -16803,7 +17177,7 @@ Shortcut for pad(side: 'right').
 text.str.rpad("7", 3, "."); // "7.."
 ```
 
-##### 17.13.7.15 text.str.rtrim
+##### 17.14.7.15 text.str.rtrim
 
 ```
 rtrim(input: string, mask?: string): string
@@ -16824,7 +17198,7 @@ Like trim, right side only.
 text.str.rtrim("x...", "."); // "x"
 ```
 
-##### 17.13.7.16 text.str.sprintf
+##### 17.14.7.16 text.str.sprintf
 
 ```
 sprintf(format: string, ...args: unknown[]): string
@@ -16845,7 +17219,7 @@ Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 text.str.sprintf("%s=%d", "n", 5); // "n=5"
 ```
 
-##### 17.13.7.17 text.str.stripHtml
+##### 17.14.7.17 text.str.stripHtml
 
 ```
 stripHtml(input: string): string
@@ -16865,7 +17239,7 @@ Remove HTML tags and decode common entities.
 text.str.stripHtml("<b>hi</b>"); // "hi"
 ```
 
-##### 17.13.7.18 text.str.trim
+##### 17.14.7.18 text.str.trim
 
 ```
 trim(input: string, mask?: string): string
@@ -16886,7 +17260,7 @@ Strip whitespace (or any char in the optional mask string) from both ends.
 text.str.trim("  hi  "); // "hi"
 ```
 
-##### 17.13.7.19 text.str.urlDecode
+##### 17.14.7.19 text.str.urlDecode
 
 ```
 urlDecode(input: string): string
@@ -16906,7 +17280,7 @@ Inverse of urlEncode.
 text.str.urlDecode("a+b%26c"); // "a b&c"
 ```
 
-##### 17.13.7.20 text.str.urlEncode
+##### 17.14.7.20 text.str.urlEncode
 
 ```
 urlEncode(input: string): string
@@ -16926,11 +17300,11 @@ Form-encoding ('+' for space). For path segments use encodeURIComponent (provide
 text.str.urlEncode("a b&c"); // "a+b%26c"
 ```
 
-### 17.14 tui
+### 17.15 tui
 
 Multi-pane terminal UI: layout, pane, write, focus.
 
-#### 17.14.1 tui.layout
+#### 17.15.1 tui.layout
 
 ```
 layout(tree: { name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number }): void
@@ -16951,7 +17325,7 @@ tui.layout({ cols: [{ name: "log", title: "Log" }, { name: "out", weight: 2 }] }
 tui.pane("log").writeln("started");
 ```
 
-#### 17.14.2 tui.onKey
+#### 17.15.2 tui.onKey
 
 ```
 onKey(handler: (key: { name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }) => void): () => void
@@ -16972,7 +17346,7 @@ tui.layout({ rows: [{ name: "log" }] });
 const off = tui.onKey((k) => { if (k.name === "Rune" && k.rune === "q") off(); });
 ```
 
-#### 17.14.3 tui.pane
+#### 17.15.3 tui.pane
 
 ```
 pane(name: string): { write(text: string): void; writeln(text: string): void; clear(): void; title(text: string): void }
@@ -16994,7 +17368,7 @@ p.title("Output");
 p.writeln("hello");
 ```
 
-#### 17.14.4 tui.waitKey
+#### 17.15.4 tui.waitKey
 
 ```
 waitKey(...args: unknown[]): Promise<{ name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }>
@@ -17012,13 +17386,13 @@ tui.pane("log").writeln("Done. Press any key to close.");
 await tui.waitKey();
 ```
 
-### 17.15 web
+### 17.16 web
 
 Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).
 
-#### 17.15.1 web.feed
+#### 17.16.1 web.feed
 
-##### 17.15.1.1 web.feed.load
+##### 17.16.1.1 web.feed.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>
@@ -17039,7 +17413,7 @@ Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option 
 const f = await web.feed.load("https://example.com/feed.xml");
 ```
 
-##### 17.15.1.2 web.feed.parse
+##### 17.16.1.2 web.feed.parse
 
 ```
 parse(source: string): { feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }
@@ -17059,9 +17433,9 @@ Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-
 const f = web.feed.parse(xml); f.items[0].title;
 ```
 
-#### 17.15.2 web.html
+#### 17.16.2 web.html
 
-##### 17.15.2.1 web.html.load
+##### 17.16.2.1 web.html.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>
@@ -17082,7 +17456,7 @@ Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the 
 const doc = await web.html.load("https://example.com"); doc.findAll("a").map(a => a.attr("href"));
 ```
 
-##### 17.15.2.2 web.html.parse
+##### 17.16.2.2 web.html.parse
 
 ```
 parse(source: string): { find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }
@@ -17102,9 +17476,9 @@ Parse HTML leniently (real-world tag soup is accepted, never throws on bad marku
 const doc = web.html.parse(html); doc.find("h1").text();
 ```
 
-#### 17.15.3 web.sitemap
+#### 17.16.3 web.sitemap
 
-##### 17.15.3.1 web.sitemap.load
+##### 17.16.3.1 web.sitemap.load
 
 ```
 load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>
@@ -17125,7 +17499,7 @@ Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic
 const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });
 ```
 
-##### 17.15.3.2 web.sitemap.parse
+##### 17.16.3.2 web.sitemap.parse
 
 ```
 parse(source: string): { type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }

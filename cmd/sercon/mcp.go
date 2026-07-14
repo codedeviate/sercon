@@ -44,9 +44,10 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 	}
 }
 
-// handle builds the goja object returned to the script. Methods for
-// tool/resource/prompt/stdio/listen are added by later tasks; this establishes
-// the object and close().
+// handle builds the goja object returned to the script: tool/resource/prompt
+// (capability registration), stdio/listen (the two transports), and close
+// (currently a no-op placeholder — see jsClose's doc comment). All six are
+// implemented in mcp_server.go.
 func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 	h := vm.NewObject()
 	must := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = h.Set(name, fn) }
@@ -60,6 +61,8 @@ func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 }
 
 // errAlreadyStarted is thrown when a tool/resource/prompt is registered after
-// the server has started serving — a list-changed notification for late
-// registration is a later phase.
-var errAlreadyStarted = errors.New("mcp: server already started; register tools/resources/prompts before serving")
+// the server has started serving, or when a second transport (stdio()/
+// listen()) is started on a handle that already has one running — a
+// list-changed notification for late capability registration, and support
+// for concurrent transports on one handle, are both later-phase work.
+var errAlreadyStarted = errors.New("mcp: server already started; a transport is already running or capabilities must be registered before serving")

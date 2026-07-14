@@ -8,6 +8,27 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`mcp` namespace — MCP (Model Context Protocol) server.** `mcp.serve({name, version,
+  instructions?})` returns a handle for registering `tool()`/`resource()`/`prompt()`
+  capabilities with JS handlers (sync or async, receiving `(args, ctx)` where `ctx`
+  carries `requestId`/`clientInfo`), then serving them over `stdio()` (newline-delimited
+  JSON-RPC on stdin/stdout — the transport clients like Claude Desktop launch as a
+  subprocess; **Unix-only this phase**, rejects with a clear error on Windows) or
+  `listen({port, host?, path?})` (the Streamable HTTP transport — cross-platform, any
+  number of clients). A tool handler's return value can be a plain string, an object
+  shaped `{content?, structuredContent?, isError?}`, or a thrown/rejected value, which
+  surfaces to the client as an `isError` tool result rather than a crash; resource/prompt
+  handler failures propagate as protocol-level errors instead. A stdio server keeps
+  stdout pure JSON-RPC — `console.*`/`runtime.log` output is transparently redirected to
+  stderr for the lifetime of the connection. Built on the official
+  `modelcontextprotocol/go-sdk`, pure-Go. See MANUAL.md §5.15 and the generated §17.9
+  reference; runnable demos at `examples/scripts/mcp-server-stdio.ts` and
+  `examples/scripts/mcp-server-http.ts`.
+  Sampling/elicitation, resource subscriptions/list-changed notifications, pagination,
+  progress/logging, resource templates, and Windows stdio support are planned follow-ups,
+  not yet available.
+
 ## [0.90.2] — 2026-07-13
 
 ### Changed

@@ -27,7 +27,7 @@ type mcpServer struct {
 	loop    *eventloop.EventLoop
 	srv     *mcp.Server
 	started bool
-	release func()       // HoldRun release, set when a transport starts; cleared on serve end (and by close())
+	release func()       // HoldRun release, set when a transport starts; cleared when that transport's serve loop ends (jsStdio's/jsListen's own goroutine clears it — jsClose is currently a no-op and does NOT clear it)
 	reqSeq  atomic.Int64 // monotonic counter backing newRequestContext's requestId
 }
 
@@ -529,4 +529,11 @@ func (ms *mcpServer) jsListen(call goja.FunctionCall) goja.Value {
 	return ms.vm.ToValue(p)
 }
 
+// jsClose is srv.close(): present on the handle for interface symmetry with
+// server.http.listen's close(), but currently an inert no-op — it does not
+// stop a running transport. Stopping actually happens per-transport: an HTTP
+// listener is stopped via the close() on jsListen's returned handle, and a
+// stdio server stops on its own once the peer disconnects (jsStdio's promise
+// settles then). Wiring this into an explicit "stop whichever transport is
+// running" shutdown is later-phase work.
 func (ms *mcpServer) jsClose(call goja.FunctionCall) goja.Value { return goja.Undefined() }

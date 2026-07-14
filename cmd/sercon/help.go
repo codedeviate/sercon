@@ -1336,10 +1336,29 @@ doc.findAll("a.product").forEach(a => console.log(a.text(), a.attr("href")));
 doc.xpathAll("//h2").forEach(h => console.log(h.text()));`)
 	note("web.html.parse is lenient (real-world tag soup OK); query with CSS find/findAll or XPath xpath/xpathAll. load() reuses net.http options + a default User-Agent and throws on non-2xx. See examples/scripts/web-*.ts.")
 
+	header(70, "Serve an MCP server (mcp)")
+	code(`// Tools/resources/prompts, served over stdio (Claude Desktop, Unix-only)
+// or Streamable HTTP (cross-platform, any number of clients).
+const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
+
+srv.tool({
+  name: "add",
+  description: "add two numbers",
+  inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] },
+  async handler(args) { return String(args.a + args.b); },
+});
+
+// Pick ONE transport per handle:
+// await srv.stdio();                          // stdin/stdout JSON-RPC (Unix only)
+const h = await srv.listen({ port: 38080 });    // Streamable HTTP
+runtime.log("listening at", h.url);
+await h.close();`)
+	note("stdio() keeps stdout pure JSON-RPC (console/runtime output is redirected to stderr) and rejects with a clear error on Windows — use listen() there instead. A tool/resource/prompt handler can return a string, {content}, or {structuredContent}; a thrown/rejected handler becomes an isError tool result, not a crash. See examples/scripts/mcp-server-stdio.ts and examples/scripts/mcp-server-http.ts, and MANUAL.md §5.15 / the generated §17.9 reference.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 69
+const exampleCount = 70

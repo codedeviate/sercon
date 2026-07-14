@@ -26,6 +26,7 @@ func docsByNamespace() map[string]map[string]scriptengine.MemberDoc {
 		"audio":    audioDocs(),
 		"server":   serverDocs(),
 		"console":  consoleDocs(),
+		"mcp":      mcpDocs(),
 	}
 }
 
@@ -33,7 +34,12 @@ func docsByNamespace() map[string]map[string]scriptengine.MemberDoc {
 // completeness standard. Each Part-B task appends its namespace here as its final
 // step; the final task asserts this set covers every namespace in
 // docsByNamespace() (see TestDocsComplete_CoversAllNamespaces, added later).
-var sweptNamespaces = []string{"runtime", "crypto", "text", "codec", "fs", "net", "db", "services", "tui", "image", "web", "audio", "server", "console"}
+//
+// Note: "cloud" is registered in main.go (SetMemberDocsStructured("cloud",
+// cloudDocs())) but is intentionally absent from both this list and
+// docsByNamespace() above — a pre-existing gap from an earlier task, left
+// untouched here since closing it is out of scope for the mcp namespace work.
+var sweptNamespaces = []string{"runtime", "crypto", "text", "codec", "fs", "net", "db", "services", "tui", "image", "web", "audio", "server", "console", "mcp"}
 
 // checkMember asserts a single MemberDoc meets the completeness standard:
 // non-empty Summary/ReturnType/Returns/Errors/Example, and every Param has

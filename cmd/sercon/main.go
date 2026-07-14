@@ -305,7 +305,7 @@ func classifyErr(err error) int {
 // namespace at Run time.
 func registerSurface(e *scriptengine.Engine) error {
 	// `console` is a browser/Node-compat shim (see console.go). Registered
-	// alongside the thirteen reserved globals; the CLI disables the engine's
+	// alongside the fifteen reserved globals; the CLI disables the engine's
 	// built-in console (Options.DisableConsole) so this one is authoritative.
 	if err := e.RegisterNamespaceFactory("console", func(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 		return consoleNamespace(vm)
@@ -601,6 +601,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("console", consoleDocs())
 	e.SetDocs("cloud", "Cloud provider clients: cloud.google(opts?) returns a handle with typed services (storage, compute, iam, secrets) plus a generic path-based REST escape hatch (call). Pure-Go, CGO-free; reuses Application Default Credentials.")
 	e.SetMemberDocsStructured("cloud", cloudDocs())
+	e.SetDocs("mcp", "Model Context Protocol server: mcp.serve({name, version, instructions?}) returns a handle for registering tools/resources/prompts with JS handlers, then serving them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk.")
+	e.SetMemberDocsStructured("mcp", mcpDocs())
 	return nil
 }
 
