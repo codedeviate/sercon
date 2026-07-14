@@ -54,5 +54,7 @@ func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 	return h
 }
 
-//nolint:unused // consumed by a later task's listen/stdio transport guard
+// errAlreadyStarted is thrown when a tool/resource/prompt is registered after
+// the server has started serving — a list-changed notification for late
+// registration is a later phase.
 var errAlreadyStarted = errors.New("mcp: server already started; register tools/resources/prompts before serving")

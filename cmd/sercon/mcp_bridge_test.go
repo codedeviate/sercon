@@ -23,7 +23,31 @@ import (
 // goroutine that calls callJSHandler off-loop, then releases once the
 // bridge settles — exactly the pattern a real SDK-goroutine caller will
 // use once tool/resource/prompt handlers route through callJSHandler.
-func mcpBridgeFixture(t *testing.T, arg int64, onDone func(val goja.Value, err error)) *scriptengine.Engine {
+// exportConvert is the trivial on-loop converter the bridge tests pass to
+// callJSHandler: it exports the settled goja.Value to native Go data (the
+// same value the tests asserted on before callJSHandler grew its convert
+// parameter). Real callers pass a richer converter (e.g. toToolResult).
+func exportConvert(_ *goja.Runtime, v goja.Value) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
+	return v.Export(), nil
+}
+
+// numEq reports whether an exported JS number equals want, tolerating goja's
+// int64/float64 export ambiguity for whole numbers.
+func numEq(v any, want float64) bool {
+	switch n := v.(type) {
+	case int64:
+		return float64(n) == want
+	case float64:
+		return n == want
+	default:
+		return false
+	}
+}
+
+func mcpBridgeFixture(t *testing.T, arg int64, onDone func(val any, err error)) *scriptengine.Engine {
 	t.Helper()
 	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
 
@@ -48,7 +72,7 @@ func mcpBridgeFixture(t *testing.T, arg int64, onDone func(val goja.Value, err e
 					defer release()
 					val, err := ms.callJSHandler(handler, func(vm *goja.Runtime) []goja.Value {
 						return []goja.Value{vm.ToValue(arg)}
-					})
+					}, exportConvert)
 					onDone(val, err)
 				}()
 				return goja.Undefined()
@@ -63,9 +87,9 @@ func mcpBridgeFixture(t *testing.T, arg int64, onDone func(val goja.Value, err e
 // TestMCPBridge_AsyncResolve verifies that a handler returning a resolved
 // Promise unblocks callJSHandler with the fulfilled value.
 func TestMCPBridge_AsyncResolve(t *testing.T) {
-	var gotVal goja.Value
+	var gotVal any
 	var gotErr error
-	eng := mcpBridgeFixture(t, 41, func(val goja.Value, err error) {
+	eng := mcpBridgeFixture(t, 41, func(val any, err error) {
 		gotVal, gotErr = val, err
 	})
 
@@ -78,7 +102,7 @@ test.fire();
 	if gotErr != nil {
 		t.Fatalf("callJSHandler: unexpected error: %v", gotErr)
 	}
-	if gotVal == nil || gotVal.ToInteger() != 42 {
+	if !numEq(gotVal, 42) {
 		t.Fatalf("got %v, want 42", gotVal)
 	}
 }
@@ -86,9 +110,9 @@ test.fire();
 // TestMCPBridge_AsyncReject verifies that a handler whose Promise rejects
 // surfaces as a Go error carrying the rejection reason.
 func TestMCPBridge_AsyncReject(t *testing.T) {
-	var gotVal goja.Value
+	var gotVal any
 	var gotErr error
-	eng := mcpBridgeFixture(t, 41, func(val goja.Value, err error) {
+	eng := mcpBridgeFixture(t, 41, func(val any, err error) {
 		gotVal, gotErr = val, err
 	})
 
@@ -104,7 +128,7 @@ test.fire();
 	if !strings.Contains(gotErr.Error(), "boom") {
 		t.Fatalf("error = %q, want it to contain %q", gotErr.Error(), "boom")
 	}
-	if gotVal != nil && !goja.IsUndefined(gotVal) {
+	if gotVal != nil {
 		t.Fatalf("expected no value on rejection, got %v", gotVal)
 	}
 }
@@ -122,7 +146,7 @@ func TestMCPBridge_BuildArgsPanic(t *testing.T) {
 		ms      *mcpServer
 		handler *scriptengine.LoopCallable
 	)
-	var gotVal goja.Value
+	var gotVal any
 	var gotErr error
 	done := make(chan struct{})
 
@@ -143,7 +167,7 @@ func TestMCPBridge_BuildArgsPanic(t *testing.T) {
 					defer release()
 					val, err := ms.callJSHandler(handler, func(vm *goja.Runtime) []goja.Value {
 						panic("boom")
-					})
+					}, exportConvert)
 					gotVal, gotErr = val, err
 					close(done)
 				}()
@@ -168,7 +192,7 @@ test.fire();
 	if !strings.Contains(gotErr.Error(), "boom") {
 		t.Fatalf("error = %q, want it to contain %q", gotErr.Error(), "boom")
 	}
-	if gotVal != nil && !goja.IsUndefined(gotVal) {
+	if gotVal != nil {
 		t.Fatalf("expected no value, got %v", gotVal)
 	}
 	// Reaching this line at all proves the panic was recovered rather
@@ -178,9 +202,9 @@ test.fire();
 // TestMCPBridge_SyncPassthrough verifies that a handler returning a plain
 // (non-Promise) value passes straight through without any Promise bridge.
 func TestMCPBridge_SyncPassthrough(t *testing.T) {
-	var gotVal goja.Value
+	var gotVal any
 	var gotErr error
-	eng := mcpBridgeFixture(t, 21, func(val goja.Value, err error) {
+	eng := mcpBridgeFixture(t, 21, func(val any, err error) {
 		gotVal, gotErr = val, err
 	})
 
@@ -193,7 +217,7 @@ test.fire();
 	if gotErr != nil {
 		t.Fatalf("callJSHandler: unexpected error: %v", gotErr)
 	}
-	if gotVal == nil || gotVal.ToInteger() != 42 {
+	if !numEq(gotVal, 42) {
 		t.Fatalf("got %v, want 42", gotVal)
 	}
 }
