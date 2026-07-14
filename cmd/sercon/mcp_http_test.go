@@ -168,3 +168,31 @@ func TestMCPHTTP_MissingPortThrows(t *testing.T) {
 		t.Fatal("expected throw for missing port")
 	}
 }
+
+// TestMCPHTTP_ListenThenStdioThrows asserts the started-guard is shared
+// across transports, not just within the same one: TestMCPHTTP_AlreadyStartedThrows
+// already covers a second listen() after the first; this covers the
+// cross-transport ordering (listen() then stdio()) the guard is also meant
+// to reject. jsStdio checks `ms.started` before doing anything else — in
+// particular before touching the stdout-redirect machinery — so this throws
+// synchronously and is safe to exercise in-process, unlike TestMCPStdio
+// (which needs a real subprocess because a live stdio() swaps fd 1).
+func TestMCPHTTP_ListenThenStdioThrows(t *testing.T) {
+	out, err := runScript(t, `
+		const srv = mcp.serve({ name: "t", version: "1.0.0" });
+		const h = await srv.listen({ port: 0 });
+		try {
+			srv.stdio();
+			runtime.log("FAIL: stdio() after listen() did not throw");
+		} catch (e) {
+			runtime.log("threw:", e.message);
+		}
+		await h.close();
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out, "threw:") || strings.Contains(out, "FAIL") {
+		t.Fatalf("expected stdio() after listen() to throw, got: %q", out)
+	}
+}

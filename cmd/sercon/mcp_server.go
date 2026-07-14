@@ -395,6 +395,7 @@ func (ms *mcpServer) jsStdio(_ goja.FunctionCall) goja.Value {
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
+
 // jsListen implements srv.listen({ port, host?, path? }): serve the MCP
 // server over the Streamable HTTP transport (the cross-platform transport —
 // unlike stdio, any number of clients/browsers can connect to a TCP
@@ -472,19 +473,38 @@ func (ms *mcpServer) jsListen(call goja.FunctionCall) goja.Value {
 
 	ms.release = ms.eng.HoldRun("mcp:http")
 
-	var serveErr atomic.Value // error
-	go func() {
-		err := httpSrv.Serve(ln)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serveErr.Store(err)
-		}
-	}()
-
-	// stoppedPromise settles once Shutdown completes; close() always returns
-	// this same promise (idempotent — a second call doesn't re-run
-	// Shutdown/release, it just hands back the pending/settled promise).
+	// stoppedPromise settles exactly once, from the Serve goroutine below,
+	// regardless of *why* Serve() returns — an explicit close() (clean
+	// shutdown, resolves) or Serve() failing on its own (e.g. an accept-loop
+	// error, rejects). This mirrors httpListen's single-settle-point design
+	// in server_http.go: close() itself never releases the hold or settles
+	// the promise directly, it only asks Shutdown to unblock Serve(), which
+	// stays the sole authority over the promise/hold lifecycle no matter
+	// which path triggered the exit. That keeps a post-bind failure (Serve
+	// exiting without close() ever being called) from leaking the hold or
+	// leaving the script waiting on a promise that never settles.
 	stoppedPromise, stoppedResolve, stoppedReject := ms.vm.NewPromise()
 	closed := atomic.Bool{}
+
+	go func() {
+		err := httpSrv.Serve(ln)
+		ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+			// Guard against a future second settle point; today Serve()
+			// only ever returns once, so this fires exactly once, but the
+			// nil-check mirrors the release-guard idiom used elsewhere
+			// (jsStdio, closeFn) rather than assuming that invariant.
+			if ms.release != nil {
+				ms.release()
+				ms.release = nil
+			}
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				_ = stoppedReject(vm.NewGoError(err))
+				return
+			}
+			_ = stoppedResolve(goja.Undefined())
+		})
+	}()
+
 	closeFn := func(goja.FunctionCall) goja.Value {
 		if closed.Swap(true) {
 			return ms.vm.ToValue(stoppedPromise)
@@ -492,30 +512,16 @@ func (ms *mcpServer) jsListen(call goja.FunctionCall) goja.Value {
 		go func() {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			shutdownErr := httpSrv.Shutdown(shutdownCtx)
-			ms.loop.RunOnLoop(func(vm *goja.Runtime) {
-				if ms.release != nil {
-					ms.release()
-					ms.release = nil
-				}
-				if shutdownErr != nil {
-					_ = stoppedReject(vm.NewGoError(shutdownErr))
-					return
-				}
-				if v := serveErr.Load(); v != nil {
-					if svErr, ok := v.(error); ok {
-						_ = stoppedReject(vm.NewGoError(svErr))
-						return
-					}
-				}
-				_ = stoppedResolve(goja.Undefined())
-			})
+			_ = httpSrv.Shutdown(shutdownCtx)
+			// stoppedResolve/stoppedReject (and the hold release) fire from
+			// the Serve goroutine above, once Shutdown unblocks it.
 		}()
 		return ms.vm.ToValue(stoppedPromise)
 	}
 
 	handle := ms.vm.NewObject()
 	_ = handle.Set("url", url)
+	_ = handle.Set("stopped", stoppedPromise)
 	_ = handle.Set("close", closeFn)
 
 	p, resolve, _ := ms.vm.NewPromise()
