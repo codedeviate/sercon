@@ -6,8 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
+	"strconv"
 	"sync/atomic"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -391,7 +395,132 @@ func (ms *mcpServer) jsStdio(_ goja.FunctionCall) goja.Value {
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
+// jsListen implements srv.listen({ port, host?, path? }): serve the MCP
+// server over the Streamable HTTP transport (the cross-platform transport —
+// unlike stdio, any number of clients/browsers can connect to a TCP
+// endpoint). Mounts mcp.NewStreamableHTTPHandler on an *http.ServeMux at
+// `path` (default "/mcp"), binds + Serves in a goroutine, and returns a
+// Promise resolving to a handle `{ url, close() }`.
+//
+// Unlike jsStdio (which blocks until the peer disconnects), listen's Promise
+// resolves as soon as the listener is bound — the handle's `close()` is what
+// later resolves once shutdown completes. This mirrors server.http.listen's
+// synchronous-bind-then-handle shape (see server_http.go's httpListen), just
+// wrapped in a real Promise per this binding's documented interface.
+//
+// No stdout redirect here: HTTP has no stdout-framing conflict (that
+// constraint is stdio-only, see jsStdio's doc comment).
 func (ms *mcpServer) jsListen(call goja.FunctionCall) goja.Value {
-	panic(ms.vm.NewTypeError("mcp: listen() not yet implemented"))
+	if ms.started {
+		panic(ms.vm.NewGoError(errAlreadyStarted))
+	}
+
+	opts := call.Argument(0)
+	if opts == nil || goja.IsUndefined(opts) || goja.IsNull(opts) {
+		panic(ms.vm.NewTypeError("mcp: listen: options object required"))
+	}
+	optsObj := opts.ToObject(ms.vm)
+
+	portVal := optsObj.Get("port")
+	if portVal == nil || goja.IsUndefined(portVal) {
+		panic(ms.vm.NewTypeError("mcp: listen: `port` is required"))
+	}
+	port := int(portVal.ToInteger())
+
+	host := "127.0.0.1"
+	if v := optsObj.Get("host"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		if s := v.String(); s != "" {
+			host = s
+		}
+	}
+	path := "/mcp"
+	if v := optsObj.Get("path"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		if s := v.String(); s != "" {
+			path = s
+		}
+	}
+
+	getServer := func(*http.Request) *mcp.Server { return ms.srv }
+	streamableHandler := mcp.NewStreamableHTTPHandler(getServer, nil)
+	mux := http.NewServeMux()
+	mux.Handle(path, streamableHandler)
+
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	httpSrv := &http.Server{Addr: addr, Handler: mux}
+
+	// Bind synchronously so the script learns about port-in-use errors
+	// immediately (mirrors httpListen in server_http.go). A bind failure
+	// means no transport actually started, so — unlike a post-bind failure —
+	// ms.started is not set, letting the script retry listen() with a
+	// different port on the same handle.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		panic(ms.vm.NewGoError(fmt.Errorf("mcp: listen %s: %w", addr, err)))
+	}
+	ms.started = true
+
+	tcpAddr, _ := ln.Addr().(*net.TCPAddr)
+	actualPort := port
+	if tcpAddr != nil {
+		actualPort = tcpAddr.Port
+	}
+	urlHost := host
+	if urlHost == "0.0.0.0" || urlHost == "::" || urlHost == "" {
+		urlHost = "127.0.0.1"
+	}
+	url := fmt.Sprintf("http://%s%s", net.JoinHostPort(urlHost, strconv.Itoa(actualPort)), path)
+
+	ms.release = ms.eng.HoldRun("mcp:http")
+
+	var serveErr atomic.Value // error
+	go func() {
+		err := httpSrv.Serve(ln)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr.Store(err)
+		}
+	}()
+
+	// stoppedPromise settles once Shutdown completes; close() always returns
+	// this same promise (idempotent — a second call doesn't re-run
+	// Shutdown/release, it just hands back the pending/settled promise).
+	stoppedPromise, stoppedResolve, stoppedReject := ms.vm.NewPromise()
+	closed := atomic.Bool{}
+	closeFn := func(goja.FunctionCall) goja.Value {
+		if closed.Swap(true) {
+			return ms.vm.ToValue(stoppedPromise)
+		}
+		go func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			shutdownErr := httpSrv.Shutdown(shutdownCtx)
+			ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+				if ms.release != nil {
+					ms.release()
+					ms.release = nil
+				}
+				if shutdownErr != nil {
+					_ = stoppedReject(vm.NewGoError(shutdownErr))
+					return
+				}
+				if v := serveErr.Load(); v != nil {
+					if svErr, ok := v.(error); ok {
+						_ = stoppedReject(vm.NewGoError(svErr))
+						return
+					}
+				}
+				_ = stoppedResolve(goja.Undefined())
+			})
+		}()
+		return ms.vm.ToValue(stoppedPromise)
+	}
+
+	handle := ms.vm.NewObject()
+	_ = handle.Set("url", url)
+	_ = handle.Set("close", closeFn)
+
+	p, resolve, _ := ms.vm.NewPromise()
+	_ = resolve(handle)
+	return ms.vm.ToValue(p)
 }
+
 func (ms *mcpServer) jsClose(call goja.FunctionCall) goja.Value { return goja.Undefined() }
