@@ -191,6 +191,164 @@ test.ready();
 	}
 }
 
+// TestMCPCapabilities locks the static capability advertisement + list
+// surface: a script registers one tool, one resource, and one prompt before
+// the in-memory client connects (registration happens before connect, same
+// ordering TestMCPTool/TestMCPResource/TestMCPPrompt already rely on since
+// mcp.serve rejects post-start registration). It asserts the negotiated
+// InitializeResult advertises tools/resources/prompts capabilities (the SDK
+// only sets these when at least one of that kind is registered — see
+// (*mcp.Server).capabilities in the go-sdk source) and that
+// ListTools/ListResources/ListPrompts report the registered items by name,
+// with the tool's input schema round-tripping.
+//
+// Out of scope (Phase 2, per task-11-brief.md): runtime post-start
+// add + list-changed notifications.
+func TestMCPCapabilities(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	ready := make(chan struct{})
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{
+					eng: eng, vm: vm, loop: loop,
+					srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil),
+				}
+				return ms.handle(vm)
+			},
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-capabilities")
+				go func() {
+					defer release()
+					<-done
+				}()
+				close(ready)
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "capabilities.ts", `
+const srv = test.serve();
+srv.tool({ name: "echo", inputSchema: { type: "object", properties: { who: { type: "string" } } }, handler: (args) => "echo-" + args.who });
+srv.resource({ uri: "text://greeting", name: "greeting", mimeType: "text/plain", read: (uri) => ({ text: "hello-" + uri }) });
+srv.prompt({
+	name: "greet",
+	description: "Greets someone",
+	arguments: [{ name: "who", description: "who to greet", required: true }],
+	get: (args) => ({
+		description: "a greeting",
+		messages: [{ role: "user", content: { type: "text", text: "hello-" + args.who } }],
+	}),
+});
+test.ready();
+`)
+		runErr <- err
+	}()
+
+	<-ready
+
+	sess, err := connectInMemory(ctx, ms.srv)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	// (a) Negotiated capabilities from the initialize result: the SDK only
+	// advertises a capability when at least one of that primitive is
+	// registered, so this also proves registration happened before connect.
+	initRes := sess.InitializeResult()
+	if initRes == nil || initRes.Capabilities == nil {
+		close(done)
+		t.Fatalf("want non-nil InitializeResult.Capabilities, got %#v", initRes)
+	}
+	caps := initRes.Capabilities
+	if caps.Tools == nil {
+		close(done)
+		t.Fatalf("want Tools capability advertised, got %#v", caps)
+	}
+	if caps.Resources == nil {
+		close(done)
+		t.Fatalf("want Resources capability advertised, got %#v", caps)
+	}
+	if caps.Prompts == nil {
+		close(done)
+		t.Fatalf("want Prompts capability advertised, got %#v", caps)
+	}
+
+	// (b) ListTools reports the registered tool with its input schema intact.
+	toolsRes, err := sess.ListTools(ctx, nil)
+	if err != nil {
+		close(done)
+		t.Fatalf("ListTools: %v", err)
+	}
+	if len(toolsRes.Tools) != 1 {
+		close(done)
+		t.Fatalf("want 1 tool, got %d: %#v", len(toolsRes.Tools), toolsRes.Tools)
+	}
+	tool := toolsRes.Tools[0]
+	if tool.Name != "echo" {
+		close(done)
+		t.Fatalf("want tool name %q, got %q", "echo", tool.Name)
+	}
+	schema, ok := tool.InputSchema.(map[string]any)
+	if !ok {
+		close(done)
+		t.Fatalf("want tool.InputSchema to be a map[string]any, got %#v", tool.InputSchema)
+	}
+	if schema["type"] != "object" {
+		close(done)
+		t.Fatalf("want input schema type %q, got %#v", "object", schema["type"])
+	}
+
+	// (c) ListResources reports the registered resource by name/uri.
+	resRes, err := sess.ListResources(ctx, nil)
+	if err != nil {
+		close(done)
+		t.Fatalf("ListResources: %v", err)
+	}
+	if len(resRes.Resources) != 1 {
+		close(done)
+		t.Fatalf("want 1 resource, got %d: %#v", len(resRes.Resources), resRes.Resources)
+	}
+	if r := resRes.Resources[0]; r.Name != "greeting" || r.URI != "text://greeting" {
+		close(done)
+		t.Fatalf("want resource name %q uri %q, got name=%q uri=%q", "greeting", "text://greeting", r.Name, r.URI)
+	}
+
+	// (d) ListPrompts reports the registered prompt by name.
+	promptsRes, err := sess.ListPrompts(ctx, nil)
+	if err != nil {
+		close(done)
+		t.Fatalf("ListPrompts: %v", err)
+	}
+	if len(promptsRes.Prompts) != 1 {
+		close(done)
+		t.Fatalf("want 1 prompt, got %d: %#v", len(promptsRes.Prompts), promptsRes.Prompts)
+	}
+	if p := promptsRes.Prompts[0]; p.Name != "greet" {
+		close(done)
+		t.Fatalf("want prompt name %q, got %q", "greet", p.Name)
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 // TestMCPContext drives the Phase-1 request-context object (`ctx`, the 2nd
 // handler arg) end to end: a script registers a tool whose handler returns
 // ctx.requestId and ctx.clientInfo.name/version as a delimited string; the Go
