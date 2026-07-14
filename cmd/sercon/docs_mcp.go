@@ -215,7 +215,7 @@ srv.onUnsubscribe((uri) => {
 			ReturnType: "Promise<void>",
 			Returns:    "A promise that resolves once the notification has been sent (or immediately if there is no active transport to send it over).",
 			Errors:     "Throws synchronously (a TypeError) if uri is missing, null, or an empty string. The returned promise rejects if the underlying notification send fails.",
-			Example: `srv.resourceUpdated("config://app");`,
+			Example:    `srv.resourceUpdated("config://app");`,
 		},
 		"serve.completion": {
 			Summary: "Register the handler invoked for a client's argument-autocompletion request (completion/complete) — suggesting values for a prompt argument or a resource-template URI variable as the user types. Only one completion callback is held at a time — a later call replaces the earlier registration. If never called, the server still advertises the completions capability and answers every request with an empty (\"no suggestions\") result rather than rejecting it.",
