@@ -1358,10 +1358,37 @@ runtime.log("listening at", h.url);
 await h.close();`)
 	note("stdio() keeps stdout pure JSON-RPC (console/runtime output is redirected to stderr) and rejects with a clear error on Windows — use listen() there instead. A tool/resource/prompt handler can return a string, {content}, or {structuredContent}; a thrown/rejected handler becomes an isError tool result, not a crash. See examples/scripts/mcp-server-stdio.ts and examples/scripts/mcp-server-http.ts, and MANUAL.md §5.15 / the generated §17.9 reference.")
 
+	header(71, "MCP cookbook: expose sercon, sampling, OAuth (mcp)")
+	code(`// ctx gains sample()/elicit()/roots() — server-initiated calls OUT to the
+// client, not just handlers responding to the client's own requests.
+srv.tool({
+  name: "summarize",
+  inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+  async handler(args, ctx) {
+    const r = await ctx.sample({
+      messages: [{ role: "user", content: { type: "text", text: "Summarize: " + args.text } }],
+      maxTokens: 200,
+    });
+    return r.content.text; // asks the CLIENT's own LLM, not an sercon-side provider
+  },
+});
+
+srv.onRootsChanged((roots) => runtime.log("roots changed:", JSON.stringify(roots)));
+
+// listen() can also be an OAuth 2.1 resource server:
+const h = await srv.listen({
+  port: 38080,
+  auth: {
+    verify: (token) => (token === "good-token" ? { subject: "demo-user", scopes: ["mcp"] } : null),
+    resourceMetadata: { authorizationServers: ["https://auth.example.com"] },
+  },
+});`)
+	note("ctx.sample/ctx.elicit/ctx.roots each reject with a clear \"mcp: client does not support <capability>\" error if the connected client never advertised it — there's no silent degrade path, and they only do something interesting against a real client (they're Go-tested, not make-demo scripts; see examples/scripts/mcp-sampling.ts, mcp-elicit.ts, mcp-roots.ts). listen()'s auth option makes sercon an OAuth resource server only — it validates bearer tokens and publishes /.well-known/oauth-protected-resource metadata; it never issues tokens or does dynamic client registration (that's the authorization server's job). Also see examples/scripts/mcp-toolbox.ts (sercon-as-toolbox) and mcp-bridge.ts (bridging a tool to an external API), both make-demo scripts. Full walkthroughs in MANUAL.md §5.15.2.10–§5.15.2.14 and the generated §17.9 reference.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 70
+const exampleCount = 71

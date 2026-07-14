@@ -8,6 +8,41 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`mcp` Phase 3 — sampling, elicitation, roots, OAuth resource server.** Every
+  tool/resource/prompt handler's `ctx` gains three server-initiated calls *out* to the
+  connected client: `ctx.sample({messages, maxTokens, systemPrompt?, temperature?,
+  stopSequences?, includeContext?, modelPreferences?})` asks the client's own LLM to run a
+  completion (`sampling/createMessage`) and resolves `{content: {type, text}, model,
+  stopReason, role}`; `ctx.elicit({message, schema, mode?})` asks the user, via the
+  client's UI, to confirm an action or fill in a small form (`elicitation/create`) and
+  resolves `{action: "accept"|"decline"|"cancel", content?}`; `ctx.roots()` asks the client
+  for its current filesystem/URI roots (`roots/list`) and resolves an array of `{uri,
+  name?}`. All three reject with a clear `"mcp: client does not support <capability>"`
+  error when the connected client hasn't advertised the matching capability — checked
+  against the negotiated `ClientCapabilities` before any wire call is attempted, so there's
+  no confusing raw protocol error. `srv.onRootsChanged(fn)` registers the push-based
+  counterpart to `ctx.roots()`, firing whenever the client's root set changes. `srv.listen`
+  gains an optional `auth` option turning the Streamable HTTP transport into an OAuth 2.1
+  *resource server*: `auth.verify(token, req)` (sync or async) validates the bearer token
+  and returns an identity (`{subject?, scopes?, expiresAt?}`) or `null`/`undefined` to
+  reject with `401`; `auth.resourceMetadata` (`{authorizationServers, scopesSupported?,
+  resourceName?, ...}`) is served as RFC 9728 protected-resource metadata at
+  `/.well-known/oauth-protected-resource`, and `auth.scopes` are enforced on every request.
+  Dynamic client registration (DCR, RFC 7591) and token issuance are intentionally out of
+  scope — those are the authorization server's job, not a resource server's. Built on the
+  official `modelcontextprotocol/go-sdk`'s `auth` package, pure-Go, no new dependency.
+- **MCP advanced cookbook.** MANUAL.md §5.15.2 grows five new recipes covering bridging a
+  tool to an external HTTP API, sampling, elicitation, roots, and an OAuth-protected
+  `listen()` server, plus a Concepts note on client-dependence (sampling/elicit/roots only
+  do something interesting against a real MCP client, so those examples are Go-tested via
+  `cmd/sercon/mcp_examples_test.go` rather than `make demo` scripts) and OAuth's
+  resource-server-only scope. New runnable examples: `examples/scripts/mcp-bridge.ts`,
+  `mcp-toolbox.ts` (both `make demo`), `mcp-sampling.ts`, `mcp-elicit.ts`, `mcp-roots.ts`,
+  and `mcp-oauth.ts` (client-dependent, Go-tested). `--examples` gains a matching walkthrough
+  (§71). With this, sercon's MCP **server** surface is full-spec against the MCP protocol;
+  an MCP **client** (`mcp.connect`) and Windows stdio transport support remain follow-ups.
+
 ## [0.91.0] — 2026-07-14
 
 ### Added

@@ -6140,14 +6140,49 @@ before the client must page with a cursor (defaults to the SDK's built-in
 1000). Useful mainly for exercising a client's pagination handling, or if
 you register a very large capability set. See §5.15.2.9.
 
-**Not yet available.** Sampling (`ctx.sample` — asking the *client's* LLM
-to generate something), elicitation (`ctx.elicit` — asking the user a
-follow-up question mid-call), roots (the client telling the server which
-filesystem/URI roots it may operate on), and an HTTP OAuth flow for
-`listen()` are all planned for later phases — not present in this
-release. Build tools/resources/prompts around request/response, progress/
-logging, subscriptions, and completion for now; don't reach for sampling/
-elicitation/roots/OAuth until they ship.
+**Sampling, elicitation, and roots — server-initiated client calls.**
+Every recipe so far has the client calling *into* the server (a tool call,
+a resource read, a prompt fetch). A handler can also call back *out* to
+the client mid-request, via three additions to `ctx`:
+
+| Method | Asks the client for | Requires the client to have |
+|---|---|---|
+| `ctx.sample(opts)` | Run a completion through *the client's own LLM* (`sampling/createMessage`) — not sercon calling an LLM provider directly. | Wired a `CreateMessageHandler` (i.e. advertised the `sampling` capability during `initialize`). |
+| `ctx.elicit(opts)` | Ask *the user*, via the client's UI, to confirm an action or fill in a small form (`elicitation/create`). | Wired an `ElicitationHandler` (the `elicitation` capability). |
+| `ctx.roots()` | The client's current list of filesystem/URI roots it's willing to let the server operate within (`roots/list`). | Advertised the `roots` capability (most SDK clients do by default). |
+
+All three reject with a clear `"mcp: client does not support <capability>"`
+error when the connected client hasn't advertised the matching
+capability — check for that error rather than assuming every client
+supports every capability; none of the three has a silent degrade path.
+`srv.onRootsChanged(fn)` is the push-based counterpart to `ctx.roots()`:
+it fires whenever the client's root set changes, so a server doesn't have
+to poll.
+
+**Client-dependence.** Unlike the recipes above — which are either
+self-testing (`mcp-server-http.ts`, `mcp-toolbox.ts`, `mcp-bridge.ts` speak
+raw JSON-RPC to themselves over HTTP) or need no client cooperation beyond
+the initial handshake — sampling/elicitation/roots only do something
+interesting against a *real* MCP client capable of answering these
+mid-call requests. `examples/scripts/mcp-sampling.ts`, `mcp-elicit.ts`,
+and `mcp-roots.ts` are therefore **not** `make demo` scripts: they serve
+over stdio and block until a peer disconnects. They're exercised by
+`cmd/sercon/mcp_examples_test.go`, which connects the real go-sdk client
+with a canned handler standing in for "the client's LLM" / "the human at
+the keyboard" / "a client with pre-seeded roots". See §5.15.2.11–§5.15.2.13.
+
+**OAuth — sercon as a resource server, not an authorization server.**
+`srv.listen({ ..., auth })` turns a Streamable HTTP listener into an OAuth
+2.1 *resource server* (RS): it validates bearer tokens (via your `verify`
+callback) and advertises RFC 9728 protected-resource metadata at
+`/.well-known/oauth-protected-resource`, so clients know which
+*authorization server* (AS) to obtain a token from. sercon deliberately
+does **not** implement dynamic client registration (DCR, RFC 7591) or any
+token issuance — minting and registering tokens is the AS's job, not a
+resource server's; sercon only ever validates tokens someone else issued.
+A request with a missing/invalid/expired/under-scoped token never reaches
+your handlers — the middleware answers it directly with `401` and a
+`WWW-Authenticate` header pointing at the metadata URL. See §5.15.2.14.
 
 #### 5.15.2 Recipes
 
@@ -6185,6 +6220,10 @@ srv.tool({
 - A handler that throws (e.g. the hostname doesn't resolve) becomes an
   `isError: true` tool result — the client sees a failed call, not a
   crashed server.
+- This scales: `examples/scripts/mcp-toolbox.ts` wraps five different
+  sercon globals (`net.http`, `db.sqlite`, `image`, `crypto`, `fs`) as five
+  tools on one handle — "drop one binary in front of an LLM client and it
+  already has a toolbox" is the same pattern as this recipe, just repeated.
 
 ##### 5.15.2.2 Run a stdio MCP server for Claude Desktop
 
@@ -6483,6 +6522,217 @@ await srv.stdio();
   rejected).
 - Omitting it uses the SDK's default (1000) — most servers with a modest,
   fixed tool set never need to set this.
+
+##### 5.15.2.10 Bridge a tool to an external HTTP API
+
+A tool handler doesn't have to do the work itself — it can forward the
+call to an existing API and hand the result back to the model, translating
+transport failures into MCP's own error shape along the way.
+
+```ts
+srv.tool({
+  name: "get_weather",
+  description: "Look up current weather for a city via the upstream weather API.",
+  inputSchema: {
+    type: "object",
+    properties: { city: { type: "string", description: "City name" } },
+    required: ["city"],
+  },
+  async handler(args: any) {
+    // net.http.request (not .get) — its richer { status, ok, headers, body }
+    // shape is what lets the bridge tell a successful response from a failed one.
+    const res = await net.http.request("GET", `https://api.example.com/weather?city=${encodeURIComponent(args.city)}`);
+    if (!res.ok) {
+      return { content: [{ type: "text", text: `upstream error: ${res.status}` }], isError: true };
+    }
+    return res.body; // upstream already returns JSON; pass it through as-is
+  },
+});
+```
+
+**Notes**
+- Returning `{ content, isError: true }` on an upstream failure surfaces a
+  normal MCP tool error to the client — not a thrown exception, which
+  would also work (see §5.15.1's failure-surface table) but loses the
+  chance to include a tailored message.
+- `examples/scripts/mcp-bridge.ts` runs this end to end against a fake
+  local upstream (started with `server.http` in the same script, so the
+  demo stays offline) and exercises both the success and the `isError`
+  path — it's a `make demo` script since it's its own client.
+
+##### 5.15.2.11 Ask the client's LLM to do work mid-call (sampling)
+
+`ctx.sample` lets a tool hand a sub-task — summarizing, rephrasing,
+classifying — to whichever LLM the *connected client* is backed by,
+instead of the tool calling out to an LLM provider itself.
+
+```ts
+srv.tool({
+  name: "summarize",
+  description: "Ask the connected client's LLM to summarize the given text in one sentence.",
+  inputSchema: {
+    type: "object",
+    properties: { text: { type: "string" } },
+    required: ["text"],
+  },
+  async handler(args: any, ctx: any) {
+    const r = await ctx.sample({
+      messages: [{ role: "user", content: { type: "text", text: `Summarize in one sentence: ${args.text}` } }],
+      maxTokens: 200,
+      systemPrompt: "You are concise.",
+    });
+    // r => { content: { type, text }, model, stopReason, role }
+    return JSON.stringify({ summary: r.content.text, model: r.model, stopReason: r.stopReason });
+  },
+});
+```
+
+**Notes**
+- `messages`/`maxTokens` are the only required fields; `systemPrompt`,
+  `temperature`, `stopSequences`, `includeContext`, and a partial
+  `modelPreferences` (cost/intelligence/speed priorities, 0–1) are all
+  optional — see §17.9 for the full `ctx.sample` signature.
+- Rejects with `"mcp: client does not support sampling"` if the connected
+  client never wired a `CreateMessageHandler` — there is no soft-degrade
+  path, so a tool that depends on sampling should let that rejection
+  propagate (or catch it and explain why the tool is unavailable) rather
+  than silently returning a placeholder.
+- `examples/scripts/mcp-sampling.ts` is driven by
+  `cmd/sercon/mcp_examples_test.go` (`TestMCPExamples/Sampling`), which
+  connects a real SDK client with a canned `CreateMessageHandler` standing
+  in for "the client's LLM" — a plain HTTP client can't answer this
+  request, so it's not a `make demo` script.
+
+##### 5.15.2.12 Confirm an action with the user mid-call (elicitation)
+
+`ctx.elicit` pauses a handler to ask the *user* — via the client's UI, not
+its LLM — to confirm an action or fill in a small form before the tool
+proceeds.
+
+```ts
+srv.tool({
+  name: "deploy",
+  description: "Deploy to the given target, after confirming with the user.",
+  inputSchema: {
+    type: "object",
+    properties: { target: { type: "string" } },
+    required: ["target"],
+  },
+  async handler(args: any, ctx: any) {
+    const e = await ctx.elicit({
+      message: `Confirm deploy to ${args.target}?`,
+      schema: { type: "object", properties: { confirm: { type: "boolean" } } },
+    });
+    // e => { action: "accept"|"decline"|"cancel", content }  (content present on accept)
+    if (e.action !== "accept" || !e.content?.confirm) {
+      return JSON.stringify({ deployed: false, action: e.action });
+    }
+    return JSON.stringify({ deployed: true, target: args.target, action: e.action });
+  },
+});
+```
+
+**Notes**
+- `schema` is a JSON Schema describing the form fields you want back
+  (passed to the SDK as-is); always branch on `action` first — `content`
+  is only present when `action === "accept"`.
+- Rejects with `"mcp: client does not support elicitation"` if the
+  connected client never wired an `ElicitationHandler` — same
+  no-soft-degrade caveat as `ctx.sample`.
+- `examples/scripts/mcp-elicit.ts` is driven by
+  `cmd/sercon/mcp_examples_test.go` (`TestMCPExamples/Elicit`) with a
+  canned `ElicitationHandler` standing in for "the human at the
+  keyboard" — not a `make demo` script, for the same client-dependence
+  reason as sampling.
+
+##### 5.15.2.13 Read the client's filesystem roots
+
+`ctx.roots()` asks the connected client which filesystem/URI roots it's
+willing to let the server operate within; `srv.onRootsChanged(fn)` is the
+push-based counterpart, firing whenever that set changes.
+
+```ts
+srv.onRootsChanged((roots: any) => {
+  const uris = roots.map((r: any) => r.uri).sort();
+  runtime.log("roots changed:", JSON.stringify(uris));
+});
+
+srv.tool({
+  name: "listRoots",
+  description: "List the connected client's filesystem roots.",
+  inputSchema: { type: "object" },
+  async handler(_args: any, ctx: any) {
+    const roots = await ctx.roots(); // Root[] : [{ uri, name? }, ...]
+    return JSON.stringify(roots.map((r: any) => r.uri).sort());
+  },
+});
+```
+
+**Notes**
+- `ctx.roots()` is the pull-based, per-request query; `onRootsChanged` is
+  the persistent, push-based hook — register both if a tool needs to
+  react to root changes even between calls, not just query them on demand.
+- Rejects with `"mcp: client does not support roots"` if the client never
+  advertises the `roots` capability — most SDK clients advertise it by
+  default, but don't assume every client does.
+- `examples/scripts/mcp-roots.ts` is driven by
+  `cmd/sercon/mcp_examples_test.go` (`TestMCPExamples/Roots`), which
+  pre-seeds roots on a real SDK client via `client.AddRoots` and then adds
+  another root post-connect to trigger `onRootsChanged` — not a `make
+  demo` script, for the same client-dependence reason as sampling/elicit.
+
+##### 5.15.2.14 Protect an HTTP server with OAuth 2.1 bearer tokens
+
+Guard `listen()` with `auth` to turn it into an OAuth 2.1 resource server:
+every request needs a valid bearer token, and the well-known metadata
+endpoint tells clients which authorization server issues one.
+
+```ts
+const srv = mcp.serve({ name: "sercon-oauth-demo", version: "1.0.0" });
+
+srv.tool({
+  name: "add",
+  inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] },
+  async handler(args: any) { return String(args.a + args.b); },
+});
+
+const h = await srv.listen({
+  port: 38080,
+  auth: {
+    // A real deployment would verify a signed JWT or call the authorization
+    // server's introspection endpoint; this hardcodes one accepted token.
+    verify: (token: string) =>
+      token === "good-token" ? { subject: "demo-user", scopes: ["mcp"] } : null,
+    resourceMetadata: {
+      authorizationServers: ["https://auth.example.com"],
+      scopesSupported: ["mcp"],
+      resourceName: "sercon OAuth demo",
+    },
+    scopes: ["mcp"],
+  },
+});
+
+runtime.log("listening at", h.url, "(bearer token required: good-token)");
+```
+
+**Notes**
+- `verify(token, req)` may be sync or return a `Promise`; returning
+  `null`/`undefined` (or throwing/rejecting) rejects the request with
+  `401` — sercon never treats a failed `verify` as a server error.
+- `expiresAt` on the returned identity accepts a Unix-seconds number or an
+  RFC 3339 string, and defaults to a 1-hour TTL if you omit it.
+- This is the **resource-server** role only: sercon validates tokens and
+  publishes `/.well-known/oauth-protected-resource` metadata pointing at
+  `authorizationServers`; it does not issue tokens and does not implement
+  dynamic client registration (DCR, RFC 7591) — provisioning clients
+  against the authorization server is out of scope here, by design.
+- `examples/scripts/mcp-oauth.ts` binds a fixed port and never calls
+  `close()` on purpose (an always-on OAuth-protected server is stopped by
+  its operator, not itself); `cmd/sercon/mcp_examples_test.go`
+  (`TestMCPExamples/OAuth`) drives it externally: no token → 401 with
+  `WWW-Authenticate`, bad token → 401, good token → `initialize` +
+  `tools/call` succeeds, and a `GET` on the metadata URL → 200 JSON. Not a
+  `make demo` script — a real client is required to exercise it.
 
 ## 6. Servers
 
@@ -13772,19 +14022,20 @@ Model Context Protocol server: mcp.serve({name, version, instructions?}) returns
 
 ```
 serve(config: { name: string; version: string; instructions?: string; pageSize?: number }): {
-  tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void;
-  resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void;
-  resourceTemplate(spec: { uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void;
-  prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void;
+  tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void;
+  resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void;
+  resourceTemplate(spec: { uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void;
+  prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void;
   removeTool(name: string): void;
   removeResource(uri: string): void;
   removePrompt(name: string): void;
   onSubscribe(fn: (uri: string) => void): void;
   onUnsubscribe(fn: (uri: string) => void): void;
+  onRootsChanged(fn: (roots: Array<{ uri: string; name?: string }>) => void): void;
   resourceUpdated(uri: string): Promise<void>;
   completion(fn: (ref: { type: "prompt" | "resource"; name: string; uri: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined): void;
   stdio(): Promise<void>;
-  listen(opts: { port: number; host?: string; path?: string }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>;
+  listen(opts: { port: number; host?: string; path?: string; auth?: { verify(token: string, req: { method: string; path: string; header: Record<string, string> }): { subject?: string; scopes?: string[]; expiresAt?: number | string } | null | Promise<{ subject?: string; scopes?: string[]; expiresAt?: number | string } | null>; resourceMetadata?: { authorizationServers?: string[]; scopesSupported?: string[]; resourceName?: string; resourceDocumentation?: string; jwksUri?: string; bearerMethodsSupported?: string[]; resource?: string }; scopes?: string[] } }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>;
   close(): void;
 }
 ```
@@ -13862,18 +14113,18 @@ srv.completion((ref, argName, partial) => {
 ##### 17.9.1.3 mcp.serve.listen
 
 ```
-listen(opts: { port: number; host?: string; path?: string }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>
+listen(opts: { port: number; host?: string; path?: string; auth?: { verify(token: string, req: { method: string; path: string; header: Record<string, string> }): { subject?: string; scopes?: string[]; expiresAt?: number | string } | null | Promise<{ subject?: string; scopes?: string[]; expiresAt?: number | string } | null>; resourceMetadata?: { authorizationServers?: string[]; scopesSupported?: string[]; resourceName?: string; resourceDocumentation?: string; jwksUri?: string; bearerMethodsSupported?: string[]; resource?: string }; scopes?: string[] } }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>
 ```
 
-Serve this handle over the Streamable HTTP transport — a cross-platform, multi-client-capable alternative to stdio(): any number of clients can connect to a plain TCP/HTTP endpoint, rather than one client per subprocess.
+Serve this handle over the Streamable HTTP transport — a cross-platform, multi-client-capable alternative to stdio(): any number of clients can connect to a plain TCP/HTTP endpoint, rather than one client per subprocess. Optionally protect it as an OAuth 2.1 resource server via `opts.auth` — sercon validates bearer tokens and advertises where to obtain one; it never issues or registers tokens itself (that is the authorization server's job, out of scope here).
 
 **Parameters**
 
-- `opts` *({ port: number; host?: string; path?: string })* — port: the TCP port to bind (required). host: bind interface, defaults to "127.0.0.1". path: the HTTP path the MCP endpoint is mounted at, defaults to "/mcp".
+- `opts` *({ port: number; host?: string; path?: string; auth?: { verify(token: string, req: { method: string; path: string; header: Record<string, string> }): { subject?: string; scopes?: string[]; expiresAt?: number | string } | null | Promise<{ subject?: string; scopes?: string[]; expiresAt?: number | string } | null>; resourceMetadata?: { authorizationServers?: string[]; scopesSupported?: string[]; resourceName?: string; resourceDocumentation?: string; jwksUri?: string; bearerMethodsSupported?: string[]; resource?: string }; scopes?: string[] } })* — port: the TCP port to bind (required). host: bind interface, defaults to "127.0.0.1". path: the HTTP path the MCP endpoint is mounted at, defaults to "/mcp". auth (optional): turns this listener into an OAuth 2.1 protected resource server (RFC 6750 bearer tokens + RFC 9728 protected-resource metadata) — omit it for the unauthenticated Phase-1/2 behavior. auth.verify(token, req) is called once per request with the bearer token string and a plain `{method, path, header}` request-info object (header values are already flattened to strings); return an identity object to accept the request (subject/scopes/expiresAt — expiresAt accepts a Unix-seconds number or an RFC 3339 string, and defaults to a 1-hour TTL if omitted) or null/undefined to reject it with a 401 (verify may be sync or return a Promise; a thrown or rejected verify is also treated as a 401, not a 500). auth.scopes lists the scopes enforced on every request (all must be present on the verified identity's scopes) and is also the WWW-Authenticate scope hint. auth.resourceMetadata fills the RFC 9728 metadata document served at `/.well-known/oauth-protected-resource` — authorizationServers is the list of AS issuer URLs clients should obtain tokens from (the whole point of a resource server: it never issues tokens itself); scopesSupported falls back to auth.scopes when omitted; resource (the RS's own identifier) defaults to the bound base URL when omitted. Dynamic client registration (DCR, RFC 7591) is intentionally out of scope — that's the authorization server's responsibility, not a resource server's.
 
 **Returns:** A promise that resolves as soon as the listener is bound (not when a client connects) to a handle: url is the full endpoint URL (e.g. "http://127.0.0.1:38080/mcp"); stopped resolves when the HTTP server stops (rejects on a non-close Serve error); close() begins a graceful shutdown and returns the same stopped promise.
 
-**Throws:** Throws synchronously if a transport is already running on this handle, opts is missing/not an object, or port is missing. Throws (wrapping the bind error) if the listener fails to bind (e.g. address already in use) — a bind failure does NOT mark the handle as started, so listen() may be retried with a different port on the same handle.
+**Throws:** Throws synchronously if a transport is already running on this handle, opts is missing/not an object, port is missing, or (with auth present) auth.verify is not a function. Throws (wrapping the bind error) if the listener fails to bind (e.g. address already in use) — a bind failure does NOT mark the handle as started, so listen() may be retried with a different port on the same handle. With auth configured, a request with a missing/invalid/expired/insufficiently-scoped bearer token never reaches your handlers — the middleware answers it directly with 401 and a WWW-Authenticate header pointing at the protected-resource metadata URL; this is enforced per-request at the HTTP layer, not surfaced as a script-side error.
 
 ```ts
 const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
@@ -13882,9 +14133,51 @@ const h = await srv.listen({ port: 38080 });
 runtime.log("listening at", h.url);
 // ... later
 await h.close();
+
+// With OAuth 2.1 resource-server protection:
+const h2 = await srv.listen({
+  port: 38081,
+  auth: {
+    verify: (token) => (token === "good-token" ? { subject: "demo-user", scopes: ["mcp"] } : null),
+    resourceMetadata: { authorizationServers: ["https://auth.example.com"], scopesSupported: ["mcp"] },
+    scopes: ["mcp"],
+  },
+});
+await h2.close();
 ```
 
-##### 17.9.1.4 mcp.serve.onSubscribe
+##### 17.9.1.4 mcp.serve.onRootsChanged
+
+```
+onRootsChanged(fn: (roots: Array<{ uri: string; name?: string }>) => void): void
+```
+
+Register a best-effort hook invoked whenever the connected client's filesystem/URI roots list changes (the MCP roots list-changed notification) — the persistent counterpart to ctx.roots()'s pull-based, per-request query. Only one onRootsChanged callback is held at a time — a later call replaces the earlier registration.
+
+**Parameters**
+
+- `fn` *((roots: Array<{ uri: string; name?: string }>) => void)* — invoked with the client's fresh root list (the same [{uri, name?}] shape ctx.roots() resolves to; name is "" when the client didn't set one). Its return value (and any thrown error or rejection) is ignored — the go-sdk's own notification handler has no way to fail the notification back to the client, so this hook is purely an observer.
+
+**Returns:** Nothing — replaces any previously registered onRootsChanged callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+srv.onRootsChanged((roots) => {
+  runtime.log("roots changed:", JSON.stringify(roots.map((r) => r.uri)));
+});
+
+srv.tool({
+  name: "listRoots",
+  inputSchema: { type: "object" },
+  async handler(_args, ctx) {
+    const roots = await ctx.roots();
+    return JSON.stringify(roots.map((r) => r.uri));
+  },
+});
+```
+
+##### 17.9.1.5 mcp.serve.onSubscribe
 
 ```
 onSubscribe(fn: (uri: string) => void): void
@@ -13912,7 +14205,7 @@ srv.onUnsubscribe((uri) => {
 });
 ```
 
-##### 17.9.1.5 mcp.serve.onUnsubscribe
+##### 17.9.1.6 mcp.serve.onUnsubscribe
 
 ```
 onUnsubscribe(fn: (uri: string) => void): void
@@ -13934,17 +14227,17 @@ srv.onUnsubscribe((uri) => {
 });
 ```
 
-##### 17.9.1.6 mcp.serve.prompt
+##### 17.9.1.7 mcp.serve.prompt
 
 ```
-prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void
+prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void
 ```
 
 Register a prompt: a named, parameterized template clients can fetch to seed a conversation. Callable at any time, including after a transport has started, for the same list-changed-notification reason as serve.tool.
 
 **Parameters**
 
-- `spec` *({ name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> })* — name: unique prompt name. description: shown to clients when listing prompts. arguments: the prompt's declared parameters (name/description/required), advertised so clients know what to supply. get(args, ctx): sync or async; must return { description?: string; messages: Array<{ role: string; content: unknown }> } — each message's content follows the same content-item shape as a tool result's content array (e.g. { type: "text", text }). Any other shape, or a thrown/rejected handler, is a protocol-level error. ctx is the same shape as a tool handler's (see serve.tool).
+- `spec` *({ name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> })* — name: unique prompt name. description: shown to clients when listing prompts. arguments: the prompt's declared parameters (name/description/required), advertised so clients know what to supply. get(args, ctx): sync or async; must return { description?: string; messages: Array<{ role: string; content: unknown }> } — each message's content follows the same content-item shape as a tool result's content array (e.g. { type: "text", text }). Any other shape, or a thrown/rejected handler, is a protocol-level error. ctx is the same shape as a tool handler's (see serve.tool).
 
 **Returns:** Nothing — registers the prompt on the handle. Call srv.removePrompt(name) to unregister it.
 
@@ -13961,7 +14254,7 @@ srv.prompt({
 });
 ```
 
-##### 17.9.1.7 mcp.serve.removePrompt
+##### 17.9.1.8 mcp.serve.removePrompt
 
 ```
 removePrompt(name: string): void
@@ -13983,7 +14276,7 @@ srv.prompt({ name: "temp", get: () => ({ messages: [] }) });
 srv.removePrompt("temp");
 ```
 
-##### 17.9.1.8 mcp.serve.removeResource
+##### 17.9.1.9 mcp.serve.removeResource
 
 ```
 removeResource(uri: string): void
@@ -14005,7 +14298,7 @@ srv.resource({ uri: "config://temp", name: "temp", read: () => ({ text: "{}" }) 
 srv.removeResource("config://temp");
 ```
 
-##### 17.9.1.9 mcp.serve.removeTool
+##### 17.9.1.10 mcp.serve.removeTool
 
 ```
 removeTool(name: string): void
@@ -14027,17 +14320,17 @@ srv.tool({ name: "temp", inputSchema: { type: "object" }, handler: () => "hi" })
 srv.removeTool("temp");
 ```
 
-##### 17.9.1.10 mcp.serve.resource
+##### 17.9.1.11 mcp.serve.resource
 
 ```
-resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void
+resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void
 ```
 
 Register a resource: a URI-addressed piece of content clients can read (e.g. a file, a config blob, a generated report). Callable at any time, including after a transport has started, for the same list-changed-notification reason as serve.tool.
 
 **Parameters**
 
-- `spec` *({ uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> })* — uri: the resource's identifier (any URI scheme, e.g. "file:///report.txt" or a custom scheme). name: a human-readable label shown when listing resources. mimeType: optional content-type hint. read(uri, ctx): sync or async; must return { text: string } or { blob: string | Uint8Array | ArrayBuffer } (blob accepts a base64 string or raw bytes) — any other shape, or a thrown/rejected handler, is a protocol-level error, unlike a tool handler's soft isError failure. ctx is the same shape as a tool handler's (see serve.tool).
+- `spec` *({ uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> })* — uri: the resource's identifier (any URI scheme, e.g. "file:///report.txt" or a custom scheme). name: a human-readable label shown when listing resources. mimeType: optional content-type hint. read(uri, ctx): sync or async; must return { text: string } or { blob: string | Uint8Array | ArrayBuffer } (blob accepts a base64 string or raw bytes) — any other shape, or a thrown/rejected handler, is a protocol-level error, unlike a tool handler's soft isError failure. ctx is the same shape as a tool handler's (see serve.tool).
 
 **Returns:** Nothing — registers the resource on the handle. Call srv.removeResource(uri) to unregister it.
 
@@ -14052,17 +14345,17 @@ srv.resource({
 });
 ```
 
-##### 17.9.1.11 mcp.serve.resourceTemplate
+##### 17.9.1.12 mcp.serve.resourceTemplate
 
 ```
-resourceTemplate(spec: { uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void
+resourceTemplate(spec: { uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void
 ```
 
 Register a resource template: an RFC 6570 URI template (e.g. "db:///{table}/{id}") describing a family of resources a client can read by supplying a concrete URI that matches the pattern, rather than one fixed uri the way serve.resource registers. Callable at any time, including after a transport has started, for the same list-changed-notification reason as serve.tool.
 
 **Parameters**
 
-- `spec` *({ uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> })* — uriTemplate: the RFC 6570 template string advertised to clients (e.g. "db:///{table}/{id}"). name: a human-readable label shown when listing resource templates. mimeType: optional content-type hint. read(uri, ctx): sync or async, invoked with the concrete URI the client actually requested (e.g. "db:///users/42") — not the template string; must return { text: string } or { blob: string | Uint8Array | ArrayBuffer }, same contract as serve.resource's read. ctx is the same shape as a tool handler's (see serve.tool).
+- `spec` *({ uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> })* — uriTemplate: the RFC 6570 template string advertised to clients (e.g. "db:///{table}/{id}"). name: a human-readable label shown when listing resource templates. mimeType: optional content-type hint. read(uri, ctx): sync or async, invoked with the concrete URI the client actually requested (e.g. "db:///users/42") — not the template string; must return { text: string } or { blob: string | Uint8Array | ArrayBuffer }, same contract as serve.resource's read. ctx is the same shape as a tool handler's (see serve.tool).
 
 **Returns:** Nothing — registers the resource template on the handle.
 
@@ -14078,7 +14371,7 @@ srv.resourceTemplate({
 // a client reading "db:///users/42" invokes read("db:///users/42", ctx)
 ```
 
-##### 17.9.1.12 mcp.serve.resourceUpdated
+##### 17.9.1.13 mcp.serve.resourceUpdated
 
 ```
 resourceUpdated(uri: string): Promise<void>
@@ -14098,7 +14391,7 @@ Notify every client currently subscribed to uri that the resource's content has 
 srv.resourceUpdated("config://app");
 ```
 
-##### 17.9.1.13 mcp.serve.stdio
+##### 17.9.1.14 mcp.serve.stdio
 
 ```
 stdio(): Promise<void>
@@ -14116,17 +14409,17 @@ srv.tool({ name: "ping", inputSchema: { type: "object" }, handler: () => "pong" 
 await srv.stdio();
 ```
 
-##### 17.9.1.14 mcp.serve.tool
+##### 17.9.1.15 mcp.serve.tool
 
 ```
-tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> }): void
+tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void
 ```
 
 Register a tool: a named, schema-described callable that MCP clients (typically an LLM agent) can invoke. Callable at any time, including after a transport has started — the SDK fires a tools/list_changed notification to already-connected clients when a tool is added post-connect, so a script can grow its tool set at runtime (e.g. from within another handler).
 
 **Parameters**
 
-- `spec` *({ name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }): unknown | Promise<unknown> })* — name: unique tool name presented to clients. description: shown to the client/LLM to help it decide when to call this tool. inputSchema: a JSON Schema object describing the call arguments — passed through to the SDK as-is (not validated by sercon itself). outputSchema: optional JSON Schema describing structuredContent. handler(args, ctx): sync or async; may return a plain string (wrapped as a single text content item), an object shaped { content?, structuredContent?, isError? }, or throw/reject — a thrown or rejected handler is NOT a protocol error, it surfaces to the client as a tool result with isError: true. ctx adds progress(progress, total?) and log(level, message, data?) to the requestId/clientInfo pair — see §5.15.1's progress/logging concepts for the SetLoggingLevel caveat on log().
+- `spec` *({ name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> })* — name: unique tool name presented to clients. description: shown to the client/LLM to help it decide when to call this tool. inputSchema: a JSON Schema object describing the call arguments — passed through to the SDK as-is (not validated by sercon itself). outputSchema: optional JSON Schema describing structuredContent. handler(args, ctx): sync or async; may return a plain string (wrapped as a single text content item), an object shaped { content?, structuredContent?, isError? }, or throw/reject — a thrown or rejected handler is NOT a protocol error, it surfaces to the client as a tool result with isError: true. ctx adds progress(progress, total?) and log(level, message, data?) to the requestId/clientInfo pair — see §5.15.1's progress/logging concepts for the SetLoggingLevel caveat on log().
 
 **Returns:** Nothing — registers the tool on the handle. Call multiple times to register multiple tools; call srv.removeTool(name) to unregister one.
 

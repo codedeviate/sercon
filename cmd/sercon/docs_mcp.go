@@ -8,7 +8,15 @@ import "github.com/codedeviate/sercon/pkg/scriptengine"
 // interpolated, so every occurrence is visibly identical at a glance).
 // progress()/log() were added in Phase 2 (Task 3, mcp_server.go's
 // jsCtxProgress/jsCtxLog); requestId/clientInfo are unchanged from Phase 1.
-const mcpCtxType = `{ requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void> }`
+// sample()/elicit()/roots() were added in Phase 3 (mcp_server.go's
+// jsCtxSample/jsCtxElicit/jsCtxRoots) — each is a mid-handler server->client
+// round trip (sampling/createMessage, elicitation/create, roots/list
+// respectively) that only resolves against a client advertising the
+// matching capability; all three reject with a clear "mcp: client does not
+// support <capability>" error otherwise (checked against the negotiated
+// ClientCapabilities before any SDK call is attempted). ctx is otherwise
+// unchanged — the handler-arg shape stays (input, ctx).
+const mcpCtxType = `{ requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }`
 
 // mcpServeHandleType is the object mcp.serve(...) resolves to — spliced
 // verbatim into the "serve" MemberDoc's ReturnType (see googleHandleType /
@@ -20,8 +28,11 @@ const mcpCtxType = `{ requestId: string; clientInfo: { name: string; version: st
 // the emitted .d.ts. Must stay valid TypeScript on its own, and in lockstep
 // with the jsTool/jsResource/jsResourceTemplate/jsPrompt/jsRemoveTool/
 // jsRemoveResource/jsRemovePrompt/jsOnSubscribe/jsOnUnsubscribe/
-// jsResourceUpdated/jsCompletion/jsStdio/jsListen/jsClose signatures in
-// mcp.go/mcp_server.go.
+// jsOnRootsChanged/jsResourceUpdated/jsCompletion/jsStdio/jsListen/jsClose
+// signatures in mcp.go/mcp_server.go. onRootsChanged (Phase 3, Task 4) and
+// listen's `auth` option (Phase 3, Task 5, cmd/sercon/mcp_auth.go) are the
+// two Phase-3 additions to this composite; everything else is unchanged from
+// Phase 1/2.
 const mcpServeHandleType = `{
   tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: ` + mcpCtxType + `): unknown | Promise<unknown> }): void;
   resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: ` + mcpCtxType + `): unknown | Promise<unknown> }): void;
@@ -32,10 +43,11 @@ const mcpServeHandleType = `{
   removePrompt(name: string): void;
   onSubscribe(fn: (uri: string) => void): void;
   onUnsubscribe(fn: (uri: string) => void): void;
+  onRootsChanged(fn: (roots: Array<{ uri: string; name?: string }>) => void): void;
   resourceUpdated(uri: string): Promise<void>;
   completion(fn: (ref: { type: "prompt" | "resource"; name: string; uri: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined): void;
   stdio(): Promise<void>;
-  listen(opts: { port: number; host?: string; path?: string }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>;
+  listen(opts: { port: number; host?: string; path?: string; auth?: { verify(token: string, req: { method: string; path: string; header: Record<string, string> }): { subject?: string; scopes?: string[]; expiresAt?: number | string } | null | Promise<{ subject?: string; scopes?: string[]; expiresAt?: number | string } | null>; resourceMetadata?: { authorizationServers?: string[]; scopesSupported?: string[]; resourceName?: string; resourceDocumentation?: string; jwksUri?: string; bearerMethodsSupported?: string[]; resource?: string }; scopes?: string[] } }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>;
   close(): void;
 }`
 
@@ -207,6 +219,27 @@ srv.onUnsubscribe((uri) => {
   runtime.log("no longer watching", uri);
 });`,
 		},
+		"serve.onRootsChanged": {
+			Summary: "Register a best-effort hook invoked whenever the connected client's filesystem/URI roots list changes (the MCP roots list-changed notification) — the persistent counterpart to ctx.roots()'s pull-based, per-request query. Only one onRootsChanged callback is held at a time — a later call replaces the earlier registration.",
+			Params: []scriptengine.Param{
+				{Name: "fn", Type: "(roots: Array<{ uri: string; name?: string }>) => void", Desc: "invoked with the client's fresh root list (the same [{uri, name?}] shape ctx.roots() resolves to; name is \"\" when the client didn't set one). Its return value (and any thrown error or rejection) is ignored — the go-sdk's own notification handler has no way to fail the notification back to the client, so this hook is purely an observer."},
+			},
+			ReturnType: "void",
+			Returns:    "Nothing — replaces any previously registered onRootsChanged callback.",
+			Errors:     "Throws synchronously (a TypeError) if fn is not a function.",
+			Example: `srv.onRootsChanged((roots) => {
+  runtime.log("roots changed:", JSON.stringify(roots.map((r) => r.uri)));
+});
+
+srv.tool({
+  name: "listRoots",
+  inputSchema: { type: "object" },
+  async handler(_args, ctx) {
+    const roots = await ctx.roots();
+    return JSON.stringify(roots.map((r) => r.uri));
+  },
+});`,
+		},
 		"serve.resourceUpdated": {
 			Summary: "Notify every client currently subscribed to uri that the resource's content has changed (resources/updated). This is the script's half of the subscription pair: the SDK tracks the actual subscriber set itself (via the subscribe/unsubscribe plumbing backing serve.onSubscribe/onUnsubscribe) and fans this notification out to whoever is subscribed to uri right now — calling it for a URI with no subscribers is a harmless no-op. Callable at any time after mcp.serve(), including before any transport has started.",
 			Params: []scriptengine.Param{
@@ -249,19 +282,30 @@ srv.tool({ name: "ping", inputSchema: { type: "object" }, handler: () => "pong" 
 await srv.stdio();`,
 		},
 		"serve.listen": {
-			Summary: "Serve this handle over the Streamable HTTP transport — a cross-platform, multi-client-capable alternative to stdio(): any number of clients can connect to a plain TCP/HTTP endpoint, rather than one client per subprocess.",
+			Summary: "Serve this handle over the Streamable HTTP transport — a cross-platform, multi-client-capable alternative to stdio(): any number of clients can connect to a plain TCP/HTTP endpoint, rather than one client per subprocess. Optionally protect it as an OAuth 2.1 resource server via `opts.auth` — sercon validates bearer tokens and advertises where to obtain one; it never issues or registers tokens itself (that is the authorization server's job, out of scope here).",
 			Params: []scriptengine.Param{
-				{Name: "opts", Type: "{ port: number; host?: string; path?: string }", Desc: "port: the TCP port to bind (required). host: bind interface, defaults to \"127.0.0.1\". path: the HTTP path the MCP endpoint is mounted at, defaults to \"/mcp\"."},
+				{Name: "opts", Type: "{ port: number; host?: string; path?: string; auth?: { verify(token: string, req: { method: string; path: string; header: Record<string, string> }): { subject?: string; scopes?: string[]; expiresAt?: number | string } | null | Promise<{ subject?: string; scopes?: string[]; expiresAt?: number | string } | null>; resourceMetadata?: { authorizationServers?: string[]; scopesSupported?: string[]; resourceName?: string; resourceDocumentation?: string; jwksUri?: string; bearerMethodsSupported?: string[]; resource?: string }; scopes?: string[] } }", Desc: "port: the TCP port to bind (required). host: bind interface, defaults to \"127.0.0.1\". path: the HTTP path the MCP endpoint is mounted at, defaults to \"/mcp\". auth (optional): turns this listener into an OAuth 2.1 protected resource server (RFC 6750 bearer tokens + RFC 9728 protected-resource metadata) — omit it for the unauthenticated Phase-1/2 behavior. auth.verify(token, req) is called once per request with the bearer token string and a plain `{method, path, header}` request-info object (header values are already flattened to strings); return an identity object to accept the request (subject/scopes/expiresAt — expiresAt accepts a Unix-seconds number or an RFC 3339 string, and defaults to a 1-hour TTL if omitted) or null/undefined to reject it with a 401 (verify may be sync or return a Promise; a thrown or rejected verify is also treated as a 401, not a 500). auth.scopes lists the scopes enforced on every request (all must be present on the verified identity's scopes) and is also the WWW-Authenticate scope hint. auth.resourceMetadata fills the RFC 9728 metadata document served at `/.well-known/oauth-protected-resource` — authorizationServers is the list of AS issuer URLs clients should obtain tokens from (the whole point of a resource server: it never issues tokens itself); scopesSupported falls back to auth.scopes when omitted; resource (the RS's own identifier) defaults to the bound base URL when omitted. Dynamic client registration (DCR, RFC 7591) is intentionally out of scope — that's the authorization server's responsibility, not a resource server's."},
 			},
 			ReturnType: "Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>",
 			Returns:    "A promise that resolves as soon as the listener is bound (not when a client connects) to a handle: url is the full endpoint URL (e.g. \"http://127.0.0.1:38080/mcp\"); stopped resolves when the HTTP server stops (rejects on a non-close Serve error); close() begins a graceful shutdown and returns the same stopped promise.",
-			Errors:     "Throws synchronously if a transport is already running on this handle, opts is missing/not an object, or port is missing. Throws (wrapping the bind error) if the listener fails to bind (e.g. address already in use) — a bind failure does NOT mark the handle as started, so listen() may be retried with a different port on the same handle.",
+			Errors:     "Throws synchronously if a transport is already running on this handle, opts is missing/not an object, port is missing, or (with auth present) auth.verify is not a function. Throws (wrapping the bind error) if the listener fails to bind (e.g. address already in use) — a bind failure does NOT mark the handle as started, so listen() may be retried with a different port on the same handle. With auth configured, a request with a missing/invalid/expired/insufficiently-scoped bearer token never reaches your handlers — the middleware answers it directly with 401 and a WWW-Authenticate header pointing at the protected-resource metadata URL; this is enforced per-request at the HTTP layer, not surfaced as a script-side error.",
 			Example: `const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
 srv.tool({ name: "ping", inputSchema: { type: "object" }, handler: () => "pong" });
 const h = await srv.listen({ port: 38080 });
 runtime.log("listening at", h.url);
 // ... later
-await h.close();`,
+await h.close();
+
+// With OAuth 2.1 resource-server protection:
+const h2 = await srv.listen({
+  port: 38081,
+  auth: {
+    verify: (token) => (token === "good-token" ? { subject: "demo-user", scopes: ["mcp"] } : null),
+    resourceMetadata: { authorizationServers: ["https://auth.example.com"], scopesSupported: ["mcp"] },
+    scopes: ["mcp"],
+  },
+});
+await h2.close();`,
 		},
 		"serve.close": {
 			Summary:    "Present on the handle for interface symmetry, but currently a no-op — it does not stop a running transport. To stop an HTTP listener, call the close() on the handle returned by listen(); a stdio server stops on its own once the peer disconnects (its stdio() promise settles then). A future phase may wire this into an explicit shutdown path.",
