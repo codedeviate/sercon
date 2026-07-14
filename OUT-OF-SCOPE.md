@@ -278,3 +278,13 @@ addressed.
   Wayland) are verified end-to-end, Windows is not. Windows isn't a focus right
   now; re-promote when a Windows host/CI runner is available to round-trip text
   + PNG (watch for PowerShell `-STA` and the temp-file marshalling).
+
+- **Honour request-context cancellation in the MCP on-loop bridge.**
+  `callJSHandler` (`cmd/sercon/mcp_bridge.go`) blocks its caller on `<-done`
+  and ignores any deadline/cancellation. A script `verify` (or tool/resource)
+  callback whose Promise never settles therefore pins the SDK request goroutine
+  indefinitely; the client eventually times out, but under sustained load stuck
+  callbacks could accrue leaked goroutines. Low-risk (needs a buggy callback)
+  but worth wiring `req.Context()` / a per-call deadline into the bridge so a
+  never-settling handler is reclaimed. Flagged by the Phase-3 whole-branch
+  review (item T5-2).

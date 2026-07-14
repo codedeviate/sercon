@@ -6592,6 +6592,11 @@ srv.tool({
   `temperature`, `stopSequences`, `includeContext`, and a partial
   `modelPreferences` (cost/intelligence/speed priorities, 0–1) are all
   optional — see §17.9 for the full `ctx.sample` signature.
+- The resolved `content` is `{ type: "text", text }` for a text reply (the
+  common case, and all this section's examples assume it). A client may
+  instead return image or audio content, in which case `content` carries
+  `{ type, data, mimeType }` with no `text` field — guard on `content.type`
+  if your tool must handle non-text replies.
 - Rejects with `"mcp: client does not support sampling"` if the connected
   client never wired a `CreateMessageHandler` — there is no soft-degrade
   path, so a tool that depends on sampling should let that rejection
