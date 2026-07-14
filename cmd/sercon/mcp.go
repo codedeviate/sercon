@@ -44,17 +44,19 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 	}
 }
 
-// handle builds the goja object returned to the script: tool/resource/prompt
-// (capability registration, runtime-mutable — see jsTool's doc comment) and
-// their removeTool/removeResource/removePrompt counterparts, stdio/listen
-// (the two transports, still one-per-handle), and close (currently a no-op
-// placeholder — see jsClose's doc comment). All nine are implemented in
+// handle builds the goja object returned to the script:
+// tool/resource/resourceTemplate/prompt (capability registration,
+// runtime-mutable — see jsTool's doc comment) and their
+// removeTool/removeResource/removePrompt counterparts, stdio/listen (the two
+// transports, still one-per-handle), and close (currently a no-op
+// placeholder — see jsClose's doc comment). All ten are implemented in
 // mcp_server.go.
 func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 	h := vm.NewObject()
 	must := func(name string, fn func(goja.FunctionCall) goja.Value) { _ = h.Set(name, fn) }
 	must("tool", ms.jsTool)
 	must("resource", ms.jsResource)
+	must("resourceTemplate", ms.jsResourceTemplate)
 	must("prompt", ms.jsPrompt)
 	must("removeTool", ms.jsRemoveTool)
 	must("removeResource", ms.jsRemoveResource)

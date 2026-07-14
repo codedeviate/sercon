@@ -322,6 +322,112 @@ test.ready();
 	}
 }
 
+// TestMCPTemplate drives srv.resourceTemplate(...) end to end: a script
+// registers a resource template (RFC-6570 URI template) via
+// srv.resourceTemplate(...) and signals readiness; the Go side connects an
+// in-memory client, asserts ListResourceTemplates surfaces the registered
+// template (URITemplate + Name), then reads a CONCRETE URI that matches the
+// template ("db:///users/42" against "db:///{table}/{id}") and asserts the
+// read handler was invoked with that resolved URI (not the template) and its
+// {text} return round-trips through toReadResourceResult, mirroring
+// TestMCPResource's harness for the plain (non-template) resource.
+func TestMCPTemplate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	var ms *mcpServer
+	ready := make(chan struct{})
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms = &mcpServer{
+					eng: eng, vm: vm, loop: loop,
+					srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil),
+				}
+				return ms.handle(vm)
+			},
+			"ready": func() goja.Value {
+				release := eng.HoldRun("test-mcp-template")
+				go func() {
+					defer release()
+					<-done
+				}()
+				close(ready)
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "template.ts", `
+const srv = test.serve();
+srv.resourceTemplate({
+	uriTemplate: "db:///{table}/{id}",
+	name: "row",
+	mimeType: "application/json",
+	read: (uri) => ({ text: "row-at-" + uri }),
+});
+test.ready();
+`)
+		runErr <- err
+	}()
+
+	<-ready
+
+	sess, err := connectInMemory(ctx, ms.srv)
+	if err != nil {
+		close(done)
+		t.Fatalf("connect: %v", err)
+	}
+	defer sess.Close()
+
+	tmplRes, err := sess.ListResourceTemplates(ctx, nil)
+	if err != nil {
+		close(done)
+		t.Fatalf("ListResourceTemplates: %v", err)
+	}
+	foundTemplate := false
+	for _, tmpl := range tmplRes.ResourceTemplates {
+		if tmpl.URITemplate == "db:///{table}/{id}" {
+			foundTemplate = true
+			if tmpl.Name != "row" {
+				close(done)
+				t.Fatalf("template name = %q, want %q", tmpl.Name, "row")
+			}
+		}
+	}
+	if !foundTemplate {
+		close(done)
+		t.Fatalf("want template %q present, got %#v", "db:///{table}/{id}", tmplRes.ResourceTemplates)
+	}
+
+	res, err := sess.ReadResource(ctx, &mcp.ReadResourceParams{URI: "db:///users/42"})
+	if err != nil {
+		close(done)
+		t.Fatalf("read db:///users/42: %v", err)
+	}
+	if len(res.Contents) != 1 {
+		close(done)
+		t.Fatalf("db:///users/42: want 1 content, got %d", len(res.Contents))
+	}
+	if c := res.Contents[0]; c.URI != "db:///users/42" || c.MIMEType != "application/json" || c.Text != "row-at-db:///users/42" {
+		close(done)
+		t.Fatalf("db:///users/42: unexpected contents %#v", c)
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 // TestMCPPhase2Remove_ValidatesArgs asserts jsRemoveTool/jsRemoveResource/
 // jsRemovePrompt all reject a missing/empty name synchronously (a goja
 // TypeError, per requireNonEmptyStringArg), rather than silently no-oping or

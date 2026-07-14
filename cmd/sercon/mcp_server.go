@@ -356,6 +356,68 @@ func (ms *mcpServer) jsResource(call goja.FunctionCall) goja.Value {
 	return goja.Undefined()
 }
 
+// jsResourceTemplate implements
+// srv.resourceTemplate({ uriTemplate, name, mimeType?, read }). It mirrors
+// jsResource exactly, swapping the SDK call (AddResourceTemplate instead of
+// AddResource, keyed by an RFC-6570 URITemplate rather than a fixed URI) —
+// the ResourceHandler bridge, error-propagation shape, and result converter
+// (toReadResourceResult) are identical. The client reads a concrete URI that
+// matches the template (e.g. "db:///users/42" against "db:///{table}/{id}");
+// that resolved URI — not the template string — is what's passed to the JS
+// `read` function and stamped onto the returned ResourceContents.
+//
+// Registration is allowed at any time, for the same runtime-add /
+// list-changed-notification reason documented on jsTool.
+func (ms *mcpServer) jsResourceTemplate(call goja.FunctionCall) goja.Value {
+	spec, ok := call.Argument(0).Export().(map[string]any)
+	if !ok {
+		panic(ms.vm.NewTypeError("mcp.resourceTemplate: a spec object is required"))
+	}
+	uriTemplate, _ := spec["uriTemplate"].(string)
+	if uriTemplate == "" {
+		panic(ms.vm.NewTypeError("mcp.resourceTemplate: `uriTemplate` is required"))
+	}
+	name, _ := spec["name"].(string)
+	if name == "" {
+		panic(ms.vm.NewTypeError("mcp.resourceTemplate: `name` is required"))
+	}
+	mimeType, _ := spec["mimeType"].(string)
+
+	hv := ms.vm.ToValue(spec["read"])
+	fn, isFn := goja.AssertFunction(hv)
+	if !isFn {
+		panic(ms.vm.NewTypeError("mcp.resourceTemplate: `read` must be a function"))
+	}
+	lc := scriptengine.NewLoopCallable(ms.loop, fn)
+
+	ms.srv.AddResourceTemplate(&mcp.ResourceTemplate{URITemplate: uriTemplate, Name: name, MIMEType: mimeType}, func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		sess := req.Session
+		tok := req.Params.GetProgressToken()
+		requestedURI := req.Params.URI
+		out, err := ms.callJSHandler(lc,
+			func(vm *goja.Runtime) []goja.Value {
+				return []goja.Value{vm.ToValue(requestedURI), ms.newRequestContext(vm, sess, tok)}
+			},
+			func(vm *goja.Runtime, v goja.Value) (any, error) {
+				return toReadResourceResult(vm, requestedURI, mimeType, v)
+			},
+		)
+		if err != nil {
+			// Same protocol-level error shape as jsResource: there's no
+			// isError equivalent for resources/read.
+			return nil, err
+		}
+		// convert always yields *mcp.ReadResourceResult on the success path;
+		// the comma-ok guard keeps a future convert change from panicking.
+		result, ok := out.(*mcp.ReadResourceResult)
+		if !ok {
+			return nil, errors.New("mcp: internal resource result conversion failed")
+		}
+		return result, nil
+	})
+	return goja.Undefined()
+}
+
 // jsPrompt implements srv.prompt({ name, description?, arguments?, get }). It
 // registers a real SDK prompt whose PromptHandler bridges into the JS `get`
 // function through callJSHandler — the same mechanism jsTool/jsResource use,
