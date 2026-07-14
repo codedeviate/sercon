@@ -215,6 +215,92 @@ await h.close();
 	}
 }
 
+// TestMCPAuth_NonObjectVerifyReturnUnauthorized locks in the fail-closed
+// guard: a verify() that returns a truthy NON-object value (a script bug —
+// the contract is identity-object | null) must NOT authenticate the request.
+// Before the guard, ToObject boxed `true` into an empty identity that passed
+// when no scopes were enforced; now convertTokenIdentity rejects it, which
+// routes through tokenVerifier as auth.ErrInvalidToken → 401. Configured with
+// NO scopes (the "any valid token" config) so the box-as-empty-identity path
+// would otherwise succeed.
+func TestMCPAuth_NonObjectVerifyReturnUnauthorized(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+
+	urlCh := make(chan string, 1)
+	done := make(chan struct{})
+
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		return map[string]any{
+			"serve": func(call goja.FunctionCall) goja.Value {
+				ms := &mcpServer{
+					eng: eng, vm: vm, loop: loop,
+					srv: mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil),
+				}
+				return ms.handle(vm)
+			},
+			"notifyURL": func(u string) goja.Value { urlCh <- u; return goja.Undefined() },
+			"waitClose": func() goja.Value {
+				p, resolve, _ := vm.NewPromise()
+				go func() { <-done; loop.RunOnLoop(func(*goja.Runtime) { _ = resolve(goja.Undefined()) }) }()
+				return vm.ToValue(p)
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runErr := make(chan error, 1)
+	go func() {
+		_, err := eng.Run(ctx, "auth-nonobj.ts", `
+const srv = test.serve();
+srv.tool({ name: "add", inputSchema: { type: "object" }, handler: (args) => String(args.a + args.b) });
+const h = await srv.listen({
+	port: 0,
+	auth: {
+		verify: (token, req) => true,   // BUG: returns a non-object truthy value
+		resourceMetadata: { authorizationServers: ["https://auth.example.com"] },
+	},
+});
+test.notifyURL(h.url);
+await test.waitClose();
+await h.close();
+`)
+		runErr <- err
+	}()
+
+	var url string
+	select {
+	case url = <-urlCh:
+	case <-ctx.Done():
+		close(done)
+		t.Fatal("timed out waiting for listen() URL")
+	}
+
+	// A request carrying any bearer token must be rejected (401), not boxed
+	// into an empty authenticated identity.
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer anything")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		close(done)
+		t.Fatalf("request: %v", err)
+	}
+	status := resp.StatusCode
+	resp.Body.Close()
+	if status != http.StatusUnauthorized {
+		close(done)
+		t.Fatalf("non-object verify return: want 401 (fail closed), got %d", status)
+	}
+
+	close(done)
+	if err := <-runErr; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 // TestMCPAuth_NonFunctionVerifyThrows asserts the auth config is validated:
 // an `auth` block whose `verify` is not a function throws synchronously.
 func TestMCPAuth_NonFunctionVerifyThrows(t *testing.T) {

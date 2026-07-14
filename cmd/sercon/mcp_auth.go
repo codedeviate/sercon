@@ -225,7 +225,15 @@ func convertTokenIdentity(vm *goja.Runtime, v goja.Value) (any, error) {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return nil, nil // unauthorized
 	}
-	obj := v.ToObject(vm)
+	// Fail closed on a non-object return. The verify contract is
+	// identity-object | null; a truthy non-object (e.g. `true`, 42, "x") is a
+	// script bug, and boxing it via ToObject would yield an empty identity that
+	// authenticates the request when no scopes are enforced. Reject instead —
+	// the error routes through tokenVerifier as auth.ErrInvalidToken → 401.
+	obj, ok := v.(*goja.Object)
+	if !ok {
+		return nil, fmt.Errorf("verify must return an identity object or null")
+	}
 	id := &tokenIdentity{}
 
 	// subject / userId (either accepted; subject wins).
