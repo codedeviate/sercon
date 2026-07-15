@@ -40,6 +40,7 @@ type mcpClient struct {
 	release  func()
 	closed   atomic.Bool
 	host     *mcpHostConfig
+	client   *mcp.Client
 	rootURIs []string
 
 	cbMu                 sync.Mutex
@@ -451,6 +452,7 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 			cerr = terr
 		} else {
 			client := mcp.NewClient(&mcp.Implementation{Name: "sercon", Version: scriptengine.Version}, mc.clientOptions())
+			mc.client = client
 			if mc.host != nil && len(mc.host.roots) > 0 {
 				client.AddRoots(mc.host.roots...)
 				for _, r := range mc.host.roots {
@@ -775,6 +777,29 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		mc.cbMu.Lock()
 		mc.onProgressCB = lc
 		mc.cbMu.Unlock()
+		return goja.Undefined()
+	})
+
+	// setRoots(roots): replaces the client's advertised filesystem/URI roots
+	// at runtime. Unlike every other handle method, this returns
+	// goja.Undefined() directly rather than a Promise: AddRoots/RemoveRoots
+	// are pure in-memory bookkeeping on the SDK's *mcp.Client (they queue a
+	// roots/list_changed notification but do no I/O themselves), so there is
+	// nothing to await. setRoots itself runs on-loop (it's a plain handle
+	// method, invoked synchronously from the script goroutine), so mutating
+	// mc.rootURIs here is race-free with the off-loop write to it at connect
+	// (connectWith's goroutine writes it, then only ever hands off to the
+	// loop before this method becomes callable).
+	_ = obj.Set("setRoots", func(call goja.FunctionCall) goja.Value {
+		roots := parseRoots(vm, call.Argument(0))
+		if len(mc.rootURIs) > 0 {
+			mc.client.RemoveRoots(mc.rootURIs...)
+		}
+		mc.client.AddRoots(roots...)
+		mc.rootURIs = mc.rootURIs[:0]
+		for _, r := range roots {
+			mc.rootURIs = append(mc.rootURIs, r.URI)
+		}
 		return goja.Undefined()
 	})
 

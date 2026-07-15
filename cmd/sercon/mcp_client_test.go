@@ -415,3 +415,36 @@ await h.close();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPClientHostRoots dogfoods MCP Phase 3's roots wiring: the client
+// seeds its filesystem/URI roots via the `roots` connect option (AddRoots
+// before Connect), and the server sees them via ctx.roots() (roots/list).
+// Then c.setRoots(...) swaps the set at runtime (RemoveRoots + AddRoots),
+// and a second ctx.roots() call on the server observes the update.
+func TestMCPClientHostRoots(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "roots.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "listRoots", inputSchema: { type: "object" }, handler: async (a, ctx) => {
+  const rs = await ctx.roots();
+  return rs.map(r => r.uri).sort().join(",");
+}});
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url, { roots: [{ uri: "file:///a" }, { uri: "file:///b" }] });
+const r1 = await c.callTool("listRoots", {});
+runtime.assert.equal(r1.content[0].text, "file:///a,file:///b", "initial roots");
+c.setRoots([{ uri: "file:///c" }]);
+const r2 = await c.callTool("listRoots", {});
+runtime.assert.equal(r2.content[0].text, "file:///c", "updated roots");
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
