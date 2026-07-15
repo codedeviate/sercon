@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.92.0] — 2026-07-15
+
 ### Added
 - **`mcp` Phase 3 — sampling, elicitation, roots, OAuth resource server.** Every
   tool/resource/prompt handler's `ctx` gains three server-initiated calls *out* to the

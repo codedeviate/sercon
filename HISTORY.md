@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.91.0 (2026-07-14).
+covered is v0.1.0 (2026-05-25) through v0.92.0 (2026-07-15).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -1058,6 +1058,32 @@ through a shared `asyncSettle` helper that holds the loop (`HoldRun`) for the
 round-trip so a top-level `await` can't have its settlement silently dropped when
 the loop would otherwise go idle. Sampling/elicitation/roots and HTTP OAuth are
 the planned Phase 3; a client (`mcp.connect`) is a separate effort.
+
+### `mcp` server — Phase 3 (v0.92.0)
+
+Full-spec completion: the client-dependent calls and HTTP auth. The request
+`ctx` gained three server→client requests — `ctx.sample()` (run a completion on
+the *client's* LLM via `sampling/createMessage`), `ctx.elicit()` (ask the user,
+through the client's UI, to confirm or fill a small form), and `ctx.roots()`
+(read the client's current filesystem/URI roots) — each reusing a value-returning
+`asyncSettleResult` (the `asyncSettle` shape, but settling with the round-trip's
+result via a JSON round-trip) and each pre-checking the negotiated client
+capability so an unsupported call throws a clear `"mcp: client does not support
+X"` instead of an opaque protocol error or a hang. The mid-handler round-trip
+does not deadlock the single-threaded loop because the SDK reads the client's
+reply on an independent goroutine while the loop is merely *held* alive. A
+`srv.onRootsChanged(fn)` push counterpart mirrors `ctx.roots()`. `srv.listen`
+gained an `auth` option turning the Streamable HTTP transport into an OAuth 2.1
+**resource server**: a script `verify(token, req)` callback validates bearer
+tokens (funnelled onto the loop per request, and *failing closed* on any non-
+identity return), RFC 9728 protected-resource metadata is served at
+`/.well-known/oauth-protected-resource`, and scopes are enforced with a correct
+`WWW-Authenticate` challenge on `401`. Token issuance and dynamic client
+registration stay out — those are the authorization server's role. Shipped
+alongside an advanced-examples cookbook (MANUAL §5.15.2 + nine runnable/
+illustrative scripts, the client-dependent ones Go-tested via the in-memory and
+subprocess SDK clients). The MCP **server** is now full-spec; an MCP **client**
+(`mcp.connect`) and Windows stdio remain the open follow-ups.
 
 ## Bundled libraries
 
