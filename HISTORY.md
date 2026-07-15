@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.92.0 (2026-07-15).
+covered is v0.1.0 (2026-05-25) through v0.93.0 (2026-07-15).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -1084,6 +1084,31 @@ alongside an advanced-examples cookbook (MANUAL §5.15.2 + nine runnable/
 illustrative scripts, the client-dependent ones Go-tested via the in-memory and
 subprocess SDK clients). The MCP **server** is now full-spec; an MCP **client**
 (`mcp.connect`) and Windows stdio remain the open follow-ups.
+
+### `mcp` client — Phase 1 (v0.93.0)
+
+The other half of the protocol: sercon can now *consume* MCP servers, not just
+be one. `mcp.connect` is a namespace of per-transport factories —
+`mcp.connect.stdio({command, env?, cwd?})` launches a server as a subprocess
+and speaks JSON-RPC over its stdio (the mirror of `srv.stdio()`, and how hosts
+like Claude Desktop start a server), while `mcp.connect.http(url, {headers?})`
+attaches to an already-listening Streamable HTTP endpoint (the `headers` can
+carry a bearer token for a `listen({auth})`-protected server). Both resolve one
+session handle: `serverInfo`/`capabilities` from the initialize handshake, then
+`listTools`/`callTool`, `listResources`/`listResourceTemplates`/`readResource`,
+`listPrompts`/`getPrompt`, `ping`, and an idempotent `close`. A tool failure
+comes back as `{isError: true}` rather than a throw (the same soft-failure
+contract the server side emits); transport and protocol failures do throw. The
+`asyncSettleResult` helper built for the server's mid-handler sends was lifted
+to a shared free function so every client call reuses it — the SDK request runs
+off the event loop and settles on it — and the connection holds the loop open
+(`HoldRun`) for its lifetime, released exactly once on `close`. Two SDK result
+fields (`CallToolResult.IsError`, `PromptArgument.Required`) are `omitempty`
+booleans, so a naive JSON round-trip would turn a legitimate `false` into
+`undefined`; small view structs restore them. Phase 1 is consume-only —
+answering the server's own sampling/elicitation/roots requests, change
+notifications and subscriptions, and an OAuth *client* are the planned later
+phases.
 
 ## Bundled libraries
 

@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.93.0] — 2026-07-15
+
 ### Added
 - **`mcp.connect` — the MCP client, Phase 1 (consume core).** sercon can now act as an MCP
   *client*, not just a server: `await mcp.connect.stdio({command, env?, cwd?})` launches an
