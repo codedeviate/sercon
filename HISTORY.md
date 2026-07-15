@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.93.0 (2026-07-15).
+covered is v0.1.0 (2026-05-25) through v0.94.0 (2026-07-15).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -1109,6 +1109,30 @@ booleans, so a naive JSON round-trip would turn a legitimate `false` into
 answering the server's own sampling/elicitation/roots requests, change
 notifications and subscriptions, and an OAuth *client* are the planned later
 phases.
+
+### `mcp` client — Phase 2 (v0.94.0)
+
+The client stops being purely pull-driven and starts reacting to what the
+server pushes. Six single-slot notification setters register callbacks —
+`onToolsChanged`/`onResourcesChanged`/`onPromptsChanged` (list changed),
+`onResourceUpdated(uri)`, `onLoggingMessage({level,logger?,data})`, and
+`onProgress({progressToken,progress,total?,message?})` — wired unconditionally
+at connect to dispatchers that read a mutex-guarded slot and invoke the script
+callback on the loop via `LoopCallable`, exactly the discipline the server side
+uses for `onSubscribe`. `subscribe`/`unsubscribe` manage resource
+subscriptions, `setLoggingLevel` opts into server logs (which otherwise never
+arrive), and `complete(ref, argName, partial)` requests argument completions
+(returning `{values, total?, hasMore?}`, symmetric with the server's
+completion result). Underneath, the connection gained a proper lifecycle: a
+connection-scoped cancellable context replaced the per-call
+`context.Background()`, a `sess.Wait()` death-watcher releases the loop hold
+when the session ends, and the auto-pagination loops gained a page cap. One
+honest limitation is documented: over Streamable HTTP a *graceful* server
+shutdown keeps the client's SSE stream alive, so the death-watcher only fires
+on stdio subprocess exit or an abrupt failure — an idle HTTP client to a
+gracefully-stopped server still relies on the run ending. Host responders
+(answering sampling/elicitation, exposing roots) and an OAuth client remain
+Phases 3–4.
 
 ## Bundled libraries
 

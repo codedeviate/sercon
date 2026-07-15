@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.94.0] — 2026-07-15
+
 ### Added
 - **`mcp.connect` — the MCP client, Phase 2 (reactive surface).** A connection resolved by
   `mcp.connect.stdio`/`mcp.connect.http` now reacts to what the server pushes, not just

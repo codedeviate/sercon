@@ -18840,7 +18840,7 @@ const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);
 
 ---
 
-*This manual covers sercon v0.93.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.94.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
