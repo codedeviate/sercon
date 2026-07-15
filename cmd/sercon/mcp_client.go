@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"sync"
 	"sync/atomic"
 
 	"github.com/dop251/goja"
@@ -21,9 +22,14 @@ import (
 const mcpClientMaxListPages = 1000
 
 // mcpClient is a live MCP client session (Phase 1: the consume half; Phase 2
-// adds a connection-scoped ctx + death-watcher). It holds the event loop alive
-// for the connection's lifetime and releases exactly once on close() or
-// transport death.
+// adds a connection-scoped ctx + death-watcher, plus the six notification
+// callback slots below). It holds the event loop alive for the connection's
+// lifetime and releases exactly once on close() or transport death.
+//
+// The six onXxxCB fields are guarded by cbMu: written on-loop by the script
+// goroutine (via c.onToolsChanged/etc. in handle) and read on arbitrary SDK
+// goroutines by the clientOptions() dispatchers below. Same pattern as
+// mcpServer's onSubscribeCB/onUnsubscribeCB in mcp_server.go.
 type mcpClient struct {
 	eng     *scriptengine.Engine
 	vm      *goja.Runtime
@@ -33,12 +39,93 @@ type mcpClient struct {
 	cancel  context.CancelFunc
 	release func()
 	closed  atomic.Bool
+
+	cbMu                 sync.Mutex
+	onToolsChangedCB     *scriptengine.LoopCallable
+	onResourcesChangedCB *scriptengine.LoopCallable
+	onPromptsChangedCB   *scriptengine.LoopCallable
+	onResourceUpdatedCB  *scriptengine.LoopCallable
+	onLoggingMessageCB   *scriptengine.LoopCallable
+	onProgressCB         *scriptengine.LoopCallable
 }
 
-// clientOptions builds the SDK ClientOptions. Task 2 wires the six notification
-// handlers to on-loop dispatchers; Phase-1 behaviour is nil (no handlers).
+// getCB returns the callback selected by pick under cbMu — a small generic
+// getter shared by all six clientOptions() dispatchers below.
+func (mc *mcpClient) getCB(pick func() *scriptengine.LoopCallable) *scriptengine.LoopCallable {
+	mc.cbMu.Lock()
+	defer mc.cbMu.Unlock()
+	return pick()
+}
+
+// clientOptions builds the SDK ClientOptions. All six notification handlers
+// are wired unconditionally at connect time; each dispatcher reads its
+// callback slot under cbMu and, if a script has registered one via
+// c.onXxx(fn), invokes it on-loop via LoopCallable.Call. Native→goja
+// conversion happens inside the buildArgs closure passed to Call, which runs
+// on the loop — these handlers themselves run on SDK-internal goroutines and
+// must never touch goja directly.
 func (mc *mcpClient) clientOptions() *mcp.ClientOptions {
-	return &mcp.ClientOptions{}
+	return &mcp.ClientOptions{
+		ToolListChangedHandler: func(_ context.Context, _ *mcp.ToolListChangedRequest) {
+			cb := mc.getCB(func() *scriptengine.LoopCallable { return mc.onToolsChangedCB })
+			if cb == nil {
+				return
+			}
+			_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) { return nil, nil })
+		},
+		ResourceListChangedHandler: func(_ context.Context, _ *mcp.ResourceListChangedRequest) {
+			cb := mc.getCB(func() *scriptengine.LoopCallable { return mc.onResourcesChangedCB })
+			if cb == nil {
+				return
+			}
+			_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) { return nil, nil })
+		},
+		PromptListChangedHandler: func(_ context.Context, _ *mcp.PromptListChangedRequest) {
+			cb := mc.getCB(func() *scriptengine.LoopCallable { return mc.onPromptsChangedCB })
+			if cb == nil {
+				return
+			}
+			_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) { return nil, nil })
+		},
+		ResourceUpdatedHandler: func(_ context.Context, req *mcp.ResourceUpdatedNotificationRequest) {
+			cb := mc.getCB(func() *scriptengine.LoopCallable { return mc.onResourceUpdatedCB })
+			if cb == nil {
+				return
+			}
+			uri := req.Params.URI
+			_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+				return []goja.Value{vm.ToValue(uri)}, nil
+			})
+		},
+		LoggingMessageHandler: func(_ context.Context, req *mcp.LoggingMessageRequest) {
+			cb := mc.getCB(func() *scriptengine.LoopCallable { return mc.onLoggingMessageCB })
+			if cb == nil {
+				return
+			}
+			params := req.Params
+			_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+				plain, err := toPlain(params) // { level, logger, data }
+				if err != nil {
+					return nil, err
+				}
+				return []goja.Value{vm.ToValue(plain)}, nil
+			})
+		},
+		ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+			cb := mc.getCB(func() *scriptengine.LoopCallable { return mc.onProgressCB })
+			if cb == nil {
+				return
+			}
+			params := req.Params
+			_, _ = cb.Call(func(vm *goja.Runtime) ([]goja.Value, error) {
+				plain, err := toPlain(params) // { progressToken, progress, total, message }
+				if err != nil {
+					return nil, err
+				}
+				return []goja.Value{vm.ToValue(plain)}, nil
+			})
+		},
+	}
 }
 
 // callToolResultView mirrors mcp.CallToolResult for the JS-facing shape,
@@ -412,6 +499,64 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		})
 	})
 
+	// Task 2: the six server-push notification callbacks. Each setter
+	// validates the fn argument, wraps it in a LoopCallable bound to this
+	// connection's loop, and stores it under cbMu (last-writer-wins, same as
+	// mcpServer's onSubscribe/onUnsubscribe single-slot registrations).
+	_ = obj.Set("onToolsChanged", func(call goja.FunctionCall) goja.Value {
+		fn := requireFunctionArg(vm, call, 0, "onToolsChanged(fn)")
+		lc := scriptengine.NewLoopCallable(mc.loop, fn)
+		mc.cbMu.Lock()
+		mc.onToolsChangedCB = lc
+		mc.cbMu.Unlock()
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("onResourcesChanged", func(call goja.FunctionCall) goja.Value {
+		fn := requireFunctionArg(vm, call, 0, "onResourcesChanged(fn)")
+		lc := scriptengine.NewLoopCallable(mc.loop, fn)
+		mc.cbMu.Lock()
+		mc.onResourcesChangedCB = lc
+		mc.cbMu.Unlock()
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("onPromptsChanged", func(call goja.FunctionCall) goja.Value {
+		fn := requireFunctionArg(vm, call, 0, "onPromptsChanged(fn)")
+		lc := scriptengine.NewLoopCallable(mc.loop, fn)
+		mc.cbMu.Lock()
+		mc.onPromptsChangedCB = lc
+		mc.cbMu.Unlock()
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("onResourceUpdated", func(call goja.FunctionCall) goja.Value {
+		fn := requireFunctionArg(vm, call, 0, "onResourceUpdated(fn)")
+		lc := scriptengine.NewLoopCallable(mc.loop, fn)
+		mc.cbMu.Lock()
+		mc.onResourceUpdatedCB = lc
+		mc.cbMu.Unlock()
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("onLoggingMessage", func(call goja.FunctionCall) goja.Value {
+		fn := requireFunctionArg(vm, call, 0, "onLoggingMessage(fn)")
+		lc := scriptengine.NewLoopCallable(mc.loop, fn)
+		mc.cbMu.Lock()
+		mc.onLoggingMessageCB = lc
+		mc.cbMu.Unlock()
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("onProgress", func(call goja.FunctionCall) goja.Value {
+		fn := requireFunctionArg(vm, call, 0, "onProgress(fn)")
+		lc := scriptengine.NewLoopCallable(mc.loop, fn)
+		mc.cbMu.Lock()
+		mc.onProgressCB = lc
+		mc.cbMu.Unlock()
+		return goja.Undefined()
+	})
+
 	return obj
 }
 
@@ -453,6 +598,22 @@ func requireStringArg(vm *goja.Runtime, call goja.FunctionCall, i int, who strin
 		panic(vm.NewTypeError(who + ": missing argument"))
 	}
 	return call.Arguments[i].String()
+}
+
+// requireFunctionArg returns call.Arguments[i] as a goja.Callable or throws.
+// Mirrors mcpServer.requireFunctionArg (mcp_server.go), which is a method on
+// *mcpServer and so isn't directly reusable here; kept as a package-level
+// function since mcpClient's other arg helpers (requireStringArg etc.) follow
+// the same free-function shape.
+func requireFunctionArg(vm *goja.Runtime, call goja.FunctionCall, i int, who string) goja.Callable {
+	if len(call.Arguments) <= i {
+		panic(vm.NewTypeError(who + ": a function is required"))
+	}
+	fn, isFn := goja.AssertFunction(call.Arguments[i])
+	if !isFn {
+		panic(vm.NewTypeError(who + ": a function is required"))
+	}
+	return fn
 }
 
 func optStringArg(vm *goja.Runtime, v goja.Value) string {

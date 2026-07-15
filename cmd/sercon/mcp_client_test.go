@@ -231,3 +231,38 @@ func TestWatchSessionDeath(t *testing.T) {
 		}
 	}
 }
+
+// TestMCPClientOnToolsChanged exercises c.onToolsChanged(fn): a server-side
+// tool addition after connect fires notifications/tools/list_changed, which
+// the client dispatches on-loop to the registered JS callback.
+func TestMCPClientOnToolsChanged(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "notif.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "a", inputSchema: { type: "object" }, handler: () => "a" });
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url);
+
+let fired = 0;
+c.onToolsChanged(() => { fired++; });
+
+// Trigger a list_changed by adding a tool after connect.
+srv.tool({ name: "b", inputSchema: { type: "object" }, handler: () => "b" });
+
+// Poll until the notification is delivered (server debounces ~10ms).
+const deadline = Date.now() + 5000;
+while (fired === 0 && Date.now() < deadline) { await new Promise(r => setTimeout(r, 20)); }
+runtime.assert.ok(fired >= 1, "onToolsChanged fired");
+
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
