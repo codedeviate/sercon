@@ -127,6 +127,10 @@ runtime.assert.equal(doc.contents[0].text, "hello", "read text");
 
 const ps = await c.listPrompts();
 runtime.assert.equal(ps[0].name, "greet", "prompt name");
+// The argument was declared without a required flag, so it must round-trip as
+// the boolean false (not undefined) — the promptView fix for PromptArgument's
+// omitempty json tag. Locks in the fix's own justification.
+runtime.assert.equal(ps[0].arguments[0].required, false, "arg.required defaults to false, not undefined");
 const p = await c.getPrompt("greet", { who: "Ada" });
 runtime.assert.ok(JSON.stringify(p.messages).includes("hi Ada"), "prompt rendered");
 
