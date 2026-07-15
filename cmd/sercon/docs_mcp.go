@@ -51,10 +51,41 @@ const mcpServeHandleType = `{
   close(): void;
 }`
 
+// mcpClientHandleType is the object mcp.connect.stdio(...)/mcp.connect.http(...)
+// resolve to — spliced verbatim into the "connect.stdio"/"connect.http"
+// MemberDocs' ReturnType (Promise<mcpClientHandleType>), the same pattern
+// mcpServeHandleType uses for the server side. Built at script-run time by
+// (*mcpClient).handle in mcp_client.go — a Go `func(goja.FunctionCall)
+// goja.Value` carries no static type information, so this constant is what
+// actually reaches the emitted .d.ts. Must stay valid TypeScript on its own,
+// and in lockstep with the obj.Set(...) calls in that function.
+//
+// Field shapes are simplified/generic reflections of the go-sdk's wire types
+// (mcp.Tool, mcp.Resource, mcp.ResourceTemplate, mcp.Content,
+// mcp.ResourceContents, mcp.Prompt/PromptArgument) — good enough for a
+// script author to know what's there without pulling in the SDK's full
+// JSON Schema machinery. `capabilities` and `inputSchema`/`outputSchema` are
+// left as `Record<string, unknown>`/`unknown` rather than modeled, matching
+// mcpCtxType's own precedent for JSON-Schema-shaped fields.
+const mcpClientHandleType = `{
+  serverInfo: { name: string; version: string; title?: string };
+  capabilities: Record<string, unknown>;
+  listTools(): Promise<Array<{ name: string; title?: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }>>;
+  callTool(name: string, args?: Record<string, unknown>): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string; uri?: string; resource?: { uri: string; mimeType?: string; text?: string; blob?: string } }>; structuredContent?: unknown; isError: boolean }>;
+  listResources(): Promise<Array<{ uri: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  listResourceTemplates(): Promise<Array<{ uriTemplate: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  readResource(uri: string): Promise<{ contents: Array<{ uri: string; mimeType?: string; text?: string; blob?: string }> }>;
+  listPrompts(): Promise<Array<{ name: string; title?: string; description?: string; arguments?: Array<{ name: string; title?: string; description?: string; required: boolean }> }>>;
+  getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
+  ping(): Promise<void>;
+  close(): Promise<void>;
+}`
+
 // mcpDocs documents the `mcp` global — mcp.serve(...) and every method of the
-// handle it returns. Keys are relative to "mcp" (no "mcp." prefix —
-// SetMemberDocsStructured prepends it), matching the convention in
-// docs_server.go/docs_cloud.go.
+// handle it returns, plus mcp.connect.stdio/mcp.connect.http (the client
+// side) and the handle they resolve to. Keys are relative to "mcp" (no
+// "mcp." prefix — SetMemberDocsStructured prepends it), matching the
+// convention in docs_server.go/docs_cloud.go.
 //
 // Unlike cloud's runtime-built provider handles (google()/aws()/azure()),
 // mcp.serve(...) has no further nesting below its own methods — there is no
@@ -71,6 +102,15 @@ const mcpServeHandleType = `{
 // (a func, not a map[string]any), so "serve.tool" etc. reach the MANUAL §17
 // output purely through this doc map, the same mechanism cloud's per-service
 // method entries use.
+//
+// mcp.connect is the mirror-image case: unlike mcp.serve, it IS a real
+// map[string]any (mcpConnectNamespace in mcp.go, nested under mcp's own
+// namespace factory), so the surface walk DOES discover "connect" as a
+// container node and "connect.stdio"/"connect.http" as real leaf members
+// (see insertSurfaceMember in reference.go). "connect" itself needs no doc
+// entry — same as "http"/"https"/"smtp" in docs_server.go, container nodes
+// render with just a heading when undocumented — only the two leaf keys
+// below need the full field set.
 func mcpDocs() map[string]scriptengine.MemberDoc {
 	return map[string]scriptengine.MemberDoc{
 		"serve": {
@@ -314,6 +354,42 @@ await h2.close();`,
 			Errors:     "Never throws.",
 			Example: `const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
 srv.close(); // currently a no-op; use the listen() handle's close(), or let stdio() resolve on disconnect`,
+		},
+		"connect.stdio": {
+			Summary: "Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 1 (this task): consume an already-running server's tools/resources/prompts; there is no host-side responder yet for the server calling back into sercon (sampling/elicitation/roots answering) or change notifications/subscriptions — those are later phases, along with an OAuth client and Windows stdio support.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ command: string[]; env?: Record<string, string>; cwd?: string }", Desc: "command: argv for the subprocess, e.g. [\"sercon\", \"server.ts\"] — command[0] is the executable (resolved via PATH), the rest are its arguments; must be a non-empty array. env: extra environment variables merged into the child's inherited environment (does not replace it). cwd: working directory for the child process; defaults to sercon's own cwd when omitted."},
+			},
+			ReturnType: "Promise<" + mcpClientHandleType + ">",
+			Returns:    "A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised, and listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.",
+			Errors:     "Throws synchronously if opts is missing/not an object or command is missing/not a non-empty string array. The returned promise rejects if the subprocess fails to start or the initialize handshake fails (wrapped as \"mcp.connect: ...\").",
+			Example: `const c = await mcp.connect.stdio({ command: ["sercon", "server.ts"] });
+runtime.log("connected to", c.serverInfo.name, c.serverInfo.version);
+const r = await c.callTool("add", { a: 2, b: 3 });
+runtime.log(r.content[0].text); // "5"
+await c.close();`,
+		},
+		"connect.http": {
+			Summary: "Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 1 scope note as connect.stdio: consume-only this phase, no host-side responder for sampling/elicitation/roots, no notifications/subscriptions, no OAuth client yet.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Desc: "the server's absolute MCP endpoint URL, e.g. \"http://127.0.0.1:38080/mcp\" (must be http or https with a host; anything else throws synchronously)."},
+				{Name: "opts", Type: "{ headers?: Record<string, string> }", Desc: "optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override."},
+			},
+			ReturnType: "Promise<" + mcpClientHandleType + ">",
+			Returns:    "Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities and the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods. Holds the script's event loop open for the connection's lifetime.",
+			Errors:     "Throws synchronously if url is missing or not an absolute http(s) URL. The returned promise rejects if the HTTP connection or initialize handshake fails (wrapped as \"mcp.connect: ...\") — including a 401 from a listen({auth})-protected server when opts.headers doesn't carry a valid bearer token.",
+			Example: `const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+runtime.log("connected to", c.serverInfo.name);
+const tools = await c.listTools();
+runtime.log(tools.map(t => t.name).join(", "));
+await c.ping();
+await c.close();
+
+// Against an OAuth-protected listener (see serve.listen's auth option):
+const authed = await mcp.connect.http("http://127.0.0.1:38081/mcp", {
+  headers: { Authorization: "Bearer good-token" },
+});
+await authed.close();`,
 		},
 	}
 }

@@ -1385,10 +1385,28 @@ const h = await srv.listen({
 });`)
 	note("ctx.sample/ctx.elicit/ctx.roots each reject with a clear \"mcp: client does not support <capability>\" error if the connected client never advertised it — there's no silent degrade path, and they only do something interesting against a real client (they're Go-tested, not make-demo scripts; see examples/scripts/mcp-sampling.ts, mcp-elicit.ts, mcp-roots.ts). listen()'s auth option makes sercon an OAuth resource server only — it validates bearer tokens and publishes /.well-known/oauth-protected-resource metadata; it never issues tokens or does dynamic client registration (that's the authorization server's job). Also see examples/scripts/mcp-toolbox.ts (sercon-as-toolbox) and mcp-bridge.ts (bridging a tool to an external API), both make-demo scripts. Full walkthroughs in MANUAL.md §5.15.2.10–§5.15.2.14 and the generated §17.9 reference.")
 
+	header(72, "Connect to an MCP server (mcp.connect)")
+	code(`// sercon as an MCP CLIENT: connect to someone else's server, then call
+// its tools/resources/prompts. Two transports, same session handle.
+const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+// or: await mcp.connect.stdio({ command: ["sercon", "server.ts"] });
+
+runtime.log("connected to", c.serverInfo.name, c.serverInfo.version);
+
+const result = await c.callTool("add", { a: 2, b: 40 });
+runtime.log(result.isError ? "tool errored" : result.content[0].text); // "42"
+
+const doc = await c.readResource("cfg://app");
+runtime.log(doc.contents[0].text);
+
+await c.ping();
+await c.close();`)
+	note("callTool never throws for a tool-level failure — check isError, same soft-failure contract as mcp.serve's tool handlers; a thrown/rejected promise here means the transport or protocol itself failed. Phase 1 is consume-only: no host-side responder yet for the server's own sampling/elicitation/roots calls, no change notifications/subscriptions, no OAuth client — those are later phases. See examples/scripts/mcp-client-http.ts (hermetic, make-demo) and mcp-client-stdio.ts (subprocess-driven, Go-tested via cmd/sercon/mcp_client_test.go), and MANUAL.md §5.15.3 / the generated §17.9.1 reference.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 71
+const exampleCount = 72

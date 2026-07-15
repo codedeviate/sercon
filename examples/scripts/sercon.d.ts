@@ -2111,6 +2111,45 @@ declare const server: {
 
 /** Model Context Protocol server: mcp.serve({name, version, instructions?}) returns a handle for registering tools/resources/prompts with JS handlers, then serving them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk. */
 declare const mcp: {
+  connect: {
+    /**
+     * Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 1 scope note as connect.stdio: consume-only this phase, no host-side responder for sampling/elicitation/roots, no notifications/subscriptions, no OAuth client yet.
+     * @param url the server's absolute MCP endpoint URL, e.g. "http://127.0.0.1:38080/mcp" (must be http or https with a host; anything else throws synchronously).
+     * @param opts optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override.
+     * @returns Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities and the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods. Holds the script's event loop open for the connection's lifetime.
+     */
+    http(url: string, opts: { headers?: Record<string, string> }): Promise<{
+  serverInfo: { name: string; version: string; title?: string };
+  capabilities: Record<string, unknown>;
+  listTools(): Promise<Array<{ name: string; title?: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }>>;
+  callTool(name: string, args?: Record<string, unknown>): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string; uri?: string; resource?: { uri: string; mimeType?: string; text?: string; blob?: string } }>; structuredContent?: unknown; isError: boolean }>;
+  listResources(): Promise<Array<{ uri: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  listResourceTemplates(): Promise<Array<{ uriTemplate: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  readResource(uri: string): Promise<{ contents: Array<{ uri: string; mimeType?: string; text?: string; blob?: string }> }>;
+  listPrompts(): Promise<Array<{ name: string; title?: string; description?: string; arguments?: Array<{ name: string; title?: string; description?: string; required: boolean }> }>>;
+  getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
+  ping(): Promise<void>;
+  close(): Promise<void>;
+}>;
+    /**
+     * Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 1 (this task): consume an already-running server's tools/resources/prompts; there is no host-side responder yet for the server calling back into sercon (sampling/elicitation/roots answering) or change notifications/subscriptions — those are later phases, along with an OAuth client and Windows stdio support.
+     * @param opts command: argv for the subprocess, e.g. ["sercon", "server.ts"] — command[0] is the executable (resolved via PATH), the rest are its arguments; must be a non-empty array. env: extra environment variables merged into the child's inherited environment (does not replace it). cwd: working directory for the child process; defaults to sercon's own cwd when omitted.
+     * @returns A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised, and listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.
+     */
+    stdio(opts: { command: string[]; env?: Record<string, string>; cwd?: string }): Promise<{
+  serverInfo: { name: string; version: string; title?: string };
+  capabilities: Record<string, unknown>;
+  listTools(): Promise<Array<{ name: string; title?: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }>>;
+  callTool(name: string, args?: Record<string, unknown>): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string; uri?: string; resource?: { uri: string; mimeType?: string; text?: string; blob?: string } }>; structuredContent?: unknown; isError: boolean }>;
+  listResources(): Promise<Array<{ uri: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  listResourceTemplates(): Promise<Array<{ uriTemplate: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  readResource(uri: string): Promise<{ contents: Array<{ uri: string; mimeType?: string; text?: string; blob?: string }> }>;
+  listPrompts(): Promise<Array<{ name: string; title?: string; description?: string; arguments?: Array<{ name: string; title?: string; description?: string; required: boolean }> }>>;
+  getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
+  ping(): Promise<void>;
+  close(): Promise<void>;
+}>;
+  };
   /**
    * Create an MCP (Model Context Protocol) server. Register zero or more tools/resources/prompts/resource templates on the returned handle — at any time, including after a transport has started, since registering them fires a list-changed notification to already-connected clients — then serve them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk; only one transport may be started per handle — starting a second one throws.
    * @param config name/version identify this server to clients during MCP's initialize handshake (surfaced to the client as serverInfo). instructions is an optional free-text hint about how to use this server (tone, expected workflow), surfaced to clients/LLMs during capability negotiation. pageSize is an optional positive integer capping how many tools/resources/prompts/resource templates a single list response returns before the client must page with a cursor; defaults to the SDK's built-in page size (1000) when omitted. Present-but-invalid (zero, negative, or non-integer) throws synchronously.

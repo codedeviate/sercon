@@ -8,6 +8,27 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`mcp.connect` — the MCP client, Phase 1 (consume core).** sercon can now act as an MCP
+  *client*, not just a server: `await mcp.connect.stdio({command, env?, cwd?})` launches an
+  MCP server as a subprocess and speaks JSON-RPC over its stdin/stdout (the mirror of
+  `srv.stdio()`); `await mcp.connect.http(url, {headers?})` connects to an already-listening
+  Streamable HTTP server (e.g. one started with `srv.listen(...)`), with `headers` able to
+  carry a bearer token for an OAuth-protected listener. Both resolve the same session
+  handle: `serverInfo`/`capabilities` (from the `initialize` handshake), `listTools()` /
+  `callTool(name, args?)` (a failed call surfaces as `{isError: true}`, not a thrown error —
+  the same soft-failure contract `mcp.serve`'s tool handlers use), `listResources()` /
+  `listResourceTemplates()` / `readResource(uri)`, `listPrompts()` / `getPrompt(name,
+  args?)`, `ping()`, and an idempotent `close()`. A connection holds the script's event loop
+  open for its lifetime, the same way an open `listen()` handle does. Built on the official
+  `modelcontextprotocol/go-sdk`'s client, pure-Go. Phase 1 is consume-only: answering the
+  server's own mid-call requests (sampling/elicitation/roots), change notifications and
+  resource subscriptions, and an OAuth *client* are later phases. See MANUAL.md §5.15.3 and
+  the generated §17.9.1 reference; `examples/scripts/mcp-client-http.ts` is hermetic
+  (starts its own in-script server, runs under `make demo`) and
+  `examples/scripts/mcp-client-stdio.ts` drives a real subprocess (Go-tested via
+  `cmd/sercon/mcp_client_test.go`).
+
 ## [0.92.0] — 2026-07-15
 
 ### Added

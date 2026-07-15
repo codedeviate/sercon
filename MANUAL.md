@@ -6739,6 +6739,91 @@ runtime.log("listening at", h.url, "(bearer token required: good-token)");
   `tools/call` succeeds, and a `GET` on the metadata URL → 200 JSON. Not a
   `make demo` script — a real client is required to exercise it.
 
+#### 5.15.3 `mcp.connect` — sercon as an MCP client
+
+Everything above is sercon *serving* MCP. `mcp.connect` is the other
+direction: sercon as an MCP **client**, connecting to someone else's
+server — over stdio (sercon launches it as a subprocess) or Streamable
+HTTP (a server already listening) — then calling its tools, reading its
+resources, and fetching its prompts. This is Phase 1 (consume core):
+answering the server's own mid-call requests (sampling/elicitation/roots),
+resource-update notifications and subscriptions, and an OAuth *client*
+(as opposed to `serve.listen`'s resource-server role) are later phases.
+
+| Call | Transport | Shape |
+|---|---|---|
+| `await mcp.connect.stdio({ command, env?, cwd? })` | subprocess stdio | Launches `command` (argv, e.g. `["sercon", "server.ts"]`) and speaks JSON-RPC over its stdin/stdout — the mirror of `srv.stdio()` on the other end. |
+| `await mcp.connect.http(url, { headers? })` | Streamable HTTP | Connects to an already-running listener (e.g. one started with `srv.listen(...)`); `headers` can carry a bearer token for an OAuth-protected server. |
+
+Both resolve the same session handle: `serverInfo`/`capabilities` (what
+the server advertised during `initialize`), `listTools()`/`callTool(name,
+args?)` (a failed tool call surfaces as `{isError: true}`, not a thrown
+error — same soft-failure contract as the server side), `listResources()`/
+`listResourceTemplates()`/`readResource(uri)`, `listPrompts()`/
+`getPrompt(name, args?)`, `ping()`, and `close()` (idempotent — safe to
+call more than once). A connection holds the script's event loop open for
+its lifetime, the same way an open `listen()` handle does. Full signatures
+are in §17.9.1.
+
+##### 5.15.3.1 Call a tool on an MCP server
+
+Connect over HTTP to a server already listening and invoke one of its
+tools:
+
+```ts
+const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+runtime.log("connected to", c.serverInfo.name, c.serverInfo.version);
+
+const result = await c.callTool("add", { a: 2, b: 40 });
+if (result.isError) {
+  runtime.log("tool call failed:", result.content[0].text);
+} else {
+  runtime.log("result:", result.content[0].text); // "42"
+}
+
+await c.close();
+```
+
+**Notes**
+- `callTool`'s result never throws for a tool-level failure — check
+  `isError` the same way a server's tool handler signals one; a thrown
+  or rejected exception here means the *transport or protocol* failed,
+  not that the tool itself errored.
+- `examples/scripts/mcp-client-http.ts` is the hermetic version of this
+  recipe: it starts its own `mcp.serve()` + `srv.listen()` in-script, so
+  it needs no external server and runs under `make demo`.
+
+##### 5.15.3.2 Read a resource from an MCP server
+
+Connect over stdio to a server launched as a subprocess, then read one of
+its resources:
+
+```ts
+const c = await mcp.connect.stdio({ command: ["sercon", "server.ts"] });
+
+const doc = await c.readResource("cfg://app");
+runtime.log(doc.contents[0].text);
+
+const prompts = await c.listPrompts();
+runtime.log("prompts:", prompts.map(p => p.name).join(", "));
+
+await c.close();
+```
+
+**Notes**
+- `readResource`'s `contents` array items carry `text` or `blob`
+  (base64), matching the shape a server's `resource.read()` handler
+  returns — see §5.15.2's resource recipes for the server side of the
+  same contract.
+- `examples/scripts/mcp-client-stdio.ts` exercises `connect.stdio` +
+  `callTool` against a real subprocess (`examples/scripts/mcp-server-stdio.ts`);
+  it needs the `sercon` binary on `PATH`, so it's driven by
+  `cmd/sercon/mcp_client_test.go` rather than `make demo`. The
+  `readResource`/`listPrompts` calls above use the same session-handle API
+  already exercised hermetically over HTTP in
+  `examples/scripts/mcp-client-http.ts` — the method set is identical
+  across both transports.
+
 ## 6. Servers
 
 The `server` global (added in v0.10.0) hosts inbound listeners — scripts
@@ -14023,7 +14108,89 @@ const sq = im.thumbnail(128, 128);
 
 Model Context Protocol server: mcp.serve({name, version, instructions?}) returns a handle for registering tools/resources/prompts with JS handlers, then serving them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk.
 
-#### 17.9.1 mcp.serve
+#### 17.9.1 mcp.connect
+
+##### 17.9.1.1 mcp.connect.http
+
+```
+http(url: string, opts: { headers?: Record<string, string> }): Promise<{
+  serverInfo: { name: string; version: string; title?: string };
+  capabilities: Record<string, unknown>;
+  listTools(): Promise<Array<{ name: string; title?: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }>>;
+  callTool(name: string, args?: Record<string, unknown>): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string; uri?: string; resource?: { uri: string; mimeType?: string; text?: string; blob?: string } }>; structuredContent?: unknown; isError: boolean }>;
+  listResources(): Promise<Array<{ uri: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  listResourceTemplates(): Promise<Array<{ uriTemplate: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  readResource(uri: string): Promise<{ contents: Array<{ uri: string; mimeType?: string; text?: string; blob?: string }> }>;
+  listPrompts(): Promise<Array<{ name: string; title?: string; description?: string; arguments?: Array<{ name: string; title?: string; description?: string; required: boolean }> }>>;
+  getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
+  ping(): Promise<void>;
+  close(): Promise<void>;
+}>
+```
+
+Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 1 scope note as connect.stdio: consume-only this phase, no host-side responder for sampling/elicitation/roots, no notifications/subscriptions, no OAuth client yet.
+
+**Parameters**
+
+- `url` *(string)* — the server's absolute MCP endpoint URL, e.g. "http://127.0.0.1:38080/mcp" (must be http or https with a host; anything else throws synchronously).
+- `opts` *({ headers?: Record<string, string> })* — optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override.
+
+**Returns:** Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities and the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods. Holds the script's event loop open for the connection's lifetime.
+
+**Throws:** Throws synchronously if url is missing or not an absolute http(s) URL. The returned promise rejects if the HTTP connection or initialize handshake fails (wrapped as "mcp.connect: ...") — including a 401 from a listen({auth})-protected server when opts.headers doesn't carry a valid bearer token.
+
+```ts
+const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+runtime.log("connected to", c.serverInfo.name);
+const tools = await c.listTools();
+runtime.log(tools.map(t => t.name).join(", "));
+await c.ping();
+await c.close();
+
+// Against an OAuth-protected listener (see serve.listen's auth option):
+const authed = await mcp.connect.http("http://127.0.0.1:38081/mcp", {
+  headers: { Authorization: "Bearer good-token" },
+});
+await authed.close();
+```
+
+##### 17.9.1.2 mcp.connect.stdio
+
+```
+stdio(opts: { command: string[]; env?: Record<string, string>; cwd?: string }): Promise<{
+  serverInfo: { name: string; version: string; title?: string };
+  capabilities: Record<string, unknown>;
+  listTools(): Promise<Array<{ name: string; title?: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }>>;
+  callTool(name: string, args?: Record<string, unknown>): Promise<{ content: Array<{ type: string; text?: string; data?: string; mimeType?: string; uri?: string; resource?: { uri: string; mimeType?: string; text?: string; blob?: string } }>; structuredContent?: unknown; isError: boolean }>;
+  listResources(): Promise<Array<{ uri: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  listResourceTemplates(): Promise<Array<{ uriTemplate: string; name: string; title?: string; description?: string; mimeType?: string }>>;
+  readResource(uri: string): Promise<{ contents: Array<{ uri: string; mimeType?: string; text?: string; blob?: string }> }>;
+  listPrompts(): Promise<Array<{ name: string; title?: string; description?: string; arguments?: Array<{ name: string; title?: string; description?: string; required: boolean }> }>>;
+  getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
+  ping(): Promise<void>;
+  close(): Promise<void>;
+}>
+```
+
+Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 1 (this task): consume an already-running server's tools/resources/prompts; there is no host-side responder yet for the server calling back into sercon (sampling/elicitation/roots answering) or change notifications/subscriptions — those are later phases, along with an OAuth client and Windows stdio support.
+
+**Parameters**
+
+- `opts` *({ command: string[]; env?: Record<string, string>; cwd?: string })* — command: argv for the subprocess, e.g. ["sercon", "server.ts"] — command[0] is the executable (resolved via PATH), the rest are its arguments; must be a non-empty array. env: extra environment variables merged into the child's inherited environment (does not replace it). cwd: working directory for the child process; defaults to sercon's own cwd when omitted.
+
+**Returns:** A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised, and listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.
+
+**Throws:** Throws synchronously if opts is missing/not an object or command is missing/not a non-empty string array. The returned promise rejects if the subprocess fails to start or the initialize handshake fails (wrapped as "mcp.connect: ...").
+
+```ts
+const c = await mcp.connect.stdio({ command: ["sercon", "server.ts"] });
+runtime.log("connected to", c.serverInfo.name, c.serverInfo.version);
+const r = await c.callTool("add", { a: 2, b: 3 });
+runtime.log(r.content[0].text); // "5"
+await c.close();
+```
+
+#### 17.9.2 mcp.serve
 
 ```
 serve(config: { name: string; version: string; instructions?: string; pageSize?: number }): {
@@ -14066,7 +14233,7 @@ srv.tool({
 await srv.stdio();
 ```
 
-##### 17.9.1.1 mcp.serve.close
+##### 17.9.2.1 mcp.serve.close
 
 ```
 close(): void
@@ -14083,7 +14250,7 @@ const srv = mcp.serve({ name: "my-tools", version: "1.0.0" });
 srv.close(); // currently a no-op; use the listen() handle's close(), or let stdio() resolve on disconnect
 ```
 
-##### 17.9.1.2 mcp.serve.completion
+##### 17.9.2.2 mcp.serve.completion
 
 ```
 completion(fn: (ref: { type: "prompt" | "resource"; name: string; uri: string }, argName: string, partial: string) => string[] | { values?: string[]; total?: number; hasMore?: boolean } | Promise<string[] | { values?: string[]; total?: number; hasMore?: boolean }> | null | undefined): void
@@ -14115,7 +14282,7 @@ srv.completion((ref, argName, partial) => {
 });
 ```
 
-##### 17.9.1.3 mcp.serve.listen
+##### 17.9.2.3 mcp.serve.listen
 
 ```
 listen(opts: { port: number; host?: string; path?: string; auth?: { verify(token: string, req: { method: string; path: string; header: Record<string, string> }): { subject?: string; scopes?: string[]; expiresAt?: number | string } | null | Promise<{ subject?: string; scopes?: string[]; expiresAt?: number | string } | null>; resourceMetadata?: { authorizationServers?: string[]; scopesSupported?: string[]; resourceName?: string; resourceDocumentation?: string; jwksUri?: string; bearerMethodsSupported?: string[]; resource?: string }; scopes?: string[] } }): Promise<{ url: string; stopped: Promise<void>; close(): Promise<void> }>
@@ -14151,7 +14318,7 @@ const h2 = await srv.listen({
 await h2.close();
 ```
 
-##### 17.9.1.4 mcp.serve.onRootsChanged
+##### 17.9.2.4 mcp.serve.onRootsChanged
 
 ```
 onRootsChanged(fn: (roots: Array<{ uri: string; name?: string }>) => void): void
@@ -14182,7 +14349,7 @@ srv.tool({
 });
 ```
 
-##### 17.9.1.5 mcp.serve.onSubscribe
+##### 17.9.2.5 mcp.serve.onSubscribe
 
 ```
 onSubscribe(fn: (uri: string) => void): void
@@ -14210,7 +14377,7 @@ srv.onUnsubscribe((uri) => {
 });
 ```
 
-##### 17.9.1.6 mcp.serve.onUnsubscribe
+##### 17.9.2.6 mcp.serve.onUnsubscribe
 
 ```
 onUnsubscribe(fn: (uri: string) => void): void
@@ -14232,7 +14399,7 @@ srv.onUnsubscribe((uri) => {
 });
 ```
 
-##### 17.9.1.7 mcp.serve.prompt
+##### 17.9.2.7 mcp.serve.prompt
 
 ```
 prompt(spec: { name: string; description?: string; arguments?: Array<{ name: string; description?: string; required?: boolean }>; get(args: Record<string, string> | undefined, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void
@@ -14259,7 +14426,7 @@ srv.prompt({
 });
 ```
 
-##### 17.9.1.8 mcp.serve.removePrompt
+##### 17.9.2.8 mcp.serve.removePrompt
 
 ```
 removePrompt(name: string): void
@@ -14281,7 +14448,7 @@ srv.prompt({ name: "temp", get: () => ({ messages: [] }) });
 srv.removePrompt("temp");
 ```
 
-##### 17.9.1.9 mcp.serve.removeResource
+##### 17.9.2.9 mcp.serve.removeResource
 
 ```
 removeResource(uri: string): void
@@ -14303,7 +14470,7 @@ srv.resource({ uri: "config://temp", name: "temp", read: () => ({ text: "{}" }) 
 srv.removeResource("config://temp");
 ```
 
-##### 17.9.1.10 mcp.serve.removeTool
+##### 17.9.2.10 mcp.serve.removeTool
 
 ```
 removeTool(name: string): void
@@ -14325,7 +14492,7 @@ srv.tool({ name: "temp", inputSchema: { type: "object" }, handler: () => "hi" })
 srv.removeTool("temp");
 ```
 
-##### 17.9.1.11 mcp.serve.resource
+##### 17.9.2.11 mcp.serve.resource
 
 ```
 resource(spec: { uri: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void
@@ -14350,7 +14517,7 @@ srv.resource({
 });
 ```
 
-##### 17.9.1.12 mcp.serve.resourceTemplate
+##### 17.9.2.12 mcp.serve.resourceTemplate
 
 ```
 resourceTemplate(spec: { uriTemplate: string; name: string; mimeType?: string; read(uri: string, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void
@@ -14376,7 +14543,7 @@ srv.resourceTemplate({
 // a client reading "db:///users/42" invokes read("db:///users/42", ctx)
 ```
 
-##### 17.9.1.13 mcp.serve.resourceUpdated
+##### 17.9.2.13 mcp.serve.resourceUpdated
 
 ```
 resourceUpdated(uri: string): Promise<void>
@@ -14396,7 +14563,7 @@ Notify every client currently subscribed to uri that the resource's content has 
 srv.resourceUpdated("config://app");
 ```
 
-##### 17.9.1.14 mcp.serve.stdio
+##### 17.9.2.14 mcp.serve.stdio
 
 ```
 stdio(): Promise<void>
@@ -14414,7 +14581,7 @@ srv.tool({ name: "ping", inputSchema: { type: "object" }, handler: () => "pong" 
 await srv.stdio();
 ```
 
-##### 17.9.1.15 mcp.serve.tool
+##### 17.9.2.15 mcp.serve.tool
 
 ```
 tool(spec: { name: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; handler(args: unknown, ctx: { requestId: string; clientInfo: { name: string; version: string }; progress(progress: number, total?: number): Promise<void>; log(level: string, message: string, data?: unknown): Promise<void>; sample(opts: { messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }): Promise<{ content: { type: string; text: string }; model: string; stopReason: string; role: string }>; elicit(opts: { message: string; schema: Record<string, unknown>; mode?: string }): Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }>; roots(): Promise<Array<{ uri: string; name?: string }>> }): unknown | Promise<unknown> }): void
