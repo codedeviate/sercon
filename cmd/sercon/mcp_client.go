@@ -393,6 +393,7 @@ func connectHTTP(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 	// the shared parseHostConfig helper. Parsed before mkTransport runs
 	// (mkTransport executes off-loop; optsObj.Get must happen on-loop).
 	maxRetries, hasMaxRetries := optIntArg(vm, optsObj, "maxRetries", "mcp.connect.http")
+	oauthHandler := parseOAuthConfig(vm, loop, optsObj)
 	hostCfg := parseHostConfig(vm, loop, optsObj)
 	return connectWith(eng, vm, loop, "mcp:client", hostCfg, func(_ context.Context) (mcp.Transport, error) {
 		httpClient := &http.Client{Transport: clientHeaderRoundTripper{base: http.DefaultTransport, headers: headers}}
@@ -400,8 +401,39 @@ func connectHTTP(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 		if hasMaxRetries {
 			transport.MaxRetries = maxRetries
 		}
+		if oauthHandler != nil {
+			transport.OAuthHandler = oauthHandler
+		}
 		return transport, nil
 	})
+}
+
+// parseOAuthConfig parses the optional `auth` object off a connect.http opts
+// argument into a jsOAuthHandler. Returns nil when `auth` is absent (the
+// unauthenticated path, unchanged from Phase 1-3). An `auth` object present
+// but missing a `getToken` function throws a TypeError naming the supported
+// shape, rather than silently connecting unauthenticated — the only
+// supported shape today is `{ getToken: () => token }` (bearer-token OAuth
+// client), mirroring parseMCPAuth's synchronous, pre-bind validation style on
+// the server side (mcp_auth.go). Runs on-loop, before mkTransport executes
+// off-loop — optsObj.Get must happen here, not inside the transport closure.
+func parseOAuthConfig(vm *goja.Runtime, loop *eventloop.EventLoop, optsObj *goja.Object) *jsOAuthHandler {
+	if optsObj == nil {
+		return nil
+	}
+	av := optsObj.Get("auth")
+	if av == nil || goja.IsUndefined(av) || goja.IsNull(av) {
+		return nil
+	}
+	authObj, ok := av.(*goja.Object)
+	if !ok {
+		panic(vm.NewTypeError("mcp.connect.http: auth must be an object { getToken: () => token }"))
+	}
+	fn, ok := goja.AssertFunction(authObj.Get("getToken"))
+	if !ok {
+		panic(vm.NewTypeError("mcp.connect.http: auth.getToken must be a function () => token"))
+	}
+	return &jsOAuthHandler{loop: loop, getToken: scriptengine.NewLoopCallable(loop, fn)}
 }
 
 // connectSSE implements mcp.connect.sse(url, opts?): the legacy (2024-11-05)

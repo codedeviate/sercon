@@ -567,3 +567,70 @@ await h.close();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPClientOAuth is the Phase-4 dogfood gate for connect.http's
+// auth.getToken option: it drives a client against the server's OWN OAuth
+// resource-server middleware (srv.listen({ auth: { verify, resourceMetadata
+// } }), server Phase 3 — see mcp_auth_test.go). A client whose getToken
+// returns the accepted token connects and calls a tool successfully; a
+// client whose getToken returns a rejected token fails (the resulting 401 on
+// the Streamable HTTP initialize request surfaces as a thrown error, since
+// the auth middleware guards the whole endpoint, not just tool calls).
+func TestMCPClientOAuth(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "oauth.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "add", inputSchema: { type: "object" }, handler: (a) => String(a.x + a.y) });
+const h = await srv.listen({
+	port: 0,
+	auth: {
+		verify: (token) => token === "good" ? { subject: "u1" } : null,
+		resourceMetadata: { authorizationServers: ["https://auth.example.com"] },
+	},
+});
+
+const good = await mcp.connect.http(h.url, { auth: { getToken: () => "good" } });
+const res2 = await good.callTool("add", { x: 2, y: 3 });
+runtime.assert.equal(res2.isError, false, "add not error");
+runtime.assert.equal(res2.content[0].text, "5", "add result");
+await good.close();
+
+let badErr = null;
+try {
+	const bad = await mcp.connect.http(h.url, { auth: { getToken: () => "bad" } });
+	await bad.callTool("add", { x: 1, y: 1 });
+	await bad.close();
+} catch (e) {
+	badErr = e;
+}
+runtime.assert.ok(badErr, "bad token should throw somewhere in connect+callTool");
+
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPClientOAuth_RequiresGetToken asserts that an `auth` object present
+// but missing a `getToken` function throws a clear TypeError rather than
+// silently connecting unauthenticated.
+func TestMCPClientOAuth_RequiresGetToken(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "oauth-bad.ts", `
+await mcp.connect.http("http://127.0.0.1:1/mcp", { auth: {} });
+`)
+	if err == nil {
+		t.Fatal("expected throw for auth without getToken")
+	}
+}
