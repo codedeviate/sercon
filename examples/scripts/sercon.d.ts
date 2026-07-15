@@ -2118,7 +2118,7 @@ declare const mcp: {
      * @param opts optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override.
      * @returns Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities and the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods. Holds the script's event loop open for the connection's lifetime.
      */
-    http(url: string, opts: { headers?: Record<string, string> }): Promise<{
+    http(url: string, opts?: { headers?: Record<string, string> }): Promise<{
   serverInfo: { name: string; version: string; title?: string };
   capabilities: Record<string, unknown>;
   listTools(): Promise<Array<{ name: string; title?: string; description?: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown> }>>;

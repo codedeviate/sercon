@@ -288,3 +288,19 @@ addressed.
   but worth wiring `req.Context()` / a per-call deadline into the bridge so a
   never-settling handler is reclaimed. Flagged by the Phase-3 whole-branch
   review (item T5-2).
+
+- **MCP client: connection-death watcher + cancellable context + list-page cap.**
+  `mcp.connect` (`cmd/sercon/mcp_client.go`, Phase 1) uses `context.Background()`
+  for the connection lifetime and every call, and has no `(*ClientSession).Wait()`
+  death-watcher. So if a connected server dies while the script is otherwise idle,
+  the connection's `HoldRun` is held until the Run-end drain (the script can hang
+  until timeout) rather than releasing on transport death as the spec's mirror-the-
+  `stopped`-promise note intended; and because the SDK call runs off-loop under a
+  background context, `vm.Interrupt` on script timeout can't stop it. Relatedly, the
+  four `list*` cursor loops have no page cap, so a server that never returns an empty
+  `NextCursor` loops/grows unbounded. All low-realism for a recon CLI connecting to
+  operator-chosen servers and consistent with existing codebase cursor loops, but the
+  clean fix is one bundle: thread a connection-scoped cancellable ctx (cancel on
+  `close()`/Run-end), spawn a `sess.Wait()` goroutine that releases the hold on death,
+  and add a sane page cap. Fold into MCP client Phase 2. Flagged by the Phase-1
+  whole-branch review.

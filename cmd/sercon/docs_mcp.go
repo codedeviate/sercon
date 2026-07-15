@@ -373,7 +373,7 @@ await c.close();`,
 			Summary: "Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 1 scope note as connect.stdio: consume-only this phase, no host-side responder for sampling/elicitation/roots, no notifications/subscriptions, no OAuth client yet.",
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "the server's absolute MCP endpoint URL, e.g. \"http://127.0.0.1:38080/mcp\" (must be http or https with a host; anything else throws synchronously)."},
-				{Name: "opts", Type: "{ headers?: Record<string, string> }", Desc: "optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override."},
+				{Name: "opts", Type: "{ headers?: Record<string, string> }", Optional: true, Desc: "optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override."},
 			},
 			ReturnType: "Promise<" + mcpClientHandleType + ">",
 			Returns:    "Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities and the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods. Holds the script's event loop open for the connection's lifetime.",
