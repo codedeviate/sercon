@@ -8,6 +8,45 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`mcp.connect` — the MCP client, Phase 2 (reactive surface).** A connection resolved by
+  `mcp.connect.stdio`/`mcp.connect.http` now reacts to what the server pushes, not just
+  what a script pulls. Six single-slot notification setters (last-writer-wins, mirroring
+  `srv.onSubscribe`/`srv.onUnsubscribe`'s convention on the server side): `onToolsChanged(fn)`
+  / `onResourcesChanged(fn)` / `onPromptsChanged(fn)` fire (no arguments) on the matching
+  `*/list_changed` notification; `onResourceUpdated(fn)` fires `fn(uri)` for a subscribed
+  resource's `resources/updated`; `onLoggingMessage(fn)` fires `fn({level, logger?, data})`
+  for `notifications/message`; `onProgress(fn)` fires `fn({progressToken, progress, total?,
+  message?})` for `notifications/progress`. Four new calls make a mid-connection request:
+  `subscribe(uri)`/`unsubscribe(uri)` (`resources/subscribe`/`unsubscribe`, pairing with
+  `onResourceUpdated`); `setLoggingLevel(level)` (`logging/setLevel` — per the MCP spec,
+  `onLoggingMessage` delivers nothing until this has been called, matching the same
+  opt-in gate `srv.tool`'s `ctx.log` has on the server side); and `complete(ref, argName,
+  partial)` (`completion/complete`, resolving `{values, total?, hasMore?}` — the client-side
+  counterpart to `srv.completion(fn)`). Built on the official `modelcontextprotocol/go-sdk`
+  client, pure-Go. See MANUAL.md §5.15.3 (recipes 5.15.3.3–5.15.3.5) and the generated
+  §17.9.1 reference; `cmd/sercon/mcp_client_test.go` dogfood-tests the round trip
+  (`-race` clean).
+- **`mcp.connect` lifecycle hardening.** Every call on a connection now uses a
+  connection-scoped, cancellable context (cancelled by `close()`, a transport death, or a
+  failed connect), so a script timeout or an explicit `close()` unblocks any in-flight
+  off-loop SDK call instead of leaving it to time out on its own. A background watcher
+  blocks on the SDK session's own `Wait()` and releases the connection's hold on the
+  script's event loop as soon as the session ends by any means (a stdio subprocess
+  exiting, or an abrupt transport/TCP failure) — a connection whose peer dies no longer
+  pins the run until its end. One documented gap: a client connected over Streamable HTTP
+  to a server that shuts down *gracefully* (`http.Server.Shutdown`, e.g. the peer's own
+  `h.close()`) does not see its SSE stream force-closed, so the watcher doesn't fire and
+  an idle client to such a server still relies on the run ending — `close()` remains the
+  clean, explicit way to end a connection. See MANUAL.md §5.15.3's "Connection lifecycle"
+  note. The four `list*` auto-pagination loops (`listTools`/`listResources`/
+  `listResourceTemplates`/`listPrompts`) are now capped at 1000 pages, logging a warning
+  and returning the truncated results instead of looping forever against a server that
+  never returns an empty cursor.
+- With this, sercon's MCP **client** surface covers consume + react (Phases 1–2) against
+  the MCP protocol. Host-side responders for the server's own mid-call requests
+  (sampling/elicitation/roots) and an OAuth *client* remain follow-up phases.
+
 ## [0.93.0] — 2026-07-15
 
 ### Added

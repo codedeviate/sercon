@@ -3,8 +3,10 @@
 // Starts an in-script MCP server (mcp.serve + srv.listen on a random port),
 // connects a client to it with mcp.connect.http, exercises the Phase-1 consume
 // surface (serverInfo, listTools, callTool incl. an isError case, listResources
-// + readResource, listPrompts + getPrompt, ping), then closes both. Self-testing
-// so it runs under `make demo`.
+// + readResource, listPrompts + getPrompt, ping) plus a slice of the Phase-2
+// reactive surface (subscribe + a server-pushed resourceUpdated notification
+// firing onResourceUpdated), then closes both. Self-testing so it runs under
+// `make demo`.
 
 const srv = mcp.serve({ name: "demo-server", version: "1.0.0" });
 srv.tool({ name: "add", description: "add two numbers", inputSchema: {
@@ -34,6 +36,19 @@ runtime.assert.equal(bad.isError, true, "fail -> isError (not a throw)");
 
 const doc = await c.readResource("cfg://app");
 runtime.assert.ok(doc.contents[0].text.includes("dark"), "resource read");
+
+// Phase 2: subscribe to the resource, then have the server push an update —
+// onResourceUpdated should fire with the subscribed uri.
+let updatedURI = "";
+c.onResourceUpdated((uri) => { updatedURI = uri; });
+await c.subscribe("cfg://app");
+await srv.resourceUpdated("cfg://app");
+const deadline = Date.now() + 5000;
+while (updatedURI === "" && Date.now() < deadline) {
+  await new Promise((r) => setTimeout(r, 20));
+}
+runtime.assert.equal(updatedURI, "cfg://app", "onResourceUpdated fired after subscribe");
+await c.unsubscribe("cfg://app");
 
 const p = await c.getPrompt("greet", { who: "world" });
 runtime.assert.ok(JSON.stringify(p.messages).includes("Hello, world!"), "prompt rendered");

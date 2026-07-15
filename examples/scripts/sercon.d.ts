@@ -2113,10 +2113,10 @@ declare const server: {
 declare const mcp: {
   connect: {
     /**
-     * Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 1 scope note as connect.stdio: consume-only this phase, no host-side responder for sampling/elicitation/roots, no notifications/subscriptions, no OAuth client yet.
+     * Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 2 scope note as connect.stdio: change notifications, subscriptions, logging, and completion are supported (see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below); no host-side responder for sampling/elicitation/roots and no OAuth client yet.
      * @param url the server's absolute MCP endpoint URL, e.g. "http://127.0.0.1:38080/mcp" (must be http or https with a host; anything else throws synchronously).
      * @param opts optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override.
-     * @returns Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities and the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods. Holds the script's event loop open for the connection's lifetime.
+     * @returns Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities, the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods, the subscribe/unsubscribe/setLoggingLevel/complete mid-connection calls, and the six onXxx notification setters. Holds the script's event loop open for the connection's lifetime.
      */
     http(url: string, opts?: { headers?: Record<string, string> }): Promise<{
   serverInfo: { name: string; version: string; title?: string };
@@ -2130,11 +2130,21 @@ declare const mcp: {
   getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
   ping(): Promise<void>;
   close(): Promise<void>;
+  onToolsChanged(fn: () => void): void;
+  onResourcesChanged(fn: () => void): void;
+  onPromptsChanged(fn: () => void): void;
+  onResourceUpdated(fn: (uri: string) => void): void;
+  onLoggingMessage(fn: (message: { level: string; logger?: string; data: unknown }) => void): void;
+  onProgress(fn: (progress: { progressToken: string | number; progress: number; total?: number; message?: string }) => void): void;
+  subscribe(uri: string): Promise<void>;
+  unsubscribe(uri: string): Promise<void>;
+  setLoggingLevel(level: string): Promise<void>;
+  complete(ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string): Promise<{ values: string[]; total?: number; hasMore?: boolean }>;
 }>;
     /**
-     * Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 1 (this task): consume an already-running server's tools/resources/prompts; there is no host-side responder yet for the server calling back into sercon (sampling/elicitation/roots answering) or change notifications/subscriptions — those are later phases, along with an OAuth client and Windows stdio support.
+     * Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 2 (current): consume an already-running server's tools/resources/prompts, react to its change notifications (onToolsChanged/onResourcesChanged/onPromptsChanged/onResourceUpdated), subscribe/unsubscribe to individual resources, opt into server logs (setLoggingLevel + onLoggingMessage), and request argument completions (complete) — see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below. There is still no host-side responder for the server calling back into sercon (sampling/elicitation/roots answering) — that, an OAuth client, and Windows stdio support remain later phases.
      * @param opts command: argv for the subprocess, e.g. ["sercon", "server.ts"] — command[0] is the executable (resolved via PATH), the rest are its arguments; must be a non-empty array. env: extra environment variables merged into the child's inherited environment (does not replace it). cwd: working directory for the child process; defaults to sercon's own cwd when omitted.
-     * @returns A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised, and listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.
+     * @returns A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised, listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session, subscribe/unsubscribe/setLoggingLevel/complete make mid-connection requests, and the six onXxx setters register server-push notification callbacks. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.
      */
     stdio(opts: { command: string[]; env?: Record<string, string>; cwd?: string }): Promise<{
   serverInfo: { name: string; version: string; title?: string };
@@ -2148,6 +2158,16 @@ declare const mcp: {
   getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
   ping(): Promise<void>;
   close(): Promise<void>;
+  onToolsChanged(fn: () => void): void;
+  onResourcesChanged(fn: () => void): void;
+  onPromptsChanged(fn: () => void): void;
+  onResourceUpdated(fn: (uri: string) => void): void;
+  onLoggingMessage(fn: (message: { level: string; logger?: string; data: unknown }) => void): void;
+  onProgress(fn: (progress: { progressToken: string | number; progress: number; total?: number; message?: string }) => void): void;
+  subscribe(uri: string): Promise<void>;
+  unsubscribe(uri: string): Promise<void>;
+  setLoggingLevel(level: string): Promise<void>;
+  complete(ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string): Promise<{ values: string[]; total?: number; hasMore?: boolean }>;
 }>;
   };
   /**

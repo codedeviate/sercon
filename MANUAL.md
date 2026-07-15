@@ -6745,10 +6745,11 @@ Everything above is sercon *serving* MCP. `mcp.connect` is the other
 direction: sercon as an MCP **client**, connecting to someone else's
 server — over stdio (sercon launches it as a subprocess) or Streamable
 HTTP (a server already listening) — then calling its tools, reading its
-resources, and fetching its prompts. This is Phase 1 (consume core):
-answering the server's own mid-call requests (sampling/elicitation/roots),
-resource-update notifications and subscriptions, and an OAuth *client*
-(as opposed to `serve.listen`'s resource-server role) are later phases.
+resources, and fetching its prompts. Phase 2 (current) adds the reactive
+half: change notifications, resource subscriptions, opt-in server logging,
+and argument completion. Answering the server's own mid-call requests
+(sampling/elicitation/roots) and an OAuth *client* (as opposed to
+`serve.listen`'s resource-server role) remain later phases.
 
 | Call | Transport | Shape |
 |---|---|---|
@@ -6762,8 +6763,37 @@ error — same soft-failure contract as the server side), `listResources()`/
 `listResourceTemplates()`/`readResource(uri)`, `listPrompts()`/
 `getPrompt(name, args?)`, `ping()`, and `close()` (idempotent — safe to
 call more than once). A connection holds the script's event loop open for
-its lifetime, the same way an open `listen()` handle does. Full signatures
-are in §17.9.1.
+its lifetime, the same way an open `listen()` handle does.
+
+The handle also carries the Phase-2 reactive surface: six single-slot
+notification setters — `onToolsChanged(fn)`/`onResourcesChanged(fn)`/
+`onPromptsChanged(fn)` (each `fn` takes no arguments — re-list to see
+what changed), `onResourceUpdated(fn)` (`fn(uri)`), `onLoggingMessage(fn)`
+(`fn({level, logger?, data})`), and `onProgress(fn)` (`fn({progressToken,
+progress, total?, message?})`) — plus four calls that make a mid-connection
+request: `subscribe(uri)`/`unsubscribe(uri)`, `setLoggingLevel(level)`, and
+`complete(ref, argName, partial)`. Each setter replaces any previously
+registered callback for that event (last-writer-wins), the same
+single-slot convention `srv.onSubscribe`/`srv.onUnsubscribe` use on the
+server side. Full signatures are in §17.9.1.
+
+**Connection lifecycle: death, `close()`, and graceful HTTP shutdown.**
+A connection whose peer disappears abruptly — a stdio subprocess exiting,
+or an abrupt TCP/transport failure — releases its hold on the script's
+event loop promptly: an internal watcher blocks on the SDK session's own
+`Wait()`, which returns as soon as the session ends by any means, and then
+tears the connection down. This is what lets a script keep running (or
+exit) without waiting out the full run when a server it was talking to
+simply goes away. The one gap is a client connected over Streamable HTTP
+to a server that shuts down **gracefully** (e.g. the peer calling its own
+`h.close()` from `srv.listen()`, backed by Go's `http.Server.Shutdown`):
+a graceful shutdown does not force-close the client's long-lived SSE
+stream, so the session looks alive from the client's point of view and
+the watcher never fires. An idle client left connected to such a server
+keeps the event loop open until the run itself ends. The takeaway:
+**`close()` is the clean, explicit way to end a connection** — call it as
+soon as a script is done with a server, rather than relying on the peer's
+own shutdown to be noticed.
 
 ##### 5.15.3.1 Call a tool on an MCP server
 
@@ -6823,6 +6853,98 @@ await c.close();
   already exercised hermetically over HTTP in
   `examples/scripts/mcp-client-http.ts` — the method set is identical
   across both transports.
+
+##### 5.15.3.3 Subscribe to a resource and react when it changes
+
+Ask the server to notify this client whenever a resource's content
+changes, then re-read it each time:
+
+```ts
+const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+
+c.onResourceUpdated(async (uri) => {
+  const doc = await c.readResource(uri);
+  runtime.log("updated:", uri, "->", doc.contents[0].text);
+});
+
+await c.subscribe("cfg://app");
+// ... the server later calls its own srv.resourceUpdated("cfg://app"),
+// which fires onResourceUpdated above with uri === "cfg://app" ...
+await c.unsubscribe("cfg://app");
+await c.close();
+```
+
+**Notes**
+- `onResourceUpdated` holds one callback at a time (last-writer-wins) —
+  if a script subscribes to several URIs, dispatch on the `uri` argument
+  inside a single callback rather than expecting per-URI registration.
+- `subscribe`/`unsubscribe` are plain request/response calls; the actual
+  notification always arrives asynchronously and only for URIs currently
+  subscribed.
+- See §5.15.2's subscription recipes for the server side of this same
+  contract (`srv.onSubscribe`/`srv.onUnsubscribe`/`srv.resourceUpdated`).
+
+##### 5.15.3.4 Receive server log messages
+
+Opt into a server's log stream — nothing arrives until `setLoggingLevel`
+resolves, per the MCP spec:
+
+```ts
+const c = await mcp.connect.stdio({ command: ["sercon", "logging-server.ts"] });
+
+c.onLoggingMessage((message) => {
+  runtime.log(`[${message.level}]`, message.logger ?? "server", message.data);
+});
+
+await c.setLoggingLevel("info"); // required first — see the Note below
+await c.callTool("do-something-noisy", {});
+
+await c.close();
+```
+
+**Notes**
+- Register `onLoggingMessage` *before* calling `setLoggingLevel` — the
+  server may start pushing messages as soon as it acknowledges the level
+  change, and a callback registered afterwards would miss anything sent
+  in that window.
+- Levels follow the RFC 5424 syslog severities the MCP spec reuses:
+  `"debug"`, `"info"`, `"notice"`, `"warning"`, `"error"`, `"critical"`,
+  `"alert"`, `"emergency"` (least to most severe) — the server sends this
+  level and anything more severe.
+- This is the client-side half of a server's `ctx.log(level, message,
+  data?)` calls inside a tool/resource/prompt handler — see §5.15.1's
+  progress/logging concepts for the server side.
+
+##### 5.15.3.5 Request an argument completion
+
+Ask a server for autocompletion suggestions for a prompt argument or a
+resource-template URI variable:
+
+```ts
+const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+
+const suggestions = await c.complete({ type: "prompt", name: "greet" }, "user", "ali");
+runtime.log(suggestions.values.join(", ")); // e.g. "alice, alicia"
+
+const uriSuggestions = await c.complete(
+  { type: "resource", uri: "db:///{table}/{id}" },
+  "table",
+  "us",
+);
+runtime.log(uriSuggestions.values.join(", ")); // e.g. "users"
+
+await c.close();
+```
+
+**Notes**
+- `ref.type` selects which field applies: `"prompt"` uses `ref.name` (a
+  prompt registered via `srv.prompt`); `"resource"` uses `ref.uri` (a
+  resource template's `uriTemplate`, not a concrete URI).
+- The result's `values` may be empty (no match is not an error);
+  `total`/`hasMore` are optional hints, present only when the server
+  supplies them.
+- This is the client-side half of `srv.completion(fn)` — see §5.15.2's
+  completion recipe for the server side of the same contract.
 
 ## 6. Servers
 
@@ -14110,7 +14232,32 @@ Model Context Protocol server: mcp.serve({name, version, instructions?}) returns
 
 #### 17.9.1 mcp.connect
 
-##### 17.9.1.1 mcp.connect.http
+##### 17.9.1.1 mcp.connect.complete
+
+```
+complete(ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string): Promise<{ values: string[]; total?: number; hasMore?: boolean }>
+```
+
+Ask the server for argument-autocompletion suggestions (completion/complete) — the client-side counterpart to serve.completion's handler. Useful for building an interactive prompt-argument or resource-template-URI-variable picker against a remote server without guessing valid values yourself.
+
+**Parameters**
+
+- `ref` *({ type: "prompt" | "resource"; name?: string; uri?: string })* — identifies what's being completed: type "prompt" completes an argument of a prompt the server registered (name: the prompt's name) or type "resource" completes a URI-template variable of a resource template the server registered (uri: the template's uriTemplate string, not a concrete URI). Set only the field matching type; the other is omitted.
+- `argName` *(string)* — the argument name (for a prompt ref) or the URI template variable name (for a resource ref) being completed.
+- `partial` *(string)* — the text typed so far; pass "" to ask for all suggestions with no filtering applied yet.
+
+**Returns:** A promise resolving to the server's suggestions: values is the ordered suggestion list (possibly empty — no match is not an error); total, when present, is the server's estimate of the full match count (may exceed values.length); hasMore, when present, signals more results exist beyond this page (the SDK does not expose a way to fetch the next page — a narrower partial is the only lever).
+
+**Throws:** Throws synchronously if ref is missing/not an object, ref.type is neither "prompt" nor "resource", or argName is missing/empty. The returned promise rejects if the connection is closed/dead or the server rejects the request as a protocol error (e.g. it doesn't support the completions capability, or ref names something it never registered).
+
+```ts
+const c = await mcp.connect.stdio({ command: ["sercon", "server.ts"] });
+const suggestions = await c.complete({ type: "prompt", name: "greet" }, "user", "ali");
+runtime.log(suggestions.values.join(", ")); // e.g. "alice, alicia"
+await c.close();
+```
+
+##### 17.9.1.2 mcp.connect.http
 
 ```
 http(url: string, opts?: { headers?: Record<string, string> }): Promise<{
@@ -14125,17 +14272,27 @@ http(url: string, opts?: { headers?: Record<string, string> }): Promise<{
   getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
   ping(): Promise<void>;
   close(): Promise<void>;
+  onToolsChanged(fn: () => void): void;
+  onResourcesChanged(fn: () => void): void;
+  onPromptsChanged(fn: () => void): void;
+  onResourceUpdated(fn: (uri: string) => void): void;
+  onLoggingMessage(fn: (message: { level: string; logger?: string; data: unknown }) => void): void;
+  onProgress(fn: (progress: { progressToken: string | number; progress: number; total?: number; message?: string }) => void): void;
+  subscribe(uri: string): Promise<void>;
+  unsubscribe(uri: string): Promise<void>;
+  setLoggingLevel(level: string): Promise<void>;
+  complete(ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string): Promise<{ values: string[]; total?: number; hasMore?: boolean }>;
 }>
 ```
 
-Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 1 scope note as connect.stdio: consume-only this phase, no host-side responder for sampling/elicitation/roots, no notifications/subscriptions, no OAuth client yet.
+Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 2 scope note as connect.stdio: change notifications, subscriptions, logging, and completion are supported (see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below); no host-side responder for sampling/elicitation/roots and no OAuth client yet.
 
 **Parameters**
 
 - `url` *(string)* — the server's absolute MCP endpoint URL, e.g. "http://127.0.0.1:38080/mcp" (must be http or https with a host; anything else throws synchronously).
 - `opts` *({ headers?: Record<string, string> }, optional)* — optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override.
 
-**Returns:** Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities and the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods. Holds the script's event loop open for the connection's lifetime.
+**Returns:** Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities, the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods, the subscribe/unsubscribe/setLoggingLevel/complete mid-connection calls, and the six onXxx notification setters. Holds the script's event loop open for the connection's lifetime.
 
 **Throws:** Throws synchronously if url is missing or not an absolute http(s) URL. The returned promise rejects if the HTTP connection or initialize handshake fails (wrapped as "mcp.connect: ...") — including a 401 from a listen({auth})-protected server when opts.headers doesn't carry a valid bearer token.
 
@@ -14154,7 +14311,173 @@ const authed = await mcp.connect.http("http://127.0.0.1:38081/mcp", {
 await authed.close();
 ```
 
-##### 17.9.1.2 mcp.connect.stdio
+##### 17.9.1.3 mcp.connect.onLoggingMessage
+
+```
+onLoggingMessage(fn: (message: { level: string; logger?: string; data: unknown }) => void): void
+```
+
+Register the callback invoked for every server log message this connection has opted into (notifications/message) — see connect.setLoggingLevel, which this callback depends on. Registering onLoggingMessage alone, without ever calling setLoggingLevel, receives nothing: the server (per the MCP spec) does not send log messages until the client explicitly requests a level. Only one onLoggingMessage callback is held at a time — a later call replaces the earlier registration.
+
+**Parameters**
+
+- `fn` *((message: { level: string; logger?: string; data: unknown }) => void)* — invoked once per log message: level is the severity the server tagged it with (one of the same eight RFC 5424 names accepted by setLoggingLevel); logger, when the server set one, names the logging source; data is whatever JSON-serializable value the server's ctx.log(level, message, data?) call passed (commonly a string, but may be an object). Its return value (and any thrown error or rejection) is ignored.
+
+**Returns:** Nothing — replaces any previously registered onLoggingMessage callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+c.onLoggingMessage((message) => {
+  runtime.log(`[${message.level}]`, message.logger ?? "server", message.data);
+});
+await c.setLoggingLevel("debug"); // required — otherwise onLoggingMessage never fires
+```
+
+##### 17.9.1.4 mcp.connect.onProgress
+
+```
+onProgress(fn: (progress: { progressToken: string | number; progress: number; total?: number; message?: string }) => void): void
+```
+
+Register the callback invoked for server-sent progress updates (notifications/progress) correlated to an in-flight call this connection made (e.g. a long-running callTool) — the client-side counterpart to a server tool handler's ctx.progress(progress, total?). Only fires for calls where the server actually chose to send progress; not every tool call produces one. Only one onProgress callback is held at a time — a later call replaces the earlier registration.
+
+**Parameters**
+
+- `fn` *((progress: { progressToken: string | number; progress: number; total?: number; message?: string }) => void)* — invoked once per progress notification: progressToken identifies which in-flight request this update belongs to (opaque — correlate it yourself if issuing multiple concurrent calls); progress is the cumulative amount of work done so far (server-defined units, monotonically increasing); total, when the server provided one, is the expected end value (progress/total gives a completion fraction); message, when present, is a short human-readable status string. Its return value (and any thrown error or rejection) is ignored.
+
+**Returns:** Nothing — replaces any previously registered onProgress callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+c.onProgress((p) => {
+  runtime.log(`progress: ${p.progress}${p.total ? "/" + p.total : ""}`, p.message ?? "");
+});
+await c.callTool("long-running-tool", {});
+```
+
+##### 17.9.1.5 mcp.connect.onPromptsChanged
+
+```
+onPromptsChanged(fn: () => void): void
+```
+
+Register the callback invoked whenever the server's prompt list changes (notifications/prompts/list_changed) — the mirror of onToolsChanged for prompts. Only one onPromptsChanged callback is held at a time — a later call replaces the earlier registration.
+
+**Parameters**
+
+- `fn` *(() => void)* — invoked with no arguments whenever the server announces its prompt list changed — call listPrompts() again inside fn if you need the fresh list. Its return value (and any thrown error or rejection) is ignored.
+
+**Returns:** Nothing — replaces any previously registered onPromptsChanged callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+c.onPromptsChanged(async () => {
+  const prompts = await c.listPrompts();
+  runtime.log("prompts now:", prompts.map(p => p.name).join(", "));
+});
+```
+
+##### 17.9.1.6 mcp.connect.onResourceUpdated
+
+```
+onResourceUpdated(fn: (uri: string) => void): void
+```
+
+Register the callback invoked whenever a subscribed resource's content changes (notifications/resources/updated) — the delivery half of the subscribe/unsubscribe pair (see connect.subscribe). Fires only for URIs this connection has subscribed to and only after the corresponding subscribe(uri) call has resolved. Only one onResourceUpdated callback is held at a time — a later call replaces the earlier registration, so a script juggling several subscribed URIs must dispatch on the uri argument itself, not register one callback per URI.
+
+**Parameters**
+
+- `fn` *((uri: string) => void)* — invoked with the URI whose content changed — typically followed by a readResource(uri) call to fetch the new content. Its return value (and any thrown error or rejection) is ignored.
+
+**Returns:** Nothing — replaces any previously registered onResourceUpdated callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+c.onResourceUpdated(async (uri) => {
+  const doc = await c.readResource(uri);
+  runtime.log("new content for", uri, ":", doc.contents[0].text);
+});
+await c.subscribe("cfg://app");
+```
+
+##### 17.9.1.7 mcp.connect.onResourcesChanged
+
+```
+onResourcesChanged(fn: () => void): void
+```
+
+Register the callback invoked whenever the server's resource list changes (notifications/resources/list_changed) — the mirror of onToolsChanged for resources. Only one onResourcesChanged callback is held at a time — a later call replaces the earlier registration.
+
+**Parameters**
+
+- `fn` *(() => void)* — invoked with no arguments whenever the server announces its resource list changed — call listResources() again inside fn if you need the fresh list. Its return value (and any thrown error or rejection) is ignored.
+
+**Returns:** Nothing — replaces any previously registered onResourcesChanged callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+c.onResourcesChanged(async () => {
+  const resources = await c.listResources();
+  runtime.log("resources now:", resources.map(r => r.uri).join(", "));
+});
+```
+
+##### 17.9.1.8 mcp.connect.onToolsChanged
+
+```
+onToolsChanged(fn: () => void): void
+```
+
+Register the callback invoked whenever the server's tool list changes (notifications/tools/list_changed) — e.g. a script connected to a server that itself calls srv.tool(...) at runtime after the initial connect. Only one onToolsChanged callback is held at a time — a later call replaces the earlier registration; there is no way to unregister short of closing the connection.
+
+**Parameters**
+
+- `fn` *(() => void)* — invoked with no arguments whenever the server announces its tool list changed — call listTools() again inside fn if you need the fresh list; the notification itself carries no payload. Its return value (and any thrown error or rejection) is ignored — the SDK's notification handler has no way to report it back to the server.
+
+**Returns:** Nothing — replaces any previously registered onToolsChanged callback.
+
+**Throws:** Throws synchronously (a TypeError) if fn is not a function.
+
+```ts
+const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+c.onToolsChanged(async () => {
+  const tools = await c.listTools();
+  runtime.log("tools now:", tools.map(t => t.name).join(", "));
+});
+```
+
+##### 17.9.1.9 mcp.connect.setLoggingLevel
+
+```
+setLoggingLevel(level: "debug" | "info" | "notice" | "warning" | "error" | "critical" | "alert" | "emergency"): Promise<void>
+```
+
+Opt this connection into receiving the server's log messages (logging/setLevel) at the given severity and higher. Per the MCP spec, a client receives nothing from a tool/resource/prompt handler's ctx.log(...) calls (see serve.tool's ctx) until it calls this — onLoggingMessage(fn) registered beforehand fires only after setLoggingLevel resolves, never before. Calling it again with a different level changes the threshold for all subsequent messages; there is no way to opt back out short of closing the connection.
+
+**Parameters**
+
+- `level` *("debug" | "info" | "notice" | "warning" | "error" | "critical" | "alert" | "emergency")* — the minimum severity to receive, using the RFC 5424 syslog severity names the MCP spec re-uses (from least to most severe: debug, info, notice, warning, error, critical, alert, emergency) — the server sends this level and everything more severe. sercon does not validate the string against this list itself; an unrecognized value is passed through to the server as-is and its handling is server-specific.
+
+**Returns:** A promise that resolves once the server has acknowledged the level change. Does not itself deliver any messages — register onLoggingMessage(fn) beforehand (or at least before awaiting this) to observe the resulting notifications, since the server may start sending them immediately after acknowledging.
+
+**Throws:** Throws synchronously if level is missing, null, or an empty string. The returned promise rejects if the connection is closed/dead or the server rejects the request as a protocol error (e.g. it doesn't support the logging capability at all).
+
+```ts
+const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+let lastLog: unknown = null;
+c.onLoggingMessage((message) => { lastLog = message; });
+await c.setLoggingLevel("info");
+// now any ctx.log(...) call at "info" or more severe, on the server side,
+// arrives here via onLoggingMessage as { level, logger?, data }
+await c.close();
+```
+
+##### 17.9.1.10 mcp.connect.stdio
 
 ```
 stdio(opts: { command: string[]; env?: Record<string, string>; cwd?: string }): Promise<{
@@ -14169,16 +14492,26 @@ stdio(opts: { command: string[]; env?: Record<string, string>; cwd?: string }): 
   getPrompt(name: string, args?: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text?: string; data?: string; mimeType?: string; uri?: string } }> }>;
   ping(): Promise<void>;
   close(): Promise<void>;
+  onToolsChanged(fn: () => void): void;
+  onResourcesChanged(fn: () => void): void;
+  onPromptsChanged(fn: () => void): void;
+  onResourceUpdated(fn: (uri: string) => void): void;
+  onLoggingMessage(fn: (message: { level: string; logger?: string; data: unknown }) => void): void;
+  onProgress(fn: (progress: { progressToken: string | number; progress: number; total?: number; message?: string }) => void): void;
+  subscribe(uri: string): Promise<void>;
+  unsubscribe(uri: string): Promise<void>;
+  setLoggingLevel(level: string): Promise<void>;
+  complete(ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string): Promise<{ values: string[]; total?: number; hasMore?: boolean }>;
 }>
 ```
 
-Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 1 (this task): consume an already-running server's tools/resources/prompts; there is no host-side responder yet for the server calling back into sercon (sampling/elicitation/roots answering) or change notifications/subscriptions — those are later phases, along with an OAuth client and Windows stdio support.
+Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 2 (current): consume an already-running server's tools/resources/prompts, react to its change notifications (onToolsChanged/onResourcesChanged/onPromptsChanged/onResourceUpdated), subscribe/unsubscribe to individual resources, opt into server logs (setLoggingLevel + onLoggingMessage), and request argument completions (complete) — see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below. There is still no host-side responder for the server calling back into sercon (sampling/elicitation/roots answering) — that, an OAuth client, and Windows stdio support remain later phases.
 
 **Parameters**
 
 - `opts` *({ command: string[]; env?: Record<string, string>; cwd?: string })* — command: argv for the subprocess, e.g. ["sercon", "server.ts"] — command[0] is the executable (resolved via PATH), the rest are its arguments; must be a non-empty array. env: extra environment variables merged into the child's inherited environment (does not replace it). cwd: working directory for the child process; defaults to sercon's own cwd when omitted.
 
-**Returns:** A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised, and listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.
+**Returns:** A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised, listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session, subscribe/unsubscribe/setLoggingLevel/complete make mid-connection requests, and the six onXxx setters register server-push notification callbacks. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.
 
 **Throws:** Throws synchronously if opts is missing/not an object or command is missing/not a non-empty string array. The returned promise rejects if the subprocess fails to start or the initialize handshake fails (wrapped as "mcp.connect: ...").
 
@@ -14188,6 +14521,53 @@ runtime.log("connected to", c.serverInfo.name, c.serverInfo.version);
 const r = await c.callTool("add", { a: 2, b: 3 });
 runtime.log(r.content[0].text); // "5"
 await c.close();
+```
+
+##### 17.9.1.11 mcp.connect.subscribe
+
+```
+subscribe(uri: string): Promise<void>
+```
+
+Ask the server to notify this client whenever the given resource's content changes (resources/subscribe). The actual notification arrives via onResourceUpdated(fn) — call subscribe once per URI you care about, then register onResourceUpdated to react. Subscribing to a URI you're already subscribed to is a harmless no-op on most servers (a plain protocol round trip either way).
+
+**Parameters**
+
+- `uri` *(string)* — the resource URI to subscribe to — must match a URI the server actually tracks; subscribing to an unknown URI is a server-specific choice (some accept it silently, some reject it as a protocol error).
+
+**Returns:** A promise that resolves once the server has acknowledged the subscription. Does not itself deliver any content — register onResourceUpdated(fn) beforehand to observe the resulting notifications.
+
+**Throws:** Throws synchronously if uri is missing, null, or an empty string. The returned promise rejects if the connection is closed/dead or the server rejects the subscribe request as a protocol error (e.g. it doesn't support resource subscriptions at all).
+
+```ts
+const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
+c.onResourceUpdated((uri) => { runtime.log("changed:", uri); });
+await c.subscribe("cfg://app");
+// ... some time later, once the server calls resourceUpdated("cfg://app") server-side ...
+await c.unsubscribe("cfg://app");
+await c.close();
+```
+
+##### 17.9.1.12 mcp.connect.unsubscribe
+
+```
+unsubscribe(uri: string): Promise<void>
+```
+
+Ask the server to stop notifying this client about changes to the given resource (resources/unsubscribe) — the mirror of subscribe. Unsubscribing from a URI you were never subscribed to is a harmless no-op on most servers.
+
+**Parameters**
+
+- `uri` *(string)* — the resource URI to unsubscribe from — typically one previously passed to subscribe(uri).
+
+**Returns:** A promise that resolves once the server has acknowledged the unsubscription. onResourceUpdated stops firing for this uri afterwards (assuming no other client-side subscription logic re-subscribes it).
+
+**Throws:** Throws synchronously if uri is missing, null, or an empty string. The returned promise rejects if the connection is closed/dead or the server rejects the unsubscribe request as a protocol error.
+
+```ts
+await c.subscribe("cfg://app");
+// ...
+await c.unsubscribe("cfg://app");
 ```
 
 #### 17.9.2 mcp.serve
