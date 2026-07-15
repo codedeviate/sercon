@@ -308,3 +308,42 @@ await h.close();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPClientSetLoggingLevel exercises c.setLoggingLevel end to end: the
+// server's ctx.log is a no-op until the client opts in with a level, so this
+// asserts that after setLoggingLevel("info") a server tool's ctx.log is
+// delivered to the client's onLoggingMessage callback with the right payload.
+// (Locks in the setLoggingLevel binding, which otherwise had no coverage.)
+func TestMCPClientSetLoggingLevel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "log.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "chatty", inputSchema: { type: "object" }, handler: async (a, ctx) => {
+  await ctx.log("info", "hello from tool", { n: 7 });
+  return "done";
+}});
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url);
+
+let got = null;
+c.onLoggingMessage((m) => { got = m; });
+await c.setLoggingLevel("info");   // without this, the server's ctx.log is a no-op
+await c.callTool("chatty", {});
+
+const dl = Date.now() + 5000;
+while (got === null && Date.now() < dl) { await new Promise(r => setTimeout(r, 20)); }
+runtime.assert.ok(got !== null, "onLoggingMessage fired after setLoggingLevel");
+runtime.assert.equal(got.level, "info", "log level");
+
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
