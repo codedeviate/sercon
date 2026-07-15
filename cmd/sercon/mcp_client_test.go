@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -140,5 +143,42 @@ await h.close();
 `)
 	if err != nil {
 		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPClientStdio is the end-to-end gate for mcp.connect.stdio(): it builds
+// the sercon binary, then runs the mcp-client-stdio.ts example (itself a
+// two-process demo) against that binary, pointing it at the
+// mcp-server-stdio.ts fixture via env vars. A clean exit proves the client
+// spawned the server subprocess, completed the handshake, and got "5" back
+// for add(2, 3) over stdio.
+func TestMCPClientStdio(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stdio MCP server is unix-only")
+	}
+
+	bin := filepath.Join(t.TempDir(), "sercon-mcp-client-test")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	build.Env = append(build.Environ(), "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+
+	clientScript, err := filepath.Abs(filepath.Join("..", "..", "examples", "scripts", "mcp-client-stdio.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverScript, err := filepath.Abs(filepath.Join("..", "..", "examples", "scripts", "mcp-server-stdio.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, bin, clientScript)
+	cmd.Env = append(cmd.Environ(), "SERCON_BIN="+bin, "MCP_SERVER_SCRIPT="+serverScript)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("client-stdio run failed: %v\n%s", err, out)
 	}
 }

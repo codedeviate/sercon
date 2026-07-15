@@ -111,6 +111,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/mcp-resources.ts \
 	examples/scripts/mcp-progress.ts \
 	examples/scripts/mcp-subscribe.ts \
+	examples/scripts/mcp-client-http.ts \
 	examples/scripts/net-sockets.ts \
 	examples/scripts/load.ts \
 	examples/scripts/capture-file.ts \
