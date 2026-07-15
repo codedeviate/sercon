@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -15,16 +16,29 @@ import (
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
-// mcpClient is a live MCP client session (Phase 1: the consume half). It holds
-// the event loop alive for the connection's lifetime and releases exactly once
-// on close() or transport death.
+// mcpClientMaxListPages bounds the four list* auto-pagination loops: a server
+// that never returns an empty cursor can't loop forever.
+const mcpClientMaxListPages = 1000
+
+// mcpClient is a live MCP client session (Phase 1: the consume half; Phase 2
+// adds a connection-scoped ctx + death-watcher). It holds the event loop alive
+// for the connection's lifetime and releases exactly once on close() or
+// transport death.
 type mcpClient struct {
 	eng     *scriptengine.Engine
 	vm      *goja.Runtime
 	loop    *eventloop.EventLoop
 	sess    *mcp.ClientSession
+	ctx     context.Context
+	cancel  context.CancelFunc
 	release func()
 	closed  atomic.Bool
+}
+
+// clientOptions builds the SDK ClientOptions. Task 2 wires the six notification
+// handlers to on-loop dispatchers; Phase-1 behaviour is nil (no handlers).
+func (mc *mcpClient) clientOptions() *mcp.ClientOptions {
+	return &mcp.ClientOptions{}
 }
 
 // callToolResultView mirrors mcp.CallToolResult for the JS-facing shape,
@@ -160,6 +174,26 @@ func connectHTTP(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 
 // connectWith constructs the transport, connects the SDK client off-loop, and
 // resolves a handle on-loop. Holds the loop for the connection's lifetime.
+// watchSessionDeath blocks on sess.Wait() — which returns when the session
+// ends by ANY means (our own Close, a stdio server subprocess exiting, or an
+// abrupt transport/TCP failure) — then cancels the connection context and
+// releases the loop hold. This is what lets a connection whose peer has died
+// stop pinning loop.Run instead of holding it until the Run-end drain.
+//
+// LIMITATION (Streamable HTTP + graceful server shutdown): if the peer HTTP
+// server shuts down *gracefully* (Go http.Server.Shutdown, e.g. sercon's own
+// srv.close()), it does not force-close the client's long-lived SSE stream and
+// the SDK client keeps the session alive, so sess.Wait() does NOT return and
+// this watcher does not fire — an idle client to a gracefully-stopped HTTP
+// server still relies on the Run-end drain to release the hold. Prompt release
+// works for stdio (subprocess exit → pipe EOF) and abrupt HTTP failures. See
+// MANUAL §5.15.3.
+func watchSessionDeath(sess *mcp.ClientSession, cancel context.CancelFunc, releaseOnce func()) {
+	_ = sess.Wait()
+	cancel()
+	releaseOnce()
+}
+
 func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.EventLoop, reason string, mkTransport func(context.Context) (mcp.Transport, error)) goja.Value {
 	p, resolve, reject := vm.NewPromise()
 	release := eng.HoldRun(reason)
@@ -170,24 +204,36 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 		}
 	}
 
+	// Connection-scoped context: cancelled by close(), the death-watcher, or
+	// a failed connect. Every SDK call uses it, so a script timeout / close
+	// unblocks in-flight off-loop calls and (for stdio) ties the subprocess
+	// lifetime to the connection.
+	connCtx, connCancel := context.WithCancel(context.Background())
+
+	// mc is created up front so later tasks' ClientOptions notification
+	// dispatchers can close over it; sess is filled after Connect.
+	mc := &mcpClient{eng: eng, vm: vm, loop: loop, ctx: connCtx, cancel: connCancel}
+	mc.release = releaseOnce
+
 	go func() {
-		ctx := context.Background()
-		transport, terr := mkTransport(ctx)
+		transport, terr := mkTransport(connCtx)
 		var sess *mcp.ClientSession
 		var cerr error
 		if terr != nil {
 			cerr = terr
 		} else {
-			client := mcp.NewClient(&mcp.Implementation{Name: "sercon", Version: scriptengine.Version}, nil)
-			sess, cerr = client.Connect(ctx, transport, nil)
+			client := mcp.NewClient(&mcp.Implementation{Name: "sercon", Version: scriptengine.Version}, mc.clientOptions())
+			sess, cerr = client.Connect(connCtx, transport, nil)
 		}
 		loop.RunOnLoop(func(vm *goja.Runtime) {
 			if cerr != nil {
+				connCancel()
 				releaseOnce()
 				_ = reject(vm.NewGoError(fmt.Errorf("mcp.connect: %w", cerr)))
 				return
 			}
-			mc := &mcpClient{eng: eng, vm: vm, loop: loop, sess: sess, release: releaseOnce}
+			mc.sess = sess
+			go watchSessionDeath(sess, connCancel, releaseOnce)
 			_ = resolve(mc.handle(vm))
 		})
 	}()
@@ -215,6 +261,7 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:close", func() (any, error) {
 			if mc.closed.CompareAndSwap(false, true) {
 				err := mc.sess.Close()
+				mc.cancel()
 				mc.release()
 				return nil, err
 			}
@@ -226,13 +273,17 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:listTools", func() (any, error) {
 			var all []*mcp.Tool
 			var cursor string
-			for {
-				res, err := mc.sess.ListTools(context.Background(), &mcp.ListToolsParams{Cursor: cursor})
+			for pages := 0; ; pages++ {
+				res, err := mc.sess.ListTools(mc.ctx, &mcp.ListToolsParams{Cursor: cursor})
 				if err != nil {
 					return nil, err
 				}
 				all = append(all, res.Tools...)
 				if res.NextCursor == "" {
+					break
+				}
+				if pages+1 >= mcpClientMaxListPages {
+					log.Printf("mcp.connect: listTools stopped at %d pages (server keeps returning a cursor); results truncated", mcpClientMaxListPages)
 					break
 				}
 				cursor = res.NextCursor
@@ -250,7 +301,7 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 			}
 		}
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:callTool", func() (any, error) {
-			res, err := mc.sess.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+			res, err := mc.sess.CallTool(mc.ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 			if err != nil {
 				return nil, err
 			}
@@ -272,13 +323,17 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:listResources", func() (any, error) {
 			var all []*mcp.Resource
 			var cursor string
-			for {
-				res, err := mc.sess.ListResources(context.Background(), &mcp.ListResourcesParams{Cursor: cursor})
+			for pages := 0; ; pages++ {
+				res, err := mc.sess.ListResources(mc.ctx, &mcp.ListResourcesParams{Cursor: cursor})
 				if err != nil {
 					return nil, err
 				}
 				all = append(all, res.Resources...)
 				if res.NextCursor == "" {
+					break
+				}
+				if pages+1 >= mcpClientMaxListPages {
+					log.Printf("mcp.connect: listResources stopped at %d pages (server keeps returning a cursor); results truncated", mcpClientMaxListPages)
 					break
 				}
 				cursor = res.NextCursor
@@ -291,13 +346,17 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:listResourceTemplates", func() (any, error) {
 			var all []*mcp.ResourceTemplate
 			var cursor string
-			for {
-				res, err := mc.sess.ListResourceTemplates(context.Background(), &mcp.ListResourceTemplatesParams{Cursor: cursor})
+			for pages := 0; ; pages++ {
+				res, err := mc.sess.ListResourceTemplates(mc.ctx, &mcp.ListResourceTemplatesParams{Cursor: cursor})
 				if err != nil {
 					return nil, err
 				}
 				all = append(all, res.ResourceTemplates...)
 				if res.NextCursor == "" {
+					break
+				}
+				if pages+1 >= mcpClientMaxListPages {
+					log.Printf("mcp.connect: listResourceTemplates stopped at %d pages (server keeps returning a cursor); results truncated", mcpClientMaxListPages)
 					break
 				}
 				cursor = res.NextCursor
@@ -309,7 +368,7 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 	_ = obj.Set("readResource", func(call goja.FunctionCall) goja.Value {
 		uri := requireStringArg(vm, call, 0, "readResource(uri)")
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:readResource", func() (any, error) {
-			return mc.sess.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: uri})
+			return mc.sess.ReadResource(mc.ctx, &mcp.ReadResourceParams{URI: uri})
 		})
 	})
 
@@ -317,13 +376,17 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:listPrompts", func() (any, error) {
 			var all []*mcp.Prompt
 			var cursor string
-			for {
-				res, err := mc.sess.ListPrompts(context.Background(), &mcp.ListPromptsParams{Cursor: cursor})
+			for pages := 0; ; pages++ {
+				res, err := mc.sess.ListPrompts(mc.ctx, &mcp.ListPromptsParams{Cursor: cursor})
 				if err != nil {
 					return nil, err
 				}
 				all = append(all, res.Prompts...)
 				if res.NextCursor == "" {
+					break
+				}
+				if pages+1 >= mcpClientMaxListPages {
+					log.Printf("mcp.connect: listPrompts stopped at %d pages (server keeps returning a cursor); results truncated", mcpClientMaxListPages)
 					break
 				}
 				cursor = res.NextCursor
@@ -339,13 +402,13 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 			args = stringMapArg(vm, call.Arguments[1])
 		}
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:getPrompt", func() (any, error) {
-			return mc.sess.GetPrompt(context.Background(), &mcp.GetPromptParams{Name: name, Arguments: args})
+			return mc.sess.GetPrompt(mc.ctx, &mcp.GetPromptParams{Name: name, Arguments: args})
 		})
 	})
 
 	_ = obj.Set("ping", func(goja.FunctionCall) goja.Value {
 		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:ping", func() (any, error) {
-			return nil, mc.sess.Ping(context.Background(), nil)
+			return nil, mc.sess.Ping(mc.ctx, nil)
 		})
 	})
 

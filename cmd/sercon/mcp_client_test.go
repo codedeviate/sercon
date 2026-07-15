@@ -5,8 +5,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
@@ -180,5 +183,51 @@ func TestMCPClientStdio(t *testing.T) {
 	cmd.Env = append(cmd.Environ(), "SERCON_BIN="+bin, "MCP_SERVER_SCRIPT="+serverScript)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("client-stdio run failed: %v\n%s", err, out)
+	}
+}
+
+// TestWatchSessionDeath asserts the contract our code owns: when a client
+// session ends, watchSessionDeath cancels the connection context and releases
+// the loop hold. It uses an in-memory transport pair and closes the SERVER
+// session to trigger an abrupt death — deterministic, unlike a graceful HTTP
+// shutdown (which the SDK's client keeps alive; see watchSessionDeath's doc
+// comment for that limitation). Wait() returns within microseconds of the
+// server close here.
+func TestWatchSessionDeath(t *testing.T) {
+	ctx := context.Background()
+	ct, st := mcp.NewInMemoryTransports()
+	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1.0.0"}, nil)
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "1.0.0"}, nil)
+	cs, err := client.Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+
+	released := make(chan struct{})
+	canceled := make(chan struct{})
+	var relOnce, canOnce sync.Once
+	go watchSessionDeath(cs,
+		func() { canOnce.Do(func() { close(canceled) }) },
+		func() { relOnce.Do(func() { close(released) }) })
+
+	// Abruptly kill the server side; the client's Wait() must return, firing
+	// both the cancel and the release.
+	if err := ss.Close(); err != nil {
+		t.Fatalf("server close: %v", err)
+	}
+
+	for _, c := range []struct {
+		name string
+		ch   chan struct{}
+	}{{"release", released}, {"cancel", canceled}} {
+		select {
+		case <-c.ch:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("watchSessionDeath did not fire %s within 5s of server death", c.name)
+		}
 	}
 }
