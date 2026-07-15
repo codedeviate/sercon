@@ -27,6 +27,17 @@ type mcpClient struct {
 	closed  atomic.Bool
 }
 
+// callToolResultView mirrors mcp.CallToolResult for the JS-facing shape,
+// except IsError has no `omitempty` tag: the SDK's own type omits IsError
+// from JSON entirely on a successful (false) call, which would surface as
+// `undefined` rather than `false` after crossing through toPlain's JSON
+// round trip. See the isError.omitempty note in callTool below.
+type callToolResultView struct {
+	Content           []mcp.Content `json:"content"`
+	StructuredContent any           `json:"structuredContent,omitempty"`
+	IsError           bool          `json:"isError"`
+}
+
 // clientHeaderRoundTripper injects fixed headers + a sercon User-Agent.
 type clientHeaderRoundTripper struct {
 	base    http.RoundTripper
@@ -168,6 +179,52 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		})
 	})
 
+	_ = obj.Set("listTools", func(goja.FunctionCall) goja.Value {
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:listTools", func() (any, error) {
+			var all []*mcp.Tool
+			var cursor string
+			for {
+				res, err := mc.sess.ListTools(context.Background(), &mcp.ListToolsParams{Cursor: cursor})
+				if err != nil {
+					return nil, err
+				}
+				all = append(all, res.Tools...)
+				if res.NextCursor == "" {
+					break
+				}
+				cursor = res.NextCursor
+			}
+			return all, nil
+		})
+	})
+
+	_ = obj.Set("callTool", func(call goja.FunctionCall) goja.Value {
+		name := requireStringArg(vm, call, 0, "callTool(name, args?)")
+		var args map[string]any
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Arguments[1]) && !goja.IsNull(call.Arguments[1]) {
+			if m, ok := call.Arguments[1].Export().(map[string]any); ok {
+				args = m
+			}
+		}
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:callTool", func() (any, error) {
+			res, err := mc.sess.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+			if err != nil {
+				return nil, err
+			}
+			// CallToolResult.IsError carries `json:"isError,omitempty"`, so a
+			// direct marshal of res drops a successful (false) call entirely —
+			// toPlain's JSON round trip would then surface `isError` as
+			// `undefined` in JS instead of `false`. Re-shape through a view
+			// struct without omitempty on IsError so the field is always
+			// present.
+			return callToolResultView{
+				Content:           res.Content,
+				StructuredContent: res.StructuredContent,
+				IsError:           res.IsError,
+			}, nil
+		})
+	})
+
 	return obj
 }
 
@@ -201,6 +258,14 @@ func stringMapArg(vm *goja.Runtime, v goja.Value) map[string]string {
 		}
 	}
 	return out
+}
+
+// requireStringArg returns call.Arguments[i] as a string or throws.
+func requireStringArg(vm *goja.Runtime, call goja.FunctionCall, i int, who string) string {
+	if len(call.Arguments) <= i || goja.IsUndefined(call.Arguments[i]) || goja.IsNull(call.Arguments[i]) {
+		panic(vm.NewTypeError(who + ": missing argument"))
+	}
+	return call.Arguments[i].String()
 }
 
 func optStringArg(vm *goja.Runtime, v goja.Value) string {

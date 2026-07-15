@@ -63,3 +63,39 @@ func TestMCPClientConnect_ValidatesArgs(t *testing.T) {
 		}
 	}
 }
+
+// TestMCPClientTools exercises listTools (auto-pagination happy path via a
+// two-tool server) and callTool, including the isError-not-thrown contract
+// for a tool that throws inside its handler.
+func TestMCPClientTools(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "tools.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "add", inputSchema: { type: "object" }, handler: (a) => String(a.x + a.y) });
+srv.tool({ name: "boom", inputSchema: { type: "object" }, handler: () => { throw new Error("nope"); } });
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url);
+
+const tools = await c.listTools();
+const names = tools.map(t => t.name).sort();
+runtime.assert.equal(JSON.stringify(names), JSON.stringify(["add","boom"]), "tool names");
+
+const ok = await c.callTool("add", { x: 2, y: 3 });
+runtime.assert.equal(ok.isError, false, "add not error");
+runtime.assert.equal(ok.content[0].text, "5", "add result");
+
+const bad = await c.callTool("boom", {});
+runtime.assert.equal(bad.isError, true, "boom isError");
+
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
