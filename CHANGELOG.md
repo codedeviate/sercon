@@ -8,6 +8,28 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`mcp.connect` — the MCP client, Phase 3 (host responders).** An `mcp.connect`
+  client can now act as a full MCP *host*, answering the server's own mid-request
+  calls. Three optional **connect options** on `mcp.connect.stdio`/`mcp.connect.http`:
+  `onSample(req)` answers the server's `sampling/createMessage` (the server's
+  `ctx.sample`) — return a string (wrapped as text, `model: "sercon"`) or
+  `{ content: { type, text }, model?, stopReason?, role? }`; `onElicit(req)` answers
+  `elicitation/create` (the server's `ctx.elicit`) — return
+  `{ action: "accept"|"decline"|"cancel", content? }`; and `roots: [{ uri, name? }]`
+  exposes the client's roots to the server's `roots/list` (`ctx.roots`), with a
+  handle method `c.setRoots(roots)` to update them at runtime (fires
+  `roots/list_changed`). `onSample`/`onElicit` are advertised to the server only when
+  provided (a client that can't answer sampling doesn't claim to); the roots
+  capability is always advertised by the SDK, and the `roots` option seeds the
+  initial set so the server's first `roots/list` sees it immediately. Both
+  request-response responders run through the same on-loop bridge the server's tool
+  handlers use (`callJSHandler`, refactored to shared), so a script's async responder
+  is awaited correctly. Built on the official `modelcontextprotocol/go-sdk`, pure-Go.
+  Only the OAuth client and SSE transport (Phase 4) remain. See MANUAL.md §5.15.3 and
+  the generated §17.9 reference; the hermetic `examples/scripts/mcp-client-http.ts`
+  now exercises a host round-trip (both sides sercon) under `make demo`.
+
 ## [0.94.0] — 2026-07-15
 
 ### Added

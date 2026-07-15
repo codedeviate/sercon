@@ -78,6 +78,19 @@ const mcpServeHandleType = `{
 // resourceUpdated/completion pattern) because their payload shapes and the
 // setLoggingLevel-gates-onLoggingMessage relationship need more than this
 // composite type's inline signatures convey.
+//
+// Phase 3 (client, current) adds the "host responder" surface: sercon now
+// answers server->client requests instead of only ever being the one asking.
+// Two of the three pieces (onSample/onElicit) are connect-time opts, not
+// handle methods — they're documented as extra fields on connect.stdio's/
+// connect.http's own "opts" Param below, not here. The third,
+// setRoots(roots), IS a handle method (added below, mirroring the
+// Phase-1/2 methods' inline-signature convention) — it updates the seeded
+// `roots` connect opt at runtime via (*mcp.Client).AddRoots/RemoveRoots,
+// firing roots/list_changed to the server. Gets its own flat
+// "connect.setRoots" MemberDoc entry below for the same reason the ten
+// Phase-2 methods do: its interaction with the seeded `roots` opt needs more
+// than this composite type's inline signature conveys.
 const mcpClientHandleType = `{
   serverInfo: { name: string; version: string; title?: string };
   capabilities: Record<string, unknown>;
@@ -100,7 +113,50 @@ const mcpClientHandleType = `{
   unsubscribe(uri: string): Promise<void>;
   setLoggingLevel(level: string): Promise<void>;
   complete(ref: { type: "prompt" | "resource"; name?: string; uri?: string }, argName: string, partial: string): Promise<{ values: string[]; total?: number; hasMore?: boolean }>;
+  setRoots(roots: Array<{ uri: string; name?: string }>): void;
 }`
+
+// mcpSampleRequestType is the shape onSample's req argument takes — a
+// simplified reflection of mcp.CreateMessageParams, structurally the same
+// request the server side builds via jsCtxSample's opts parsing (mcp_server.go)
+// just travelling in the opposite direction (server asking the client, here,
+// rather than the script asking ctx.sample). Spliced into both the
+// "connect.stdio"/"connect.http" opts Param docs and mcpHostOnSampleType below
+// so the two stay in lockstep without hand-duplicating the field list.
+const mcpSampleRequestType = `{ messages: Array<{ role: string; content: { type: string; text: string } }>; maxTokens?: number; systemPrompt?: string; temperature?: number; stopSequences?: string[]; includeContext?: string; modelPreferences?: { costPriority?: number; intelligencePriority?: number; speedPriority?: number } }`
+
+// mcpSampleResultType is the shape onSample may return (sync or resolved from
+// a Promise) — a plain string (the common case, wrapped as text content with
+// model "sercon"/role "assistant"/stopReason "endTurn") or an object giving
+// explicit control over content/model/stopReason/role. Mirrors
+// toCreateMessageResult's two accepted shapes (mcp_client.go) exactly.
+const mcpSampleResultType = `string | { content: { type: string; text: string } | string; model?: string; stopReason?: string; role?: string }`
+
+// mcpHostOnSampleType is the full onSample connect-opt signature, spliced
+// into the "connect.stdio"/"connect.http" opts Param Type strings below.
+const mcpHostOnSampleType = `(req: ` + mcpSampleRequestType + `) => ` + mcpSampleResultType + ` | Promise<` + mcpSampleResultType + `>`
+
+// mcpElicitRequestType is the shape onElicit's req argument takes — a
+// simplified reflection of mcp.ElicitParams, the same request shape the
+// server side builds via jsCtxElicit's opts parsing (mcp_server.go) travelling
+// in the opposite direction.
+const mcpElicitRequestType = `{ message: string; requestedSchema: Record<string, unknown>; mode?: string }`
+
+// mcpElicitResultType is the shape onElicit must return (sync or resolved
+// from a Promise) — mirrors toElicitResult's expected shape exactly
+// (mcp_client.go): action is required, content is only meaningful when
+// action is "accept".
+const mcpElicitResultType = `{ action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> }`
+
+// mcpHostOnElicitType is the full onElicit connect-opt signature, spliced
+// into the "connect.stdio"/"connect.http" opts Param Type strings below.
+const mcpHostOnElicitType = `(req: ` + mcpElicitRequestType + `) => ` + mcpElicitResultType + ` | Promise<` + mcpElicitResultType + `>`
+
+// mcpRootsOptType is the shape of the `roots` connect opt (and setRoots'
+// single argument) — an array of { uri, name? }, matching mcp.Root and the
+// server-facing Array<{uri, name?}> shape ctx.roots()/onRootsChanged already
+// use in mcpCtxType/mcpServeHandleType above.
+const mcpRootsOptType = `Array<{ uri: string; name?: string }>`
 
 // mcpDocs documents the `mcp` global — mcp.serve(...) and every method of the
 // handle it returns, plus mcp.connect.stdio/mcp.connect.http (the client
@@ -377,28 +433,37 @@ await h2.close();`,
 srv.close(); // currently a no-op; use the listen() handle's close(), or let stdio() resolve on disconnect`,
 		},
 		"connect.stdio": {
-			Summary: "Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 2 (current): consume an already-running server's tools/resources/prompts, react to its change notifications (onToolsChanged/onResourcesChanged/onPromptsChanged/onResourceUpdated), subscribe/unsubscribe to individual resources, opt into server logs (setLoggingLevel + onLoggingMessage), and request argument completions (complete) — see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below. There is still no host-side responder for the server calling back into sercon (sampling/elicitation/roots answering) — that, an OAuth client, and Windows stdio support remain later phases.",
+			Summary: "Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 2: consume an already-running server's tools/resources/prompts, react to its change notifications (onToolsChanged/onResourcesChanged/onPromptsChanged/onResourceUpdated), subscribe/unsubscribe to individual resources, opt into server logs (setLoggingLevel + onLoggingMessage), and request argument completions (complete) — see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below. Phase 3 (current) adds the host responder surface: onSample/onElicit answer the server's own sampling/createMessage and elicitation/create requests (the client-side counterpart to a server tool's ctx.sample()/ctx.elicit()), and roots seeds the client's filesystem/URI roots (answering the server's roots/list) — see setRoots below for updating that set at runtime. An OAuth client and Windows stdio support remain later phases.",
 			Params: []scriptengine.Param{
-				{Name: "opts", Type: "{ command: string[]; env?: Record<string, string>; cwd?: string }", Desc: "command: argv for the subprocess, e.g. [\"sercon\", \"server.ts\"] — command[0] is the executable (resolved via PATH), the rest are its arguments; must be a non-empty array. env: extra environment variables merged into the child's inherited environment (does not replace it). cwd: working directory for the child process; defaults to sercon's own cwd when omitted."},
+				{Name: "opts", Type: "{ command: string[]; env?: Record<string, string>; cwd?: string; onSample?: " + mcpHostOnSampleType + "; onElicit?: " + mcpHostOnElicitType + "; roots?: " + mcpRootsOptType + " }", Desc: "command: argv for the subprocess, e.g. [\"sercon\", \"server.ts\"] — command[0] is the executable (resolved via PATH), the rest are its arguments; must be a non-empty array. env: extra environment variables merged into the child's inherited environment (does not replace it). cwd: working directory for the child process; defaults to sercon's own cwd when omitted. onSample(req): answers the server's sampling/createMessage requests (ctx.sample() on the server side); req carries the same messages/maxTokens/systemPrompt/temperature/stopSequences/includeContext/modelPreferences fields ctx.sample's opts accepts. May return a plain string (wrapped as text content with model \"sercon\", role \"assistant\", stopReason \"endTurn\") or an object giving explicit control over content/model/stopReason/role; sync or async (a returned Promise is awaited). onElicit(req): answers the server's elicitation/create requests (ctx.elicit() on the server side); req carries { message, requestedSchema, mode? }. Must return { action: \"accept\"|\"decline\"|\"cancel\", content? } (content only meaningful on \"accept\"); sync or async. roots: seeds this client's filesystem/URI roots — an array of { uri, name? } — sent to the SDK via AddRoots before the connection is established, so the server's first roots/list sees them immediately rather than an empty set followed by a change notification. IMPORTANT: unlike onSample/onElicit (each advertised only when provided — see Errors), the roots capability itself is advertised by the underlying SDK unconditionally, regardless of whether this option is given; omitting roots simply means the initial root set is empty (still updatable later via setRoots)."},
 			},
 			ReturnType: "Promise<" + mcpClientHandleType + ">",
-			Returns:    "A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised, listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session, subscribe/unsubscribe/setLoggingLevel/complete make mid-connection requests, and the six onXxx setters register server-push notification callbacks. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.",
-			Errors:     "Throws synchronously if opts is missing/not an object or command is missing/not a non-empty string array. The returned promise rejects if the subprocess fails to start or the initialize handshake fails (wrapped as \"mcp.connect: ...\").",
+			Returns:    "A promise that resolves once the MCP initialize handshake completes to a session handle: serverInfo/capabilities reflect what the server advertised (capabilities.sampling/capabilities.elicitation here describe what the SERVER supports, not this client's own onSample/onElicit — there is no client-facing field reflecting what this client advertised), listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close drive the session, subscribe/unsubscribe/setLoggingLevel/complete make mid-connection requests, the six onXxx setters register server-push notification callbacks, and setRoots(roots) updates the seeded roots set at runtime. Holds the script's event loop open for the connection's lifetime (until close() or the subprocess exits) the same way an open server listener does.",
+			Errors:     "Throws synchronously if opts is missing/not an object, command is missing/not a non-empty string array, onSample/onElicit are present but not functions, or a roots entry is missing a non-empty uri. The returned promise rejects if the subprocess fails to start or the initialize handshake fails (wrapped as \"mcp.connect: ...\"). Capability gating happens at connect time, not as a throw: the SDK client advertises the sampling capability if and only if onSample is provided (likewise elicitation/onElicit) — a server calling ctx.sample()/ctx.elicit() against a client that omitted the matching responder gets that server-side call rejected (\"mcp: client does not support sampling\"/\"...elicitation\"), not this connect call.",
 			Example: `const c = await mcp.connect.stdio({ command: ["sercon", "server.ts"] });
 runtime.log("connected to", c.serverInfo.name, c.serverInfo.version);
 const r = await c.callTool("add", { a: 2, b: 3 });
 runtime.log(r.content[0].text); // "5"
-await c.close();`,
+await c.close();
+
+// As a host: answer the server's sampling/elicitation requests and seed roots.
+const host = await mcp.connect.stdio({
+  command: ["sercon", "server.ts"],
+  onSample: (req) => "SUMMARY: " + req.messages[0].content.text,
+  onElicit: (req) => ({ action: "accept", content: { confirmed: true } }),
+  roots: [{ uri: "file:///workspace", name: "workspace" }],
+});
+await host.close();`,
 		},
 		"connect.http": {
-			Summary: "Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 2 scope note as connect.stdio: change notifications, subscriptions, logging, and completion are supported (see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below); no host-side responder for sampling/elicitation/roots and no OAuth client yet.",
+			Summary: "Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 2/Phase 3 scope note as connect.stdio: change notifications, subscriptions, logging, and completion are supported (see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below), and onSample/onElicit/roots (see setRoots) let this connection act as a host for the server's own requests. No OAuth client yet.",
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "the server's absolute MCP endpoint URL, e.g. \"http://127.0.0.1:38080/mcp\" (must be http or https with a host; anything else throws synchronously)."},
-				{Name: "opts", Type: "{ headers?: Record<string, string> }", Optional: true, Desc: "optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override."},
+				{Name: "opts", Type: "{ headers?: Record<string, string>; onSample?: " + mcpHostOnSampleType + "; onElicit?: " + mcpHostOnElicitType + "; roots?: " + mcpRootsOptType + " }", Optional: true, Desc: "optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override. onSample(req): answers the server's sampling/createMessage requests (ctx.sample() on the server side); req carries messages/maxTokens/systemPrompt/temperature/stopSequences/includeContext/modelPreferences. May return a plain string (wrapped as text content, model \"sercon\", role \"assistant\", stopReason \"endTurn\") or an object giving explicit control over content/model/stopReason/role; sync or async. onElicit(req): answers the server's elicitation/create requests (ctx.elicit() on the server side); req carries { message, requestedSchema, mode? }. Must return { action: \"accept\"|\"decline\"|\"cancel\", content? }; sync or async. roots: seeds this client's filesystem/URI roots — an array of { uri, name? } — via AddRoots before the connection is established, so the server's first roots/list sees them immediately. IMPORTANT: the roots capability is advertised by the underlying SDK unconditionally regardless of whether this option is given (unlike onSample/onElicit, each advertised only when provided — see Errors); omitting roots just means the initial set is empty, still updatable later via setRoots."},
 			},
 			ReturnType: "Promise<" + mcpClientHandleType + ">",
-			Returns:    "Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities, the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods, the subscribe/unsubscribe/setLoggingLevel/complete mid-connection calls, and the six onXxx notification setters. Holds the script's event loop open for the connection's lifetime.",
-			Errors:     "Throws synchronously if url is missing or not an absolute http(s) URL. The returned promise rejects if the HTTP connection or initialize handshake fails (wrapped as \"mcp.connect: ...\") — including a 401 from a listen({auth})-protected server when opts.headers doesn't carry a valid bearer token.",
+			Returns:    "Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities, the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods, the subscribe/unsubscribe/setLoggingLevel/complete mid-connection calls, the six onXxx notification setters, and setRoots(roots) to update the seeded roots set at runtime. Holds the script's event loop open for the connection's lifetime.",
+			Errors:     "Throws synchronously if url is missing or not an absolute http(s) URL, onSample/onElicit are present but not functions, or a roots entry is missing a non-empty uri. The returned promise rejects if the HTTP connection or initialize handshake fails (wrapped as \"mcp.connect: ...\") — including a 401 from a listen({auth})-protected server when opts.headers doesn't carry a valid bearer token. Capability gating happens at connect time, not as a throw here: the SDK client advertises sampling/elicitation if and only if onSample/onElicit (respectively) is provided — a server calling ctx.sample()/ctx.elicit() against a client that omitted the matching responder gets that server-side call rejected, not this connect call.",
 			Example: `const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
 runtime.log("connected to", c.serverInfo.name);
 const tools = await c.listTools();
@@ -410,7 +475,21 @@ await c.close();
 const authed = await mcp.connect.http("http://127.0.0.1:38081/mcp", {
   headers: { Authorization: "Bearer good-token" },
 });
-await authed.close();`,
+await authed.close();
+
+// As a host: answer the server's sampling/elicitation requests and seed roots.
+const host = await mcp.connect.http("http://127.0.0.1:38080/mcp", {
+  onSample: async (req) => {
+    // wire this to services.ai to answer with a real LLM instead of an echo:
+    // const r = await services.ai.send({ prompt: req.messages[0].content.text });
+    // return r.output;
+    return "SUMMARY: " + req.messages[0].content.text;
+  },
+  onElicit: (req) => ({ action: "accept", content: { confirmed: true } }),
+  roots: [{ uri: "file:///workspace", name: "workspace" }],
+});
+host.setRoots([{ uri: "file:///workspace2", name: "workspace2" }]);
+await host.close();`,
 		},
 
 		// Phase 2 (client): the four mid-connection calls
@@ -562,6 +641,31 @@ await c.setLoggingLevel("debug"); // required — otherwise onLoggingMessage nev
   runtime.log(` + "`progress: ${p.progress}${p.total ? \"/\" + p.total : \"\"}`" + `, p.message ?? "");
 });
 await c.callTool("long-running-tool", {});`,
+		},
+
+		// Phase 3 (client): setRoots. Keyed "connect.setRoots" for the same
+		// "orphan doc key nested under mcp.connect" reason the Phase-2 block
+		// above documents — it's a method on the runtime handle
+		// mcp.connect.stdio/mcp.connect.http resolve to, not a static member of
+		// the "connect" object itself. Unlike onSample/onElicit/roots (which
+		// are connect-time opts, documented as extra fields on connect.stdio's/
+		// connect.http's own opts Param, not their own MemberDoc entries),
+		// setRoots is a real handle method, so it gets the full-field entry
+		// every other "connect.X" method here does.
+		"connect.setRoots": {
+			Summary: "Replace this connection's advertised filesystem/URI roots at runtime — the update counterpart to the `roots` connect opt's initial seed. Calls the SDK's RemoveRoots (for whatever this connection previously seeded/set) followed by AddRoots (for the new list), which together fire a roots/list_changed notification to the server; a server watching via srv.onRootsChanged(fn) sees the change pushed, and a server that only pulls via ctx.roots() sees the new set on its next call. Synchronous — there is no network round trip to await (AddRoots/RemoveRoots are pure in-memory bookkeeping on the client), so setRoots returns void, not a Promise, unlike almost every other method on this handle.",
+			Params: []scriptengine.Param{
+				{Name: "roots", Type: mcpRootsOptType, Desc: "the new complete root set — this REPLACES the previous set (whether it came from the connect opt's `roots` or an earlier setRoots call), it does not merge with it. Each entry needs a non-empty uri; name is an optional human-readable label. Pass an empty array to clear all roots."},
+			},
+			ReturnType: "void",
+			Returns:    "Nothing. The server is not guaranteed to have observed the change by the time setRoots returns — only that the notification has been handed to the SDK client to send; a script that needs to be sure the server has picked up the new set should have the server confirm it back (e.g. via a tool call reading ctx.roots() after some delay, or by reacting to the server's own srv.onRootsChanged if scripting both sides).",
+			Errors:     "Throws synchronously (a TypeError) if roots is not an array, or if any entry is not an object with a non-empty string uri. Never rejects — there is no Promise to reject.",
+			Example: `const c = await mcp.connect.http("http://127.0.0.1:38080/mcp", {
+  roots: [{ uri: "file:///a" }, { uri: "file:///b" }],
+});
+// ... later, the workspace changed:
+c.setRoots([{ uri: "file:///c", name: "new workspace" }]);
+await c.close();`,
 		},
 	}
 }
