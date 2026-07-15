@@ -38,6 +38,48 @@ type callToolResultView struct {
 	IsError           bool          `json:"isError"`
 }
 
+// promptArgumentView mirrors mcp.PromptArgument for the JS-facing shape,
+// except Required has no `omitempty` tag: the SDK's own type omits Required
+// from JSON when false (the common, unset-by-default case for an optional
+// argument), which would surface as `undefined` rather than `false` after
+// toPlain's JSON round trip — the same isError.omitempty footgun as
+// callToolResultView above.
+type promptArgumentView struct {
+	Name        string `json:"name"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required"`
+}
+
+// promptView mirrors mcp.Prompt, reshaping Arguments through
+// promptArgumentView so Required survives the round trip described above.
+type promptView struct {
+	Name        string               `json:"name"`
+	Title       string               `json:"title,omitempty"`
+	Description string               `json:"description,omitempty"`
+	Icons       []mcp.Icon           `json:"icons,omitempty"`
+	Arguments   []promptArgumentView `json:"arguments,omitempty"`
+}
+
+// toPromptViews reshapes a page of *mcp.Prompt into promptView, applying the
+// Required.omitempty fix described on promptArgumentView.
+func toPromptViews(prompts []*mcp.Prompt) []promptView {
+	views := make([]promptView, 0, len(prompts))
+	for _, p := range prompts {
+		v := promptView{Name: p.Name, Title: p.Title, Description: p.Description, Icons: p.Icons}
+		for _, a := range p.Arguments {
+			v.Arguments = append(v.Arguments, promptArgumentView{
+				Name:        a.Name,
+				Title:       a.Title,
+				Description: a.Description,
+				Required:    a.Required,
+			})
+		}
+		views = append(views, v)
+	}
+	return views
+}
+
 // clientHeaderRoundTripper injects fixed headers + a sercon User-Agent.
 type clientHeaderRoundTripper struct {
 	base    http.RoundTripper
@@ -153,8 +195,9 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 	return vm.ToValue(p)
 }
 
-// handle builds the JS session object. Later tasks add tool/resource/prompt
-// methods; Phase-1 Task 1 provides serverInfo, capabilities, and close.
+// handle builds the JS session object. Phase-1 provides serverInfo,
+// capabilities, close, listTools, callTool, listResources,
+// listResourceTemplates, readResource, listPrompts, getPrompt, and ping.
 func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 	obj := vm.NewObject()
 
@@ -222,6 +265,87 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 				StructuredContent: res.StructuredContent,
 				IsError:           res.IsError,
 			}, nil
+		})
+	})
+
+	_ = obj.Set("listResources", func(goja.FunctionCall) goja.Value {
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:listResources", func() (any, error) {
+			var all []*mcp.Resource
+			var cursor string
+			for {
+				res, err := mc.sess.ListResources(context.Background(), &mcp.ListResourcesParams{Cursor: cursor})
+				if err != nil {
+					return nil, err
+				}
+				all = append(all, res.Resources...)
+				if res.NextCursor == "" {
+					break
+				}
+				cursor = res.NextCursor
+			}
+			return all, nil
+		})
+	})
+
+	_ = obj.Set("listResourceTemplates", func(goja.FunctionCall) goja.Value {
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:listResourceTemplates", func() (any, error) {
+			var all []*mcp.ResourceTemplate
+			var cursor string
+			for {
+				res, err := mc.sess.ListResourceTemplates(context.Background(), &mcp.ListResourceTemplatesParams{Cursor: cursor})
+				if err != nil {
+					return nil, err
+				}
+				all = append(all, res.ResourceTemplates...)
+				if res.NextCursor == "" {
+					break
+				}
+				cursor = res.NextCursor
+			}
+			return all, nil
+		})
+	})
+
+	_ = obj.Set("readResource", func(call goja.FunctionCall) goja.Value {
+		uri := requireStringArg(vm, call, 0, "readResource(uri)")
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:readResource", func() (any, error) {
+			return mc.sess.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: uri})
+		})
+	})
+
+	_ = obj.Set("listPrompts", func(goja.FunctionCall) goja.Value {
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:listPrompts", func() (any, error) {
+			var all []*mcp.Prompt
+			var cursor string
+			for {
+				res, err := mc.sess.ListPrompts(context.Background(), &mcp.ListPromptsParams{Cursor: cursor})
+				if err != nil {
+					return nil, err
+				}
+				all = append(all, res.Prompts...)
+				if res.NextCursor == "" {
+					break
+				}
+				cursor = res.NextCursor
+			}
+			return toPromptViews(all), nil
+		})
+	})
+
+	_ = obj.Set("getPrompt", func(call goja.FunctionCall) goja.Value {
+		name := requireStringArg(vm, call, 0, "getPrompt(name, args?)")
+		var args map[string]string
+		if len(call.Arguments) > 1 {
+			args = stringMapArg(vm, call.Arguments[1])
+		}
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:getPrompt", func() (any, error) {
+			return mc.sess.GetPrompt(context.Background(), &mcp.GetPromptParams{Name: name, Arguments: args})
+		})
+	})
+
+	_ = obj.Set("ping", func(goja.FunctionCall) goja.Value {
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:ping", func() (any, error) {
+			return nil, mc.sess.Ping(context.Background(), nil)
 		})
 	})
 

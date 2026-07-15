@@ -99,3 +99,42 @@ await h.close();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPClientResourcesPromptsPing exercises listResources,
+// listResourceTemplates, readResource, listPrompts, getPrompt, and ping
+// against a dogfood server exposing one of each.
+func TestMCPClientResourcesPromptsPing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "rpp.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.resource({ uri: "cfg://app", name: "cfg", read: () => ({ text: "hello" }) });
+srv.resourceTemplate({ uriTemplate: "u:///{id}", name: "u", read: (uri) => ({ text: uri }) });
+srv.prompt({ name: "greet", arguments: [{ name: "who" }], get: (a) => ({ messages: [{ role: "user", content: { type: "text", text: "hi " + a.who } }] }) });
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url);
+
+const rs = await c.listResources();
+runtime.assert.equal(rs[0].uri, "cfg://app", "resource uri");
+const tpls = await c.listResourceTemplates();
+runtime.assert.equal(tpls[0].uriTemplate, "u:///{id}", "template");
+const doc = await c.readResource("cfg://app");
+runtime.assert.equal(doc.contents[0].text, "hello", "read text");
+
+const ps = await c.listPrompts();
+runtime.assert.equal(ps[0].name, "greet", "prompt name");
+const p = await c.getPrompt("greet", { who: "Ada" });
+runtime.assert.ok(JSON.stringify(p.messages).includes("hi Ada"), "prompt rendered");
+
+await c.ping();  // throws if server gone
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
