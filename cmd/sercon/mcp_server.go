@@ -1217,15 +1217,15 @@ func (ms *mcpServer) asyncSettle(reason string, work func() error) goja.Value {
 	return ms.vm.ToValue(p)
 }
 
-// asyncSettleResult is asyncSettle's sibling for SDK calls that hand back a
-// result value alongside the error (CreateMessage today; Elicit/ListRoots
-// will reuse it in Tasks 3-4) — same HoldRun + off-loop work + on-loop
-// settle shape, except the success path resolves to the SDK result rather
-// than undefined. `val` is exported through toPlain (cloud_google_storage.go,
-// a JSON marshal/unmarshal round trip) before crossing to goja, mirroring
-// how the cloud namespace already surfaces SDK response structs as plain
-// objects — no goja.Value is built off-loop, and no *mcp.CreateMessageResult
-// (or future Elicit/ListRoots result) needs a bespoke converter the way
+// asyncSettleResult runs `work` off the event loop, then settles a JS Promise
+// on-loop with toPlain(result). It holds loop.Run alive (HoldRun) for the
+// whole round-trip and releases exactly once. Shared by the MCP server
+// (server->client sends: CreateMessage today, Elicit/ListRoots reuse it in
+// Tasks 3-4) and the MCP client (client->server calls). `val` is exported
+// through toPlain (cloud_google_storage.go, a JSON marshal/unmarshal round
+// trip) before crossing to goja, mirroring how the cloud namespace already
+// surfaces SDK response structs as plain objects — no goja.Value is built
+// off-loop, and no SDK result struct needs a bespoke converter the way
 // toToolResult/toReadResourceResult/toGetPromptResult do for JS-authored
 // shapes.
 //
@@ -1234,13 +1234,13 @@ func (ms *mcpServer) asyncSettle(reason string, work func() error) goja.Value {
 // the goroutine's RunOnLoop reaches the loop, per the eventloop's jobCount
 // contract) and for the exactly-once release + defer recover() shape, both
 // reproduced here unchanged.
-func (ms *mcpServer) asyncSettleResult(vm *goja.Runtime, reason string, work func() (any, error)) goja.Value {
+func asyncSettleResult(eng *scriptengine.Engine, loop *eventloop.EventLoop, vm *goja.Runtime, reason string, work func() (any, error)) goja.Value {
 	p, resolve, reject := vm.NewPromise()
-	release := ms.eng.HoldRun(reason)
+	release := eng.HoldRun(reason)
 
 	go func() {
 		val, workErr := work()
-		ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+		loop.RunOnLoop(func(vm *goja.Runtime) {
 			defer func() {
 				release()
 				if r := recover(); r != nil {
@@ -1261,6 +1261,10 @@ func (ms *mcpServer) asyncSettleResult(vm *goja.Runtime, reason string, work fun
 	}()
 
 	return vm.ToValue(p)
+}
+
+func (ms *mcpServer) asyncSettleResult(vm *goja.Runtime, reason string, work func() (any, error)) goja.Value {
+	return asyncSettleResult(ms.eng, ms.loop, vm, reason, work)
 }
 
 // jsStdio implements srv.stdio(): serve the MCP server over stdin/stdout using

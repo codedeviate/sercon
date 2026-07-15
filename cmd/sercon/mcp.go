@@ -103,6 +103,7 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 			installMCPStdioRedirectIfArmed()
 			return ms.handle(vm)
 		},
+		"connect": mcpConnectNamespace(eng, vm, loop),
 	}
 }
 
