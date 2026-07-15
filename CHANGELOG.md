@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.95.0] — 2026-07-16
+
 ### Added
 - **`mcp.connect` — the MCP client, Phase 3 (host responders).** An `mcp.connect`
   client can now act as a full MCP *host*, answering the server's own mid-request

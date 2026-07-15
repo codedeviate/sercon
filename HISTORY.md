@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.94.0 (2026-07-15).
+covered is v0.1.0 (2026-05-25) through v0.95.0 (2026-07-16).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -1133,6 +1133,26 @@ on stdio subprocess exit or an abrupt failure — an idle HTTP client to a
 gracefully-stopped server still relies on the run ending. Host responders
 (answering sampling/elicitation, exposing roots) and an OAuth client remain
 Phases 3–4.
+
+### `mcp` client — Phase 3 (v0.95.0)
+
+The client becomes a full MCP *host*, answering the server's own mid-request
+calls — the mirror image of the server's Phase-3 `ctx.sample`/`ctx.elicit`/
+`ctx.roots`. Three optional connect options: `onSample(req)` answers
+`sampling/createMessage` (return a string, wrapped as text, or a
+`{content,model?,stopReason?,role?}` object), `onElicit(req)` answers
+`elicitation/create` (`{action,content?}`), and `roots: [{uri,name?}]` exposes
+the client's roots to `roots/list`, with a handle method `setRoots` to update
+them at runtime (firing `roots/list_changed`). Sampling and elicitation are
+advertised to the server only when the responder is provided — a client that
+can't answer doesn't claim the capability — while the SDK advertises roots
+unconditionally, so the `roots` option just seeds the initial set. The two
+request-response responders reuse the server's `callJSHandler` bridge (lifted
+to a shared package-level function): the SDK invokes them on its own goroutine,
+`callJSHandler` runs the script handler on the loop, awaits a returned Promise,
+and hands back native Go — so an async responder is awaited correctly and no
+goja value ever crosses a goroutine. Only the OAuth client and the SSE
+transport (Phase 4) remain.
 
 ## Bundled libraries
 
