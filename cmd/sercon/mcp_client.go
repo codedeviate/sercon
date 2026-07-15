@@ -499,6 +499,76 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		})
 	})
 
+	// Task 3: subscribe/unsubscribe/setLoggingLevel/complete. All route
+	// through asyncSettleResult using mc.ctx like every other call above;
+	// none of these are tool calls, so a protocol failure throws rather than
+	// surfacing as an isError-shaped result.
+	_ = obj.Set("subscribe", func(call goja.FunctionCall) goja.Value {
+		uri := requireStringArg(vm, call, 0, "subscribe(uri)")
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:subscribe", func() (any, error) {
+			return nil, mc.sess.Subscribe(mc.ctx, &mcp.SubscribeParams{URI: uri})
+		})
+	})
+
+	_ = obj.Set("unsubscribe", func(call goja.FunctionCall) goja.Value {
+		uri := requireStringArg(vm, call, 0, "unsubscribe(uri)")
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:unsubscribe", func() (any, error) {
+			return nil, mc.sess.Unsubscribe(mc.ctx, &mcp.UnsubscribeParams{URI: uri})
+		})
+	})
+
+	_ = obj.Set("setLoggingLevel", func(call goja.FunctionCall) goja.Value {
+		level := requireStringArg(vm, call, 0, "setLoggingLevel(level)")
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:setLoggingLevel", func() (any, error) {
+			return nil, mc.sess.SetLoggingLevel(mc.ctx, &mcp.SetLoggingLevelParams{Level: mcp.LoggingLevel(level)})
+		})
+	})
+
+	// complete(ref, argName, partial): ref is a JS object { type: "prompt"|
+	// "resource", name?, uri? }. The SDK's *mcp.CompleteReference must be
+	// built here, on-loop, before the work closure below runs off-loop —
+	// goja values (refObj) can't cross that boundary. Mirrors the server
+	// side's mcpCompletionHandler (mcp_server.go), which builds the JS-facing
+	// { type, name, uri } object from the same *mcp.CompleteReference shape
+	// in the other direction.
+	//
+	// The result is returned as the raw CompleteResult.Completion
+	// (mcp.CompletionResultDetails{Values,Total,HasMore}) rather than nested
+	// under a `completion` key, so the script gets { values, total, hasMore }
+	// directly — symmetric with what a script passes back from
+	// srv.completion(fn) on the server side (see toCompleteResult in
+	// mcp_content.go), just without the wrapper.
+	_ = obj.Set("complete", func(call goja.FunctionCall) goja.Value {
+		refObj := requireObjectArg(vm, call, 0, "complete(ref, argName, partial)")
+		argName := requireStringArg(vm, call, 1, "complete(ref, argName, partial)")
+		var partial string
+		if len(call.Arguments) > 2 {
+			partial = call.Arguments[2].String()
+		}
+		refType := refObj.Get("type").String()
+		ref := &mcp.CompleteReference{}
+		switch refType {
+		case "prompt":
+			ref.Type = "ref/prompt"
+			ref.Name = optStringArg(vm, refObj.Get("name"))
+		case "resource":
+			ref.Type = "ref/resource"
+			ref.URI = optStringArg(vm, refObj.Get("uri"))
+		default:
+			panic(vm.NewTypeError("complete: ref.type must be \"prompt\" or \"resource\""))
+		}
+		return asyncSettleResult(mc.eng, mc.loop, vm, "mcp:client:complete", func() (any, error) {
+			res, err := mc.sess.Complete(mc.ctx, &mcp.CompleteParams{
+				Ref:      ref,
+				Argument: mcp.CompleteParamsArgument{Name: argName, Value: partial},
+			})
+			if err != nil {
+				return nil, err
+			}
+			return res.Completion, nil
+		})
+	})
+
 	// Task 2: the six server-push notification callbacks. Each setter
 	// validates the fn argument, wraps it in a LoopCallable bound to this
 	// connection's loop, and stores it under cbMu (last-writer-wins, same as

@@ -266,3 +266,45 @@ await h.close();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPClientSubscribeAndComplete drives Task 3's four reactive methods:
+// subscribe (a server-pushed resourceUpdated notification fires
+// onResourceUpdated, wired in Task 2), unsubscribe, and a complete()
+// round-trip against a server srv.completion(fn) handler. The server's
+// CompletionHandler (mcpCompletionHandler, mcp_server.go) dispatches purely
+// on ref.Type without requiring a matching srv.prompt/resourceTemplate to
+// exist, so the { type: "prompt", name: "greet" } ref below needs no
+// registered prompt fixture.
+func TestMCPClientSubscribeAndComplete(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "sub.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.resource({ uri: "cfg://app", name: "cfg", read: () => ({ text: "v" }) });
+srv.completion((ref, argName, partial) => argName === "who" ? ["alice","alan"].filter(v => v.startsWith(partial)) : []);
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url);
+
+let updated = "";
+c.onResourceUpdated((uri) => { updated = uri; });
+await c.subscribe("cfg://app");
+await srv.resourceUpdated("cfg://app");           // server pushes the update
+const dl = Date.now() + 5000;
+while (updated === "" && Date.now() < dl) { await new Promise(r => setTimeout(r, 20)); }
+runtime.assert.equal(updated, "cfg://app", "onResourceUpdated fired with uri");
+await c.unsubscribe("cfg://app");
+
+const comp = await c.complete({ type: "prompt", name: "greet" }, "who", "ala");
+runtime.assert.equal(JSON.stringify(comp.values), JSON.stringify(["alan"]), "completion filtered");
+
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
