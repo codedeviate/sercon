@@ -336,6 +336,9 @@ func mcpConnectNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *event
 		"http": func(call goja.FunctionCall) goja.Value {
 			return connectHTTP(eng, vm, loop, call)
 		},
+		"sse": func(call goja.FunctionCall) goja.Value {
+			return connectSSE(eng, vm, loop, call)
+		},
 	}
 }
 
@@ -385,10 +388,51 @@ func connectHTTP(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 			headers = stringMapArg(vm, o.Get("headers"))
 		}
 	}
+	// maxRetries is StreamableClientTransport-only (mcp.SSEClientTransport has
+	// no such field — see connectSSE), so it's parsed here rather than inside
+	// the shared parseHostConfig helper. Parsed before mkTransport runs
+	// (mkTransport executes off-loop; optsObj.Get must happen on-loop).
+	maxRetries, hasMaxRetries := optIntArg(vm, optsObj, "maxRetries", "mcp.connect.http")
 	hostCfg := parseHostConfig(vm, loop, optsObj)
 	return connectWith(eng, vm, loop, "mcp:client", hostCfg, func(_ context.Context) (mcp.Transport, error) {
 		httpClient := &http.Client{Transport: clientHeaderRoundTripper{base: http.DefaultTransport, headers: headers}}
-		return &mcp.StreamableClientTransport{Endpoint: rawURL, HTTPClient: httpClient}, nil
+		transport := &mcp.StreamableClientTransport{Endpoint: rawURL, HTTPClient: httpClient}
+		if hasMaxRetries {
+			transport.MaxRetries = maxRetries
+		}
+		return transport, nil
+	})
+}
+
+// connectSSE implements mcp.connect.sse(url, opts?): the legacy (2024-11-05)
+// SSE transport. Mirrors connectHTTP's URL validation, headers, and host
+// responders (onSample/onElicit/roots — transport-agnostic, so they work
+// over SSE too); the only difference is the transport type. Unlike
+// connectHTTP, there is no maxRetries here: mcp.SSEClientTransport has only
+// {Endpoint, HTTPClient} — no retry knob to plumb (see go-sdk@v1.6.1's
+// mcp/streamable.go, which defines MaxRetries solely on
+// StreamableClientTransport).
+func connectSSE(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) == 0 {
+		panic(vm.NewTypeError("mcp.connect.sse(url, opts?): url is required"))
+	}
+	rawURL := call.Arguments[0].String()
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		panic(vm.NewTypeError("mcp.connect.sse: url must be an absolute http(s) URL"))
+	}
+	var headers map[string]string
+	var optsObj *goja.Object
+	if len(call.Arguments) > 1 {
+		if o, ok := call.Arguments[1].(*goja.Object); ok && o != nil {
+			optsObj = o
+			headers = stringMapArg(vm, o.Get("headers"))
+		}
+	}
+	hostCfg := parseHostConfig(vm, loop, optsObj)
+	return connectWith(eng, vm, loop, "mcp:client", hostCfg, func(_ context.Context) (mcp.Transport, error) {
+		httpClient := &http.Client{Transport: clientHeaderRoundTripper{base: http.DefaultTransport, headers: headers}}
+		return &mcp.SSEClientTransport{Endpoint: rawURL, HTTPClient: httpClient}, nil
 	})
 }
 
@@ -867,6 +911,30 @@ func optStringArg(vm *goja.Runtime, v goja.Value) string {
 		return ""
 	}
 	return v.String()
+}
+
+// optIntArg reads an optional numeric field named key off optsObj (nil-safe:
+// a nil optsObj or a missing/undefined/null field returns ok=false, leaving
+// the caller to keep its own default). Accepts int64 (goja's export for a JS
+// integer literal) or float64 (a non-integer JS literal); any other export
+// type throws, same pattern as barcode.go's optInt but reading straight off
+// a *goja.Object instead of an already-exported map[string]any.
+func optIntArg(vm *goja.Runtime, optsObj *goja.Object, key, who string) (int, bool) {
+	if optsObj == nil {
+		return 0, false
+	}
+	v := optsObj.Get(key)
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return 0, false
+	}
+	switch n := v.Export().(type) {
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	default:
+		panic(vm.NewTypeError(who + ": " + key + " must be a number"))
+	}
 }
 
 // toCreateMessageResult converts an onSample handler's JS return value into

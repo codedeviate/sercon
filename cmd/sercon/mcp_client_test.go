@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -441,6 +445,121 @@ runtime.assert.equal(r1.content[0].text, "file:///a,file:///b", "initial roots")
 c.setRoots([{ uri: "file:///c" }]);
 const r2 = await c.callTool("listRoots", {});
 runtime.assert.equal(r2.content[0].text, "file:///c", "updated roots");
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPClientSSE is the Phase-4 gate for mcp.connect.sse(): a client
+// connects over the legacy (2024-11-05) SSE transport and round-trips
+// listTools/callTool.
+//
+// Dogfood path (Task 1 brief, Step 1): sercon's own server (srv.listen,
+// server_http.go) mounts ONLY mcp.NewStreamableHTTPHandler — grepping
+// cmd/sercon/ turns up no use of the SDK's mcp.NewSSEHandler, so there is no
+// SSE-compatible endpoint on the sercon side to dogfood against. Instead this
+// test builds a Go mcp.Server directly (mirroring TestMCPSDKSpike's
+// AddTool/CallToolRequest pattern) and serves it over the SDK's
+// mcp.NewSSEHandler + httptest.NewServer, then drives mcp.connect.sse from a
+// sercon script against that URL.
+func TestMCPClientSSE(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	srv := mcp.NewServer(&mcp.Implementation{Name: "sse-fixture", Version: "1.2.3"}, nil)
+	srv.AddTool(&mcp.Tool{
+		Name: "add",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"x": map[string]any{"type": "number"},
+				"y": map[string]any{"type": "number"},
+			},
+			"required": []any{"x", "y"},
+		},
+	}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var args struct {
+			X float64 `json:"x"`
+			Y float64 `json:"y"`
+		}
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return nil, err
+		}
+		sum := fmt.Sprintf("%v", args.X+args.Y)
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: sum}}}, nil
+	})
+
+	sseHandler := mcp.NewSSEHandler(func(*http.Request) *mcp.Server { return srv }, nil)
+	ts := httptest.NewServer(sseHandler)
+	defer ts.Close()
+
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	script := fmt.Sprintf(`
+const c = await mcp.connect.sse(%q);
+runtime.assert.equal(c.serverInfo.name, "sse-fixture", "serverInfo.name");
+runtime.assert.equal(c.serverInfo.version, "1.2.3", "serverInfo.version");
+const tools = await c.listTools();
+runtime.assert.equal(tools.map(t => t.name).join(","), "add", "tool names");
+const res = await c.callTool("add", { x: 2, y: 3 });
+runtime.assert.equal(res.isError, false, "add not error");
+runtime.assert.equal(res.content[0].text, "5", "add result");
+await c.close();
+`, ts.URL)
+	if _, err := eng.Run(ctx, "sse.ts", script); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPClientSSE_ValidatesArgs asserts mcp.connect.sse rejects a
+// non-absolute / non-http(s) URL the same way mcp.connect.http does.
+func TestMCPClientSSE_ValidatesArgs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	cases := []string{
+		`await mcp.connect.sse("not-a-url");`,
+		`await mcp.connect.sse("ftp://x/y");`,
+	}
+	for _, c := range cases {
+		if _, err := eng.Run(ctx, "bad-sse.ts", c); err == nil {
+			t.Errorf("expected throw for %q, got nil", c)
+		}
+	}
+}
+
+// TestMCPClientMaxRetries is the Phase-4 gate for connect.http's maxRetries
+// option: it proves { maxRetries: 0 } is accepted and plumbed through to
+// StreamableClientTransport without breaking a normal, successful session —
+// deeper reconnect-retry behaviour on transport failure is SDK-owned and not
+// re-tested here.
+func TestMCPClientMaxRetries(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "maxretries.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "add", inputSchema: { type: "object" }, handler: (a) => String(a.x + a.y) });
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url, { maxRetries: 0 });
+
+const tools = await c.listTools();
+runtime.assert.equal(tools.map(t => t.name).join(","), "add", "tool names");
+const res = await c.callTool("add", { x: 2, y: 3 });
+runtime.assert.equal(res.isError, false, "add not error");
+runtime.assert.equal(res.content[0].text, "5", "add result");
+
 await c.close();
 await h.close();
 `)
