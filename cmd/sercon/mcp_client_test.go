@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -63,5 +62,4 @@ func TestMCPClientConnect_ValidatesArgs(t *testing.T) {
 			t.Errorf("expected throw for %q, got nil", c)
 		}
 	}
-	_ = strings.TrimSpace
 }
