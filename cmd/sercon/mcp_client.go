@@ -917,8 +917,9 @@ func optStringArg(vm *goja.Runtime, v goja.Value) string {
 // a nil optsObj or a missing/undefined/null field returns ok=false, leaving
 // the caller to keep its own default). Accepts int64 (goja's export for a JS
 // integer literal) or float64 (a non-integer JS literal); any other export
-// type throws, same pattern as barcode.go's optInt but reading straight off
-// a *goja.Object instead of an already-exported map[string]any.
+// type throws a TypeError — consistent with this file's other opt/require
+// helpers (requireObjectArg, stringMapArg) which reject a wrong-typed field
+// rather than silently defaulting.
 func optIntArg(vm *goja.Runtime, optsObj *goja.Object, key, who string) (int, bool) {
 	if optsObj == nil {
 		return 0, false
