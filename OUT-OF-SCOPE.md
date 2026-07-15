@@ -289,18 +289,17 @@ addressed.
   never-settling handler is reclaimed. Flagged by the Phase-3 whole-branch
   review (item T5-2).
 
-- **MCP client: connection-death watcher + cancellable context + list-page cap.**
-  `mcp.connect` (`cmd/sercon/mcp_client.go`, Phase 1) uses `context.Background()`
-  for the connection lifetime and every call, and has no `(*ClientSession).Wait()`
-  death-watcher. So if a connected server dies while the script is otherwise idle,
-  the connection's `HoldRun` is held until the Run-end drain (the script can hang
-  until timeout) rather than releasing on transport death as the spec's mirror-the-
-  `stopped`-promise note intended; and because the SDK call runs off-loop under a
-  background context, `vm.Interrupt` on script timeout can't stop it. Relatedly, the
-  four `list*` cursor loops have no page cap, so a server that never returns an empty
-  `NextCursor` loops/grows unbounded. All low-realism for a recon CLI connecting to
-  operator-chosen servers and consistent with existing codebase cursor loops, but the
-  clean fix is one bundle: thread a connection-scoped cancellable ctx (cancel on
-  `close()`/Run-end), spawn a `sess.Wait()` goroutine that releases the hold on death,
-  and add a sane page cap. Fold into MCP client Phase 2. Flagged by the Phase-1
-  whole-branch review.
+- **MCP client: root the connection context at the Run context.**
+  MCP client Phase 2 delivered most of the original hardening bundle — a
+  connection-scoped cancellable context (`mc.ctx`), a `(*ClientSession).Wait()`
+  death-watcher that releases the `HoldRun` on session end, and a `list*` page
+  cap. What remains: `mc.ctx` is rooted at `context.Background()`, not the engine
+  Run context, so a script *timeout* / Run-end does NOT cancel it — an in-flight
+  off-loop `sess.Call*` isn't unblocked by a timeout and a stdio subprocess isn't
+  ctx-killed; the leaked goroutine + child are reaped on process exit (fine under
+  the single-shot CLI model). The clean fix is to thread the Run context into
+  `connectWith` and root `connCtx` there so timeout/Run-end genuinely cancel it.
+  Also note the documented death-watcher limitation stands: a *graceful* HTTP
+  server shutdown keeps the SSE stream alive so `sess.Wait()` doesn't fire (the
+  Run-end drain is the backstop). Low-realism; flagged by the Phase-1 and Phase-2
+  whole-branch reviews.

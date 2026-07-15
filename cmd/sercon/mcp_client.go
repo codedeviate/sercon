@@ -291,10 +291,16 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 		}
 	}
 
-	// Connection-scoped context: cancelled by close(), the death-watcher, or
-	// a failed connect. Every SDK call uses it, so a script timeout / close
-	// unblocks in-flight off-loop calls and (for stdio) ties the subprocess
-	// lifetime to the connection.
+	// Connection-scoped context, used by every SDK call. It is cancelled only by
+	// close(), the death-watcher (on session end), or a failed connect — so
+	// close() unblocks in-flight off-loop calls and (for stdio) ties the
+	// subprocess lifetime to the connection. NOTE: it is rooted at
+	// context.Background(), NOT the Run context, so a script *timeout* / Run-end
+	// does NOT cancel it or unblock an in-flight SDK call — the engine's
+	// vm.Interrupt+loop.Terminate stop the script, and the leaked off-loop
+	// goroutine + subprocess are reaped on process exit (fine under the
+	// single-shot CLI model). Rooting this at the Run context is a tracked
+	// follow-up (see OUT-OF-SCOPE).
 	connCtx, connCancel := context.WithCancel(context.Background())
 
 	// mc is created up front so later tasks' ClientOptions notification
@@ -545,7 +551,11 @@ func (mc *mcpClient) handle(vm *goja.Runtime) *goja.Object {
 		if len(call.Arguments) > 2 {
 			partial = call.Arguments[2].String()
 		}
-		refType := refObj.Get("type").String()
+		// optStringArg is nil-safe: a missing `type` yields "" → the default
+		// case throws cleanly. Calling .String() directly on a missing property
+		// would nil-deref (goja returns a Go nil for an absent key) and crash
+		// the runtime with an uncatchable SIGSEGV.
+		refType := optStringArg(vm, refObj.Get("type"))
 		ref := &mcp.CompleteReference{}
 		switch refType {
 		case "prompt":

@@ -309,6 +309,34 @@ await h.close();
 	}
 }
 
+// TestMCPClientCompleteValidatesRef asserts complete() throws a clean, catchable
+// error for a bad ref — a missing `type` (regression: reading it via
+// .Get("type").String() nil-dereffed and crashed the runtime with an uncatchable
+// SIGSEGV) and an unknown `type`. Must be a caught JS error, not a process crash.
+func TestMCPClientCompleteValidatesRef(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "badref.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url);
+let threwMissing = false, threwUnknown = false;
+try { await c.complete({}, "who", "a"); } catch (e) { threwMissing = true; }
+try { await c.complete({ type: "nope" }, "who", "a"); } catch (e) { threwUnknown = true; }
+runtime.assert.ok(threwMissing, "complete with missing ref.type throws (not a crash)");
+runtime.assert.ok(threwUnknown, "complete with unknown ref.type throws");
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 // TestMCPClientSetLoggingLevel exercises c.setLoggingLevel end to end: the
 // server's ctx.log is a no-op until the client opts in with a level, so this
 // asserts that after setLoggingLevel("info") a server tool's ctx.log is
