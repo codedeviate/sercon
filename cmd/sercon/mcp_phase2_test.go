@@ -18,8 +18,12 @@ import (
 // channel in this file's tests. The SDK debounces list-changed notifications
 // by 10ms (notificationDelay in mcp/server.go's changeAndNotify) before
 // dispatching, so this margin only needs to comfortably clear that plus
-// scheduling jitter — it is not expected to be hit in a passing run.
-const notifyWait = 3 * time.Second
+// scheduling jitter — it is not expected to be hit in a passing run. Kept
+// generous (matching the 10s/30s deadlines the Phase-3 notification tests
+// use) so a loaded CI runner can't trip it: a 3s value flaked on the slowest
+// matrix cell (macos/go-stable) under the heavier post-Phase-3 package load.
+// Raising it only lengthens the failure path; a passing run returns at once.
+const notifyWait = 15 * time.Second
 
 // connectInMemoryWithOptions is connectInMemory (mcp_server_test.go) plus a
 // caller-supplied *mcp.ClientOptions, so this file's tests can register
