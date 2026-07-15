@@ -31,14 +31,16 @@ const mcpClientMaxListPages = 1000
 // goroutines by the clientOptions() dispatchers below. Same pattern as
 // mcpServer's onSubscribeCB/onUnsubscribeCB in mcp_server.go.
 type mcpClient struct {
-	eng     *scriptengine.Engine
-	vm      *goja.Runtime
-	loop    *eventloop.EventLoop
-	sess    *mcp.ClientSession
-	ctx     context.Context
-	cancel  context.CancelFunc
-	release func()
-	closed  atomic.Bool
+	eng      *scriptengine.Engine
+	vm       *goja.Runtime
+	loop     *eventloop.EventLoop
+	sess     *mcp.ClientSession
+	ctx      context.Context
+	cancel   context.CancelFunc
+	release  func()
+	closed   atomic.Bool
+	host     *mcpHostConfig
+	rootURIs []string
 
 	cbMu                 sync.Mutex
 	onToolsChangedCB     *scriptengine.LoopCallable
@@ -47,6 +49,74 @@ type mcpClient struct {
 	onResourceUpdatedCB  *scriptengine.LoopCallable
 	onLoggingMessageCB   *scriptengine.LoopCallable
 	onProgressCB         *scriptengine.LoopCallable
+}
+
+// mcpHostConfig holds the client-side "host responder" configuration passed
+// to mcp.connect.{stdio,http}'s opts object: onSample/onElicit answer the
+// server's sampling/createMessage and elicitation/create requests, and roots
+// seeds the client's filesystem-roots list (mcp.Root, sent via
+// Client.AddRoots before Connect — see connectWith). All three are optional;
+// a nil/zero field means the corresponding capability is not advertised (see
+// clientOptions' nil-gated wiring) or, for roots, that none are seeded.
+type mcpHostConfig struct {
+	onSample *scriptengine.LoopCallable
+	onElicit *scriptengine.LoopCallable
+	roots    []*mcp.Root
+}
+
+// parseHostConfig parses onSample/onElicit/roots from a connect-opts object
+// (already validated as non-nil by the caller when present) into an
+// *mcpHostConfig. Called on-loop, before any SDK I/O — vm/loop are only used
+// to validate the two function-typed fields and bind them to LoopCallables.
+// A nil optsObj (connectHTTP's opts argument is optional) yields a
+// zero-value *mcpHostConfig, i.e. no host responders and no seeded roots.
+func parseHostConfig(vm *goja.Runtime, loop *eventloop.EventLoop, optsObj *goja.Object) *mcpHostConfig {
+	if optsObj == nil {
+		return &mcpHostConfig{}
+	}
+	hc := &mcpHostConfig{}
+	if v := optsObj.Get("onSample"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		if fn, ok := goja.AssertFunction(v); ok {
+			hc.onSample = scriptengine.NewLoopCallable(loop, fn)
+		} else {
+			panic(vm.NewTypeError("mcp.connect: onSample must be a function"))
+		}
+	}
+	if v := optsObj.Get("onElicit"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		if fn, ok := goja.AssertFunction(v); ok {
+			hc.onElicit = scriptengine.NewLoopCallable(loop, fn)
+		} else {
+			panic(vm.NewTypeError("mcp.connect: onElicit must be a function"))
+		}
+	}
+	if v := optsObj.Get("roots"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		hc.roots = parseRoots(vm, v)
+	}
+	return hc
+}
+
+// parseRoots converts a JS array of {uri, name?} into []*mcp.Root. Each
+// element must be an object with a non-empty string `uri`; `name` is
+// optional. Runs on-loop (called from parseHostConfig).
+func parseRoots(vm *goja.Runtime, v goja.Value) []*mcp.Root {
+	items, ok := v.Export().([]any)
+	if !ok {
+		panic(vm.NewTypeError("mcp.connect: roots must be an array of { uri, name? }"))
+	}
+	roots := make([]*mcp.Root, 0, len(items))
+	for i, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			panic(vm.NewTypeError(fmt.Sprintf("mcp.connect: roots[%d] must be an object", i)))
+		}
+		uri, _ := m["uri"].(string)
+		if uri == "" {
+			panic(vm.NewTypeError(fmt.Sprintf("mcp.connect: roots[%d].uri is required", i)))
+		}
+		name, _ := m["name"].(string)
+		roots = append(roots, &mcp.Root{URI: uri, Name: name})
+	}
+	return roots
 }
 
 // getCB returns the callback selected by pick under cbMu — a small generic
@@ -65,7 +135,7 @@ func (mc *mcpClient) getCB(pick func() *scriptengine.LoopCallable) *scriptengine
 // on the loop — these handlers themselves run on SDK-internal goroutines and
 // must never touch goja directly.
 func (mc *mcpClient) clientOptions() *mcp.ClientOptions {
-	return &mcp.ClientOptions{
+	opts := &mcp.ClientOptions{
 		ToolListChangedHandler: func(_ context.Context, _ *mcp.ToolListChangedRequest) {
 			cb := mc.getCB(func() *scriptengine.LoopCallable { return mc.onToolsChangedCB })
 			if cb == nil {
@@ -126,6 +196,64 @@ func (mc *mcpClient) clientOptions() *mcp.ClientOptions {
 			})
 		},
 	}
+
+	// Host responders (onSample/onElicit) are wired ONLY when the script
+	// provided one, unlike the six notification handlers above (which are
+	// always wired and dispatch as no-ops when no callback is registered).
+	// That distinction matters here: setting CreateMessageHandler/
+	// ElicitationHandler to non-nil is what causes the SDK client to
+	// advertise the corresponding capability (Sampling/Elicitation) during
+	// initialize — see ClientOptions' doc comments in go-sdk@v1.6.1's
+	// client.go. A client with no onSample must NOT claim it supports
+	// sampling, so these two are gated on mc.host being non-nil AND the
+	// specific responder being set, whereas the six notification handlers
+	// carry no such capability-advertisement side effect and are safe to
+	// register unconditionally.
+	//
+	// Unlike the six notification dispatchers (which read their callback
+	// slot under cbMu because a script can register them any time after
+	// connect via c.onXxx(fn)), onSample/onElicit are fixed at connect time
+	// from the opts object — there is no c.onSample(fn) setter — so no
+	// locking is needed here; mc.host is written once in connectWith before
+	// this method is ever called.
+	if mc.host != nil && mc.host.onSample != nil {
+		opts.CreateMessageHandler = func(_ context.Context, req *mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error) {
+			out, err := callJSHandler(mc.loop, mc.host.onSample,
+				func(vm *goja.Runtime) []goja.Value {
+					plain, _ := toPlain(req.Params) // { messages, maxTokens, systemPrompt?, ... }
+					return []goja.Value{vm.ToValue(plain)}
+				},
+				func(vm *goja.Runtime, v goja.Value) (any, error) { return toCreateMessageResult(vm, v) })
+			if err != nil {
+				return nil, err
+			}
+			res, ok := out.(*mcp.CreateMessageResult)
+			if !ok {
+				return nil, fmt.Errorf("mcp: onSample: internal conversion returned %T, want *mcp.CreateMessageResult", out)
+			}
+			return res, nil
+		}
+	}
+	if mc.host != nil && mc.host.onElicit != nil {
+		opts.ElicitationHandler = func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			out, err := callJSHandler(mc.loop, mc.host.onElicit,
+				func(vm *goja.Runtime) []goja.Value {
+					plain, _ := toPlain(req.Params) // { message, requestedSchema, ... }
+					return []goja.Value{vm.ToValue(plain)}
+				},
+				func(vm *goja.Runtime, v goja.Value) (any, error) { return toElicitResult(vm, v) })
+			if err != nil {
+				return nil, err
+			}
+			res, ok := out.(*mcp.ElicitResult)
+			if !ok {
+				return nil, fmt.Errorf("mcp: onElicit: internal conversion returned %T, want *mcp.ElicitResult", out)
+			}
+			return res, nil
+		}
+	}
+
+	return opts
 }
 
 // callToolResultView mirrors mcp.CallToolResult for the JS-facing shape,
@@ -219,8 +347,9 @@ func connectStdio(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 	}
 	env := stringMapArg(vm, optsObj.Get("env")) // map[string]string, nil if absent
 	cwd := optStringArg(vm, optsObj.Get("cwd"))
+	hostCfg := parseHostConfig(vm, loop, optsObj)
 
-	return connectWith(eng, vm, loop, "mcp:client", func(ctx context.Context) (mcp.Transport, error) {
+	return connectWith(eng, vm, loop, "mcp:client", hostCfg, func(ctx context.Context) (mcp.Transport, error) {
 		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 		if cwd != "" {
 			cmd.Dir = cwd
@@ -248,14 +377,17 @@ func connectHTTP(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 		panic(vm.NewTypeError("mcp.connect.http: url must be an absolute http(s) URL"))
 	}
 	var headers map[string]string
+	var optsObj *goja.Object
 	if len(call.Arguments) > 1 {
 		if o, ok := call.Arguments[1].(*goja.Object); ok && o != nil {
+			optsObj = o
 			headers = stringMapArg(vm, o.Get("headers"))
 		}
 	}
-	return connectWith(eng, vm, loop, "mcp:client", func(_ context.Context) (mcp.Transport, error) {
-		hc := &http.Client{Transport: clientHeaderRoundTripper{base: http.DefaultTransport, headers: headers}}
-		return &mcp.StreamableClientTransport{Endpoint: rawURL, HTTPClient: hc}, nil
+	hostCfg := parseHostConfig(vm, loop, optsObj)
+	return connectWith(eng, vm, loop, "mcp:client", hostCfg, func(_ context.Context) (mcp.Transport, error) {
+		httpClient := &http.Client{Transport: clientHeaderRoundTripper{base: http.DefaultTransport, headers: headers}}
+		return &mcp.StreamableClientTransport{Endpoint: rawURL, HTTPClient: httpClient}, nil
 	})
 }
 
@@ -281,7 +413,7 @@ func watchSessionDeath(sess *mcp.ClientSession, cancel context.CancelFunc, relea
 	releaseOnce()
 }
 
-func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.EventLoop, reason string, mkTransport func(context.Context) (mcp.Transport, error)) goja.Value {
+func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.EventLoop, reason string, hostCfg *mcpHostConfig, mkTransport func(context.Context) (mcp.Transport, error)) goja.Value {
 	p, resolve, reject := vm.NewPromise()
 	release := eng.HoldRun(reason)
 	var released atomic.Bool
@@ -304,8 +436,11 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 	connCtx, connCancel := context.WithCancel(context.Background())
 
 	// mc is created up front so later tasks' ClientOptions notification
-	// dispatchers can close over it; sess is filled after Connect.
-	mc := &mcpClient{eng: eng, vm: vm, loop: loop, ctx: connCtx, cancel: connCancel}
+	// dispatchers can close over it; sess is filled after Connect. mc.host is
+	// set before clientOptions() is ever called (both here and inside the
+	// goroutine below) since clientOptions gates CreateMessageHandler/
+	// ElicitationHandler on mc.host being non-nil.
+	mc := &mcpClient{eng: eng, vm: vm, loop: loop, ctx: connCtx, cancel: connCancel, host: hostCfg}
 	mc.release = releaseOnce
 
 	go func() {
@@ -316,6 +451,12 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 			cerr = terr
 		} else {
 			client := mcp.NewClient(&mcp.Implementation{Name: "sercon", Version: scriptengine.Version}, mc.clientOptions())
+			if mc.host != nil && len(mc.host.roots) > 0 {
+				client.AddRoots(mc.host.roots...)
+				for _, r := range mc.host.roots {
+					mc.rootURIs = append(mc.rootURIs, r.URI)
+				}
+			}
 			sess, cerr = client.Connect(connCtx, transport, nil)
 		}
 		loop.RunOnLoop(func(vm *goja.Runtime) {
@@ -701,4 +842,68 @@ func optStringArg(vm *goja.Runtime, v goja.Value) string {
 		return ""
 	}
 	return v.String()
+}
+
+// toCreateMessageResult converts an onSample handler's JS return value into
+// the native *mcp.CreateMessageResult the SDK's CreateMessageHandler must
+// return. Runs on-loop (called from callJSHandler's convert callback — see
+// clientOptions' CreateMessageHandler wiring above). Two shapes are accepted:
+//
+//   - a plain string: the common case, wrapped as text content with sercon's
+//     default model/role/stopReason;
+//   - an object { content: {type, text} | string, model?, stopReason?, role? }
+//     for scripts that want to control those fields explicitly.
+func toCreateMessageResult(vm *goja.Runtime, v goja.Value) (any, error) {
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return nil, fmt.Errorf("onSample must return a string or a result object")
+	}
+	if s, ok := v.Export().(string); ok {
+		return &mcp.CreateMessageResult{Content: &mcp.TextContent{Text: s}, Model: "sercon", Role: "assistant", StopReason: "endTurn"}, nil
+	}
+	obj, ok := v.(*goja.Object)
+	if !ok {
+		return nil, fmt.Errorf("onSample must return a string or an object")
+	}
+	res := &mcp.CreateMessageResult{Model: "sercon", Role: "assistant"}
+	if m := optStringArg(vm, obj.Get("model")); m != "" {
+		res.Model = m
+	}
+	if sr := optStringArg(vm, obj.Get("stopReason")); sr != "" {
+		res.StopReason = sr
+	}
+	if r := optStringArg(vm, obj.Get("role")); r != "" {
+		res.Role = mcp.Role(r)
+	}
+	cv := obj.Get("content")
+	text := ""
+	if co, ok := cv.(*goja.Object); ok {
+		text = optStringArg(vm, co.Get("text"))
+	} else if s := optStringArg(vm, cv); s != "" {
+		text = s
+	}
+	res.Content = &mcp.TextContent{Text: text}
+	return res, nil
+}
+
+// toElicitResult converts an onElicit handler's JS return value
+// ({ action: "accept"|"decline"|"cancel", content? }) into the native
+// *mcp.ElicitResult the SDK's ElicitationHandler must return. Runs on-loop
+// (called from callJSHandler's convert callback — see clientOptions'
+// ElicitationHandler wiring above).
+func toElicitResult(vm *goja.Runtime, v goja.Value) (any, error) {
+	obj, ok := v.(*goja.Object)
+	if !ok {
+		return nil, fmt.Errorf("onElicit must return an object { action, content? }")
+	}
+	action := optStringArg(vm, obj.Get("action"))
+	if action == "" {
+		return nil, fmt.Errorf("onElicit result.action is required")
+	}
+	res := &mcp.ElicitResult{Action: action}
+	if cv := obj.Get("content"); cv != nil && !goja.IsUndefined(cv) && !goja.IsNull(cv) {
+		if m, ok := cv.Export().(map[string]any); ok {
+			res.Content = m
+		}
+	}
+	return res, nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
@@ -77,9 +78,24 @@ func (ms *mcpServer) callJSHandler(
 	buildArgs func(vm *goja.Runtime) []goja.Value,
 	convert func(vm *goja.Runtime, v goja.Value) (any, error),
 ) (any, error) {
+	return callJSHandler(ms.loop, fn, buildArgs, convert)
+}
+
+// callJSHandler is the package-level worker behind (*mcpServer).callJSHandler
+// (kept as a one-line delegate above for the server's tool/resource/prompt
+// handlers) and also used directly by the client-side host responders
+// (mcp.connect's onSample/onElicit in mcp_client.go) — same on-loop-only
+// discipline, just parameterized over the *eventloop.EventLoop instead of
+// reaching for ms.loop.
+func callJSHandler(
+	loop *eventloop.EventLoop,
+	fn *scriptengine.LoopCallable,
+	buildArgs func(vm *goja.Runtime) []goja.Value,
+	convert func(vm *goja.Runtime, v goja.Value) (any, error),
+) (any, error) {
 	done := make(chan mcpSettled, 1)
 
-	if !ms.loop.RunOnLoop(func(vm *goja.Runtime) {
+	if !loop.RunOnLoop(func(vm *goja.Runtime) {
 		// send runs the on-loop convert and delivers exactly one outcome,
 		// recovering a convert panic here or in the promise onSettle
 		// callback (a separate, later loop job).

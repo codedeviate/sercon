@@ -375,3 +375,43 @@ await h.close();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPClientHostSampleElicit dogfoods MCP Phase 3's host responders: the
+// client answers the server's sampling/createMessage (ctx.sample) and
+// elicitation/create (ctx.elicit) requests via onSample/onElicit passed to
+// mcp.connect.http. Asserts the tool results reflect the client's answers,
+// exercising both the CreateMessageResult and ElicitResult conversion paths.
+func TestMCPClientHostSampleElicit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "host.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "summarize", inputSchema: { type: "object" }, handler: async (a, ctx) => {
+  const r = await ctx.sample({ messages: [{ role: "user", content: { type: "text", text: "hi" } }], maxTokens: 50 });
+  return r.content.text;
+}});
+srv.tool({ name: "confirm", inputSchema: { type: "object" }, handler: async (a, ctx) => {
+  const e = await ctx.elicit({ message: "ok?", schema: { type: "object", properties: { yes: { type: "boolean" } } } });
+  return JSON.stringify({ action: e.action, yes: e.content && e.content.yes });
+}});
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url, {
+  onSample: (req) => "SUMMARY:" + req.messages[0].content.text,
+  onElicit: (req) => ({ action: "accept", content: { yes: true } }),
+});
+const s = await c.callTool("summarize", {});
+runtime.assert.equal(s.content[0].text, "SUMMARY:hi", "onSample answered");
+const e = await c.callTool("confirm", {});
+runtime.assert.ok(e.content[0].text.includes('"action":"accept"'), "onElicit accept");
+runtime.assert.ok(e.content[0].text.includes('"yes":true'), "onElicit content");
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
