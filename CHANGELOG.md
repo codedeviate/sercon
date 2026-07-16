@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.97.0] — 2026-07-16
+
 ### Added
 - **`handlerTimeout` option for MCP handlers.** `mcp.serve({..., handlerTimeout})`
   and every `mcp.connect.{stdio,http,sse}({..., handlerTimeout})` accept a

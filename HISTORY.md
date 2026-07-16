@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.96.0 (2026-07-16).
+covered is v0.1.0 (2026-05-25) through v0.97.0 (2026-07-16).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -1173,6 +1173,24 @@ sercon needs no browser-based authorization-code flow. This required promoting
 `golang.org/x/oauth2` from an indirect to a direct dependency (still pure-Go).
 With this, the MCP **client** matches the **server**: both halves of the
 protocol — consume, react, host, and authenticate — are now scriptable.
+
+### `mcp` context/cancellation hardening (v0.97.0)
+
+A robustness pass over both MCP halves, closing the two tracked follow-ups
+from the phase reviews. The on-loop bridge that runs every script handler
+(`callJSHandler`) now selects on its request context, so a handler whose
+Promise never settles no longer pins the SDK request goroutine forever — and a
+new `handlerTimeout` option (on `mcp.serve` and every `mcp.connect.*`,
+milliseconds; default 5 minutes, `0` disables) bounds that wait, surfacing a
+tool timeout as an `isError` result. The default is generous on purpose: a
+handler legitimately awaiting `ctx.elicit` (a human) or `ctx.sample` (an LLM)
+must not be cut off, and the deadline reclaims only the *waiting goroutine* —
+the handler's JavaScript keeps running on the loop (a runaway synchronous
+script remains the `--timeout` / `vm.Interrupt` job). Separately, the client's
+connection context is now rooted at the engine Run context (via a newly
+exported `scriptengine.RunContextFromVM`), so a script timeout / Run-end
+cancels in-flight calls and reaps the stdio subprocess instead of leaking them
+until process exit.
 
 ## Bundled libraries
 
