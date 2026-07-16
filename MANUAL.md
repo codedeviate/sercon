@@ -81,7 +81,7 @@ write your first script:
 - **Binding errors throw.** When a built-in fails it throws a normal JS
   exception you can `try`/`catch` — see [§13](#13-error-semantics).
 
-**The reserved globals — what's in the box.** sercon scripts get **thirteen**
+**The reserved globals — what's in the box.** sercon scripts get **fifteen**
 reserved top-level globals plus a `console` shim. Use them directly; there is
 no enclosing namespace. This is the map — follow the link for the full
 treatment.
@@ -101,7 +101,8 @@ treatment.
 | `image` | decode/encode/transform images | [§5.11](#511-image) |
 | `web` | fetch + parse: feeds, sitemaps, HTML | [§5.12](#512-web) |
 | `audio` | read/write/convert audio, steganography | [§5.13](#513-audio) |
-| `mcp` | Model Context Protocol server: tools/resources/prompts over stdio or HTTP | [§5.15](#515-mcp) |
+| `cloud` | provider APIs — AWS, Azure, Google Cloud (object storage, …) | [§5.14](#514-cloud) |
+| `mcp` | Model Context Protocol — server (`serve`) and client (`connect`): tools/resources/prompts over stdio or HTTP | [§5.15](#515-mcp) |
 | `console` | browser/Node-compatible logging shim | [§5.1](#51-console-browsernode-compatibility) |
 
 The full per-binding signatures live in the generated
