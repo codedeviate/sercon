@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -14,21 +15,30 @@ import (
 
 // jsOAuthHandler adapts a script's getToken callback to auth.OAuthHandler.
 // getToken returns a bearer-token string (sync or async); it is invoked via the
-// on-loop callJSHandler bridge from the transport goroutine.
+// on-loop callJSHandler bridge from the transport goroutine. handlerTimeout is
+// the per-call deadline (0 = disabled) applied to getToken. Its fields must
+// stay identical to jsTokenSource's — TokenSource() converts between them.
 type jsOAuthHandler struct {
-	loop     *eventloop.EventLoop
-	getToken *scriptengine.LoopCallable
+	loop           *eventloop.EventLoop
+	getToken       *scriptengine.LoopCallable
+	handlerTimeout time.Duration
 }
 
 // jsTokenSource calls getToken each time a token is needed. The transport wraps
 // requests with this; Authorize (below) forces a fresh fetch on 401/403.
 type jsTokenSource struct {
-	loop     *eventloop.EventLoop
-	getToken *scriptengine.LoopCallable
+	loop           *eventloop.EventLoop
+	getToken       *scriptengine.LoopCallable
+	handlerTimeout time.Duration
 }
 
 func (ts jsTokenSource) Token() (*oauth2.Token, error) {
-	out, err := callJSHandler(ts.loop, ts.getToken,
+	// Token() has no SDK-supplied context (the oauth2.TokenSource interface is
+	// arg-less), so root the deadline at Background(); handlerTimeout: 0 keeps
+	// the no-op cancel and waits indefinitely on the loop.
+	ctx, cancel := withHandlerTimeout(context.Background(), ts.handlerTimeout)
+	defer cancel()
+	out, err := callJSHandler(ctx, ts.loop, ts.getToken,
 		func(vm *goja.Runtime) []goja.Value { return nil },
 		func(vm *goja.Runtime, v goja.Value) (any, error) {
 			if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {

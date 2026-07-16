@@ -30,7 +30,7 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 			instructions, _ := o["instructions"].(string)
 			pageSize := mcpPageSizeArg(vm, o)
 
-			ms := &mcpServer{eng: eng, vm: vm, loop: loop}
+			ms := &mcpServer{eng: eng, vm: vm, loop: loop, handlerTimeout: mcpDefaultHandlerTimeout}
 			// SubscribeHandler/UnsubscribeHandler are set unconditionally
 			// (never nil) and together: the go-sdk panics at NewServer time
 			// if only one of the pair is set (see ServerOptions' validation

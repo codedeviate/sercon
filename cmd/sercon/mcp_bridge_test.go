@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -70,7 +72,7 @@ func mcpBridgeFixture(t *testing.T, arg int64, onDone func(val any, err error)) 
 				release := eng.HoldRun("test-mcp-bridge")
 				go func() {
 					defer release()
-					val, err := ms.callJSHandler(handler, func(vm *goja.Runtime) []goja.Value {
+					val, err := ms.callJSHandler(context.Background(), handler, func(vm *goja.Runtime) []goja.Value {
 						return []goja.Value{vm.ToValue(arg)}
 					}, exportConvert)
 					onDone(val, err)
@@ -82,6 +84,92 @@ func mcpBridgeFixture(t *testing.T, arg int64, onDone func(val any, err error)) 
 		t.Fatal(err)
 	}
 	return eng
+}
+
+// mcpBridgeCtxFixture is mcpBridgeFixture parameterized over the context passed
+// to the package-level callJSHandler, so a test can drive its cancellation /
+// deadline behaviour. The handler is set from the script (typically one that
+// returns a never-settling Promise).
+func mcpBridgeCtxFixture(t *testing.T, ctx context.Context, onDone func(val any, err error)) *scriptengine.Engine {
+	t.Helper()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	var handler *scriptengine.LoopCallable
+	var theLoop *eventloop.EventLoop
+	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
+		theLoop = loop
+		return map[string]any{
+			"setHandler": func(call goja.FunctionCall) goja.Value {
+				fn, ok := goja.AssertFunction(call.Argument(0))
+				if !ok {
+					panic(vm.NewTypeError("setHandler: expected function"))
+				}
+				handler = scriptengine.NewLoopCallable(loop, fn)
+				return goja.Undefined()
+			},
+			"fire": func() goja.Value {
+				release := eng.HoldRun("test-mcp-bridge-ctx")
+				go func() {
+					defer release()
+					val, err := callJSHandler(ctx, theLoop, handler,
+						func(vm *goja.Runtime) []goja.Value { return nil },
+						exportConvert)
+					onDone(val, err)
+				}()
+				return goja.Undefined()
+			},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return eng
+}
+
+// TestMCPBridge_ContextCanceled verifies callJSHandler returns promptly with the
+// context error (instead of blocking forever) when its context is already
+// cancelled and the handler never settles.
+func TestMCPBridge_ContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled before fire()
+	done := make(chan error, 1)
+	eng := mcpBridgeCtxFixture(t, ctx, func(_ any, err error) { done <- err })
+	if _, err := eng.Run(context.Background(), "bridge_cancel.ts", `
+test.setHandler(() => new Promise(() => {}));  // never settles
+test.fire();
+`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("want context.Canceled, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("callJSHandler did not return after ctx cancel — it blocked on a never-settling handler")
+	}
+}
+
+// TestMCPBridge_ContextDeadline verifies the handlerTimeout path: a short
+// deadline on the context unblocks callJSHandler with DeadlineExceeded when the
+// handler never settles.
+func TestMCPBridge_ContextDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	eng := mcpBridgeCtxFixture(t, ctx, func(_ any, err error) { done <- err })
+	if _, err := eng.Run(context.Background(), "bridge_deadline.ts", `
+test.setHandler(() => new Promise(() => {}));  // never settles
+test.fire();
+`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("want context.DeadlineExceeded, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("callJSHandler did not return after deadline")
+	}
 }
 
 // TestMCPBridge_AsyncResolve verifies that a handler returning a resolved
@@ -165,7 +253,7 @@ func TestMCPBridge_BuildArgsPanic(t *testing.T) {
 				release := eng.HoldRun("test-mcp-bridge-panic")
 				go func() {
 					defer release()
-					val, err := ms.callJSHandler(handler, func(vm *goja.Runtime) []goja.Value {
+					val, err := ms.callJSHandler(context.Background(), handler, func(vm *goja.Runtime) []goja.Value {
 						panic("boom")
 					}, exportConvert)
 					gotVal, gotErr = val, err

@@ -31,6 +31,11 @@ type mcpServer struct {
 	release func()       // HoldRun release, set when a transport starts; cleared when that transport's serve loop ends (jsStdio's/jsListen's own goroutine clears it — jsClose is currently a no-op and does NOT clear it)
 	reqSeq  atomic.Int64 // monotonic counter backing newRequestContext's requestId
 
+	// handlerTimeout is the per-call deadline callJSHandler applies to a tool/
+	// resource/prompt/completion/verify handler (from mcp.serve's handlerTimeout
+	// option; default mcpDefaultHandlerTimeout, 0 disables).
+	handlerTimeout time.Duration
+
 	// Resource-subscription state (Task 5). subscribeMu guards both fields
 	// below: onSubscribeCB, onUnsubscribeCB. They are touched from both the
 	// main script goroutine (on-loop, via jsOnSubscribe/jsOnUnsubscribe
@@ -630,7 +635,7 @@ func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
 		tool.OutputSchema = os
 	}
 
-	ms.srv.AddTool(tool, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ms.srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		// Captured off-loop (native Go field access); newRequestContext itself
 		// runs on-loop inside buildArgs below, since it allocates goja values.
 		sess := req.Session
@@ -643,7 +648,7 @@ func (ms *mcpServer) jsTool(call goja.FunctionCall) goja.Value {
 				return nil, err
 			}
 		}
-		out, err := ms.callJSHandler(lc,
+		out, err := ms.callJSHandler(ctx, lc,
 			func(vm *goja.Runtime) []goja.Value {
 				return []goja.Value{vm.ToValue(args), ms.newRequestContext(vm, sess, tok)}
 			},
@@ -708,11 +713,11 @@ func (ms *mcpServer) jsResource(call goja.FunctionCall) goja.Value {
 	}
 	lc := scriptengine.NewLoopCallable(ms.loop, fn)
 
-	ms.srv.AddResource(&mcp.Resource{URI: uri, Name: name, MIMEType: mimeType}, func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	ms.srv.AddResource(&mcp.Resource{URI: uri, Name: name, MIMEType: mimeType}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		sess := req.Session
 		tok := req.Params.GetProgressToken()
 		requestedURI := req.Params.URI
-		out, err := ms.callJSHandler(lc,
+		out, err := ms.callJSHandler(ctx, lc,
 			func(vm *goja.Runtime) []goja.Value {
 				return []goja.Value{vm.ToValue(requestedURI), ms.newRequestContext(vm, sess, tok)}
 			},
@@ -771,11 +776,11 @@ func (ms *mcpServer) jsResourceTemplate(call goja.FunctionCall) goja.Value {
 	}
 	lc := scriptengine.NewLoopCallable(ms.loop, fn)
 
-	ms.srv.AddResourceTemplate(&mcp.ResourceTemplate{URITemplate: uriTemplate, Name: name, MIMEType: mimeType}, func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+	ms.srv.AddResourceTemplate(&mcp.ResourceTemplate{URITemplate: uriTemplate, Name: name, MIMEType: mimeType}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		sess := req.Session
 		tok := req.Params.GetProgressToken()
 		requestedURI := req.Params.URI
-		out, err := ms.callJSHandler(lc,
+		out, err := ms.callJSHandler(ctx, lc,
 			func(vm *goja.Runtime) []goja.Value {
 				return []goja.Value{vm.ToValue(requestedURI), ms.newRequestContext(vm, sess, tok)}
 			},
@@ -853,11 +858,11 @@ func (ms *mcpServer) jsPrompt(call goja.FunctionCall) goja.Value {
 	}
 	lc := scriptengine.NewLoopCallable(ms.loop, fn)
 
-	ms.srv.AddPrompt(&mcp.Prompt{Name: name, Description: desc, Arguments: args}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	ms.srv.AddPrompt(&mcp.Prompt{Name: name, Description: desc, Arguments: args}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		sess := req.Session
 		tok := req.Params.GetProgressToken()
 		requestedArgs := req.Params.Arguments
-		out, err := ms.callJSHandler(lc,
+		out, err := ms.callJSHandler(ctx, lc,
 			func(vm *goja.Runtime) []goja.Value {
 				return []goja.Value{vm.ToValue(requestedArgs), ms.newRequestContext(vm, sess, tok)}
 			},
@@ -1049,7 +1054,7 @@ func (ms *mcpServer) jsCompletion(call goja.FunctionCall) goja.Value {
 // the server) than silently downgraded to "no suggestions" — which would
 // make the bug indistinguishable from a handler that legitimately has
 // nothing to suggest.
-func (ms *mcpServer) mcpCompletionHandler(_ context.Context, req *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
+func (ms *mcpServer) mcpCompletionHandler(ctx context.Context, req *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
 	cb := ms.getCompletionCB()
 	if cb == nil {
 		return &mcp.CompleteResult{}, nil
@@ -1059,7 +1064,7 @@ func (ms *mcpServer) mcpCompletionHandler(_ context.Context, req *mcp.CompleteRe
 	argName := req.Params.Argument.Name
 	partial := req.Params.Argument.Value
 
-	out, err := ms.callJSHandler(cb,
+	out, err := ms.callJSHandler(ctx, cb,
 		func(vm *goja.Runtime) []goja.Value {
 			refType := "resource"
 			var name, uri string

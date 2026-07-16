@@ -1,14 +1,33 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
+
+// mcpDefaultHandlerTimeout is the default per-call deadline callJSHandler
+// enforces on a script handler (via the handlerTimeout option on mcp.serve /
+// mcp.connect). Generous on purpose: a tool handler may legitimately block for
+// a long time awaiting ctx.elicit (a human filling a form) or ctx.sample (the
+// client's LLM), so the default clears human/LLM latency; handlerTimeout: 0
+// disables the timer entirely (honour-context-only).
+const mcpDefaultHandlerTimeout = 5 * time.Minute
+
+// withHandlerTimeout derives a deadline context from ctx when d > 0; when d <= 0
+// (handlerTimeout disabled) it returns ctx unchanged with a no-op cancel.
+func withHandlerTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if d <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d)
+}
 
 // mcpThenChain chains .then/.catch onto a handler-returned Promise so its
 // settled value or rejection reaches the onSettle/onReject callbacks passed
@@ -74,11 +93,14 @@ type mcpSettled struct {
 // completion and the recover paths are mutually exclusive — exactly one
 // send per invocation either way.
 func (ms *mcpServer) callJSHandler(
+	ctx context.Context,
 	fn *scriptengine.LoopCallable,
 	buildArgs func(vm *goja.Runtime) []goja.Value,
 	convert func(vm *goja.Runtime, v goja.Value) (any, error),
 ) (any, error) {
-	return callJSHandler(ms.loop, fn, buildArgs, convert)
+	dctx, cancel := withHandlerTimeout(ctx, ms.handlerTimeout)
+	defer cancel()
+	return callJSHandler(dctx, ms.loop, fn, buildArgs, convert)
 }
 
 // callJSHandler is the package-level worker behind (*mcpServer).callJSHandler
@@ -88,6 +110,7 @@ func (ms *mcpServer) callJSHandler(
 // discipline, just parameterized over the *eventloop.EventLoop instead of
 // reaching for ms.loop.
 func callJSHandler(
+	ctx context.Context,
 	loop *eventloop.EventLoop,
 	fn *scriptengine.LoopCallable,
 	buildArgs func(vm *goja.Runtime) []goja.Value,
@@ -156,8 +179,16 @@ func callJSHandler(
 		return nil, errors.New("mcp: event loop terminated before handler ran")
 	}
 
-	s := <-done
-	return s.val, s.err
+	select {
+	case s := <-done:
+		return s.val, s.err
+	case <-ctx.Done():
+		// The client cancelled, or the handlerTimeout deadline elapsed.
+		// Reclaim this SDK request goroutine now instead of blocking forever;
+		// the JS callback keeps running on the loop until it settles, and its
+		// late send lands in the buffered (cap-1) `done` and is discarded.
+		return nil, ctx.Err()
+	}
 }
 
 // promiseRejectionError converts a Promise rejection reason to a Go error.

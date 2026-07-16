@@ -193,6 +193,7 @@ func (ms *mcpServer) tokenVerifier(cfg *mcpAuthConfig) auth.TokenVerifier {
 		}
 
 		out, err := ms.callJSHandler(
+			ctx,
 			cfg.verify,
 			func(vm *goja.Runtime) []goja.Value {
 				reqInfo := vm.NewObject()

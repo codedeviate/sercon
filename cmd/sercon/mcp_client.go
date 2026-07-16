@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -42,6 +43,11 @@ type mcpClient struct {
 	host     *mcpHostConfig
 	client   *mcp.Client
 	rootURIs []string
+
+	// handlerTimeout is the per-call deadline applied to the host responders
+	// (onSample/onElicit) and the OAuth getToken callback (from the connect
+	// opts' handlerTimeout; default mcpDefaultHandlerTimeout, 0 disables).
+	handlerTimeout time.Duration
 
 	cbMu                 sync.Mutex
 	onToolsChangedCB     *scriptengine.LoopCallable
@@ -218,8 +224,10 @@ func (mc *mcpClient) clientOptions() *mcp.ClientOptions {
 	// locking is needed here; mc.host is written once in connectWith before
 	// this method is ever called.
 	if mc.host != nil && mc.host.onSample != nil {
-		opts.CreateMessageHandler = func(_ context.Context, req *mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error) {
-			out, err := callJSHandler(mc.loop, mc.host.onSample,
+		opts.CreateMessageHandler = func(ctx context.Context, req *mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error) {
+			dctx, cancel := withHandlerTimeout(ctx, mc.handlerTimeout)
+			defer cancel()
+			out, err := callJSHandler(dctx, mc.loop, mc.host.onSample,
 				func(vm *goja.Runtime) []goja.Value {
 					plain, _ := toPlain(req.Params) // { messages, maxTokens, systemPrompt?, ... }
 					return []goja.Value{vm.ToValue(plain)}
@@ -236,8 +244,10 @@ func (mc *mcpClient) clientOptions() *mcp.ClientOptions {
 		}
 	}
 	if mc.host != nil && mc.host.onElicit != nil {
-		opts.ElicitationHandler = func(_ context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
-			out, err := callJSHandler(mc.loop, mc.host.onElicit,
+		opts.ElicitationHandler = func(ctx context.Context, req *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
+			dctx, cancel := withHandlerTimeout(ctx, mc.handlerTimeout)
+			defer cancel()
+			out, err := callJSHandler(dctx, mc.loop, mc.host.onElicit,
 				func(vm *goja.Runtime) []goja.Value {
 					plain, _ := toPlain(req.Params) // { message, requestedSchema, ... }
 					return []goja.Value{vm.ToValue(plain)}
@@ -441,7 +451,7 @@ func parseOAuthConfig(vm *goja.Runtime, loop *eventloop.EventLoop, optsObj *goja
 	if !ok {
 		panic(vm.NewTypeError("mcp.connect.http: auth.getToken must be a function () => token"))
 	}
-	return &jsOAuthHandler{loop: loop, getToken: scriptengine.NewLoopCallable(loop, fn)}
+	return &jsOAuthHandler{loop: loop, getToken: scriptengine.NewLoopCallable(loop, fn), handlerTimeout: mcpDefaultHandlerTimeout}
 }
 
 // connectSSE implements mcp.connect.sse(url, opts?): the legacy (2024-11-05)
@@ -525,7 +535,7 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 	// set before clientOptions() is ever called (both here and inside the
 	// goroutine below) since clientOptions gates CreateMessageHandler/
 	// ElicitationHandler on mc.host being non-nil.
-	mc := &mcpClient{eng: eng, vm: vm, loop: loop, ctx: connCtx, cancel: connCancel, host: hostCfg}
+	mc := &mcpClient{eng: eng, vm: vm, loop: loop, ctx: connCtx, cancel: connCancel, host: hostCfg, handlerTimeout: mcpDefaultHandlerTimeout}
 	mc.release = releaseOnce
 
 	go func() {
