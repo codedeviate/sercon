@@ -34,7 +34,13 @@ func (ts jsTokenSource) Token() (*oauth2.Token, error) {
 			if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 				return "", nil
 			}
-			return v.String(), nil
+			// Require an actual string — don't stringify a number/boolean/object
+			// into a bogus token (v.String() would turn 42 into "42").
+			s, ok := v.Export().(string)
+			if !ok {
+				return nil, fmt.Errorf("mcp.connect: auth.getToken must return a string, got %T", v.Export())
+			}
+			return s, nil
 		})
 	if err != nil {
 		return nil, err
