@@ -399,7 +399,15 @@ func connectHTTP(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 		httpClient := &http.Client{Transport: clientHeaderRoundTripper{base: http.DefaultTransport, headers: headers}}
 		transport := &mcp.StreamableClientTransport{Endpoint: rawURL, HTTPClient: httpClient}
 		if hasMaxRetries {
-			transport.MaxRetries = maxRetries
+			// The go-sdk treats MaxRetries == 0 as "use the default (5)" and only
+			// a NEGATIVE value as "disable". Map any non-positive script value to
+			// -1 so the documented contract — 0 or negative disables reconnection
+			// entirely — actually holds.
+			if maxRetries <= 0 {
+				transport.MaxRetries = -1
+			} else {
+				transport.MaxRetries = maxRetries
+			}
 		}
 		if oauthHandler != nil {
 			transport.OAuthHandler = oauthHandler

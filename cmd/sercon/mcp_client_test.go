@@ -634,3 +634,45 @@ await mcp.connect.http("http://127.0.0.1:1/mcp", { auth: {} });
 		t.Fatal("expected throw for auth without getToken")
 	}
 }
+
+// TestMCPClientOAuth_RejectsBadTokenReturn asserts the security-critical
+// contract that getToken must return a non-empty STRING: an empty string or a
+// non-string return (e.g. a number) must fail the connection with a clear
+// error, never send a blank/stringified Bearer header. Both drive the token
+// source against an auth-protected server so getToken is actually invoked.
+func TestMCPClientOAuth_RejectsBadTokenReturn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "oauth-badreturn.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "add", inputSchema: { type: "object" }, handler: (a) => String(a.x + a.y) });
+const h = await srv.listen({
+	port: 0,
+	auth: {
+		verify: (token) => token === "good" ? { subject: "u1" } : null,
+		resourceMetadata: { authorizationServers: ["https://auth.example.com"] },
+	},
+});
+
+for (const bad of [() => "", () => 42]) {
+	let threw = false;
+	try {
+		const c = await mcp.connect.http(h.url, { auth: { getToken: bad } });
+		await c.callTool("add", { x: 1, y: 1 });
+		await c.close();
+	} catch (e) {
+		threw = true;
+	}
+	runtime.assert.ok(threw, "getToken returning empty/non-string must reject, not send a bogus Bearer");
+}
+
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
