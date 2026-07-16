@@ -155,6 +155,16 @@ func runContextFromVM(vm *goja.Runtime) context.Context {
 	return context.Background()
 }
 
+// RunContextFromVM returns the context.Context of the Engine.Run currently
+// executing on vm, or context.Background() when vm is not inside a Run (e.g. a
+// test that constructed bindings without calling Run). It is the exported form
+// of runContextFromVM, for host bindings in other packages (e.g. cmd/sercon's
+// mcp.connect) that spawn long-lived goroutines or subprocesses and want them
+// rooted at the Run context, so a Run timeout / cancellation reaches them.
+func RunContextFromVM(vm *goja.Runtime) context.Context {
+	return runContextFromVM(vm)
+}
+
 // unwrapAsyncBindings walks v and replaces any AsyncBinding with its bare
 // Func so goja's host-callback special case fires at vm.Set time. Recurses
 // into `map[string]any` values so nested namespace shapes (e.g.

@@ -535,17 +535,13 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 		}
 	}
 
-	// Connection-scoped context, used by every SDK call. It is cancelled only by
-	// close(), the death-watcher (on session end), or a failed connect — so
-	// close() unblocks in-flight off-loop calls and (for stdio) ties the
-	// subprocess lifetime to the connection. NOTE: it is rooted at
-	// context.Background(), NOT the Run context, so a script *timeout* / Run-end
-	// does NOT cancel it or unblock an in-flight SDK call — the engine's
-	// vm.Interrupt+loop.Terminate stop the script, and the leaked off-loop
-	// goroutine + subprocess are reaped on process exit (fine under the
-	// single-shot CLI model). Rooting this at the Run context is a tracked
-	// follow-up (see OUT-OF-SCOPE).
-	connCtx, connCancel := context.WithCancel(context.Background())
+	// Connection-scoped context, used by every SDK call. Rooted at the engine
+	// Run context so a script *timeout* / Run-end cancels it — unblocking any
+	// in-flight off-loop sess.Call* and (for stdio) killing the subprocess via
+	// exec.CommandContext — in addition to the explicit close()/death-watcher/
+	// failed-connect paths that also cancel it. Falls back to Background() when
+	// vm is not inside a Run (e.g. a Go test constructing the binding directly).
+	connCtx, connCancel := context.WithCancel(scriptengine.RunContextFromVM(vm))
 
 	// mc is created up front so later tasks' ClientOptions notification
 	// dispatchers can close over it; sess is filled after Connect. mc.host is

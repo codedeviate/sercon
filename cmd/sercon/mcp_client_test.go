@@ -736,3 +736,36 @@ await h.close();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPClientRunTimeoutUnblocks verifies the connection context is rooted at
+// the Run context: with the server's handlerTimeout disabled (so its tool
+// genuinely hangs), a client callTool that would block forever is unblocked by
+// the Run timeout — Run returns promptly instead of hanging to the test guard.
+func TestMCPClientRunTimeoutUnblocks(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	runCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	start := time.Now()
+	go func() {
+		defer close(done)
+		_, _ = eng.Run(runCtx, "runtimeout.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0", handlerTimeout: 0 }); // no server-side cap: tool truly hangs
+srv.tool({ name: "hang", inputSchema: { type: "object" }, handler: () => new Promise(() => {}) });
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url);
+await c.callTool("hang", {}); // blocks; only the Run timeout (via the Run-rooted connCtx) unblocks it
+`)
+	}()
+	select {
+	case <-done:
+		if el := time.Since(start); el > 15*time.Second {
+			t.Fatalf("Run took %v — the connection did not honour the Run timeout", el)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("Run did not return after the 1s Run timeout — the hung connection was not cancelled")
+	}
+}
