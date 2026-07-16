@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -30,7 +31,7 @@ func mcpNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 			instructions, _ := o["instructions"].(string)
 			pageSize := mcpPageSizeArg(vm, o)
 
-			ms := &mcpServer{eng: eng, vm: vm, loop: loop, handlerTimeout: mcpDefaultHandlerTimeout}
+			ms := &mcpServer{eng: eng, vm: vm, loop: loop, handlerTimeout: mcpHandlerTimeoutArg(vm, o)}
 			// SubscribeHandler/UnsubscribeHandler are set unconditionally
 			// (never nil) and together: the go-sdk panics at NewServer time
 			// if only one of the pair is set (see ServerOptions' validation
@@ -148,6 +149,30 @@ func (ms *mcpServer) handle(vm *goja.Runtime) goja.Value {
 // else present under the key — including a non-integer float, zero,
 // negative, or a non-number value like a string — throws, per the task
 // brief's validation contract.
+// mcpHandlerTimeoutArg reads the optional handlerTimeout (milliseconds) from the
+// mcp.serve config: absent -> the default (mcpDefaultHandlerTimeout); 0 ->
+// disabled (handlers may block indefinitely, honouring only the request
+// context); otherwise a non-negative integer number of milliseconds.
+func mcpHandlerTimeoutArg(vm *goja.Runtime, o map[string]any) time.Duration {
+	v, present := o["handlerTimeout"]
+	if !present {
+		return mcpDefaultHandlerTimeout
+	}
+	var ms float64
+	switch t := v.(type) {
+	case int64:
+		ms = float64(t)
+	case float64:
+		ms = t
+	default:
+		panic(vm.NewTypeError("mcp.serve: handlerTimeout must be a number of milliseconds (0 disables)"))
+	}
+	if ms != math.Trunc(ms) || ms < 0 {
+		panic(vm.NewTypeError("mcp.serve: handlerTimeout must be a non-negative integer (milliseconds; 0 disables)"))
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 func mcpPageSizeArg(vm *goja.Runtime, o map[string]any) int {
 	v, present := o["pageSize"]
 	if !present {

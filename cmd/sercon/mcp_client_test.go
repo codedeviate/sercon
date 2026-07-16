@@ -676,3 +676,63 @@ await h.close();
 		t.Fatalf("run: %v", err)
 	}
 }
+
+// TestMCPServerHandlerTimeout verifies mcp.serve({handlerTimeout}) caps a
+// never-settling tool handler: the call comes back isError within ~the timeout
+// (not hanging), while a normal tool on the same server still works.
+func TestMCPServerHandlerTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "htimeout.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0", handlerTimeout: 300 });
+srv.tool({ name: "hang", inputSchema: { type: "object" }, handler: () => new Promise(() => {}) });
+srv.tool({ name: "fast", inputSchema: { type: "object" }, handler: () => "ok" });
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url);
+
+const start = Date.now();
+const r = await c.callTool("hang", {});
+const elapsed = Date.now() - start;
+runtime.assert.equal(r.isError, true, "hang tool must time out -> isError");
+runtime.assert.ok(elapsed < 10000, "must return within ~handlerTimeout, not hang; elapsed=" + elapsed);
+
+const ok = await c.callTool("fast", {});
+runtime.assert.equal(ok.content[0].text, "ok", "a normal tool still works under handlerTimeout");
+
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// TestMCPClientHandlerTimeoutAccepted verifies connect.http accepts the
+// handlerTimeout option and a normal round-trip still works (the deadline-firing
+// path on host responders shares callJSHandler with the server, unit-tested in
+// TestMCPBridge_ContextDeadline).
+func TestMCPClientHandlerTimeoutAccepted(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if err := registerSurface(eng); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(ctx, "cht.ts", `
+const srv = mcp.serve({ name: "f", version: "1.0.0" });
+srv.tool({ name: "add", inputSchema: { type: "object" }, handler: (a) => String(a.x + a.y) });
+const h = await srv.listen({ port: 0 });
+const c = await mcp.connect.http(h.url, { handlerTimeout: 1000 });
+const r = await c.callTool("add", { x: 2, y: 3 });
+runtime.assert.equal(r.content[0].text, "5", "round-trip works with handlerTimeout set");
+await c.close();
+await h.close();
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}

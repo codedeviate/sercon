@@ -352,6 +352,20 @@ func mcpConnectNamespace(eng *scriptengine.Engine, vm *goja.Runtime, loop *event
 	}
 }
 
+// connectHandlerTimeout reads the optional handlerTimeout (milliseconds) from a
+// connect opts object: absent -> the default; 0 or negative -> disabled
+// (honour-context-only). Shared by connect.stdio/http/sse.
+func connectHandlerTimeout(vm *goja.Runtime, optsObj *goja.Object) time.Duration {
+	ms, ok := optIntArg(vm, optsObj, "handlerTimeout", "mcp.connect")
+	if !ok {
+		return mcpDefaultHandlerTimeout
+	}
+	if ms < 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 func connectStdio(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.EventLoop, call goja.FunctionCall) goja.Value {
 	optsObj := requireObjectArg(vm, call, 0, "mcp.connect.stdio(opts)")
 	cmdVal := optsObj.Get("command")
@@ -362,8 +376,9 @@ func connectStdio(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Ev
 	env := stringMapArg(vm, optsObj.Get("env")) // map[string]string, nil if absent
 	cwd := optStringArg(vm, optsObj.Get("cwd"))
 	hostCfg := parseHostConfig(vm, loop, optsObj)
+	handlerTimeout := connectHandlerTimeout(vm, optsObj)
 
-	return connectWith(eng, vm, loop, "mcp:client", hostCfg, func(ctx context.Context) (mcp.Transport, error) {
+	return connectWith(eng, vm, loop, "mcp:client", hostCfg, handlerTimeout, func(ctx context.Context) (mcp.Transport, error) {
 		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 		if cwd != "" {
 			cmd.Dir = cwd
@@ -403,9 +418,10 @@ func connectHTTP(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 	// the shared parseHostConfig helper. Parsed before mkTransport runs
 	// (mkTransport executes off-loop; optsObj.Get must happen on-loop).
 	maxRetries, hasMaxRetries := optIntArg(vm, optsObj, "maxRetries", "mcp.connect.http")
-	oauthHandler := parseOAuthConfig(vm, loop, optsObj)
+	handlerTimeout := connectHandlerTimeout(vm, optsObj)
+	oauthHandler := parseOAuthConfig(vm, loop, optsObj, handlerTimeout)
 	hostCfg := parseHostConfig(vm, loop, optsObj)
-	return connectWith(eng, vm, loop, "mcp:client", hostCfg, func(_ context.Context) (mcp.Transport, error) {
+	return connectWith(eng, vm, loop, "mcp:client", hostCfg, handlerTimeout, func(_ context.Context) (mcp.Transport, error) {
 		httpClient := &http.Client{Transport: clientHeaderRoundTripper{base: http.DefaultTransport, headers: headers}}
 		transport := &mcp.StreamableClientTransport{Endpoint: rawURL, HTTPClient: httpClient}
 		if hasMaxRetries {
@@ -435,7 +451,7 @@ func connectHTTP(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 // client), mirroring parseMCPAuth's synchronous, pre-bind validation style on
 // the server side (mcp_auth.go). Runs on-loop, before mkTransport executes
 // off-loop — optsObj.Get must happen here, not inside the transport closure.
-func parseOAuthConfig(vm *goja.Runtime, loop *eventloop.EventLoop, optsObj *goja.Object) *jsOAuthHandler {
+func parseOAuthConfig(vm *goja.Runtime, loop *eventloop.EventLoop, optsObj *goja.Object, handlerTimeout time.Duration) *jsOAuthHandler {
 	if optsObj == nil {
 		return nil
 	}
@@ -451,7 +467,7 @@ func parseOAuthConfig(vm *goja.Runtime, loop *eventloop.EventLoop, optsObj *goja
 	if !ok {
 		panic(vm.NewTypeError("mcp.connect.http: auth.getToken must be a function () => token"))
 	}
-	return &jsOAuthHandler{loop: loop, getToken: scriptengine.NewLoopCallable(loop, fn), handlerTimeout: mcpDefaultHandlerTimeout}
+	return &jsOAuthHandler{loop: loop, getToken: scriptengine.NewLoopCallable(loop, fn), handlerTimeout: handlerTimeout}
 }
 
 // connectSSE implements mcp.connect.sse(url, opts?): the legacy (2024-11-05)
@@ -480,7 +496,8 @@ func connectSSE(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Even
 		}
 	}
 	hostCfg := parseHostConfig(vm, loop, optsObj)
-	return connectWith(eng, vm, loop, "mcp:client", hostCfg, func(_ context.Context) (mcp.Transport, error) {
+	handlerTimeout := connectHandlerTimeout(vm, optsObj)
+	return connectWith(eng, vm, loop, "mcp:client", hostCfg, handlerTimeout, func(_ context.Context) (mcp.Transport, error) {
 		httpClient := &http.Client{Transport: clientHeaderRoundTripper{base: http.DefaultTransport, headers: headers}}
 		return &mcp.SSEClientTransport{Endpoint: rawURL, HTTPClient: httpClient}, nil
 	})
@@ -508,7 +525,7 @@ func watchSessionDeath(sess *mcp.ClientSession, cancel context.CancelFunc, relea
 	releaseOnce()
 }
 
-func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.EventLoop, reason string, hostCfg *mcpHostConfig, mkTransport func(context.Context) (mcp.Transport, error)) goja.Value {
+func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.EventLoop, reason string, hostCfg *mcpHostConfig, handlerTimeout time.Duration, mkTransport func(context.Context) (mcp.Transport, error)) goja.Value {
 	p, resolve, reject := vm.NewPromise()
 	release := eng.HoldRun(reason)
 	var released atomic.Bool
@@ -535,7 +552,7 @@ func connectWith(eng *scriptengine.Engine, vm *goja.Runtime, loop *eventloop.Eve
 	// set before clientOptions() is ever called (both here and inside the
 	// goroutine below) since clientOptions gates CreateMessageHandler/
 	// ElicitationHandler on mc.host being non-nil.
-	mc := &mcpClient{eng: eng, vm: vm, loop: loop, ctx: connCtx, cancel: connCancel, host: hostCfg, handlerTimeout: mcpDefaultHandlerTimeout}
+	mc := &mcpClient{eng: eng, vm: vm, loop: loop, ctx: connCtx, cancel: connCancel, host: hostCfg, handlerTimeout: handlerTimeout}
 	mc.release = releaseOnce
 
 	go func() {
