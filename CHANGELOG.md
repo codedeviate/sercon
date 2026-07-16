@@ -8,6 +8,30 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`handlerTimeout` option for MCP handlers.** `mcp.serve({..., handlerTimeout})`
+  and every `mcp.connect.{stdio,http,sse}({..., handlerTimeout})` accept a
+  per-call deadline (milliseconds) for the script handlers the SDK invokes —
+  server tool/resource/prompt/completion handlers and `auth.verify`, client
+  `onSample`/`onElicit` and `auth.getToken`. If a handler hasn't settled by the
+  deadline the on-loop bridge returns an error (a tool → `isError`; others → a
+  protocol error) and reclaims the SDK request goroutine instead of blocking on
+  it forever. Defaults to 5 minutes (generous, so a handler awaiting
+  `ctx.elicit`/`ctx.sample` isn't cut off); `0` disables the timer (honour the
+  request context only). The handler's JS keeps running on the loop until it
+  settles — the deadline reclaims the *waiting goroutine*, not the script.
+- **`scriptengine.RunContextFromVM(vm)`** (library API) — returns the current
+  `Engine.Run`'s context (or `context.Background()` outside a Run), so a host
+  binding can root long-lived goroutines/subprocesses at the Run.
+
+### Changed
+- **MCP bridges now honour cancellation** (closes both MCP items in
+  `OUT-OF-SCOPE.md`). `callJSHandler` selects on its request context, so a
+  never-settling handler no longer pins its SDK goroutine. The `mcp.connect`
+  client's connection context is now rooted at the engine Run context, so a
+  script timeout / Run-end cancels in-flight `sess.Call*` and kills the stdio
+  subprocess instead of leaking them until process exit.
+
 ## [0.96.0] — 2026-07-16
 
 ### Added

@@ -278,28 +278,3 @@ addressed.
   Wayland) are verified end-to-end, Windows is not. Windows isn't a focus right
   now; re-promote when a Windows host/CI runner is available to round-trip text
   + PNG (watch for PowerShell `-STA` and the temp-file marshalling).
-
-- **Honour request-context cancellation in the MCP on-loop bridge.**
-  `callJSHandler` (`cmd/sercon/mcp_bridge.go`) blocks its caller on `<-done`
-  and ignores any deadline/cancellation. A script `verify` (or tool/resource)
-  callback whose Promise never settles therefore pins the SDK request goroutine
-  indefinitely; the client eventually times out, but under sustained load stuck
-  callbacks could accrue leaked goroutines. Low-risk (needs a buggy callback)
-  but worth wiring `req.Context()` / a per-call deadline into the bridge so a
-  never-settling handler is reclaimed. Flagged by the Phase-3 whole-branch
-  review (item T5-2).
-
-- **MCP client: root the connection context at the Run context.**
-  MCP client Phase 2 delivered most of the original hardening bundle — a
-  connection-scoped cancellable context (`mc.ctx`), a `(*ClientSession).Wait()`
-  death-watcher that releases the `HoldRun` on session end, and a `list*` page
-  cap. What remains: `mc.ctx` is rooted at `context.Background()`, not the engine
-  Run context, so a script *timeout* / Run-end does NOT cancel it — an in-flight
-  off-loop `sess.Call*` isn't unblocked by a timeout and a stdio subprocess isn't
-  ctx-killed; the leaked goroutine + child are reaped on process exit (fine under
-  the single-shot CLI model). The clean fix is to thread the Run context into
-  `connectWith` and root `connCtx` there so timeout/Run-end genuinely cancel it.
-  Also note the documented death-watcher limitation stands: a *graceful* HTTP
-  server shutdown keeps the SSE stream alive so `sess.Wait()` doesn't fire (the
-  Run-end drain is the backstop). Low-realism; flagged by the Phase-1 and Phase-2
-  whole-branch reviews.
