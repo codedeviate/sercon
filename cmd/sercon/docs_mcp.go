@@ -79,7 +79,7 @@ const mcpServeHandleType = `{
 // setLoggingLevel-gates-onLoggingMessage relationship need more than this
 // composite type's inline signatures convey.
 //
-// Phase 3 (client, current) adds the "host responder" surface: sercon now
+// Phase 3 (client) adds the "host responder" surface: sercon now
 // answers server->client requests instead of only ever being the one asking.
 // Two of the three pieces (onSample/onElicit) are connect-time opts, not
 // handle methods — they're documented as extra fields on connect.stdio's/
@@ -433,7 +433,7 @@ await h2.close();`,
 srv.close(); // currently a no-op; use the listen() handle's close(), or let stdio() resolve on disconnect`,
 		},
 		"connect.stdio": {
-			Summary: "Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 2: consume an already-running server's tools/resources/prompts, react to its change notifications (onToolsChanged/onResourcesChanged/onPromptsChanged/onResourceUpdated), subscribe/unsubscribe to individual resources, opt into server logs (setLoggingLevel + onLoggingMessage), and request argument completions (complete) — see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below. Phase 3 (current) adds the host responder surface: onSample/onElicit answer the server's own sampling/createMessage and elicitation/create requests (the client-side counterpart to a server tool's ctx.sample()/ctx.elicit()), and roots seeds the client's filesystem/URI roots (answering the server's roots/list) — see setRoots below for updating that set at runtime. An OAuth client and Windows stdio support remain later phases.",
+			Summary: "Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 2: consume an already-running server's tools/resources/prompts, react to its change notifications (onToolsChanged/onResourcesChanged/onPromptsChanged/onResourceUpdated), subscribe/unsubscribe to individual resources, opt into server logs (setLoggingLevel + onLoggingMessage), and request argument completions (complete) — see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below. Phase 3 adds the host responder surface: onSample/onElicit answer the server's own sampling/createMessage and elicitation/create requests (the client-side counterpart to a server tool's ctx.sample()/ctx.elicit()), and roots seeds the client's filesystem/URI roots (answering the server's roots/list) — see setRoots below for updating that set at runtime. Phase 4 rounds out the MCP client with connect.sse (the legacy SSE transport) and an OAuth client (connect.http's auth option) — neither applies to stdio itself (there's no HTTP handshake to attach a bearer token to, and this transport is a different wire format than SSE); Windows stdio support remains an unaddressed gap.",
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "{ command: string[]; env?: Record<string, string>; cwd?: string; onSample?: " + mcpHostOnSampleType + "; onElicit?: " + mcpHostOnElicitType + "; roots?: " + mcpRootsOptType + " }", Desc: "command: argv for the subprocess, e.g. [\"sercon\", \"server.ts\"] — command[0] is the executable (resolved via PATH), the rest are its arguments; must be a non-empty array. env: extra environment variables merged into the child's inherited environment (does not replace it). cwd: working directory for the child process; defaults to sercon's own cwd when omitted. onSample(req): answers the server's sampling/createMessage requests (ctx.sample() on the server side); req carries the same messages/maxTokens/systemPrompt/temperature/stopSequences/includeContext/modelPreferences fields ctx.sample's opts accepts. May return a plain string (wrapped as text content with model \"sercon\", role \"assistant\", stopReason \"endTurn\") or an object giving explicit control over content/model/stopReason/role; sync or async (a returned Promise is awaited). onElicit(req): answers the server's elicitation/create requests (ctx.elicit() on the server side); req carries { message, requestedSchema, mode? }. Must return { action: \"accept\"|\"decline\"|\"cancel\", content? } (content only meaningful on \"accept\"); sync or async. roots: seeds this client's filesystem/URI roots — an array of { uri, name? } — sent to the SDK via AddRoots before the connection is established, so the server's first roots/list sees them immediately rather than an empty set followed by a change notification. IMPORTANT: unlike onSample/onElicit (each advertised only when provided — see Errors), the roots capability itself is advertised by the underlying SDK unconditionally, regardless of whether this option is given; omitting roots simply means the initial root set is empty (still updatable later via setRoots)."},
 			},
@@ -456,14 +456,14 @@ const host = await mcp.connect.stdio({
 await host.close();`,
 		},
 		"connect.http": {
-			Summary: "Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 2/Phase 3 scope note as connect.stdio: change notifications, subscriptions, logging, and completion are supported (see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below), and onSample/onElicit/roots (see setRoots) let this connection act as a host for the server's own requests. No OAuth client yet.",
+			Summary: "Connect to an MCP server as a client over the Streamable HTTP transport — the cross-platform counterpart to connect.stdio, talking to a server already listening (e.g. one started with srv.listen(...)) instead of launching a subprocess. Same Phase 2/Phase 3 scope note as connect.stdio: change notifications, subscriptions, logging, and completion are supported (see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below), and onSample/onElicit/roots (see setRoots) let this connection act as a host for the server's own requests. Phase 4 (current) adds maxRetries (a reconnect cap for this transport) and auth (an OAuth 2.1 bearer-token client) — see below.",
 			Params: []scriptengine.Param{
 				{Name: "url", Type: "string", Desc: "the server's absolute MCP endpoint URL, e.g. \"http://127.0.0.1:38080/mcp\" (must be http or https with a host; anything else throws synchronously)."},
-				{Name: "opts", Type: "{ headers?: Record<string, string>; onSample?: " + mcpHostOnSampleType + "; onElicit?: " + mcpHostOnElicitType + "; roots?: " + mcpRootsOptType + " }", Optional: true, Desc: "optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override. onSample(req): answers the server's sampling/createMessage requests (ctx.sample() on the server side); req carries messages/maxTokens/systemPrompt/temperature/stopSequences/includeContext/modelPreferences. May return a plain string (wrapped as text content, model \"sercon\", role \"assistant\", stopReason \"endTurn\") or an object giving explicit control over content/model/stopReason/role; sync or async. onElicit(req): answers the server's elicitation/create requests (ctx.elicit() on the server side); req carries { message, requestedSchema, mode? }. Must return { action: \"accept\"|\"decline\"|\"cancel\", content? }; sync or async. roots: seeds this client's filesystem/URI roots — an array of { uri, name? } — via AddRoots before the connection is established, so the server's first roots/list sees them immediately. IMPORTANT: the roots capability is advertised by the underlying SDK unconditionally regardless of whether this option is given (unlike onSample/onElicit, each advertised only when provided — see Errors); omitting roots just means the initial set is empty, still updatable later via setRoots."},
+				{Name: "opts", Type: "{ headers?: Record<string, string>; maxRetries?: number; auth?: { getToken(): string | Promise<string> }; onSample?: " + mcpHostOnSampleType + "; onElicit?: " + mcpHostOnElicitType + "; roots?: " + mcpRootsOptType + " }", Optional: true, Desc: "optional. headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a listen({auth}) protected server, as an alternative to auth below) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override. maxRetries: caps how many times the Streamable-HTTP transport's own SSE-stream reconnect logic retries after a dropped connection; 0 or a negative number disables reconnection entirely (a single drop ends the session), omitted leaves the go-sdk's built-in default (5) in place. Streamable-HTTP-only — connect.sse's legacy SSE transport has no equivalent knob. auth: turns this connection into an OAuth 2.1 bearer-token client — the client-side counterpart to serve.listen's auth (resource-server) option. auth.getToken() is called once before the initial request and again whenever a request comes back 401/403, so the script can refresh an expired token; it may return a plain string or a Promise<string> and MUST resolve to a non-empty string — the returned value is sent verbatim as an `Authorization: Bearer <token>` header on every request. getToken runs on-loop (the same bridge tool/resource/prompt handlers use), so it may safely call other sercon bindings (e.g. net.http for a client-credentials token endpoint) or read a value cached from an earlier step. auth and headers.Authorization are independent — setting both means auth's bearer header is applied via the transport's own OAuth plumbing while headers still layers in anything else you supply (do not also set headers.Authorization yourself; the two would conflict). onSample(req): answers the server's sampling/createMessage requests (ctx.sample() on the server side); req carries messages/maxTokens/systemPrompt/temperature/stopSequences/includeContext/modelPreferences. May return a plain string (wrapped as text content, model \"sercon\", role \"assistant\", stopReason \"endTurn\") or an object giving explicit control over content/model/stopReason/role; sync or async. onElicit(req): answers the server's elicitation/create requests (ctx.elicit() on the server side); req carries { message, requestedSchema, mode? }. Must return { action: \"accept\"|\"decline\"|\"cancel\", content? }; sync or async. roots: seeds this client's filesystem/URI roots — an array of { uri, name? } — via AddRoots before the connection is established, so the server's first roots/list sees them immediately. IMPORTANT: the roots capability is advertised by the underlying SDK unconditionally regardless of whether this option is given (unlike onSample/onElicit, each advertised only when provided — see Errors); omitting roots just means the initial set is empty, still updatable later via setRoots."},
 			},
 			ReturnType: "Promise<" + mcpClientHandleType + ">",
 			Returns:    "Same handle shape as connect.stdio: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities, the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods, the subscribe/unsubscribe/setLoggingLevel/complete mid-connection calls, the six onXxx notification setters, and setRoots(roots) to update the seeded roots set at runtime. Holds the script's event loop open for the connection's lifetime.",
-			Errors:     "Throws synchronously if url is missing or not an absolute http(s) URL, onSample/onElicit are present but not functions, or a roots entry is missing a non-empty uri. The returned promise rejects if the HTTP connection or initialize handshake fails (wrapped as \"mcp.connect: ...\") — including a 401 from a listen({auth})-protected server when opts.headers doesn't carry a valid bearer token. Capability gating happens at connect time, not as a throw here: the SDK client advertises sampling/elicitation if and only if onSample/onElicit (respectively) is provided — a server calling ctx.sample()/ctx.elicit() against a client that omitted the matching responder gets that server-side call rejected, not this connect call.",
+			Errors:     "Throws synchronously if url is missing or not an absolute http(s) URL, maxRetries is present but not a number, auth is present but auth.getToken is not a function, onSample/onElicit are present but not functions, or a roots entry is missing a non-empty uri. The returned promise rejects if the HTTP connection or initialize handshake fails (wrapped as \"mcp.connect: ...\") — including a 401 from a listen({auth})-protected server when neither opts.headers nor opts.auth carries a valid bearer token, or if auth.getToken throws/rejects, resolves to a non-string, or resolves to an empty string (\"mcp.connect: auth.getToken must return a string\"/\"...a non-empty token string\"). Capability gating happens at connect time, not as a throw here: the SDK client advertises sampling/elicitation if and only if onSample/onElicit (respectively) is provided — a server calling ctx.sample()/ctx.elicit() against a client that omitted the matching responder gets that server-side call rejected, not this connect call.",
 			Example: `const c = await mcp.connect.http("http://127.0.0.1:38080/mcp");
 runtime.log("connected to", c.serverInfo.name);
 const tools = await c.listTools();
@@ -471,11 +471,27 @@ runtime.log(tools.map(t => t.name).join(", "));
 await c.ping();
 await c.close();
 
-// Against an OAuth-protected listener (see serve.listen's auth option):
+// Against an OAuth-protected listener via a static header (see serve.listen's auth option):
 const authed = await mcp.connect.http("http://127.0.0.1:38081/mcp", {
   headers: { Authorization: "Bearer good-token" },
 });
 await authed.close();
+
+// Same, but via auth.getToken (re-invoked on 401/403 to refresh):
+let cachedToken = "";
+const oauthed = await mcp.connect.http("http://127.0.0.1:38081/mcp", {
+  auth: {
+    async getToken() {
+      if (!cachedToken) cachedToken = "good-token"; // e.g. fetch via net.http client-credentials
+      return cachedToken;
+    },
+  },
+});
+await oauthed.close();
+
+// Disable the transport's automatic reconnect:
+const noRetry = await mcp.connect.http("http://127.0.0.1:38080/mcp", { maxRetries: 0 });
+await noRetry.close();
 
 // As a host: answer the server's sampling/elicitation requests and seed roots.
 const host = await mcp.connect.http("http://127.0.0.1:38080/mcp", {
@@ -489,6 +505,35 @@ const host = await mcp.connect.http("http://127.0.0.1:38080/mcp", {
   roots: [{ uri: "file:///workspace", name: "workspace" }],
 });
 host.setRoots([{ uri: "file:///workspace2", name: "workspace2" }]);
+await host.close();`,
+		},
+		"connect.sse": {
+			Summary: "Connect to an MCP server as a client over the legacy (2024-11-05) HTTP+SSE transport — for servers that predate Streamable HTTP (connect.http) and only expose the older two-endpoint SSE handshake. Routes through the same connectWith lifecycle as connect.stdio/connect.http, so everything else in Phase 1-4 works identically over this transport: the consume surface (listTools/callTool/etc.), the Phase-2 reactive surface (onToolsChanged/subscribe/setLoggingLevel/complete/...), and the Phase-3 host responder surface (onSample/onElicit/roots). The one Phase-4 addition that does NOT apply here is maxRetries: the go-sdk's SSE client transport has no reconnect-cap field to plumb (Streamable HTTP only) — see connect.http.",
+			Params: []scriptengine.Param{
+				{Name: "url", Type: "string", Desc: "the server's absolute SSE endpoint URL, e.g. \"http://127.0.0.1:38080/sse\" (must be http or https with a host; anything else throws synchronously)."},
+				{Name: "opts", Type: "{ headers?: Record<string, string>; onSample?: " + mcpHostOnSampleType + "; onElicit?: " + mcpHostOnElicitType + "; roots?: " + mcpRootsOptType + " }", Optional: true, Desc: "optional — the same shape as connect.http's opts minus maxRetries/auth (neither applies to this transport: there's no reconnect cap to set, and no OAuth client wiring yet for SSE — use headers for a static bearer token instead). headers: extra HTTP headers sent with every request on this connection (e.g. a bearer token for a protected server) — merged with sercon's default sercon-mcp/<version> User-Agent, which headers may override. onSample(req)/onElicit(req)/roots: identical host-responder semantics to connect.http/connect.stdio — see connect.http's Params for the full field-by-field description of each."},
+			},
+			ReturnType: "Promise<" + mcpClientHandleType + ">",
+			Returns:    "Same handle shape as connect.stdio/connect.http: a promise that resolves once the initialize handshake completes to a session handle with serverInfo/capabilities, the listTools/callTool/listResources/listResourceTemplates/readResource/listPrompts/getPrompt/ping/close methods, the subscribe/unsubscribe/setLoggingLevel/complete mid-connection calls, the six onXxx notification setters, and setRoots(roots) to update the seeded roots set at runtime. Holds the script's event loop open for the connection's lifetime.",
+			Errors:     "Throws synchronously if url is missing or not an absolute http(s) URL, onSample/onElicit are present but not functions, or a roots entry is missing a non-empty uri. The returned promise rejects if the SSE handshake or initialize fails (wrapped as \"mcp.connect: ...\") — including a 401 from a protected server when opts.headers doesn't carry a valid bearer token (there is no opts.auth on this transport yet; retry/refresh it yourself before reconnecting). Capability gating happens at connect time, not as a throw here: the SDK client advertises sampling/elicitation if and only if onSample/onElicit (respectively) is provided — a server calling ctx.sample()/ctx.elicit() against a client that omitted the matching responder gets that server-side call rejected, not this connect call.",
+			Example: `const c = await mcp.connect.sse("http://127.0.0.1:38080/sse");
+runtime.log("connected to", c.serverInfo.name);
+const tools = await c.listTools();
+runtime.log(tools.map(t => t.name).join(", "));
+await c.ping();
+await c.close();
+
+// Against a bearer-protected legacy SSE server (no opts.auth on this transport yet):
+const authed = await mcp.connect.sse("http://127.0.0.1:38081/sse", {
+  headers: { Authorization: "Bearer good-token" },
+});
+await authed.close();
+
+// As a host: same onSample/onElicit/roots surface as connect.http/connect.stdio.
+const host = await mcp.connect.sse("http://127.0.0.1:38080/sse", {
+  onSample: (req) => "SUMMARY: " + req.messages[0].content.text,
+  roots: [{ uri: "file:///workspace", name: "workspace" }],
+});
 await host.close();`,
 		},
 

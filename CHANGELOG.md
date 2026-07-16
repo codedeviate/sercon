@@ -8,6 +8,27 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`mcp.connect` — the MCP client, Phase 4 (OAuth + SSE) — the MCP client is now
+  full-spec.** Two additions close out the four-phase MCP client effort (consume,
+  react, host, OAuth/SSE): `mcp.connect.sse(url, { headers?, onSample?, onElicit?,
+  roots? })` connects over the legacy (2024-11-05) HTTP+SSE transport for servers
+  that predate Streamable HTTP — it routes through the same connection lifecycle as
+  `connect.http`/`connect.stdio`, so the full Phase 1-3 surface (consume, reactive
+  notifications, host responders) works identically, just with no `maxRetries`/`auth`
+  (the SDK's SSE transport has neither knob). `mcp.connect.http` gains two opts:
+  `maxRetries?: number` caps the Streamable-HTTP transport's own reconnect attempts
+  (0 or negative disables reconnection; omitted keeps the go-sdk default of 5), and
+  `auth?: { getToken(): string | Promise<string> }` turns the connection into an
+  OAuth 2.1 bearer-token client — the client-side counterpart to `serve.listen`'s
+  `auth` (resource-server) option — with `getToken` re-invoked automatically on a
+  401/403 to refresh an expired token. Both `getToken` and the SSE transport route
+  through the same on-loop bridges the rest of the client surface uses. Built on the
+  official `modelcontextprotocol/go-sdk` plus `golang.org/x/oauth2`, pure-Go. See
+  MANUAL.md §5.15.3 (recipes §5.15.3.9-11) and the generated §17.9 reference; the
+  hermetic `examples/scripts/mcp-client-http.ts` now exercises a full OAuth
+  good-token/bad-token round-trip (both sides sercon) under `make demo`.
+
 ## [0.95.0] — 2026-07-16
 
 ### Added
