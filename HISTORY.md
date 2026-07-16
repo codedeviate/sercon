@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.95.0 (2026-07-16).
+covered is v0.1.0 (2026-05-25) through v0.96.0 (2026-07-16).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -1153,6 +1153,26 @@ to a shared package-level function): the SDK invokes them on its own goroutine,
 and hands back native Go — so an async responder is awaited correctly and no
 goja value ever crosses a goroutine. Only the OAuth client and the SSE
 transport (Phase 4) remain.
+
+### `mcp` client — Phase 4 (v0.96.0) — the client is full-spec
+
+The final phase closes out the client: a legacy transport, reconnection
+tuning, and OAuth. `mcp.connect.sse(url, {headers?})` adds the HTTP+SSE
+transport (a third factory beside `stdio`/`http`, routed through the same
+connection machinery, so notifications and host responders work over it too).
+`connect.http` gained `maxRetries` (caps the Streamable-HTTP transport's
+reconnect attempts; `0` or negative disables — sercon maps non-positive values
+to the SDK's disable sentinel so the documented contract holds). And an OAuth
+client: `connect.http(url, { auth: { getToken } })` wraps a script callback in
+the SDK's `auth.OAuthHandler` — `getToken` (sync or async, must return a
+non-empty string) is invoked via the same on-loop `callJSHandler` bridge to
+supply the bearer token, and is re-invoked when a request comes back 401/403 so
+the script can refresh an expired token. The script owns *how* it obtains the
+token (a static value, a `net.http` client-credentials call, its own store), so
+sercon needs no browser-based authorization-code flow. This required promoting
+`golang.org/x/oauth2` from an indirect to a direct dependency (still pure-Go).
+With this, the MCP **client** matches the **server**: both halves of the
+protocol — consume, react, host, and authenticate — are now scriptable.
 
 ## Bundled libraries
 

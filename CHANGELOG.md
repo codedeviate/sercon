@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.96.0] — 2026-07-16
+
 ### Added
 - **`mcp.connect` — the MCP client, Phase 4 (OAuth + SSE) — the MCP client is now
   full-spec.** Two additions close out the four-phase MCP client effort (consume,

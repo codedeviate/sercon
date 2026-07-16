@@ -14890,7 +14890,7 @@ stdio(opts: { command: string[]; env?: Record<string, string>; cwd?: string; onS
 }>
 ```
 
-Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 2: consume an already-running server's tools/resources/prompts, react to its change notifications (onToolsChanged/onResourcesChanged/onPromptsChanged/onResourceUpdated), subscribe/unsubscribe to individual resources, opt into server logs (setLoggingLevel + onLoggingMessage), and request argument completions (complete) — see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below. Phase 3 (current) adds the host responder surface: onSample/onElicit answer the server's own sampling/createMessage and elicitation/create requests (the client-side counterpart to a server tool's ctx.sample()/ctx.elicit()), and roots seeds the client's filesystem/URI roots (answering the server's roots/list) — see setRoots below for updating that set at runtime. An OAuth client and Windows stdio support remain later phases.
+Connect to an MCP server as a client, launching it as a subprocess and speaking newline-delimited JSON-RPC over its stdin/stdout — the shape most CLI-launched MCP servers (including sercon's own srv.stdio()) expect. Phase 2: consume an already-running server's tools/resources/prompts, react to its change notifications (onToolsChanged/onResourcesChanged/onPromptsChanged/onResourceUpdated), subscribe/unsubscribe to individual resources, opt into server logs (setLoggingLevel + onLoggingMessage), and request argument completions (complete) — see the ten onXxx/subscribe/unsubscribe/setLoggingLevel/complete entries below. Phase 3 adds the host responder surface: onSample/onElicit answer the server's own sampling/createMessage and elicitation/create requests (the client-side counterpart to a server tool's ctx.sample()/ctx.elicit()), and roots seeds the client's filesystem/URI roots (answering the server's roots/list) — see setRoots below for updating that set at runtime. Phase 4 rounds out the MCP client with connect.sse (the legacy SSE transport) and an OAuth client (connect.http's auth option) — neither applies to stdio itself (there's no HTTP handshake to attach a bearer token to, and this transport is a different wire format than SSE); Windows stdio support remains an unaddressed gap.
 
 **Parameters**
 
@@ -19234,7 +19234,7 @@ const sm = web.sitemap.parse(xml); sm.urls.map(u => u.loc);
 
 ---
 
-*This manual covers sercon v0.95.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
+*This manual covers sercon v0.96.0. Whenever you add, remove, or change a <!-- x-release-please-version -->
 flag, a binding, or the script API, update this file alongside the help
 screen (`--help`), the examples walkthrough (`--examples`), and the
 `CHANGELOG.md`.*
