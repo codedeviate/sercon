@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.98.1] — 2026-07-17
+
 ### Fixed
 - **Host async call after an awaited timer no longer silently drops its
   continuation.** In the sequence `await <setTimeout-backed promise>; await

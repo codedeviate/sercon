@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.98.0 (2026-07-17).
+covered is v0.1.0 (2026-05-25) through v0.98.1 (2026-07-17).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -46,6 +46,17 @@ is in flight and clears it on resolution.
 the same pattern for long-lived bindings (servers, listeners) that don't
 have a single Promise to hold the loop open. The returned `release` func is
 idempotent; the engine drains any leaked holds at Run end.
+
+v0.98.1 closed a subtle gap in both sentinels: the Go-side `loop.SetTimeout`
+they use defers its `jobCount` increment into an aux job, while the eventloop
+decrements `jobCount` *before* running a timer callback. So in the sequence
+`await <setTimeout-backed promise>; await <host binding>` the loop could exit
+the instant the awaited timer dropped `jobCount` to zero — before the sentinel
+was armed — silently dropping the host call's continuation (the script
+"succeeded" with exit 0). `PromisifyAsync` and `HoldRun` now call
+`bumpLoopSync`, which schedules a no-op `setImmediate` (the JS-facing timers
+increment `jobCount` synchronously, unlike the Go APIs) to bridge that
+transient-zero window. Surfaced by the DailyScripts port.
 
 `LoopCallable` (also v0.10.0) wraps a captured `goja.Callable` so it can
 be invoked from any goroutine via `.Call(buildArgs)`. On-loop callers use
