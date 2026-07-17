@@ -863,6 +863,7 @@ scripts pasted from a browser or Node run unchanged:
 |---|---|
 | `console.log` / `console.info` / `console.debug` | stdout |
 | `console.warn` / `console.error` | stderr |
+| `console.table` | stdout |
 
 Each prints one space-joined line — clean and prefix-free (no
 timestamp), unlike the goja default console. Primitives print raw;
@@ -873,6 +874,29 @@ stream-correct shim is the only `console` a script sees. `runtime.log`
 is the native equivalent of `console.log` (stdout) and formats the same
 way. Library embedders get the goja_nodejs console by default instead;
 toggle it with `Options.DisableConsole`.
+
+`console.table(data, columns?)` renders tabular data as an aligned,
+bordered table (Node/Bun/Deno parity) — an array of objects, an array of
+primitives, or an object of objects/primitives. It prints a leading
+`(index)` column, one column per property (union of keys across rows, in
+first-seen order), and a `Values` column for primitive rows; the optional
+`columns` array restricts and orders the property columns. Cells are
+formatted like `console.log` (so strings are not quoted, unlike Node's
+`util.inspect`), and non-tabular input (a primitive) falls back to a
+`console.log`-style line rather than throwing.
+
+```ts
+console.table([
+  { name: "web", status: "ok" },
+  { name: "db", status: "down" },
+]);
+// ┌─────────┬──────┬────────┐
+// │ (index) │ name │ status │
+// ├─────────┼──────┼────────┤
+// │    0    │ web  │   ok   │
+// │    1    │  db  │  down  │
+// └─────────┴──────┴────────┘
+```
 
 ### 5.2 `runtime`
 
@@ -1259,6 +1283,13 @@ families are **synchronous**; `charset.*`, `jq.*`, and `diff.*` return
   string on extract) or a `Uint8Array` (returned as
   `Uint8Array`). There is no separate capacity call — zero-width characters
   cost only 8 runes per payload byte, so practical limits are high.
+- `text.markdown.toHtml(md, opts?)` — render a Markdown string to an HTML
+  string (CommonMark, backed by the pure-Go **goldmark**). GFM extensions
+  (tables, strikethrough, task lists, autolinks) are on by default;
+  `opts.gfm: false` disables them, and `opts.hardBreaks: true` renders a
+  single source newline as `<br>` instead of a space. Raw HTML in the source
+  is escaped (goldmark's safe default). String in, string out — for Markdown
+  → **PDF**, see `recon --md-to-pdf` (used by `make manual`).
 
 #### 5.4.1 Concepts
 
@@ -1669,6 +1700,11 @@ method names differ per family:
 
 - **`codec.toml`** — `parse(text)` / `stringify(value)`. The one family
   that mirrors native `JSON.parse`/`JSON.stringify` shape-for-shape.
+- **`codec.yaml`** — `parse(text)` / `stringify(value)`, same
+  `JSON`-shaped pair as `codec.toml`. Mappings ↔ objects, sequences ↔
+  arrays, scalars ↔ primitives. Only the **first** document of a
+  multi-document (`---`-separated) stream is parsed; non-string mapping
+  keys are coerced to their string form.
 - **`codec.xml`** — `decode(xml)` / `encode(value, opts?)`, using the
   `@`-attribute / `#text` convention (§5.5 above has the full rules).
 - **`codec.dotenv`** — `parse(text)` / `stringify(obj)`, pure (never
@@ -1686,12 +1722,12 @@ method names differ per family:
   codecs, check-digit validation, and binary compression, each with their
   own method names (§5.5.1–§5.5.4 above).
 
-**There is no `codec.json` and no YAML codec.** JSON needs no wrapper —
-use the built-in `JSON.parse`/`JSON.stringify` — and YAML isn't part of
-the reserved surface at all.
+**There is no `codec.json`.** JSON needs no wrapper — use the built-in
+`JSON.parse`/`JSON.stringify`.
 
-**Round-trip fidelity varies by format.** `codec.toml` preserves
-ints/floats/bools/nested tables (datetimes come back as strings);
+**Round-trip fidelity varies by format.** `codec.toml` and `codec.yaml`
+preserve ints/floats/bools/nested structures (datetimes come back as
+strings);
 `codec.xml.decode` is fully untyped (every leaf is a string, per the XML
 spec); `codec.sheet` preserves types through XLSX/ODS but flattens
 everything to strings through CSV/TSV; `codec.dotenv.stringify` is
@@ -1725,7 +1761,35 @@ tables). Signatures: §17.2.28 (`codec.toml.parse`), §17.2.29
 (`codec.toml.stringify`).
 runnable: `examples/scripts/codec-toml.ts`
 
-##### 5.5.9.2 Round-trip tabular data as CSV
+##### 5.5.9.2 Parse and stringify a YAML document
+
+```ts
+const cfg = codec.yaml.parse(`
+title: sercon demo
+server:
+  port: 8080
+  hosts: [a.example, b.example]
+`);
+runtime.assert.equal(cfg.server.port, 8080, "parsed int");
+runtime.assert.equal(cfg.server.hosts.length, 2, "parsed sequence");
+
+// A top-level sequence parses to a JS array.
+const list = codec.yaml.parse("- one\n- two\n");
+runtime.assert.equal(list[1], "two", "top-level sequence");
+
+const text = codec.yaml.stringify({ name: "demo", flags: { debug: true } });
+const back = codec.yaml.parse(text);
+runtime.assert.equal(back.flags.debug, true, "round-trip bool");
+```
+
+Mappings become objects, sequences become arrays, and scalars map to their
+JS equivalents. Only the **first** document of a `---`-separated stream is
+parsed (a documented v1 limitation), and non-string mapping keys (`1:`,
+`true:`) are coerced to their string form so the mapping stays reachable as
+an object. See the generated §17 reference for the exact signatures.
+runnable: `examples/scripts/codec-yaml.ts`
+
+##### 5.5.9.3 Round-trip tabular data as CSV
 
 ```ts
 const wb = { sheets: [{ name: "Inventory", rows: [
@@ -1745,7 +1809,7 @@ untyped: every cell round-trips as a string (`42` becomes `"42"`). See
 §17.2.26 (`codec.sheet.read`), §17.2.27 (`codec.sheet.write`).
 runnable: `examples/scripts/sheet.ts`
 
-##### 5.5.9.3 Convert a parsed document into another format
+##### 5.5.9.4 Convert a parsed document into another format
 
 ```ts
 const cfg = codec.toml.parse('title = "demo"\n[server]\nport = 8080\n');
@@ -1771,7 +1835,7 @@ multi-key parse result (like a TOML table) needs `rootName` to wrap it.
 Signatures: §17.2.28 (`codec.toml.parse`), §17.2.31 (`codec.xml.encode`).
 runnable: `examples/scripts/codec-toml.ts`, `examples/scripts/codec-xml.ts`
 
-##### 5.5.9.4 Parse and apply a `.env` file
+##### 5.5.9.5 Parse and apply a `.env` file
 
 ```ts
 // Pure parse — no environment side effects.
@@ -1796,7 +1860,7 @@ just parsed. Signatures: §17.3.5.1 (`codec.dotenv.parse`), §17.3.5.2
 (`codec.dotenv.stringify`), §17.11.5.2 (`runtime.env.load`).
 runnable: `examples/scripts/env.ts`
 
-##### 5.5.9.5 Round-trip PHP and Perl dump formats
+##### 5.5.9.6 Round-trip PHP and Perl dump formats
 
 ```ts
 const order = { __class: "Order", id: 7, items: ["a", "b"], paid: true, note: null };
@@ -2752,6 +2816,21 @@ v0.8.0). Members:
   `{ exitCode, success, durationMs }` on exit; a non-zero exit resolves with
   `success: false`, while spawn failures and timeouts reject. Useful for
   processing large or incremental output without holding it all in memory.
+- `services.exec.interactive(cmd, opts?)` — run a subprocess wired to
+  sercon's **own terminal** — the interactive counterpart to `exec.shell`.
+  Where `shell` captures stdout/stderr, `interactive` inherits
+  stdin/stdout/stderr so genuinely interactive children work: `docker exec
+  -it`, `ssh`, interactive `mysql` / `redis-cli` REPLs, pagers, and
+  full-screen TUIs. On Unix with a real TTY it allocates a pty and switches
+  the terminal to **raw mode** (restored on every exit path), forwarding
+  `SIGWINCH` resizes; on a non-TTY stdin (pipes, CI) or on Windows it
+  inherits the raw handles with no pty. `opts` is `{ cwd?, env?, timeout? }`
+  — `timeout` has **no default** (0 / absent = run until the child exits).
+  Nothing is captured (the child owns the terminal), so it resolves to just
+  `{ exitCode, success, durationMs }`; a non-zero exit resolves with
+  `success: false`, while spawn failures and timeouts throw. See
+  `examples/scripts/exec-interactive.ts` (TTY-only; run it in a real
+  terminal).
 - `services.exec.http(method, url, opts?)` — shell-level `curl`-style
   HTTP, separate from `net.http` and intended for raw protocol use. It
   shells out to **`recon` first, then `curl`** (`opts.backend` =
@@ -12701,6 +12780,48 @@ const xml = codec.xml.encode({ note: { "@id": "5", "#text": "hi" } });
 // <note id="5">hi</note>
 ```
 
+#### 17.3.11 codec.yaml
+
+##### 17.3.11.1 codec.yaml.parse
+
+```
+parse(text: string): unknown
+```
+
+Parse a YAML document string into a JS value. Mappings become objects, sequences become arrays, and scalars map to the matching JS type (int/float/boolean/string/null). Only the first document of a multi-document ("---"-separated) stream is parsed; non-string mapping keys are coerced to their string form.
+
+**Parameters**
+
+- `text` *(string)* — The YAML document text.
+
+**Returns:** The parsed value — a plain object for a mapping, an array for a sequence, or a primitive for a scalar document.
+
+**Throws:** Throws ("codec.yaml.parse: …") on malformed YAML.
+
+```ts
+const cfg = codec.yaml.parse('port: 8080\ndb:\n  host: localhost');
+```
+
+##### 17.3.11.2 codec.yaml.stringify
+
+```
+stringify(value: unknown): string
+```
+
+Serialize a JS value to a YAML document string. Objects become mappings, arrays become sequences, and primitives become scalars. The value round-trips through codec.yaml.parse.
+
+**Parameters**
+
+- `value` *(unknown)* — The value to serialize as YAML (typically an object).
+
+**Returns:** The YAML document text (terminated with a trailing newline).
+
+**Throws:** Throws ("codec.yaml.stringify: …") if the value can't be represented as YAML.
+
+```ts
+const text = codec.yaml.stringify({ port: 8080, db: { host: "localhost" } });
+```
+
 ### 17.4 console
 
 Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent.
@@ -12785,7 +12906,28 @@ Print a space-joined line of the arguments to stdout. Primitives print raw; obje
 console.log("user", { id: 1, name: "ada" }); // user {"id":1,"name":"ada"}
 ```
 
-#### 17.4.5 console.warn
+#### 17.4.5 console.table
+
+```
+table(data: unknown, columns?: string[]): void
+```
+
+Render tabular data as an aligned, bordered table on stdout (Node/Bun/Deno parity). Accepts an array of objects (rows), an array of primitives, or an object of objects/primitives. Prints a leading (index) column, one column per property (union of keys across rows, first-seen order), and a Values column for primitive rows. Non-tabular input (a primitive) falls back to console.log-style output without throwing.
+
+**Parameters**
+
+- `data` *(unknown)* — The rows to tabulate: an array (indices become the (index) column) or an object (keys become the (index) column). Cells are formatted like console.log — primitives raw, objects/arrays as compact JSON (strings are not quoted).
+- `columns` *(string[], optional)* — Restrict and order the property columns to exactly these names; an absent column renders as an empty column. The (index) column is always shown.
+
+**Returns:** void — the table is written to stdout as a side effect.
+
+**Throws:** Never throws; non-tabular input degrades to a console.log-style line.
+
+```ts
+console.table([{ name: "web", status: "ok" }, { name: "db", status: "down" }]);
+```
+
+#### 17.4.6 console.warn
 
 ```
 warn(...args: unknown[]): void
@@ -17651,7 +17793,29 @@ const r = await services.exec.http("GET", "https://example.com");
 runtime.log(r.status, r.backend);
 ```
 
-##### 17.13.4.2 services.exec.shell
+##### 17.13.4.2 services.exec.interactive
+
+```
+interactive(cmd: string | string[], opts?: { cwd?: string, env?: Record<string, string>, timeout?: number }): Promise<{ exitCode: number; success: boolean; durationMs: number }>
+```
+
+Run a subprocess wired to sercon's own terminal — the interactive counterpart to exec.shell. Inherits stdin/stdout/stderr so genuinely interactive children work (docker exec -it, ssh, interactive mysql/redis-cli REPLs, pagers, full-screen TUIs). On Unix with a real TTY it allocates a pty and switches to raw mode (restored on exit); on a non-TTY stdin or on Windows it inherits the raw handles. Nothing is captured — the result is just { exitCode, success, durationMs }.
+
+**Parameters**
+
+- `cmd` *(string | string[])* — A string is passed to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell.
+- `opts` *({ cwd?: string, env?: Record<string, string>, timeout?: number }, optional)* — cwd sets the working directory. env entries are merged on top of the inherited environment (they do not replace it). timeout is in ms with NO default (0 / absent = run until the child exits, since an interactive shell or REPL is expected to stay open); when set, the process tree is killed on expiry and the call throws.
+
+**Returns:** Promise<{ exitCode: number, success: boolean, durationMs: number }> — the child's exit code (0 on success), success (exitCode === 0), and wall-clock spawn-to-exit time. No stdout/stderr is captured; the child wrote directly to the terminal.
+
+**Throws:** Throws if cmd is missing, an empty string, an empty array, or a non-string array element; if the host binary is not on PATH or fails to start; or if the timeout (or context cancellation) fires before exit — terminal state is restored first. A non-zero exit code does NOT throw — it resolves with success:false.
+
+```ts
+const r = await services.exec.interactive("ssh user@host");
+runtime.log("session ended, exit", r.exitCode);
+```
+
+##### 17.13.4.3 services.exec.shell
 
 ```
 shell(cmd: string | string[], opts?: { timeout?: number, cwd?: string, stdin?: string, env?: Record<string, string>, pane?: string | Pane, pty?: boolean }): Promise<{ stdout: string; stderr: string; exitCode: number; success: boolean; durationMs: number }>
@@ -17673,7 +17837,7 @@ const r = await services.exec.shell("echo hi");
 if (r.success) runtime.log(r.stdout.trim());
 ```
 
-##### 17.13.4.3 services.exec.stream
+##### 17.13.4.4 services.exec.stream
 
 ```
 stream(cmd: string | string[], onLine: (line: string, stream: "stdout" | "stderr") => void, opts?: { cwd?: string, env?: Record<string, string>, stdin?: string, timeout?: number }): Promise<{ exitCode: number; success: boolean; durationMs: number }>
@@ -18444,9 +18608,32 @@ Run a jq filter and drain the iterator into an array.
 const ids = await text.jq.queryAll(obj, ".users[].id");
 ```
 
-#### 17.14.4 text.preg
+#### 17.14.4 text.markdown
 
-##### 17.14.4.1 text.preg.match
+##### 17.14.4.1 text.markdown.toHtml
+
+```
+toHtml(md: string, opts?: { gfm?: boolean, hardBreaks?: boolean }): string
+```
+
+Render a Markdown string to an HTML string (CommonMark, backed by the pure-Go goldmark). GFM extensions (tables, strikethrough, task lists, autolinks) are on by default; raw HTML in the source is escaped.
+
+**Parameters**
+
+- `md` *(string)* — The Markdown source text.
+- `opts` *({ gfm?: boolean, hardBreaks?: boolean }, optional)* — gfm (default true) enables GitHub-Flavored Markdown extensions — tables, strikethrough, task lists, autolinks. hardBreaks (default false) renders a single source newline as <br> instead of a space.
+
+**Returns:** The rendered HTML fragment (e.g. "<h1>Hi</h1>\n<ul>\n<li>a</li>\n</ul>\n").
+
+**Throws:** Throws ("text.markdown.toHtml: …") if rendering fails (rare — malformed input is handled leniently, not rejected).
+
+```ts
+const html = text.markdown.toHtml("# Hi\n\n- a\n- b");
+```
+
+#### 17.14.5 text.preg
+
+##### 17.14.5.1 text.preg.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -18467,7 +18654,7 @@ First hit of /pattern/flags against subject, or null. Returns { match, groups, i
 const m = text.preg.match("/(\\d+)/", "x42"); // { match: "42", groups: ["42"], index: 1 }
 ```
 
-##### 17.14.4.2 text.preg.matchAll
+##### 17.14.5.2 text.preg.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -18488,7 +18675,7 @@ Every hit of /pattern/flags against subject, as an array of { match, groups, ind
 const all = text.preg.matchAll("/\\d+/", "1 22 333"); // 3 matches
 ```
 
-##### 17.14.4.3 text.preg.replace
+##### 17.14.5.3 text.preg.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -18510,9 +18697,9 @@ Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / 
 text.preg.replace("/(\\w+)@/", "${1}_at_", "a@b"); // "a_at_b"
 ```
 
-#### 17.14.5 text.preg2
+#### 17.14.6 text.preg2
 
-##### 17.14.5.1 text.preg2.match
+##### 17.14.6.1 text.preg2.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -18533,7 +18720,7 @@ First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/ba
 const m = text.preg2.match("/(?<=@)\\w+/", "a@host"); // { match: "host", ... }
 ```
 
-##### 17.14.5.2 text.preg2.matchAll
+##### 17.14.6.2 text.preg2.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -18554,7 +18741,7 @@ Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, 
 const all = text.preg2.matchAll("/\\w+/", "a b c"); // 3 matches
 ```
 
-##### 17.14.5.3 text.preg2.replace
+##### 17.14.6.3 text.preg2.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -18576,9 +18763,9 @@ Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 /
 text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 ```
 
-#### 17.14.6 text.stego
+#### 17.14.7 text.stego
 
-##### 17.14.6.1 text.stego.embed
+##### 17.14.7.1 text.stego.embed
 
 ```
 embed(cover: string, payload: string | Uint8Array, opts?: { password?: string }): string
@@ -18600,7 +18787,7 @@ Hide a payload inside cover text using zero-width characters (U+200B / U+200C), 
 const out = text.stego.embed("Hello there.", "meet at noon", { password: "s3cret" });
 ```
 
-##### 17.14.6.2 text.stego.extract
+##### 17.14.7.2 text.stego.extract
 
 ```
 extract(stegoText: string, opts?: { password?: string }): string | Uint8Array
@@ -18621,9 +18808,9 @@ Recover a payload hidden by text.stego.embed. Scans the string for zero-width ca
 const msg = text.stego.extract(out, { password: "s3cret" });
 ```
 
-#### 17.14.7 text.str
+#### 17.14.8 text.str
 
-##### 17.14.7.1 text.str.base64Decode
+##### 17.14.8.1 text.str.base64Decode
 
 ```
 base64Decode(input: string): string
@@ -18643,7 +18830,7 @@ Decode standard (RFC 4648) base64 with padding. The standard alphabet only — U
 text.str.base64Decode("aGk="); // "hi"
 ```
 
-##### 17.14.7.2 text.str.base64Encode
+##### 17.14.8.2 text.str.base64Encode
 
 ```
 base64Encode(input: string): string
@@ -18663,7 +18850,7 @@ Standard base64 (with padding).
 text.str.base64Encode("hi"); // "aGk="
 ```
 
-##### 17.14.7.3 text.str.base64UrlDecode
+##### 17.14.8.3 text.str.base64UrlDecode
 
 ```
 base64UrlDecode(input: string): string
@@ -18683,7 +18870,7 @@ Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded inpu
 text.str.base64UrlDecode("YT9i"); // "a?b"
 ```
 
-##### 17.14.7.4 text.str.base64UrlEncode
+##### 17.14.8.4 text.str.base64UrlEncode
 
 ```
 base64UrlEncode(input: string): string
@@ -18703,7 +18890,7 @@ URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe t
 text.str.base64UrlEncode("a?b"); // "YT9i"
 ```
 
-##### 17.14.7.5 text.str.br2nl
+##### 17.14.8.5 text.str.br2nl
 
 ```
 br2nl(input: string): string
@@ -18723,7 +18910,7 @@ Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
 text.str.br2nl("a<br/>b"); // "a\nb"
 ```
 
-##### 17.14.7.6 text.str.htmlEntityDecode
+##### 17.14.8.6 text.str.htmlEntityDecode
 
 ```
 htmlEntityDecode(input: string): string
@@ -18743,7 +18930,7 @@ Decode named and numeric HTML entities to their UTF-8 equivalents.
 text.str.htmlEntityDecode("a &amp; b"); // "a & b"
 ```
 
-##### 17.14.7.7 text.str.lpad
+##### 17.14.8.7 text.str.lpad
 
 ```
 lpad(input: string, len: number, padChar?: string): string
@@ -18765,7 +18952,7 @@ Shortcut for pad(side: 'left').
 text.str.lpad("7", 3, "0"); // "007"
 ```
 
-##### 17.14.7.8 text.str.ltrim
+##### 17.14.8.8 text.str.ltrim
 
 ```
 ltrim(input: string, mask?: string): string
@@ -18786,7 +18973,7 @@ Like trim, left side only.
 text.str.ltrim("--x", "-"); // "x"
 ```
 
-##### 17.14.7.9 text.str.nl2br
+##### 17.14.8.9 text.str.nl2br
 
 ```
 nl2br(input: string, xhtml?: boolean): string
@@ -18807,7 +18994,7 @@ Replace newlines with <br> (or <br/> when xhtml=true).
 text.str.nl2br("a\nb"); // "a<br>\nb"
 ```
 
-##### 17.14.7.10 text.str.normalizeNewlines
+##### 17.14.8.10 text.str.normalizeNewlines
 
 ```
 normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string
@@ -18828,7 +19015,7 @@ Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr
 text.str.normalizeNewlines("a\r\nb", "lf"); // "a\nb"
 ```
 
-##### 17.14.7.11 text.str.pad
+##### 17.14.8.11 text.str.pad
 
 ```
 pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string
@@ -18851,7 +19038,7 @@ Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', 
 text.str.pad("7", 3, "0", "left"); // "007"
 ```
 
-##### 17.14.7.12 text.str.printf
+##### 17.14.8.12 text.str.printf
 
 ```
 printf(format: string, ...args: unknown[]): void
@@ -18872,7 +19059,7 @@ sprintf + write to stdout.
 text.str.printf("%d items\n", 3);
 ```
 
-##### 17.14.7.13 text.str.reverse
+##### 17.14.8.13 text.str.reverse
 
 ```
 reverse(input: string): string
@@ -18892,7 +19079,7 @@ Rune-aware reversal — `reverse('café')` is `'éfac'`.
 text.str.reverse("café"); // "éfac"
 ```
 
-##### 17.14.7.14 text.str.rpad
+##### 17.14.8.14 text.str.rpad
 
 ```
 rpad(input: string, len: number, padChar?: string): string
@@ -18914,7 +19101,7 @@ Shortcut for pad(side: 'right').
 text.str.rpad("7", 3, "."); // "7.."
 ```
 
-##### 17.14.7.15 text.str.rtrim
+##### 17.14.8.15 text.str.rtrim
 
 ```
 rtrim(input: string, mask?: string): string
@@ -18935,7 +19122,7 @@ Like trim, right side only.
 text.str.rtrim("x...", "."); // "x"
 ```
 
-##### 17.14.7.16 text.str.sprintf
+##### 17.14.8.16 text.str.sprintf
 
 ```
 sprintf(format: string, ...args: unknown[]): string
@@ -18956,7 +19143,7 @@ Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 text.str.sprintf("%s=%d", "n", 5); // "n=5"
 ```
 
-##### 17.14.7.17 text.str.stripHtml
+##### 17.14.8.17 text.str.stripHtml
 
 ```
 stripHtml(input: string): string
@@ -18976,7 +19163,7 @@ Remove HTML tags and decode common entities.
 text.str.stripHtml("<b>hi</b>"); // "hi"
 ```
 
-##### 17.14.7.18 text.str.trim
+##### 17.14.8.18 text.str.trim
 
 ```
 trim(input: string, mask?: string): string
@@ -18997,7 +19184,7 @@ Strip whitespace (or any char in the optional mask string) from both ends.
 text.str.trim("  hi  "); // "hi"
 ```
 
-##### 17.14.7.19 text.str.urlDecode
+##### 17.14.8.19 text.str.urlDecode
 
 ```
 urlDecode(input: string): string
@@ -19017,7 +19204,7 @@ Inverse of urlEncode.
 text.str.urlDecode("a+b%26c"); // "a b&c"
 ```
 
-##### 17.14.7.20 text.str.urlEncode
+##### 17.14.8.20 text.str.urlEncode
 
 ```
 urlEncode(input: string): string

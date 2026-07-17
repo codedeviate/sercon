@@ -41,12 +41,33 @@ func consoleNamespace(vm *goja.Runtime) map[string]any {
 		fmt.Fprintln(consoleErr, line(call))
 		return goja.Undefined()
 	}
+	table := func(call goja.FunctionCall) goja.Value {
+		var columns []string
+		if arg := call.Argument(1); arg != nil && !goja.IsUndefined(arg) && !goja.IsNull(arg) {
+			if arr, ok := arg.Export().([]any); ok {
+				columns = []string{} // non-nil: an explicit (even empty) restriction
+				for _, it := range arr {
+					if s, ok := it.(string); ok {
+						columns = append(columns, s)
+					}
+				}
+			}
+		}
+		if out, ok := consoleTableString(vm, call.Argument(0), columns); ok {
+			fmt.Fprintln(consoleOut, out)
+		} else {
+			// Non-tabular input (a primitive): behave like console.log(data).
+			fmt.Fprintln(consoleOut, formatValue(vm, call.Argument(0)))
+		}
+		return goja.Undefined()
+	}
 	return map[string]any{
 		"log":   toStdout,
 		"info":  toStdout,
 		"debug": toStdout,
 		"warn":  toStderr,
 		"error": toStderr,
+		"table": table,
 	}
 }
 

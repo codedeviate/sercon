@@ -141,6 +141,13 @@ declare const console: {
    */
   log(...args: unknown[]): void;
   /**
+   * Render tabular data as an aligned, bordered table on stdout (Node/Bun/Deno parity). Accepts an array of objects (rows), an array of primitives, or an object of objects/primitives. Prints a leading (index) column, one column per property (union of keys across rows, first-seen order), and a Values column for primitive rows. Non-tabular input (a primitive) falls back to console.log-style output without throwing.
+   * @param data The rows to tabulate: an array (indices become the (index) column) or an object (keys become the (index) column). Cells are formatted like console.log — primitives raw, objects/arrays as compact JSON (strings are not quoted).
+   * @param columns Restrict and order the property columns to exactly these names; an absent column renders as an empty column. The (index) column is always shown.
+   * @returns void — the table is written to stdout as a side effect.
+   */
+  table(data: unknown, columns?: string[]): void;
+  /**
    * Like console.log but writes to stderr.
    * @param args Values to print; same space-joined / JSON formatting as console.log but routed to stderr.
    * @returns void — output is written to stderr as a side effect.
@@ -471,6 +478,15 @@ declare const text: {
      * @returns Promise<unknown[]> — every value the filter emits, in order (empty array when it emits nothing).
      */
     queryAll(data: unknown, filter: string): Promise<unknown[]>;
+  };
+  markdown: {
+    /**
+     * Render a Markdown string to an HTML string (CommonMark, backed by the pure-Go goldmark). GFM extensions (tables, strikethrough, task lists, autolinks) are on by default; raw HTML in the source is escaped.
+     * @param md The Markdown source text.
+     * @param opts gfm (default true) enables GitHub-Flavored Markdown extensions — tables, strikethrough, task lists, autolinks. hardBreaks (default false) renders a single source newline as <br> instead of a space.
+     * @returns The rendered HTML fragment (e.g. "<h1>Hi</h1>\n<ul>\n<li>a</li>\n</ul>\n").
+     */
+    toHtml(md: string, opts?: { gfm?: boolean, hardBreaks?: boolean }): string;
   };
   preg: {
     /**
@@ -898,6 +914,20 @@ declare const codec: {
      * @returns The XML string.
      */
     encode(value: unknown, opts?: { rootName?: string, indent?: string, declaration?: boolean }): string;
+  };
+  yaml: {
+    /**
+     * Parse a YAML document string into a JS value. Mappings become objects, sequences become arrays, and scalars map to the matching JS type (int/float/boolean/string/null). Only the first document of a multi-document ("---"-separated) stream is parsed; non-string mapping keys are coerced to their string form.
+     * @param text The YAML document text.
+     * @returns The parsed value — a plain object for a mapping, an array for a sequence, or a primitive for a scalar document.
+     */
+    parse(text: string): unknown;
+    /**
+     * Serialize a JS value to a YAML document string. Objects become mappings, arrays become sequences, and primitives become scalars. The value round-trips through codec.yaml.parse.
+     * @param value The value to serialize as YAML (typically an object).
+     * @returns The YAML document text (terminated with a trailing newline).
+     */
+    stringify(value: unknown): string;
   };
 };
 
@@ -1600,6 +1630,13 @@ declare const services: {
      * @returns Promise<{ status: number, headers: Record<string, string>, body: string, durationMs: number, backend: "recon" | "curl" }> — status is the final HTTP status code; headers have lower-cased names (last response block on a redirect chain); body is the UTF-8 decoded response body; backend is whichever tool ran.
      */
     http(method: string, url: string, opts?: { headers?: Record<string, string>, body?: string, timeout?: number, follow?: boolean, insecure?: boolean, backend?: "auto" | "recon" | "curl" }): Promise<{ status: number; headers: Record<string, string>; body: string; durationMs: number; backend: "recon" | "curl" }>;
+    /**
+     * Run a subprocess wired to sercon's own terminal — the interactive counterpart to exec.shell. Inherits stdin/stdout/stderr so genuinely interactive children work (docker exec -it, ssh, interactive mysql/redis-cli REPLs, pagers, full-screen TUIs). On Unix with a real TTY it allocates a pty and switches to raw mode (restored on exit); on a non-TTY stdin or on Windows it inherits the raw handles. Nothing is captured — the result is just { exitCode, success, durationMs }.
+     * @param cmd A string is passed to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell.
+     * @param opts cwd sets the working directory. env entries are merged on top of the inherited environment (they do not replace it). timeout is in ms with NO default (0 / absent = run until the child exits, since an interactive shell or REPL is expected to stay open); when set, the process tree is killed on expiry and the call throws.
+     * @returns Promise<{ exitCode: number, success: boolean, durationMs: number }> — the child's exit code (0 on success), success (exitCode === 0), and wall-clock spawn-to-exit time. No stdout/stderr is captured; the child wrote directly to the terminal.
+     */
+    interactive(cmd: string | string[], opts?: { cwd?: string, env?: Record<string, string>, timeout?: number }): Promise<{ exitCode: number; success: boolean; durationMs: number }>;
     /**
      * Run a subprocess and wait for it to exit. String cmd → /bin/sh -c (or `cmd /C` on Windows); array cmd → argv (no shell). Non-zero exits resolve normally; spawn failures and timeouts throw.
      * @param cmd A string is passed verbatim to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell, so use this form when arguments contain whitespace or shell metacharacters you don't want re-interpreted.

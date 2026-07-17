@@ -419,13 +419,14 @@ func registerSurface(e *scriptengine.Engine) error {
 	}
 	if err := e.RegisterNamespaceFactory("text", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
-			"str":     strNamespace(vm),
-			"preg":    pregNamespace(vm),
-			"preg2":   preg2Namespace(vm),
-			"charset": charsetNamespace(vm, loop),
-			"jq":      jqNamespace(vm, loop),
-			"diff":    diffNamespace(vm, loop),
-			"stego":   textStegoNamespace(vm),
+			"str":      strNamespace(vm),
+			"preg":     pregNamespace(vm),
+			"preg2":    preg2Namespace(vm),
+			"charset":  charsetNamespace(vm, loop),
+			"jq":       jqNamespace(vm, loop),
+			"diff":     diffNamespace(vm, loop),
+			"stego":    textStegoNamespace(vm),
+			"markdown": textMarkdownNamespace(vm),
 		}
 	}); err != nil {
 		return err
@@ -441,6 +442,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"sheet":       sheetNamespace(vm),
 			"doc":         docNamespace(vm),
 			"toml":        tomlNamespace(vm),
+			"yaml":        yamlNamespace(vm),
 			"dotenv":      dotenvNamespace(vm),
 		}
 	}); err != nil {
@@ -520,9 +522,10 @@ func registerSurface(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("services", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
 			"exec": map[string]any{
-				"shell":  scriptengine.PromisifyAsync(vm, loop, execShellExtract, execShell),
-				"http":   scriptengine.PromisifyAsync(vm, loop, execHTTPExtract, execHTTP),
-				"stream": execStreamFn(vm, loop, e),
+				"shell":       scriptengine.PromisifyAsync(vm, loop, execShellExtract, execShell),
+				"http":        scriptengine.PromisifyAsync(vm, loop, execHTTPExtract, execHTTP),
+				"stream":      execStreamFn(vm, loop, e),
+				"interactive": scriptengine.PromisifyAsync(vm, loop, execInteractiveExtract, execInteractive),
 			},
 			"git":          gitNamespace(vm, loop),
 			"gh":           ghNamespace(vm, loop),

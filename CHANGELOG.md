@@ -8,6 +8,37 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`codec.yaml.parse` / `codec.yaml.stringify`.** YAML text ↔ JS value, the
+  same `JSON`-shaped pair as `codec.toml`: mappings ↔ objects, sequences ↔
+  arrays, scalars ↔ primitives. Backed by the pure-Go `yaml.v3` (already
+  vendored, promoted to a direct dependency; stays cgo-free). Only the first
+  document of a `---`-separated stream is parsed, and non-string mapping keys
+  are coerced to their string form (documented v1 limitations). Example:
+  `examples/scripts/codec-yaml.ts`.
+- **`console.table(data, columns?)`.** Node/Bun/Deno-parity tabular output: an
+  array of objects, an array of primitives, or an object of objects/primitives
+  renders as an aligned, bordered table with a leading `(index)` column and an
+  optional `Values` column. The optional `columns` array restricts and orders
+  the property columns. Cells are formatted like `console.log`; non-tabular
+  input falls back to a `console.log`-style line without throwing. Pure-Go
+  (hand-rolled Unicode-box renderer, no new dependency).
+- **`services.exec.interactive(cmd, opts?)`.** Run a subprocess wired to
+  sercon's own terminal — the interactive counterpart to `exec.shell`. Inherits
+  stdin/stdout/stderr so `docker exec -it`, `ssh`, interactive REPLs, pagers,
+  and full-screen TUIs work. On Unix with a real TTY it allocates a pty and
+  switches to raw mode (restored on every exit path, including timeout /
+  cancellation), forwarding `SIGWINCH`; a non-TTY stdin or Windows inherits the
+  raw handles. `timeout` has no default (0 / absent = run until exit). Resolves
+  `{ exitCode, success, durationMs }` (nothing captured). Example (TTY-only,
+  not in `make demo`): `examples/scripts/exec-interactive.ts`.
+- **`text.markdown.toHtml(md, opts?)`.** Render a Markdown string to an HTML
+  string (CommonMark) via the pure-Go `goldmark` (new authorized direct
+  dependency; stays cgo-free). GFM extensions (tables, strikethrough, task
+  lists, autolinks) are on by default (`gfm: false` disables); `hardBreaks:
+  true` maps a source newline to `<br>`. Raw HTML is escaped. Example:
+  `examples/scripts/text-markdown.ts`.
+
 ## [0.97.0] — 2026-07-16
 
 ### Added

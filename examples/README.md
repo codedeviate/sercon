@@ -44,6 +44,7 @@ Or pick individual scripts:
 | `dump-codec.ts` | `codec.php.*` / `codec.perl.*` — round-trip a value through PHP serialize / var_export / var_dump and Perl Data::Dumper. |
 | `codec-xml.ts` | `codec.xml.encode` / `decode` — value ↔ XML (@-attributes, #text, arrays as repeated siblings). Round-trips an object and self-checks. |
 | `codec-toml.ts` | `codec.toml.parse` / `stringify` — value ↔ TOML (pure-Go, `pelletier/go-toml/v2`). Parses a document, asserts typed fields, and round-trips through stringify. |
+| `codec-yaml.ts` | `codec.yaml.parse` / `stringify` — value ↔ YAML (pure-Go, `yaml.v3`). Parses a mapping and a top-level sequence, asserts typed fields, and round-trips through stringify. |
 | `archive.ts` | `archive.create/extract` round-trip over zip / tar / tar.gz. |
 | `diff.ts` | `diff.compare` — unified diff of two text inputs. |
 | `jq.ts` | `jq.query/queryAll` — jq filters over JS data structures. |
@@ -96,10 +97,12 @@ Or pick individual scripts:
 | `stego.ts` | `image.stego` — LSB steganography: check capacity on an embedded PNG carrier, embed a password-encrypted secret, extract and assert round-trip equality. Fully offline and self-contained. |
 | `stego-analyze.ts` | `image.stego.detect` / `image.stego.analyze` / `image.stego.bitplane` — embed a secret in an in-memory PNG, assert the detection and analysis verdict, write a bit-plane PNG to `$TMPDIR`. Fully offline and self-contained. |
 | `text-stego.ts` | `text.stego` — zero-width character steganography: embed a password-protected secret in plain cover text, assert the visible text is unchanged, extract and verify round-trip. Fully offline and self-contained. |
+| `text-markdown.ts` | `text.markdown.toHtml` — render Markdown to HTML (pure-Go `goldmark`): headings/lists, a GFM table (on by default), `gfm:false` opt-out, and `hardBreaks`. Fully offline and self-contained. |
 | `audio-stego.ts` | `audio.stego` — WAV PCM LSB steganography: synthesize a 16-bit PCM WAV in-script, check capacity, embed a password-protected secret, extract and assert round-trip equality. Fully offline and self-contained. |
 | `audio-format.ts` | `audio.info` / `audio.convert` — synthesize a 16-bit PCM WAV in-script, probe it with `audio.info`, convert to FLAC with `audio.convert`, probe the result and assert format + channels, write the FLAC to `$TMPDIR`. Fully offline and self-contained. |
 | `tui-keys.ts` | `tui.*` — autoscroll (panes follow the tail), `{ autoscroll: false }` per-pane opt-out, `{ mouse: true }` root option, `tui.onKey` persistent callback, `tui.waitKey` awaitable keypress. Falls back to prefixed lines in non-TTY. |
 | `pty-color.ts` | `services.exec.shell` `{ pty: true }` — run a command under a pseudo-terminal so TTY-gated color output reaches the pane; contrasts with the same command without `pty` (monochrome). Unix only; falls back to pipes on Windows. **Run separately in a real terminal** — headless the PTY pane renders blank (CRLF), so the color contrast only shows on a TTY. |
+| `exec-interactive.ts` | `services.exec.interactive` — run a child wired to sercon's own terminal (inherits stdin/stdout/stderr; Unix pty + raw mode). Launches an interactive shell. **TTY-only, run separately** — intentionally NOT in `make demo` (like `hang.ts`); needs a real terminal. |
 | `hang.ts` | Timeout demo; intentionally non-zero exit. Run separately. |
 | `paymentproviders-kcov3.ts` | Bundled `paymentproviders` library — KCO v3 payment lifecycle (`getPayment`/`capturePayment`/`refundPayment`/`cancelPayment`) over a local mock; live check self-skips without `KCO_*` env. |
 | `paymentproviders-nets.ts` | Bundled `paymentproviders` — `netsv1` (Nexi/Nets Checkout v1) create/get over a local mock; live check self-skips without `NETS_SECRET_KEY`. |

@@ -31,6 +31,18 @@ if (r.success) runtime.log(r.stdout.trim());`,
 });
 runtime.log("exit", r.exitCode);`,
 		},
+		"exec.interactive": {
+			Summary: "Run a subprocess wired to sercon's own terminal — the interactive counterpart to exec.shell. Inherits stdin/stdout/stderr so genuinely interactive children work (docker exec -it, ssh, interactive mysql/redis-cli REPLs, pagers, full-screen TUIs). On Unix with a real TTY it allocates a pty and switches to raw mode (restored on exit); on a non-TTY stdin or on Windows it inherits the raw handles. Nothing is captured — the result is just { exitCode, success, durationMs }.",
+			Params: []scriptengine.Param{
+				{Name: "cmd", Type: "string | string[]", Desc: "A string is passed to the host shell (/bin/sh -c on Unix, cmd /C on Windows) so quoting, pipes, and redirects work. A string[] is treated as argv: argv[0] is run directly with no shell."},
+				{Name: "opts", Type: "{ cwd?: string, env?: Record<string, string>, timeout?: number }", Optional: true, Desc: "cwd sets the working directory. env entries are merged on top of the inherited environment (they do not replace it). timeout is in ms with NO default (0 / absent = run until the child exits, since an interactive shell or REPL is expected to stay open); when set, the process tree is killed on expiry and the call throws."},
+			},
+			ReturnType: "Promise<{ exitCode: number; success: boolean; durationMs: number }>",
+			Returns:    "Promise<{ exitCode: number, success: boolean, durationMs: number }> — the child's exit code (0 on success), success (exitCode === 0), and wall-clock spawn-to-exit time. No stdout/stderr is captured; the child wrote directly to the terminal.",
+			Errors:     "Throws if cmd is missing, an empty string, an empty array, or a non-string array element; if the host binary is not on PATH or fails to start; or if the timeout (or context cancellation) fires before exit — terminal state is restored first. A non-zero exit code does NOT throw — it resolves with success:false.",
+			Example: `const r = await services.exec.interactive("ssh user@host");
+runtime.log("session ended, exit", r.exitCode);`,
+		},
 		"exec.http": {
 			Summary: "Make an HTTP request by shelling out to recon (preferred) or curl (fallback). 4xx/5xx resolve as status; transport errors and timeouts throw. opts.backend = 'auto' | 'recon' | 'curl'.",
 			Params: []scriptengine.Param{

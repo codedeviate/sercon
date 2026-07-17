@@ -306,6 +306,26 @@ const capped = await codec.compression.decompress("gzip", packed, { maxBytes: 1 
 			Errors:     "Does not throw.",
 			Example:    `if (!codec.doc.formats().pdf.write) console.log("pdf is read-only");`,
 		},
+		"yaml.parse": {
+			Summary: "Parse a YAML document string into a JS value. Mappings become objects, sequences become arrays, and scalars map to the matching JS type (int/float/boolean/string/null). Only the first document of a multi-document (\"---\"-separated) stream is parsed; non-string mapping keys are coerced to their string form.",
+			Params: []scriptengine.Param{
+				{Name: "text", Type: "string", Desc: "The YAML document text."},
+			},
+			ReturnType: "unknown",
+			Returns:    "The parsed value — a plain object for a mapping, an array for a sequence, or a primitive for a scalar document.",
+			Errors:     "Throws (\"codec.yaml.parse: …\") on malformed YAML.",
+			Example:    "const cfg = codec.yaml.parse('port: 8080\\ndb:\\n  host: localhost');",
+		},
+		"yaml.stringify": {
+			Summary: "Serialize a JS value to a YAML document string. Objects become mappings, arrays become sequences, and primitives become scalars. The value round-trips through codec.yaml.parse.",
+			Params: []scriptengine.Param{
+				{Name: "value", Type: "unknown", Desc: "The value to serialize as YAML (typically an object)."},
+			},
+			ReturnType: "string",
+			Returns:    "The YAML document text (terminated with a trailing newline).",
+			Errors:     "Throws (\"codec.yaml.stringify: …\") if the value can't be represented as YAML.",
+			Example:    "const text = codec.yaml.stringify({ port: 8080, db: { host: \"localhost\" } });",
+		},
 		"dotenv.parse": {
 			Summary: "Parse dotenv-format text into an object. Handles KEY=VALUE lines, # comments, blank lines, an optional leading `export `, and surrounding single/double quotes; no shell expansion. A later duplicate key overrides an earlier one. Pure — does not touch the environment.",
 			Params: []scriptengine.Param{

@@ -77,6 +77,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/dump-codec.ts \
 	examples/scripts/codec-xml.ts \
 	examples/scripts/codec-toml.ts \
+	examples/scripts/codec-yaml.ts \
 	examples/scripts/archive.ts \
 	examples/scripts/diff.ts \
 	examples/scripts/jq.ts \
@@ -121,6 +122,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/stego.ts \
 	examples/scripts/stego-analyze.ts \
 	examples/scripts/text-stego.ts \
+	examples/scripts/text-markdown.ts \
 	examples/scripts/audio-stego.ts \
 	examples/scripts/audio-format.ts \
 	examples/scripts/tui-keys.ts \

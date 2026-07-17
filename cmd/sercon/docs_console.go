@@ -44,5 +44,16 @@ func consoleDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Never throws; values JSON cannot serialise degrade to their String() form.",
 			Example:    `console.error("request failed", { status: 500 });`,
 		},
+		"table": {
+			Summary: "Render tabular data as an aligned, bordered table on stdout (Node/Bun/Deno parity). Accepts an array of objects (rows), an array of primitives, or an object of objects/primitives. Prints a leading (index) column, one column per property (union of keys across rows, first-seen order), and a Values column for primitive rows. Non-tabular input (a primitive) falls back to console.log-style output without throwing.",
+			Params: []scriptengine.Param{
+				{Name: "data", Type: "unknown", Desc: "The rows to tabulate: an array (indices become the (index) column) or an object (keys become the (index) column). Cells are formatted like console.log — primitives raw, objects/arrays as compact JSON (strings are not quoted)."},
+				{Name: "columns", Type: "string[]", Optional: true, Desc: "Restrict and order the property columns to exactly these names; an absent column renders as an empty column. The (index) column is always shown."},
+			},
+			ReturnType: "void",
+			Returns:    "void — the table is written to stdout as a side effect.",
+			Errors:     "Never throws; non-tabular input degrades to a console.log-style line.",
+			Example:    `console.table([{ name: "web", status: "ok" }, { name: "db", status: "down" }]);`,
+		},
 	}
 }

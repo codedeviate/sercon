@@ -342,6 +342,17 @@ runtime.log(r.charset, r.confidence);`,
 			Errors:     "Throws if no sercon stego payload is present, if the payload is encrypted but no password is given, or if decryption fails (wrong password / corrupt).",
 			Example:    `const msg = text.stego.extract(out, { password: "s3cret" });`,
 		},
+		"markdown.toHtml": {
+			Summary: "Render a Markdown string to an HTML string (CommonMark, backed by the pure-Go goldmark). GFM extensions (tables, strikethrough, task lists, autolinks) are on by default; raw HTML in the source is escaped.",
+			Params: []scriptengine.Param{
+				{Name: "md", Type: "string", Desc: "The Markdown source text."},
+				{Name: "opts", Type: "{ gfm?: boolean, hardBreaks?: boolean }", Optional: true, Desc: "gfm (default true) enables GitHub-Flavored Markdown extensions — tables, strikethrough, task lists, autolinks. hardBreaks (default false) renders a single source newline as <br> instead of a space."},
+			},
+			ReturnType: "string",
+			Returns:    "The rendered HTML fragment (e.g. \"<h1>Hi</h1>\\n<ul>\\n<li>a</li>\\n</ul>\\n\").",
+			Errors:     "Throws (\"text.markdown.toHtml: …\") if rendering fails (rare — malformed input is handled leniently, not rejected).",
+			Example:    `const html = text.markdown.toHtml("# Hi\n\n- a\n- b");`,
+		},
 		"diff.compare": {
 			Summary: "Unified-diff two text inputs. opts: context (default 3), fromFile / toFile (default 'a' / 'b'). Binary inputs return { binary: true } with an empty diff.",
 			Params: []scriptengine.Param{
