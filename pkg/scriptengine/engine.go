@@ -135,6 +135,7 @@ type Engine struct {
 	// as a safety net.
 	holdRunMu        sync.Mutex
 	holdRunLoop      *eventloop.EventLoop
+	holdRunVM        *goja.Runtime // this Run's vm, for HoldRun's synchronous keep-alive bridge
 	holdRunSentinels map[*holdRunEntry]struct{}
 
 	// abortFn cancels the in-flight Run. Set at the top of Run to the
@@ -629,6 +630,13 @@ func (e *Engine) Run(ctx context.Context, name, source string, opts ...RunOption
 		// read it the moment a script calls it. See runCtxGlobalName's doc
 		// comment for why this lives on the vm rather than on the Engine.
 		_ = vm.Set(runCtxGlobalName, &runCtxHolder{ctx: runCtx})
+
+		// Record this Run's vm so HoldRun can synchronously bridge the loop's
+		// job count when a long-lived binding is started right after an awaited
+		// timer (see bumpLoopSync / hold_run.go).
+		e.holdRunMu.Lock()
+		e.holdRunVM = vm
+		e.holdRunMu.Unlock()
 
 		if err := e.applyRegistrations(vm, loop); err != nil {
 			scriptErr = err

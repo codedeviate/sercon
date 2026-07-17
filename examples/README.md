@@ -50,6 +50,7 @@ Or pick individual scripts:
 | `jq.ts` | `jq.query/queryAll` — jq filters over JS data structures. |
 | `exec-shell.ts` | `exec.shell` — subprocess runner; POSIX-only (uses `/bin/echo` / `/usr/bin/tr` / `sleep`). |
 | `exec-stream.ts` | `services.exec.stream` — run a subprocess and stream its stdout/stderr to a callback line by line; resolves `{ exitCode, success, durationMs }` on exit. Runs a finite `echo` command and self-checks. |
+| `async-timer-host.ts` | Regression guard — a host async call (`services.exec.shell`) awaited immediately after an awaited `setTimeout` / `runtime.time.sleep` must still run its continuation (the event loop used to drain and silently drop the tail). Fully offline and self-checking. |
 | `exec-http.ts` | `exec.http` — recon-with-curl-fallback HTTP client; hits httpbin.org (not in CI). |
 | `http-request.ts` | `http.request` — full HTTP client (headers/body/timeout/retry/auth/redirect) over net/http; hits httpbin.org (not in CI). |
 | `browser.ts` | `browser.*` — stateful HTTP session (cookie jar + replayed headers); hits httpbin.org (not in CI). |

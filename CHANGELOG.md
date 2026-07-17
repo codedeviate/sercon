@@ -8,6 +8,23 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Fixed
+- **Host async call after an awaited timer no longer silently drops its
+  continuation.** In the sequence `await <setTimeout-backed promise>; await
+  <host binding>` (e.g. `await sleep(ms); await services.exec.shell(...)`), the
+  event loop could exit the instant the timer dropped its job count to zero —
+  before the host binding's keep-alive sentinel was armed — so the host call's
+  continuation never ran and the script "succeeded" (exit 0) with its tail
+  skipped. Root cause: the eventloop's Go-side `loop.SetTimeout` defers its
+  `jobCount` increment into an aux job, and `doTimeout` decrements `jobCount`
+  before running the timer callback, so the run loop's `for jobCount > 0` guard
+  exited first. `PromisifyAsync` and `Engine.HoldRun` now synchronously bridge
+  that window (a no-op `setImmediate`, which increments `jobCount`
+  synchronously) right after parking the sentinel. Affects every
+  `PromisifyAsync` binding (`services.exec.*`, `net.*`, …) and long-lived
+  `HoldRun` bindings (servers/listeners). Regression coverage:
+  `examples/scripts/async-timer-host.ts` + engine tests.
+
 ## [0.98.0] — 2026-07-17
 
 ### Added

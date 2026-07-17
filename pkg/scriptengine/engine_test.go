@@ -164,6 +164,84 @@ if (x !== 42) throw new Error("expected 42, got " + x);
 	}
 }
 
+// A host async binding awaited immediately after a setTimeout-backed promise
+// must still run its continuation. Regression for the timer->host handoff race:
+// goja_nodejs/eventloop decrements jobCount in doTimeout BEFORE running the
+// timer callback, and the Go-side loop.SetTimeout used by PromisifyAsync's
+// keep-alive sentinel defers its jobCount increment into an aux job. So without
+// a synchronous bridge, the awaited timer dropped jobCount to 0 and the run
+// loop exited before the sentinel was armed — the host call silently never
+// completed and the script "succeeded" (exit 0) with its tail skipped.
+func TestRun_TimerThenHostAsyncContinues(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.RegisterFactory("asyncEcho", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
+		return scriptengine.PromisifyAsync(vm, loop,
+			func(call goja.FunctionCall) (string, error) { return call.Argument(0).String(), nil },
+			func(_ context.Context, s string) (string, error) { return "got:" + s, nil })
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// mark records, from the loop goroutine, that the post-await continuation
+	// ran. Read after Run returns (loop finished) — safe via that happens-before.
+	var marked atomic.Value
+	if err := eng.Register("mark", func(s string) { marked.Store(s) }); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "race.ts", `
+await new Promise((r) => setTimeout(r, 20));
+const out = await asyncEcho("hi");
+mark(out);
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, _ := marked.Load().(string); got != "got:hi" {
+		t.Fatalf("continuation after timer->host await was dropped: mark got %q, want %q", got, "got:hi")
+	}
+}
+
+// HoldRun uses the same deferred loop.SetTimeout sentinel as PromisifyAsync, so
+// it hit the same timer->host handoff race: a long-lived binding started right
+// after an awaited setTimeout, whose only keep-alive is HoldRun, must keep the
+// loop alive long enough for a later async resolution to run. Here holdThing
+// parks a HoldRun and resolves its promise from a background goroutine 30ms
+// later; without the synchronous bridge in HoldRun the loop exited immediately
+// after the awaited timer and the resolution (and mark) never ran.
+func TestRun_TimerThenHoldRunKeepsLoopAlive(t *testing.T) {
+	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
+	if err := eng.RegisterFactory("holdThing", func(vm *goja.Runtime, loop *eventloop.EventLoop) any {
+		return func(goja.FunctionCall) goja.Value {
+			release := eng.HoldRun("test-hold")
+			promise, resolve, _ := vm.NewPromise()
+			go func() {
+				time.Sleep(30 * time.Millisecond)
+				loop.RunOnLoop(func(vm *goja.Runtime) {
+					_ = resolve(vm.ToValue("held-done"))
+					release()
+				})
+			}()
+			return vm.ToValue(promise)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var marked atomic.Value
+	if err := eng.Register("mark", func(s string) { marked.Store(s) }); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "hold.ts", `
+await new Promise((r) => setTimeout(r, 20));
+const x = await holdThing();
+mark(x);
+`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, _ := marked.Load().(string); got != "held-done" {
+		t.Fatalf("HoldRun did not keep the loop alive across timer->hold: mark got %q, want %q", got, "held-done")
+	}
+}
+
 // 4. Promise from Go rejects and try/catch in the script catches it.
 func TestRun_PromiseRejectCatchable(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})

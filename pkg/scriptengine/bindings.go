@@ -92,6 +92,16 @@ func PromisifyAsync[A, T any](vm *goja.Runtime, loop *eventloop.EventLoop,
 		// Park a long-duration setTimeout while the work is in flight and clear
 		// it on resolution so the loop drains exactly when the work is done.
 		keepAlive := loop.SetTimeout(func(*goja.Runtime) {}, 24*time.Hour)
+		// The Go-side loop.SetTimeout above defers its jobCount increment into an
+		// aux job that only runs when the run loop next drains aux jobs. That
+		// leaves a window in the "await <setTimeout-backed promise>; await
+		// <this binding>" sequence: doTimeout decrements jobCount to 0 BEFORE
+		// running the timer callback, the callback runs the continuation that
+		// invokes this binding, and the run loop's top-level `for jobCount > 0`
+		// guard then exits before the sentinel's increment is drained — silently
+		// dropping this call's continuation. bumpLoopSync bridges that window by
+		// incrementing jobCount synchronously (see its doc).
+		bumpLoopSync(vm)
 
 		go func() {
 			val, err := work(ctx, args)
@@ -118,6 +128,44 @@ func PromisifyAsync[A, T any](vm *goja.Runtime, loop *eventloop.EventLoop,
 	tsRet := tsType(newTypeCtx(), reflect.TypeOf((*T)(nil)).Elem())
 
 	return AsyncBinding{Func: fn, TSReturnType: tsRet}
+}
+
+// bumpLoopSync synchronously increments the event loop's job count so the loop
+// cannot exit while a keep-alive sentinel parked via the Go-side
+// loop.SetTimeout (whose jobCount increment is deferred into an aux job) is
+// still pending.
+//
+// Why it's needed: goja_nodejs/eventloop decrements jobCount in doTimeout
+// BEFORE running a timer's callback, and its Go-side SetTimeout/SetInterval/
+// RunOnLoop APIs all defer their bookkeeping into aux jobs. So in the sequence
+//
+//	await <setTimeout-backed promise>; await <host binding>
+//
+// the awaited timer drops jobCount to 0, its callback runs the continuation
+// that invokes the host binding and parks a sentinel via loop.SetTimeout (the
+// increment still queued in an aux job) — and the run loop's top-level
+// `for jobCount > 0` guard then exits before that aux job runs, silently
+// dropping the host call's continuation.
+//
+// The JS-facing setImmediate global (loop.setImmediate) increments jobCount
+// SYNCHRONOUSLY — unlike the Go APIs — and self-clears on the next tick, by
+// which point the deferred sentinel's own aux job has been drained. Scheduling
+// a no-op setImmediate therefore bridges the transient-zero window without
+// changing the steady-state job count.
+//
+// Must be called on the loop goroutine (host binding fns run there). No-ops
+// safely when the vm has no eventloop timer globals — e.g. a bare goja.New vm
+// in a unit test, which has no running loop to keep alive.
+func bumpLoopSync(vm *goja.Runtime) {
+	if vm == nil {
+		return
+	}
+	setImmediate, ok := goja.AssertFunction(vm.Get("setImmediate"))
+	if !ok {
+		return
+	}
+	noop := vm.ToValue(func(goja.FunctionCall) goja.Value { return goja.Undefined() })
+	_, _ = setImmediate(goja.Undefined(), noop)
 }
 
 // rejectionValue builds the value a rejected async binding throws. It is a

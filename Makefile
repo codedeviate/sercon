@@ -83,6 +83,7 @@ DEMO_SCRIPTS = \
 	examples/scripts/jq.ts \
 	examples/scripts/exec-shell.ts \
 	examples/scripts/exec-stream.ts \
+	examples/scripts/async-timer-host.ts \
 	examples/scripts/exec-http.ts \
 	examples/scripts/http-request.ts \
 	examples/scripts/browser.ts \

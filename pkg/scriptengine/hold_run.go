@@ -39,6 +39,7 @@ type holdRunEntry struct {
 func (e *Engine) HoldRun(reason string) (release func()) {
 	e.holdRunMu.Lock()
 	loop := e.holdRunLoop
+	vm := e.holdRunVM
 	e.holdRunMu.Unlock()
 	if loop == nil {
 		// No active Run; return a no-op release. Bindings can still
@@ -51,6 +52,13 @@ func (e *Engine) HoldRun(reason string) (release func()) {
 	// Park a 24h sentinel. goja_nodejs/eventloop counts SetTimeout as
 	// a live task, so the loop will not exit while this sits.
 	entry.timer = loop.SetTimeout(func(*goja.Runtime) { /* never fires unless 24h elapses */ }, 24*time.Hour)
+	// loop.SetTimeout defers its jobCount increment into an aux job. When a
+	// long-lived binding is started right after an awaited setTimeout-backed
+	// promise, the run loop can exit before that aux job runs (the timer drops
+	// jobCount to 0 first). bumpLoopSync bridges that window synchronously so
+	// the sentinel is never lost. Safe here: HoldRun is documented to run on
+	// the loop goroutine (binding factory / callback), where touching vm is ok.
+	bumpLoopSync(vm)
 
 	e.holdRunMu.Lock()
 	if e.holdRunSentinels == nil {
@@ -90,6 +98,7 @@ func (e *Engine) HoldRun(reason string) (release func()) {
 func (e *Engine) holdRunBegin(loop *eventloop.EventLoop) {
 	e.holdRunMu.Lock()
 	e.holdRunLoop = loop
+	e.holdRunVM = nil // set later, inside the loop callback once the vm exists
 	for entry := range e.holdRunSentinels {
 		entry.released.Store(true)
 	}
@@ -108,6 +117,7 @@ func (e *Engine) holdRunEnd() {
 	loop := e.holdRunLoop
 	entries := e.holdRunSentinels
 	e.holdRunLoop = nil
+	e.holdRunVM = nil
 	e.holdRunSentinels = nil
 	e.holdRunMu.Unlock()
 	if loop == nil {
