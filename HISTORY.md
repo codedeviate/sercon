@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.97.0 (2026-07-16).
+covered is v0.1.0 (2026-05-25) through v0.98.0 (2026-07-17).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -248,7 +248,11 @@ reference spliced into MANUAL.md §16 via `make reference`.
 A browser/Node-compatible `console` shim was added: `log`/`info`/`debug` →
 stdout, `warn`/`error` → stderr. This replaced goja's default console
 (which routed everything through Go's logger — timestamped, all on stderr).
-`runtime.log` remains the native stdout logger.
+`runtime.log` remains the native stdout logger. `console.table` (Node/Bun/Deno
+-parity bordered table with a leading `(index)` column, optional `Values`
+column, and a `columns` restrict/order argument; hand-rolled Unicode-box
+renderer, no new dependency) was added in v0.98.0, surfaced by the DailyScripts
+port (~24 call sites).
 
 ---
 
@@ -372,6 +376,13 @@ unified-diff body.
 sibling backed by `dlclark/regexp2`, supporting lookahead, lookbehind, and
 backreferences that RE2 cannot do.
 
+**`text.markdown.toHtml`** (Markdown → HTML): v0.98.0, backed by pure-Go
+`yuin/goldmark` (CommonMark; GFM extensions — tables/strikethrough/task
+lists/autolinks — on by default, plus a `hardBreaks` option). String in,
+string out — complements the existing Markdown → **PDF** path
+(`recon --md-to-pdf`). Surfaced by the DailyScripts port (its `md`/`md2html`
+helper); the new dependency was maintainer-authorized.
+
 ### `codec`
 
 **`codec.compression.*`** (nine algorithms: gzip/deflate/zlib/bzip2/zstd/
@@ -391,6 +402,13 @@ cycle detection.
 
 **`codec.xml.*`** (`encode`/`decode` via `@`-prefix attributes and `#text`
 convention): v0.32.0.
+
+**`codec.yaml.*`** (`parse`/`stringify`): v0.98.0, the `JSON`-shaped pair
+matching `codec.toml`, backed by the pure-Go `yaml.v3` (promoted from an
+indirect to a direct dependency). First document of a `---` stream only;
+non-string mapping keys are coerced to their string form so goja can expose
+the mapping as an object. Surfaced by the DailyScripts port (native config
+loading in place of a JSON shim).
 
 ### `fs`
 
@@ -519,6 +537,10 @@ non-zero exits resolve as data): v0.4.17. Group-kill on timeout/cancel:
 v0.6.0. `services.exec.stream` (line-by-line streaming with `onLine`
 callback): v0.28.0. `services.exec.shell` gained `{ pty: true }` for
 pseudo-terminal (color/progress) support on Unix: v0.35.0.
+`services.exec.interactive` (child wired to sercon's own terminal for
+`docker -it` / `ssh` / interactive REPLs — Unix pty + raw mode + `SIGWINCH`,
+restored on every exit path; non-TTY and Windows inherit the raw handles):
+v0.98.0, surfaced by the DailyScripts port (its `inherit`-stdio `sysCall`).
 
 **`services.exec.http`** (recon-with-curl-fallback HTTP client): v0.4.18.
 

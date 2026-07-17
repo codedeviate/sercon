@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.98.0] — 2026-07-17
+
 ### Added
 - **`codec.yaml.parse` / `codec.yaml.stringify`.** YAML text ↔ JS value, the
   same `JSON`-shaped pair as `codec.toml`: mappings ↔ objects, sequences ↔
