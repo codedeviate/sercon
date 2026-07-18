@@ -114,6 +114,20 @@ type Image = {
   save(path: string, opts?: { format?: string; quality?: number }): void;
 };
 
+type FindEntry = { path: string; type: "file" | "dir" | "symlink"; size: number; mtimeMs: number };
+
+type GrepMatch = { path: string; line: number; column: number; match: string; text: string; before?: string[]; after?: string[] };
+
+type GrepOptions = {
+  pattern: string; fixed?: boolean; root?: string | string[]; paths?: string[];
+  glob?: string | string[]; exclude?: string | string[]; type?: string | string[]; extension?: string | string[];
+  case?: "smart" | "sensitive" | "insensitive"; word?: boolean; multiline?: boolean;
+  context?: number; before?: number; after?: number; invert?: boolean;
+  maxMatches?: number; maxResults?: number; includeBinary?: boolean;
+  hidden?: boolean; gitignore?: boolean; followSymlinks?: boolean; maxDepth?: number;
+  absolute?: boolean; sort?: boolean; strict?: boolean; stream?: boolean;
+};
+
 /** Browser/Node-style console shim: log/info/debug to stdout, warn/error to stderr. For porting scripts; runtime.log is the native equivalent. */
 declare const console: {
   /**
@@ -962,6 +976,24 @@ declare const fs: {
    * @returns By default Promise<string[]> of matching paths (relative to cwd, or absolute with absolute:true). With stat:true, Promise<{ path: string, type: "file"|"dir"|"symlink", size: number, mtimeMs: number }[]>. With stream:true, an async iterator (for await ...) yielding the same items.
    */
   find(opts?: { root?: string | string[], glob?: string | string[], exclude?: string | string[], regex?: string, fullPath?: boolean, type?: "file"|"dir"|"symlink"|Array<"file"|"dir"|"symlink">, extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, minDepth?: number, absolute?: boolean, limit?: number, sort?: boolean, strict?: boolean, stat?: boolean, stream?: boolean }): Promise<string[]> | Promise<FindEntry[]> | AsyncIterable<string>;
+  /**
+   * Fast content search (rg-like): walk roots (or explicit paths) and return per-line matches. RE2 regex by default (fixed:true for a literal). Respects .gitignore, skips hidden and binary files by default. Returns GrepMatch[], or an async iterator with stream:true.
+   * @param opts pattern is a RE2 regex (or literal with fixed:true). root defaults to "."; paths searches explicit files instead. type maps rg-style names (ts/js/go/md/json/py/rs/c) to extensions. case defaults to smart. context (or before/after) adds context lines. invert emits non-matching lines. maxMatches caps per file; maxResults caps total. Binary files are skipped unless includeBinary. stream returns an async iterator.
+   * @returns Promise<{ path: string, line: number, column: number, match: string, text: string, before?: string[], after?: string[] }[]> (1-based line/column). With stream:true, an async iterator yielding the same objects.
+   */
+  grep(opts: { pattern: string, fixed?: boolean, root?: string | string[], paths?: string[], glob?: string | string[], exclude?: string | string[], type?: string | string[], extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", word?: boolean, multiline?: boolean, context?: number, before?: number, after?: number, invert?: boolean, maxMatches?: number, maxResults?: number, includeBinary?: boolean, hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, absolute?: boolean, sort?: boolean, strict?: boolean, stream?: boolean }): Promise<GrepMatch[]> | AsyncIterable<GrepMatch>;
+  /**
+   * Like fs.grep but returns per-file match counts (rg -c). Files with zero matches are omitted.
+   * @param opts Same options as fs.grep.
+   * @returns Promise<{ path: string, count: number }[]> — one entry per file with >= 1 match.
+   */
+  grepCount(opts: GrepOptions): Promise<{ path: string; count: number }[]>;
+  /**
+   * Like fs.grep but returns just the paths of files with at least one match (rg -l). Stops at the first match per file, so it is faster than fs.grep when you only need the file list.
+   * @param opts Same options as fs.grep (streaming/context options are ignored).
+   * @returns Promise<string[]> — paths (relative to cwd, or absolute with absolute:true) of files containing at least one match.
+   */
+  grepFiles(opts: GrepOptions): Promise<string[]>;
   /**
    * Create a directory, including any missing parents (mkdir -p). Idempotent.
    * @param path Directory path to create (mode 0755). Existing directories are fine.

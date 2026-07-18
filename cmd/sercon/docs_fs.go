@@ -131,5 +131,35 @@ runtime.log(st.size, st.isDir, st.modifiedMs);`,
 			Errors:     "Throws (\"fs.find: …\") on an invalid regex, or on the first traversal error when strict:true. Unreadable files/dirs are skipped by default.",
 			Example:    "const files = await fs.find({ glob: \"src/**/*.ts\", type: \"file\" });",
 		},
+		"grep": {
+			Summary: "Fast content search (rg-like): walk roots (or explicit paths) and return per-line matches. RE2 regex by default (fixed:true for a literal). Respects .gitignore, skips hidden and binary files by default. Returns GrepMatch[], or an async iterator with stream:true.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "{ pattern: string, fixed?: boolean, root?: string | string[], paths?: string[], glob?: string | string[], exclude?: string | string[], type?: string | string[], extension?: string | string[], case?: \"smart\"|\"sensitive\"|\"insensitive\", word?: boolean, multiline?: boolean, context?: number, before?: number, after?: number, invert?: boolean, maxMatches?: number, maxResults?: number, includeBinary?: boolean, hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, absolute?: boolean, sort?: boolean, strict?: boolean, stream?: boolean }", Desc: "pattern is a RE2 regex (or literal with fixed:true). root defaults to \".\"; paths searches explicit files instead. type maps rg-style names (ts/js/go/md/json/py/rs/c) to extensions. case defaults to smart. context (or before/after) adds context lines. invert emits non-matching lines. maxMatches caps per file; maxResults caps total. Binary files are skipped unless includeBinary. stream returns an async iterator."},
+			},
+			ReturnType: "Promise<GrepMatch[]> | AsyncIterable<GrepMatch>",
+			Returns:    "Promise<{ path: string, line: number, column: number, match: string, text: string, before?: string[], after?: string[] }[]> (1-based line/column). With stream:true, an async iterator yielding the same objects.",
+			Errors:     "Throws (\"fs.grep: …\") if pattern is missing/invalid, or on the first traversal/read error when strict:true. Unreadable and binary files are skipped by default.",
+			Example:    "const hits = await fs.grep({ pattern: \"TODO\\\\(.*\\\\)\", type: \"ts\", context: 1 });",
+		},
+		"grepFiles": {
+			Summary: "Like fs.grep but returns just the paths of files with at least one match (rg -l). Stops at the first match per file, so it is faster than fs.grep when you only need the file list.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "GrepOptions", Desc: "Same options as fs.grep (streaming/context options are ignored)."},
+			},
+			ReturnType: "Promise<string[]>",
+			Returns:    "Promise<string[]> — paths (relative to cwd, or absolute with absolute:true) of files containing at least one match.",
+			Errors:     "Throws (\"fs.grepFiles: …\") if pattern is missing/invalid, or on the first error when strict:true.",
+			Example:    "const files = await fs.grepFiles({ pattern: \"deprecated\", type: \"go\" });",
+		},
+		"grepCount": {
+			Summary: "Like fs.grep but returns per-file match counts (rg -c). Files with zero matches are omitted.",
+			Params: []scriptengine.Param{
+				{Name: "opts", Type: "GrepOptions", Desc: "Same options as fs.grep."},
+			},
+			ReturnType: "Promise<{ path: string; count: number }[]>",
+			Returns:    "Promise<{ path: string, count: number }[]> — one entry per file with >= 1 match.",
+			Errors:     "Throws (\"fs.grepCount: …\") if pattern is missing/invalid, or on the first error when strict:true.",
+			Example:    "const counts = await fs.grepCount({ pattern: \"import\", type: \"ts\" });",
+		},
 	}
 }

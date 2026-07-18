@@ -114,6 +114,20 @@ type Image = {
   save(path: string, opts?: { format?: string; quality?: number }): void;
 };
 
+type FindEntry = { path: string; type: "file" | "dir" | "symlink"; size: number; mtimeMs: number };
+
+type GrepMatch = { path: string; line: number; column: number; match: string; text: string; before?: string[]; after?: string[] };
+
+type GrepOptions = {
+  pattern: string; fixed?: boolean; root?: string | string[]; paths?: string[];
+  glob?: string | string[]; exclude?: string | string[]; type?: string | string[]; extension?: string | string[];
+  case?: "smart" | "sensitive" | "insensitive"; word?: boolean; multiline?: boolean;
+  context?: number; before?: number; after?: number; invert?: boolean;
+  maxMatches?: number; maxResults?: number; includeBinary?: boolean;
+  hidden?: boolean; gitignore?: boolean; followSymlinks?: boolean; maxDepth?: number;
+  absolute?: boolean; sort?: boolean; strict?: boolean; stream?: boolean;
+};
+
 declare function greet(arg0: string): string;
 
 declare function divide(arg0: number, arg1: number): number;

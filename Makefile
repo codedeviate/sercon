@@ -140,6 +140,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/webdriver-cdp-oopif.ts \
 	examples/scripts/fs-report.ts \
 	examples/scripts/fs-find.ts \
+	examples/scripts/fs-grep.ts \
 	examples/scripts/typst.ts \
 	examples/scripts/pdf-extract.ts \
 	examples/scripts/doctor.ts \
