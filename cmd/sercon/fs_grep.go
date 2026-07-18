@@ -40,7 +40,7 @@ type grepExtra struct {
 
 type grepArgs struct {
 	walk  walkOptions
-	paths []string // explicit files/dirs (overrides walk roots when set)
+	paths []string // explicit files (overrides walk roots when set); dirs are NOT recursed in v1
 	extra grepExtra
 }
 

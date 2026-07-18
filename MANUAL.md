@@ -1963,6 +1963,15 @@ Unreadable files/dirs are **skipped** by default; pass `strict: true` to
 throw on the first error instead. Traversal is parallel and pure-Go
 (no `rg`/`fd` required).
 
+**v1 limitations.** Ignore handling reads `.gitignore` and `.ignore` only
+(not `.git/info/exclude` or the global excludes file), and a nested ignore
+file's **negation** (`!pattern`) does not re-include a path an ancestor
+ignore file excluded (git's last-match-wins across the hierarchy is not
+resolved — the first ancestor match wins). `fs.grep`'s `paths` option takes
+explicit **files**; a directory in `paths` is not recursed. `fs.find`'s
+`regex` with `fullPath: true` matches the path **relative to its `root`**,
+which equals the displayed (cwd-relative) path only when `root` is `"."`.
+
 #### 5.6.1 Concepts
 
 `fs` reads and writes the real filesystem — there is **no sandbox**; paths are
@@ -13762,7 +13771,7 @@ Fast file/path search (fd-like): walk one or more roots and return matching path
 
 **Parameters**
 
-- `opts` *({ root?: string | string[], glob?: string | string[], exclude?: string | string[], regex?: string, fullPath?: boolean, type?: "file"|"dir"|"symlink"|Array<"file"|"dir"|"symlink">, extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, minDepth?: number, absolute?: boolean, limit?: number, sort?: boolean, strict?: boolean, stat?: boolean, stream?: boolean }, optional)* — Search options. root defaults to ".". glob/exclude use ** globs; regex matches the basename (or full path with fullPath). type/extension filter by kind. case defaults to smart (case-insensitive unless the regex has an uppercase char). hidden (default false) and gitignore (default true) control ignore-awareness. maxDepth/minDepth bound recursion. absolute returns absolute paths. limit caps results. sort yields deterministic path order. strict throws on the first traversal error (default: skip unreadable entries). stat returns { path, type, size, mtimeMs } objects. stream returns an async iterator.
+- `opts` *({ root?: string | string[], glob?: string | string[], exclude?: string | string[], regex?: string, fullPath?: boolean, type?: "file"|"dir"|"symlink"|Array<"file"|"dir"|"symlink">, extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, minDepth?: number, absolute?: boolean, limit?: number, sort?: boolean, strict?: boolean, stat?: boolean, stream?: boolean }, optional)* — Search options. root defaults to ".". glob/exclude use ** globs; regex matches the basename (or, with fullPath, the path relative to root — which equals the displayed cwd-relative path only when root is "."). type/extension filter by kind. case defaults to smart (case-insensitive unless the regex has an uppercase char). hidden (default false) and gitignore (default true) control ignore-awareness. maxDepth/minDepth bound recursion. absolute returns absolute paths. limit caps results. sort yields deterministic path order. strict throws on the first traversal error (default: skip unreadable entries). stat returns { path, type, size, mtimeMs } objects. stream returns an async iterator.
 
 **Returns:** By default Promise<string[]> of matching paths (relative to cwd, or absolute with absolute:true). With stat:true, Promise<{ path: string, type: "file"|"dir"|"symlink", size: number, mtimeMs: number }[]>. With stream:true, an async iterator (for await ...) yielding the same items.
 
@@ -13782,7 +13791,7 @@ Fast content search (rg-like): walk roots (or explicit paths) and return per-lin
 
 **Parameters**
 
-- `opts` *({ pattern: string, fixed?: boolean, root?: string | string[], paths?: string[], glob?: string | string[], exclude?: string | string[], type?: string | string[], extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", word?: boolean, multiline?: boolean, context?: number, before?: number, after?: number, invert?: boolean, maxMatches?: number, maxResults?: number, includeBinary?: boolean, hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, absolute?: boolean, sort?: boolean, strict?: boolean, stream?: boolean })* — pattern is a RE2 regex (or literal with fixed:true). root defaults to "."; paths searches explicit files instead. type maps rg-style names (ts/js/go/md/json/py/rs/c) to extensions. case defaults to smart. context (or before/after) adds context lines. invert emits non-matching lines. maxMatches caps per file; maxResults caps total. Binary files are skipped unless includeBinary. stream returns an async iterator.
+- `opts` *({ pattern: string, fixed?: boolean, root?: string | string[], paths?: string[], glob?: string | string[], exclude?: string | string[], type?: string | string[], extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", word?: boolean, multiline?: boolean, context?: number, before?: number, after?: number, invert?: boolean, maxMatches?: number, maxResults?: number, includeBinary?: boolean, hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, absolute?: boolean, sort?: boolean, strict?: boolean, stream?: boolean })* — pattern is a RE2 regex (or literal with fixed:true). root defaults to "."; paths searches an explicit list of files instead (directories in paths are not recursed). type maps rg-style names (ts/js/go/md/json/py/rs/c) to extensions. case defaults to smart. context (or before/after) adds context lines. invert emits non-matching lines. maxMatches caps per file; maxResults caps total. Binary files are skipped unless includeBinary. stream returns an async iterator.
 
 **Returns:** Promise<{ path: string, line: number, column: number, match: string, text: string, before?: string[], after?: string[] }[]> (1-based line/column). With stream:true, an async iterator yielding the same objects.
 
