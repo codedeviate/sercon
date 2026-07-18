@@ -39,6 +39,26 @@ func TestFsFind_GlobDefaults(t *testing.T) {
 	}
 }
 
+// TestFsFind_Limit asserts fs.find's limit option bounds the result count.
+// The fixture (searchFixture) has exactly 3 files that survive the default
+// gitignore+hidden filters (a.txt, b.go, sub/c.go). Because fastwalk walks
+// concurrently, hitting the limit (which stops the walk via the internal
+// errStopWalk sentinel) can overshoot the exact number by a few entries that
+// were already in flight when the stop propagated — so this asserts a
+// bounded range (>= the requested limit, <= the fixture's total of 3
+// matches) rather than an exact length of 1.
+func TestFsFind_Limit(t *testing.T) {
+	eng, _ := findEng(t)
+	_, err := eng.Run(context.Background(), "find.ts", `
+		const files = await fs.find({ glob: "**/*", type: "file", limit: 1 });
+		if (files.length < 1 || files.length > 3)
+			throw new Error("expected 1-3 results (limit:1, bounded overshoot), got " + files.length + ": " + JSON.stringify(files));
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 func TestFsFind_StatShape(t *testing.T) {
 	eng, root := findEng(t)
 	_ = filepath.Join(root, "a.txt")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/dop251/goja"
@@ -158,9 +159,11 @@ func grepEachFile(ctx context.Context, a grepArgs, fn func(matches []grepMatch, 
 	return err
 }
 
+// absPath resolves p to an absolute path for read + display consistency,
+// falling back to the original (relative) input if resolution fails.
 func absPath(p string) (string, error) {
-	if info, err := os.Stat(p); err == nil && info != nil {
-		// resolve to absolute for display consistency
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs, nil
 	}
 	return p, nil
 }
@@ -201,7 +204,11 @@ func runGrepFiles(ctx context.Context, a grepArgs) ([]any, error) {
 		return nil, fmt.Errorf("fs.grepFiles: %w", err)
 	}
 	if a.extra.sortOut {
-		sort.Slice(out, func(i, j int) bool { return out[i].(string) < out[j].(string) })
+		sort.Slice(out, func(i, j int) bool {
+			si, _ := out[i].(string)
+			sj, _ := out[j].(string)
+			return si < sj
+		})
 	}
 	return out, nil
 }
@@ -236,12 +243,16 @@ func grepMatchToMap(m grepMatch) map[string]any {
 }
 
 func grepLess(a, b any) bool {
-	ma, mb := a.(map[string]any), b.(map[string]any)
-	pa, pb := ma["path"].(string), mb["path"].(string)
+	ma, _ := a.(map[string]any)
+	mb, _ := b.(map[string]any)
+	pa, _ := ma["path"].(string)
+	pb, _ := mb["path"].(string)
 	if pa != pb {
 		return pa < pb
 	}
-	return ma["line"].(int) < mb["line"].(int)
+	la, _ := ma["line"].(int)
+	lb, _ := mb["line"].(int)
+	return la < lb
 }
 
 func fsGrepBinding(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) func(goja.FunctionCall) goja.Value {

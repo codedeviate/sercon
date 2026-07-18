@@ -28,14 +28,15 @@ type walkOptions struct {
 	strict      bool // true = return first traversal error; false = skip
 }
 
-// walkEntry is one filesystem entry passed to the walk callback.
+// walkEntry is one filesystem entry passed to the walk callback. Consumers
+// needing os.FileInfo (e.g. `stat: true` mode) call os.Lstat(e.abs)
+// themselves rather than have fsSearchWalk stat every entry unconditionally.
 type walkEntry struct {
-	abs   string      // absolute path
-	rel   string      // path relative to cwd (slash-normalized for display via relDisplay)
-	name  string      // basename
-	typ   string      // "file" | "dir" | "symlink"
-	depth int         // depth below the root (root children = 1)
-	info  os.FileInfo // lazily available; may be nil for pure DirEntry
+	abs   string // absolute path
+	rel   string // path relative to cwd (slash-normalized for display via relDisplay)
+	name  string // basename
+	typ   string // "file" | "dir" | "symlink"
+	depth int    // depth below the root (root children = 1)
 }
 
 // ignoreStack lazily loads and caches the .gitignore / .ignore matchers for a

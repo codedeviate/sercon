@@ -194,9 +194,12 @@ func sortFindResults(out []any, stat bool) {
 
 func findKey(v any, stat bool) string {
 	if stat {
-		return v.(map[string]any)["path"].(string)
+		m, _ := v.(map[string]any)
+		s, _ := m["path"].(string)
+		return s
 	}
-	return v.(string)
+	s, _ := v.(string)
+	return s
 }
 
 // fsFindBinding returns the goja-callable for fs.find. It dispatches to the
