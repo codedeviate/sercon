@@ -957,6 +957,12 @@ declare const fs: {
    */
   exists(path: string): Promise<boolean>;
   /**
+   * Fast file/path search (fd-like): walk one or more roots and return matching paths. Respects .gitignore and skips hidden files by default (opt out with gitignore:false / hidden:true). Returns string[] of paths, or FindEntry[] with stat:true, or an async iterator with stream:true.
+   * @param opts Search options. root defaults to ".". glob/exclude use ** globs; regex matches the basename (or full path with fullPath). type/extension filter by kind. case defaults to smart (case-insensitive unless the regex has an uppercase char). hidden (default false) and gitignore (default true) control ignore-awareness. maxDepth/minDepth bound recursion. absolute returns absolute paths. limit caps results. sort yields deterministic path order. strict throws on the first traversal error (default: skip unreadable entries). stat returns { path, type, size, mtimeMs } objects. stream returns an async iterator.
+   * @returns By default Promise<string[]> of matching paths (relative to cwd, or absolute with absolute:true). With stat:true, Promise<{ path: string, type: "file"|"dir"|"symlink", size: number, mtimeMs: number }[]>. With stream:true, an async iterator (for await ...) yielding the same items.
+   */
+  find(opts?: { root?: string | string[], glob?: string | string[], exclude?: string | string[], regex?: string, fullPath?: boolean, type?: "file"|"dir"|"symlink"|Array<"file"|"dir"|"symlink">, extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, minDepth?: number, absolute?: boolean, limit?: number, sort?: boolean, strict?: boolean, stat?: boolean, stream?: boolean }): Promise<string[]> | Promise<FindEntry[]> | AsyncIterable<string>;
+  /**
    * Create a directory, including any missing parents (mkdir -p). Idempotent.
    * @param path Directory path to create (mode 0755). Existing directories are fine.
    * @returns Promise resolving to { path }.

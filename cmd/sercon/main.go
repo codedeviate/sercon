@@ -452,6 +452,7 @@ func registerSurface(e *scriptengine.Engine) error {
 		m := map[string]any{
 			"path":    pathNamespace(vm),
 			"archive": archiveNamespace(vm, loop),
+			"find":    fsFindBinding(vm, loop, e),
 		}
 		for k, v := range fileNamespace(vm, loop) {
 			m[k] = v
