@@ -36,6 +36,19 @@ func TestFsGrep_Matches(t *testing.T) {
 	}
 }
 
+func TestFsGrep_TypePreset(t *testing.T) {
+	eng := grepEng(t)
+	_, err := eng.Run(context.Background(), "grep.ts", `
+		const hits = await fs.grep({ pattern: "package", type: "go" });
+		if (hits.length !== 2) throw new Error("type:go should match b.go + sub/c.go, got " + hits.length);
+		const paths = hits.map(h => h.path).sort().join(",");
+		if (paths !== "b.go,sub/c.go") throw new Error("paths " + paths);
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 func TestFsGrepFilesAndCount(t *testing.T) {
 	eng := grepEng(t)
 	_, err := eng.Run(context.Background(), "grep.ts", `

@@ -53,6 +53,13 @@ func fsGrepExtract(call goja.FunctionCall) (grepArgs, error) {
 	if err != nil {
 		return grepArgs{}, err
 	}
+	// grep's `type` is rg-style (ts/js/go/…), an extension preset — NOT
+	// fs.find's file/dir/symlink KIND filter. parseWalkOptions parsed it into
+	// w.types with kind semantics, which would make typeWanted() reject every
+	// "file" entry. Discard it: grep only ever wants files (grepEachFile
+	// already hard-filters e.typ != "file"), and the real preset is merged
+	// into w.exts just below.
+	w.types = nil
 	// Merge type presets into the extension filter.
 	for _, tn := range stringOrSlice(opts, "type") {
 		if exts, ok := grepTypePresets[tn]; ok {

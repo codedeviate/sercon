@@ -989,7 +989,7 @@ declare const fs: {
    */
   grepCount(opts: GrepOptions): Promise<{ path: string; count: number }[]>;
   /**
-   * Like fs.grep but returns just the paths of files with at least one match (rg -l). Stops at the first match per file, so it is faster than fs.grep when you only need the file list.
+   * Like fs.grep but returns just the paths of files with at least one match (rg -l); one entry per file (deduplicated), no per-line detail.
    * @param opts Same options as fs.grep (streaming/context options are ignored).
    * @returns Promise<string[]> — paths (relative to cwd, or absolute with absolute:true) of files containing at least one match.
    */

@@ -142,7 +142,7 @@ runtime.log(st.size, st.isDir, st.modifiedMs);`,
 			Example:    "const hits = await fs.grep({ pattern: \"TODO\\\\(.*\\\\)\", type: \"ts\", context: 1 });",
 		},
 		"grepFiles": {
-			Summary: "Like fs.grep but returns just the paths of files with at least one match (rg -l). Stops at the first match per file, so it is faster than fs.grep when you only need the file list.",
+			Summary: "Like fs.grep but returns just the paths of files with at least one match (rg -l); one entry per file (deduplicated), no per-line detail.",
 			Params: []scriptengine.Param{
 				{Name: "opts", Type: "GrepOptions", Desc: "Same options as fs.grep (streaming/context options are ignored)."},
 			},
