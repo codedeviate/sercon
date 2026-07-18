@@ -1934,6 +1934,35 @@ matching `image.save` and the WebDriver `screenshot` writers):
 first (Node-like); reads and `stat` reject when the target is absent. See
 `examples/scripts/fs-report.ts` for a per-step screenshot report built on these.
 
+- `fs.find(opts?)` — **fast file search** (fd-like). Walk one or more
+  `root`s and return matching paths. Respects `.gitignore`/`.ignore` and
+  skips hidden files **by default** (`gitignore: false` / `hidden: true` to
+  opt out). Filter with `glob`/`exclude` (`**` supported), `regex` (matches
+  the basename, or the full path with `fullPath: true`), `type`
+  (`"file"`/`"dir"`/`"symlink"`), and `extension`. `case` defaults to
+  **smart** (case-insensitive unless the pattern has an uppercase char).
+  Bound recursion with `maxDepth`/`minDepth`; `absolute` returns absolute
+  paths; `limit` caps results; `sort` gives deterministic order. Returns
+  `Promise<string[]>`, or `Promise<FindEntry[]>` with `stat: true`
+  (`{ path, type, size, mtimeMs }`), or an **async iterator** with
+  `stream: true`.
+- `fs.grep(opts)` — **fast content search** (rg-like). RE2 `pattern`
+  (`fixed: true` for a literal fast-path), searched across the walked tree
+  (or explicit `paths`). Same traversal/ignore options as `find`, plus
+  `type` presets (`"ts"`, `"go"`, …), `word`, `multiline`, `context`
+  (or `before`/`after`), `invert`, `maxMatches` (per file), `maxResults`
+  (total), and `includeBinary` (binary files are skipped by default).
+  Returns `Promise<GrepMatch[]>` (`{ path, line, column, match, text,
+  before?, after? }`, 1-based) or an async iterator with `stream: true`.
+- `fs.grepFiles(opts)` — like `fs.grep` but returns just `string[]` of files
+  with ≥1 match (rg `-l`; stops at the first hit per file).
+- `fs.grepCount(opts)` — like `fs.grep` but returns
+  `{ path, count }[]` per-file counts (rg `-c`).
+
+Unreadable files/dirs are **skipped** by default; pass `strict: true` to
+throw on the first error instead. Traversal is parallel and pure-Go
+(no `rg`/`fd` required).
+
 #### 5.6.1 Concepts
 
 `fs` reads and writes the real filesystem — there is **no sandbox**; paths are
@@ -1982,6 +2011,33 @@ await fs.archive.extract("./backup.tar.gz", "./restored");
 **Notes**
 - `archive.create`/`archive.extract` argument order and the `stat` field names
   are confirmed against §17.6 (the source of truth for the full surface).
+
+##### 5.6.2.5 Find files by glob, respecting .gitignore
+
+Locate source files without descending into ignored directories
+(`node_modules`, `dist`, …) — no external `fd` needed.
+
+```ts
+const files = await fs.find({ root: "src", glob: "**/*.ts", type: "file" });
+runtime.log(`${files.length} TypeScript files`);
+```
+
+`.gitignore` is honored by default; pass `gitignore: false` to search
+everything. See §17 (`fs.find`) for the full option list.
+
+##### 5.6.2.6 Search file contents for a pattern
+
+Grep a tree for a regex and print `path:line` for each hit — an in-process
+`rg`.
+
+```ts
+for await (const m of fs.grep({ pattern: "TODO\\(.*\\)", type: "ts", stream: true })) {
+  runtime.log(`${m.path}:${m.line}: ${m.text.trim()}`);
+}
+```
+
+Use `fs.grepFiles(...)` for just the file list, or `fs.grepCount(...)` for
+per-file counts. See §17 (`fs.grep`).
 
 ### 5.7 `net`
 
@@ -13696,7 +13752,87 @@ Report whether a path exists. Never throws for a missing path.
 if (!(await fs.exists("report"))) await fs.mkdir("report");
 ```
 
-#### 17.7.3 fs.mkdir
+#### 17.7.3 fs.find
+
+```
+find(opts?: { root?: string | string[], glob?: string | string[], exclude?: string | string[], regex?: string, fullPath?: boolean, type?: "file"|"dir"|"symlink"|Array<"file"|"dir"|"symlink">, extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, minDepth?: number, absolute?: boolean, limit?: number, sort?: boolean, strict?: boolean, stat?: boolean, stream?: boolean }): Promise<string[]> | Promise<FindEntry[]> | AsyncIterable<string>
+```
+
+Fast file/path search (fd-like): walk one or more roots and return matching paths. Respects .gitignore and skips hidden files by default (opt out with gitignore:false / hidden:true). Returns string[] of paths, or FindEntry[] with stat:true, or an async iterator with stream:true.
+
+**Parameters**
+
+- `opts` *({ root?: string | string[], glob?: string | string[], exclude?: string | string[], regex?: string, fullPath?: boolean, type?: "file"|"dir"|"symlink"|Array<"file"|"dir"|"symlink">, extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, minDepth?: number, absolute?: boolean, limit?: number, sort?: boolean, strict?: boolean, stat?: boolean, stream?: boolean }, optional)* — Search options. root defaults to ".". glob/exclude use ** globs; regex matches the basename (or full path with fullPath). type/extension filter by kind. case defaults to smart (case-insensitive unless the regex has an uppercase char). hidden (default false) and gitignore (default true) control ignore-awareness. maxDepth/minDepth bound recursion. absolute returns absolute paths. limit caps results. sort yields deterministic path order. strict throws on the first traversal error (default: skip unreadable entries). stat returns { path, type, size, mtimeMs } objects. stream returns an async iterator.
+
+**Returns:** By default Promise<string[]> of matching paths (relative to cwd, or absolute with absolute:true). With stat:true, Promise<{ path: string, type: "file"|"dir"|"symlink", size: number, mtimeMs: number }[]>. With stream:true, an async iterator (for await ...) yielding the same items.
+
+**Throws:** Throws ("fs.find: …") on an invalid regex, or on the first traversal error when strict:true. Unreadable files/dirs are skipped by default.
+
+```ts
+const files = await fs.find({ glob: "src/**/*.ts", type: "file" });
+```
+
+#### 17.7.4 fs.grep
+
+```
+grep(opts: { pattern: string, fixed?: boolean, root?: string | string[], paths?: string[], glob?: string | string[], exclude?: string | string[], type?: string | string[], extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", word?: boolean, multiline?: boolean, context?: number, before?: number, after?: number, invert?: boolean, maxMatches?: number, maxResults?: number, includeBinary?: boolean, hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, absolute?: boolean, sort?: boolean, strict?: boolean, stream?: boolean }): Promise<GrepMatch[]> | AsyncIterable<GrepMatch>
+```
+
+Fast content search (rg-like): walk roots (or explicit paths) and return per-line matches. RE2 regex by default (fixed:true for a literal). Respects .gitignore, skips hidden and binary files by default. Returns GrepMatch[], or an async iterator with stream:true.
+
+**Parameters**
+
+- `opts` *({ pattern: string, fixed?: boolean, root?: string | string[], paths?: string[], glob?: string | string[], exclude?: string | string[], type?: string | string[], extension?: string | string[], case?: "smart"|"sensitive"|"insensitive", word?: boolean, multiline?: boolean, context?: number, before?: number, after?: number, invert?: boolean, maxMatches?: number, maxResults?: number, includeBinary?: boolean, hidden?: boolean, gitignore?: boolean, followSymlinks?: boolean, maxDepth?: number, absolute?: boolean, sort?: boolean, strict?: boolean, stream?: boolean })* — pattern is a RE2 regex (or literal with fixed:true). root defaults to "."; paths searches explicit files instead. type maps rg-style names (ts/js/go/md/json/py/rs/c) to extensions. case defaults to smart. context (or before/after) adds context lines. invert emits non-matching lines. maxMatches caps per file; maxResults caps total. Binary files are skipped unless includeBinary. stream returns an async iterator.
+
+**Returns:** Promise<{ path: string, line: number, column: number, match: string, text: string, before?: string[], after?: string[] }[]> (1-based line/column). With stream:true, an async iterator yielding the same objects.
+
+**Throws:** Throws ("fs.grep: …") if pattern is missing/invalid, or on the first traversal/read error when strict:true. Unreadable and binary files are skipped by default.
+
+```ts
+const hits = await fs.grep({ pattern: "TODO\\(.*\\)", type: "ts", context: 1 });
+```
+
+#### 17.7.5 fs.grepCount
+
+```
+grepCount(opts: GrepOptions): Promise<{ path: string; count: number }[]>
+```
+
+Like fs.grep but returns per-file match counts (rg -c). Files with zero matches are omitted.
+
+**Parameters**
+
+- `opts` *(GrepOptions)* — Same options as fs.grep.
+
+**Returns:** Promise<{ path: string, count: number }[]> — one entry per file with >= 1 match.
+
+**Throws:** Throws ("fs.grepCount: …") if pattern is missing/invalid, or on the first error when strict:true.
+
+```ts
+const counts = await fs.grepCount({ pattern: "import", type: "ts" });
+```
+
+#### 17.7.6 fs.grepFiles
+
+```
+grepFiles(opts: GrepOptions): Promise<string[]>
+```
+
+Like fs.grep but returns just the paths of files with at least one match (rg -l); one entry per file (deduplicated), no per-line detail.
+
+**Parameters**
+
+- `opts` *(GrepOptions)* — Same options as fs.grep (streaming/context options are ignored).
+
+**Returns:** Promise<string[]> — paths (relative to cwd, or absolute with absolute:true) of files containing at least one match.
+
+**Throws:** Throws ("fs.grepFiles: …") if pattern is missing/invalid, or on the first error when strict:true.
+
+```ts
+const files = await fs.grepFiles({ pattern: "deprecated", type: "go" });
+```
+
+#### 17.7.7 fs.mkdir
 
 ```
 mkdir(path: string): Promise<{ path: string }>
@@ -13716,9 +13852,9 @@ Create a directory, including any missing parents (mkdir -p). Idempotent.
 await fs.mkdir("report/assets");
 ```
 
-#### 17.7.4 fs.path
+#### 17.7.8 fs.path
 
-##### 17.7.4.1 fs.path.basename
+##### 17.7.8.1 fs.path.basename
 
 ```
 basename(path: string, suffix?: string): string
@@ -13739,7 +13875,7 @@ Final segment of a path; optional suffix is stripped if it matches.
 const b = fs.path.basename("/var/log/app.log", ".log"); // "app"
 ```
 
-##### 17.7.4.2 fs.path.dirname
+##### 17.7.8.2 fs.path.dirname
 
 ```
 dirname(path: string): string
@@ -13759,7 +13895,7 @@ Directory portion of a path. POSIX-style; trailing slashes are stripped.
 const d = fs.path.dirname("/var/log/app.log"); // "/var/log"
 ```
 
-#### 17.7.5 fs.readBytes
+#### 17.7.9 fs.readBytes
 
 ```
 readBytes(path: string): Promise<Uint8Array>
@@ -13779,7 +13915,7 @@ Read an entire file as bytes.
 const bytes = await fs.readBytes("shot.png");
 ```
 
-#### 17.7.6 fs.readText
+#### 17.7.10 fs.readText
 
 ```
 readText(path: string): Promise<string>
@@ -13799,7 +13935,7 @@ Read an entire file as a UTF-8 string.
 const html = await fs.readText("report/index.html");
 ```
 
-#### 17.7.7 fs.remove
+#### 17.7.11 fs.remove
 
 ```
 remove(path: string): Promise<{ path: string }>
@@ -13819,7 +13955,7 @@ Remove a file or a directory tree (recursive). No error if the path is already a
 await fs.remove("report"); // clean slate
 ```
 
-#### 17.7.8 fs.stat
+#### 17.7.12 fs.stat
 
 ```
 stat(path: string): Promise<{ size: number; isDir: boolean; modifiedMs: number }>
@@ -13840,7 +13976,7 @@ const st = await fs.stat("report/index.html");
 runtime.log(st.size, st.isDir, st.modifiedMs);
 ```
 
-#### 17.7.9 fs.writeBytes
+#### 17.7.13 fs.writeBytes
 
 ```
 writeBytes(path: string, data: Uint8Array): Promise<{ path: string; bytes: number }>
@@ -13862,7 +13998,7 @@ const shot = await d.screenshot();
 await fs.writeBytes("shot.png", new Uint8Array(shot.bytes));
 ```
 
-#### 17.7.10 fs.writeText
+#### 17.7.14 fs.writeText
 
 ```
 writeText(path: string, text: string): Promise<{ path: string; bytes: number }>

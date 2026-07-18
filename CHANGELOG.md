@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`fs.find` and `fs.grep` / `fs.grepFiles` / `fs.grepCount`.** Native,
+  pure-Go fast file search (fd-like) and content search (rg-like) — parallel
+  traversal (`fastwalk`) with `.gitignore`-aware pruning, `**` globs
+  (`doublestar`), smart-case, literal fast-path + RE2, context lines, binary
+  skipping, and Run-context cancellation. Results as structured objects, with
+  a `Promise<T[]>` default and an async-iterator `stream: true` mode. Removes
+  the need to shell out to `rg`/`fd`. Examples: `examples/scripts/fs-find.ts`,
+  `examples/scripts/fs-grep.ts`.
+
 ## [0.98.1] — 2026-07-17
 
 ### Fixed
