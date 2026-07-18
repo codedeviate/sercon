@@ -14,6 +14,7 @@ import (
 //	  a.txt  b.go  .hidden.txt
 //	  sub/c.go  sub/d.md
 //	  node_modules/skip.go
+//	  .hiddendir/deep.go
 //	  .gitignore   (contents: "node_modules/\n*.md\n")
 func searchFixture(t *testing.T) string {
 	t.Helper()
@@ -33,6 +34,7 @@ func searchFixture(t *testing.T) string {
 	write("sub/c.go", "package sub\n")
 	write("sub/d.md", "# doc\n")
 	write("node_modules/skip.go", "package skip\n")
+	write(".hiddendir/deep.go", "package deep\n")
 	write(".gitignore", "node_modules/\n*.md\n")
 	return root
 }
@@ -65,10 +67,30 @@ func TestFsSearchWalk_DefaultsRespectGitignoreAndHidden(t *testing.T) {
 	}
 }
 
+func TestFsSearchWalk_PrunesHiddenDirectories(t *testing.T) {
+	root := searchFixture(t)
+	// Defaults (hidden:false) must prune the hidden directory entirely: its
+	// child .hiddendir/deep.go is a NON-hidden file, so if the walker had
+	// descended into .hiddendir instead of returning filepath.SkipDir, the
+	// file would surface. Its absence proves the dir was pruned, not descended.
+	got := collect(t, root, walkOptions{gitignore: false, types: map[string]bool{"file": true}})
+	for _, g := range got {
+		if g == ".hiddendir/deep.go" {
+			t.Fatalf("hidden directory was descended into, not pruned: got %v", got)
+		}
+	}
+	// Sanity: the visible tree is exactly what remains after the hidden prune
+	// (gitignore off, so node_modules/skip.go and sub/d.md stay).
+	want := []string{"a.txt", "b.go", "node_modules/skip.go", "sub/c.go", "sub/d.md"}
+	if !equalStrings(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
+
 func TestFsSearchWalk_HiddenAndNoGitignore(t *testing.T) {
 	root := searchFixture(t)
 	got := collect(t, root, walkOptions{hidden: true, gitignore: false, types: map[string]bool{"file": true}})
-	want := []string{".gitignore", ".hidden.txt", "a.txt", "b.go", "node_modules/skip.go", "sub/c.go", "sub/d.md"}
+	want := []string{".gitignore", ".hidden.txt", ".hiddendir/deep.go", "a.txt", "b.go", "node_modules/skip.go", "sub/c.go", "sub/d.md"}
 	if !equalStrings(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}

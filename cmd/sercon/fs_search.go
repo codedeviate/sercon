@@ -21,7 +21,7 @@ type walkOptions struct {
 	types       map[string]bool // "file"/"dir"/"symlink"; empty = any
 	exts        map[string]bool // lowercase, no leading dot; empty = any
 	hidden      bool            // include dotfiles/dirs
-	gitignore   bool            // honor .gitignore/.ignore/.git/info/exclude
+	gitignore   bool            // honor .gitignore and .ignore files
 	followLinks bool
 	maxDepth    int // 0 = unlimited
 	minDepth    int
@@ -122,11 +122,11 @@ func relDisplay(abs string, absolute bool) string {
 	return filepath.ToSlash(abs)
 }
 
-func entryType(d fs.DirEntry) string {
+func entryType(d fs.DirEntry, isDir bool) string {
 	switch {
 	case d.Type()&os.ModeSymlink != 0:
 		return "symlink"
-	case d.IsDir():
+	case isDir:
 		return "dir"
 	default:
 		return "file"
@@ -199,7 +199,7 @@ func fsSearchWalk(ctx context.Context, o walkOptions, fn func(walkEntry) error) 
 				}
 			}
 			relSlash := filepath.ToSlash(rel)
-			typ := entryType(d)
+			typ := entryType(d, isDir)
 
 			// Emit-level filters (do not affect descent).
 			if o.minDepth > 0 && depth < o.minDepth {
