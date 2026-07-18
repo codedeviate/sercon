@@ -248,7 +248,13 @@ func fsGrepBinding(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengin
 	async := scriptengine.PromisifyAsync(vm, loop, fsGrepExtract, runGrep)
 	return func(call goja.FunctionCall) goja.Value {
 		if optBool(optsArgMap(call, 0), "stream", false) {
-			return fsSearchStream(vm, loop, eng, call, grepStreamProducer)
+			args, err := fsGrepExtract(call) // on loop — safe (goja access stays here)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return fsSearchStream(vm, loop, eng, func(ctx context.Context, out chan<- any) error {
+				return streamGrep(ctx, args, out)
+			})
 		}
 		return async.Func(call)
 	}
@@ -261,6 +267,3 @@ func fsGrepFilesBinding(vm *goja.Runtime, loop *eventloop.EventLoop) any {
 func fsGrepCountBinding(vm *goja.Runtime, loop *eventloop.EventLoop) any {
 	return scriptengine.PromisifyAsync(vm, loop, fsGrepExtract, runGrepCount)
 }
-
-// TEMPORARY until Task 5 — replaced with the real streaming producer.
-var grepStreamProducer any

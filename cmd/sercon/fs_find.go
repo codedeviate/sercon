@@ -205,15 +205,14 @@ func fsFindBinding(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengin
 	async := scriptengine.PromisifyAsync(vm, loop, fsFindExtract, runFind)
 	return func(call goja.FunctionCall) goja.Value {
 		if optBool(optsArgMap(call, 0), "stream", false) {
-			return fsSearchStream(vm, loop, eng, call, findStreamProducer)
+			args, err := fsFindExtract(call) // on loop — safe (goja access stays here)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return fsSearchStream(vm, loop, eng, func(ctx context.Context, out chan<- any) error {
+				return streamFind(ctx, args, out)
+			})
 		}
 		return async.Func(call)
 	}
 }
-
-// TEMPORARY until Task 5 — replace with the real fsSearchStream.
-func fsSearchStream(vm *goja.Runtime, _ *eventloop.EventLoop, _ *scriptengine.Engine, _ goja.FunctionCall, _ any) goja.Value {
-	panic(vm.NewTypeError("fs: streaming not yet implemented"))
-}
-
-var findStreamProducer any
