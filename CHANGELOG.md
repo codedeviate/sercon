@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.99.0] — 2026-07-19
+
 ### Added
 - **`fs.find` and `fs.grep` / `fs.grepFiles` / `fs.grepCount`.** Native,
   pure-Go fast file search (fd-like) and content search (rg-like) — parallel

@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.98.1 (2026-07-17).
+covered is v0.1.0 (2026-05-25) through v0.99.0 (2026-07-19).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -437,6 +437,26 @@ protection): v0.4.14 (`api.archive.*`), stdlib-only.
   `mkdir` is `mkdir -p`); no path sandboxing, matching the existing
   `image.save`/`screenshot` writers. Shipped with `fs-report.ts` — an illustrated
   per-step screenshot report.
+
+- **Fast search — `fs.find` + `fs.grep` family (v0.99.0)** — native, pure-Go
+  file search (fd-like) and content search (rg-like), so scripts stop shelling
+  out to `rg`/`fd`. `fs.find(opts?)` walks with parallel traversal
+  (`charlievieth/fastwalk`) and **`.gitignore`-aware directory pruning**
+  (`monochromegane/go-gitignore`) — the property that makes `rg`/`fd` fast is
+  not descending `node_modules`/`.git` at all — plus `**` globs
+  (`bmatcuk/doublestar`), regex/type/extension filters, smart-case, and a
+  `stat: true` shape. `fs.grep(opts)` matches file contents with a literal
+  `bytes.Index` fast-path or RE2, with context lines, word/multiline
+  (whole-file), invert, per-file/total caps, and binary skipping; `fs.grepFiles`
+  (rg `-l`) and `fs.grepCount` (rg `-c`) are the count/list shortcuts. Every
+  binding returns a `Promise<T[]>` by default or an **async iterator** with
+  `stream: true` (mirrors the `server_ws` iterator: `HoldRun` + a cancellable
+  producer goroutine), and roots on the Run context for prompt cancel/timeout.
+  Built subagent-driven; the review loop caught a `fastwalk` concurrency race
+  (fn is mutex-serialized), an ignoreCase-literal byte-offset bug, and a
+  `type:`-preset filter that returned zero results. v1 reads `.gitignore` +
+  `.ignore` only (no cross-file negation). Three new authorized pure-Go deps;
+  stays cgo-free. Examples: `fs-find.ts`, `fs-grep.ts`.
 
 ### `net`
 
