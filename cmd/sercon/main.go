@@ -47,6 +47,22 @@ func main() {
 	os.Exit(run(os.Args[1:]))
 }
 
+// entryScriptDir returns the directory to use as the default require root for
+// an entry script, resolving symlinks (filepath.EvalSymlinks) so a launcher
+// symlinked onto PATH roots at the real project directory — matching how
+// Engine.RunFile resolves the entry module id. Falls back to the unresolved
+// absolute directory when the path can't be resolved (e.g. a broken link).
+func entryScriptDir(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if real, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		abs = real
+	}
+	return filepath.Dir(abs), nil
+}
+
 func run(args []string) int {
 	// Split the raw args at the first standalone "--": everything after it
 	// is the user argument vector handed to scripts as runtime.argv[2:]. We
@@ -132,12 +148,12 @@ func run(args []string) int {
 				break
 			}
 		}
-		abs, err := filepath.Abs(seed)
+		dir, err := entryScriptDir(seed)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "sercon:", err)
 			return exitUsage
 		}
-		scriptRoot = filepath.Dir(abs)
+		scriptRoot = dir
 	}
 
 	engOpts := scriptengine.Options{

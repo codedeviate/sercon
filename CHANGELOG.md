@@ -8,6 +8,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Fixed
+- **Symlinked entry scripts now resolve imports against the real file.** When an
+  entry script is invoked through a symlink — the common "symlink a `bin/`
+  launcher onto `PATH`" deployment (`~/bin/tool` → `proj/bin/tool` with a
+  `#!/usr/bin/env -S sercon run` shebang) — its relative `import`/`require`
+  specifiers (and `runtime.argv[1]`) now resolve against the **real** file's
+  directory instead of the symlink's, so `../lib/…` imports work. `Engine.RunFile`
+  and the CLI's default `-root` resolve the entry path with
+  `filepath.EvalSymlinks`, falling back to the unresolved path on a broken link
+  (which then errors cleanly). Only the entry path is resolved; required modules
+  already resolve against their own on-disk locations.
+
 ## [0.99.0] — 2026-07-19
 
 ### Added

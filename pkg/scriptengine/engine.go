@@ -736,6 +736,17 @@ func (e *Engine) RunFile(ctx context.Context, path string, opts ...RunOption) (g
 	if err != nil {
 		return nil, err
 	}
+	// Resolve symlinks so the entry module's directory — the base against which
+	// its own relative import/require specifiers resolve, and the value exposed
+	// as runtime.argv[1] — is the REAL file's directory, not a symlink's. This
+	// makes the common deployment (a launcher in bin/ symlinked onto PATH)
+	// resolve `../lib/…` against the project instead of the symlink's parent.
+	// Only the entry path is resolved; required modules already resolve against
+	// their own on-disk locations. Fall back to abs when EvalSymlinks fails
+	// (e.g. a broken link) so os.ReadFile's error path / prior behaviour holds.
+	if real, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		abs = real
+	}
 	return e.Run(ctx, abs, string(data), opts...)
 }
 

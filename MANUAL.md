@@ -673,6 +673,16 @@ supported by GNU coreutils, macOS, and the BSDs.
 sercon run script.ts --port 8080 alice    # argv[2:] = ["--port","8080","alice"]
 ```
 
+**Symlinked launchers.** The natural way to expose a command is to keep the
+entry script in a project's `bin/` and symlink it onto `PATH`
+(`ln -s ~/proj/bin/tool ~/bin/tool`). sercon resolves the entry script
+through the symlink (`filepath.EvalSymlinks`) before computing the module
+root, so the script's relative `import`/`require` specifiers (and
+`runtime.argv[1]`) resolve against the **real** file's directory —
+`../lib/…` finds `~/proj/lib`, not `~/lib`. A broken symlink still errors
+cleanly. Only the entry path is resolved; already-required modules resolve
+against their own on-disk locations.
+
 ### 4.5 `sercon serve`: long-running scripts with production niceties
 
 ```

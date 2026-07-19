@@ -242,6 +242,65 @@ mark(x);
 	}
 }
 
+// A symlinked entry script must resolve its relative imports against the REAL
+// file's directory, not the symlink's — so a launcher symlinked onto PATH
+// (bin/tool with a `#!/usr/bin/env -S sercon run` shebang) resolves `../lib/…`
+// against the project, not the symlink's parent. Regression for RunFile using
+// filepath.Abs (which does not resolve symlinks) as the entry module id.
+func TestRunFile_SymlinkedEntryResolvesModules(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "proj", "bin")
+	common := filepath.Join(root, "proj", "common")
+	for _, d := range []string{bin, common} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(common, "mod.ts"), []byte(`export const hello = "from-common";`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entry := `import { hello } from "../common/mod";` + "\n" +
+		`if (hello !== "from-common") throw new Error("bad import: " + hello);` + "\n" +
+		`mark(hello);` + "\n"
+	if err := os.WriteFile(filepath.Join(bin, "entry.ts"), []byte(entry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Symlink lives in a DIFFERENT directory (root/), so "../common" relative to
+	// the symlink (root/../common) differs from the real entry (proj/common).
+	link := filepath.Join(root, "launcher")
+	if err := os.Symlink(filepath.Join(bin, "entry.ts"), link); err != nil {
+		t.Skipf("symlinks unsupported here: %v", err)
+	}
+
+	// No ScriptRoot set (defaults to cwd), so this isolates the entry-module
+	// directory: relative imports must resolve against the real entry dir.
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	var marked atomic.Value
+	if err := eng.Register("mark", func(s string) { marked.Store(s) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.RunFile(context.Background(), link); err != nil {
+		t.Fatalf("run via symlink: %v", err)
+	}
+	if got, _ := marked.Load().(string); got != "from-common" {
+		t.Fatalf("symlinked entry did not resolve ../common/mod (mark=%q)", got)
+	}
+}
+
+// A broken symlink must error cleanly (no panic), falling back to the original
+// path so os.ReadFile surfaces a normal not-found error.
+func TestRunFile_BrokenSymlinkErrorsCleanly(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(root, "broken")
+	if err := os.Symlink(filepath.Join(root, "does-not-exist.ts"), link); err != nil {
+		t.Skipf("symlinks unsupported here: %v", err)
+	}
+	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
+	if _, err := eng.RunFile(context.Background(), link); err == nil {
+		t.Fatal("expected an error for a broken symlink, got nil")
+	}
+}
+
 // 4. Promise from Go rejects and try/catch in the script catches it.
 func TestRun_PromiseRejectCatchable(t *testing.T) {
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})

@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
@@ -50,12 +49,12 @@ func runRun(args []string) int {
 
 	scriptRoot := *root
 	if scriptRoot == "" && script != "-" {
-		abs, err := filepath.Abs(script)
+		dir, err := entryScriptDir(script)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "sercon:", err)
 			return exitUsage
 		}
-		scriptRoot = filepath.Dir(abs)
+		scriptRoot = dir
 	}
 
 	engOpts := scriptengine.Options{
