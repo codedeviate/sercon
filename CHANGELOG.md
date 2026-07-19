@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.100.0] — 2026-07-19
+
 ### Added
 - **`runtime.termSize()`.** The controlling terminal's size as
   `{ columns, rows, tty }` (synchronous, pure-Go `x/term`). Non-TTY stdout

@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.99.1 (2026-07-19).
+covered is v0.1.0 (2026-05-25) through v0.100.0 (2026-07-19).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -345,6 +345,23 @@ and the inherited captured-stderr pipe blocked `cmd.Wait()` forever — clipboar
 writes now route the child's std streams to `os.DevNull` (an `*os.File`, so
 `os/exec` spawns no copier goroutine). Verified end-to-end across macOS, Linux
 X11 (Xvfb), and Linux Wayland (headless sway) for both text and PNG.
+
+`runtime.termSize()` (v0.100.0) returns the controlling terminal's
+`{ columns, rows, tty }` for scripts that format their own output (tables,
+progress bars, banners) outside the full-screen `tui` namespace. Pure-Go
+(`golang.org/x/term.GetSize`, already in the graph for the pty/raw-mode path);
+a non-terminal stdout reports `tty:false` and the `$COLUMNS`/`$LINES`-or-`80×24`
+fallback so callers never special-case.
+
+`runtime.open(target)` + `runtime.openAvailable` (v0.100.0) hand a URL or file
+to the OS default handler — the "open this in my browser" primitive, distinct
+from `net.http`/`web.load` (fetch) and `services.agentBrowser`/`webdriver`
+(automation browser). It follows the `runtime.clipboard` external-CLI precedent:
+feature-detected on PATH (`open` / `xdg-open`/`gnome-open` / `rundll32`·`start`),
+resolved by a pure `openerArgv(goos, look)` table (unit-tested without touching
+PATH), fire-and-forget, with the target passed as a single argv element (no
+shell, so a URL with special characters can't inject). Both surfaced by the
+DailyScripts port (bookmark commands + custom output formatting).
 
 `runtime.setDeadline`/`clearDeadline`/`getDeadline` (v0.55.0) let a script
 control its own wall-clock kill timeout — the same deadline the `-timeout` flag
