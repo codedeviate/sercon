@@ -258,6 +258,17 @@ declare const runtime: {
    * @returns void — writes a single newline-terminated line to stdout.
    */
   log(args: unknown[]): void;
+  /**
+   * Open a URL or file path in the OS default handler (the user's normal GUI browser for URLs) via the platform opener — macOS `open`, Linux `xdg-open`/`gnome-open`, Windows rundll32/`start` — feature-detected on PATH. Fire-and-forget: resolves once the opener is spawned, not when the browser closes. The target is passed as a single argument with no shell, so special characters can't inject.
+   * @param target A URL or file path to hand to the OS default handler. Passed as one argument with no shell interpolation; must be non-empty.
+   * @returns Promise<void> — resolves once the opener process has been spawned (the browser's lifetime is not awaited).
+   */
+  open(target: string): Promise<void>;
+  /**
+   * Whether an OS opener is available on PATH — an advisory for runtime.open. True when the platform opener (open / xdg-open / gnome-open / rundll32) is found. A value (property), not a function.
+   * @returns boolean — true if runtime.open can launch a handler on this host; false otherwise (in which case runtime.open throws).
+   */
+  openAvailable: boolean;
   secrets: {
     /**
      * True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows Credential Manager) is plausibly reachable this run. Cheap advisory hint — does not touch the keystore; gate calls on it to self-skip on headless boxes.
@@ -293,6 +304,11 @@ declare const runtime: {
    * @returns void — applies immediately to the in-flight run.
    */
   setDeadline(ms: number): void;
+  /**
+   * Current terminal size of the controlling TTY (stdout) as { columns, rows, tty }. Synchronous (a single ioctl). When stdout is not a terminal (piped/redirected) tty is false and columns/rows fall back to $COLUMNS/$LINES, then 80x24 — so scripts can format tables/progress bars without special-casing the non-TTY path.
+   * @returns { columns, rows, tty } — terminal width/height in character cells; tty is true only when stdout is a real terminal (otherwise the values are the $COLUMNS/$LINES-or-80x24 fallback).
+   */
+  termSize(): { columns: number; rows: number; tty: boolean };
   time: {
     /**
      * Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Europe/Stockholm'); default is the host's local zone.

@@ -8,6 +8,22 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`runtime.termSize()`.** The controlling terminal's size as
+  `{ columns, rows, tty }` (synchronous, pure-Go `x/term`). Non-TTY stdout
+  (piped/redirected) returns `tty: false` and the `$COLUMNS`/`$LINES`-or-`80×24`
+  fallback, so scripts can format tables/progress bars without special-casing.
+  Example: `examples/scripts/runtime-termsize.ts`.
+- **`runtime.open(target)` + `runtime.openAvailable`.** Open a URL or file path
+  in the OS default handler (the user's normal GUI browser) via the
+  feature-detected platform opener (macOS `open`, Linux `xdg-open`/`gnome-open`,
+  Windows `rundll32`/`start`). Fire-and-forget (resolves once spawned); the
+  target is passed as a single argument with no shell, so special characters
+  can't inject; throws cleanly when no opener is on `PATH`. `runtime.openAvailable`
+  is the boolean advisory. Mirrors the `runtime.clipboard` feature-detection
+  pattern; stays cgo-free (shells out to a user-installed OS utility only).
+  Example: `examples/scripts/runtime-open.ts`.
+
 ## [0.99.1] — 2026-07-19
 
 ### Fixed

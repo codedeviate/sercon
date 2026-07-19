@@ -20,6 +20,8 @@ Or pick individual scripts:
 | `async.ts` | `http.get`, `time.sleep`, top-level `await`, `import` from a sibling helper |
 | `argv.ts` | `runtime.argv` — the per-script argument vector (program / script / user args). |
 | `console.ts` | `console.*` — browser/Node-compat shim (log/info/debug → stdout, warn/error → stderr). |
+| `runtime-termsize.ts` | `runtime.termSize()` — terminal `{ columns, rows, tty }` (pure-Go `x/term`); draws a rule sized to the terminal. Non-TTY (CI/pipe) returns the 80×24 fallback. |
+| `runtime-open.ts` | `runtime.open(url)` / `runtime.openAvailable` — open a URL in the OS default browser (feature-detected). Demo-safe: only opens when `SERCON_OPEN_DEMO=1`, otherwise prints what it would open. |
 | `deadline.ts` | `runtime.setDeadline`/`clearDeadline`/`getDeadline` — adjust or remove the script's own running timeout at runtime. |
 | `secrets.ts` | `runtime.secrets` set/get/delete round-trip in the OS keystore (prefix-namespaced); self-skips when no backend. |
 | `clipboard.ts` | `runtime.clipboard` — host system clipboard text round-trip (write then read); self-skips when no clipboard backend is on PATH. |

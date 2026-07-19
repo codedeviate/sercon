@@ -417,9 +417,12 @@ func registerSurface(e *scriptengine.Engine) error {
 			// onto this object after registrations are applied. Registering
 			// here ensures the d.ts emitter surfaces `argv: string[]` with
 			// JSDoc — runtime behaviour is identical to v0.8.x.
-			"argv":      []string{},
-			"secrets":   secretsNamespace(vm, loop),
-			"clipboard": clipboardNamespace(vm, loop),
+			"argv":          []string{},
+			"secrets":       secretsNamespace(vm, loop),
+			"clipboard":     clipboardNamespace(vm, loop),
+			"termSize":      termSizeFn(vm),
+			"open":          scriptengine.PromisifyAsync(vm, loop, openExtract, openOp),
+			"openAvailable": openAvailable(),
 		}
 	}); err != nil {
 		return err

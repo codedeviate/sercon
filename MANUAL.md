@@ -1008,6 +1008,21 @@ Script-host scaffolding. Members:
   binary itself stays fully functional. Image is PNG-only and feature-detected
   separately (`imageAvailable`); macOS image read needs `pngpaste`, Linux needs
   `wl-clipboard` or `xclip` (not `xsel`). RTF/HTML/non-PNG are out of scope.
+- `runtime.termSize()` — the controlling terminal's size as
+  `{ columns, rows, tty }` (synchronous). When stdout is not a terminal
+  (piped/redirected), `tty` is `false` and `columns`/`rows` fall back to
+  `$COLUMNS`/`$LINES` then `80×24`, so scripts can format tables/progress bars
+  without special-casing the non-TTY path. Pure-Go (`x/term`).
+- `runtime.open(target)` — **async**; hand a URL or file path to the OS default
+  handler (the user's normal GUI browser for URLs). Fire-and-forget: resolves
+  once the opener is spawned, not when the browser closes. The target is passed
+  as a single argument (no shell, so special characters can't inject). Throws if
+  no opener is on `PATH`. `runtime.openAvailable` is the cheap boolean advisory.
+  Backends (feature-detected): macOS `open`, Linux `xdg-open`/`gnome-open`,
+  Windows `rundll32`/`start`. This is the "open this in my browser" primitive —
+  distinct from `net.http`/`web.load` (which *fetch*) and
+  `services.agentBrowser`/`services.webdriver` (which drive an *automation*
+  browser).
 
 ```ts
 runtime.log("hello");
@@ -16681,9 +16696,45 @@ Print one space-separated line of the arguments to stdout. Primitives print raw;
 runtime.log("count", 3, { ok: true }); // count 3 {"ok":true}
 ```
 
-#### 17.11.8 runtime.secrets
+#### 17.11.8 runtime.open
 
-##### 17.11.8.1 runtime.secrets.available
+```
+open(target: string): Promise<void>
+```
+
+Open a URL or file path in the OS default handler (the user's normal GUI browser for URLs) via the platform opener — macOS `open`, Linux `xdg-open`/`gnome-open`, Windows rundll32/`start` — feature-detected on PATH. Fire-and-forget: resolves once the opener is spawned, not when the browser closes. The target is passed as a single argument with no shell, so special characters can't inject.
+
+**Parameters**
+
+- `target` *(string)* — A URL or file path to hand to the OS default handler. Passed as one argument with no shell interpolation; must be non-empty.
+
+**Returns:** Promise<void> — resolves once the opener process has been spawned (the browser's lifetime is not awaited).
+
+**Throws:** Throws ("runtime.open: …") if target is missing/empty, if no OS opener is found on PATH (see runtime.openAvailable), or if the opener fails to start.
+
+```ts
+await runtime.open("https://example.com");
+```
+
+#### 17.11.9 runtime.openAvailable
+
+```
+openAvailable: boolean
+```
+
+Whether an OS opener is available on PATH — an advisory for runtime.open. True when the platform opener (open / xdg-open / gnome-open / rundll32) is found. A value (property), not a function.
+
+**Returns:** boolean — true if runtime.open can launch a handler on this host; false otherwise (in which case runtime.open throws).
+
+**Throws:** Not callable — accessing it never throws.
+
+```ts
+if (runtime.openAvailable) await runtime.open(url);
+```
+
+#### 17.11.10 runtime.secrets
+
+##### 17.11.10.1 runtime.secrets.available
 
 ```
 available: boolean
@@ -16699,7 +16750,7 @@ True when an OS keystore backend (macOS Keychain, Linux Secret Service, Windows 
 if (!runtime.secrets.available) runtime.log("no keystore — skipping");
 ```
 
-##### 17.11.8.2 runtime.secrets.delete
+##### 17.11.10.2 runtime.secrets.delete
 
 ```
 delete(name: string, account: string): Promise<boolean>
@@ -16720,7 +16771,7 @@ Remove a secret from the OS keystore under prefix + name / account. Async (keyst
 const removed = await runtime.secrets.delete("devshop", "tess@example.com");
 ```
 
-##### 17.11.8.3 runtime.secrets.get
+##### 17.11.10.3 runtime.secrets.get
 
 ```
 get(name: string, account: string): Promise<string | null>
@@ -16741,7 +16792,7 @@ Read a string secret from the OS keystore. The keystore service is the configure
 const pw = await runtime.secrets.get("devshop", "tess@example.com");
 ```
 
-##### 17.11.8.4 runtime.secrets.set
+##### 17.11.10.4 runtime.secrets.set
 
 ```
 set(name: string, account: string, secret: string): Promise<void>
@@ -16763,7 +16814,7 @@ Store or overwrite a string secret in the OS keystore under prefix + name / acco
 await runtime.secrets.set("devshop", "tess@example.com", "hunter2");
 ```
 
-#### 17.11.9 runtime.setDeadline
+#### 17.11.11 runtime.setDeadline
 
 ```
 setDeadline(ms: number): void
@@ -16783,9 +16834,25 @@ Set the running script's wall-clock kill deadline to now + ms (replacing any pri
 runtime.setDeadline(30000); // give this run 30s from now
 ```
 
-#### 17.11.10 runtime.time
+#### 17.11.12 runtime.termSize
 
-##### 17.11.10.1 runtime.time.format
+```
+termSize(): { columns: number; rows: number; tty: boolean }
+```
+
+Current terminal size of the controlling TTY (stdout) as { columns, rows, tty }. Synchronous (a single ioctl). When stdout is not a terminal (piped/redirected) tty is false and columns/rows fall back to $COLUMNS/$LINES, then 80x24 — so scripts can format tables/progress bars without special-casing the non-TTY path.
+
+**Returns:** { columns, rows, tty } — terminal width/height in character cells; tty is true only when stdout is a real terminal (otherwise the values are the $COLUMNS/$LINES-or-80x24 fallback).
+
+**Throws:** Never throws; a non-terminal stdout yields the fallback with tty:false.
+
+```ts
+const { columns } = runtime.termSize(); const bar = "=".repeat(Math.min(columns, 40));
+```
+
+#### 17.11.13 runtime.time
+
+##### 17.11.13.1 runtime.time.format
 
 ```
 format(ms: number, layout: string, tz?: string): string
@@ -16807,7 +16874,7 @@ Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Euro
 const s = runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC");
 ```
 
-##### 17.11.10.2 runtime.time.nowMs
+##### 17.11.13.2 runtime.time.nowMs
 
 ```
 nowMs(): number
@@ -16823,7 +16890,7 @@ Wall-clock milliseconds since the Unix epoch.
 const t0 = runtime.time.nowMs();
 ```
 
-##### 17.11.10.3 runtime.time.sleep
+##### 17.11.13.3 runtime.time.sleep
 
 ```
 sleep(ms: number): Promise<void>

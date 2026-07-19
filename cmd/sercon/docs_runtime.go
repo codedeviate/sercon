@@ -207,5 +207,29 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Not callable — accessing it never throws; reading an out-of-range index yields undefined per normal array semantics.",
 			Example:    `const target = runtime.argv[2] ?? "default-host";`,
 		},
+		"termSize": {
+			Summary:    "Current terminal size of the controlling TTY (stdout) as { columns, rows, tty }. Synchronous (a single ioctl). When stdout is not a terminal (piped/redirected) tty is false and columns/rows fall back to $COLUMNS/$LINES, then 80x24 — so scripts can format tables/progress bars without special-casing the non-TTY path.",
+			ReturnType: "{ columns: number; rows: number; tty: boolean }",
+			Returns:    "{ columns, rows, tty } — terminal width/height in character cells; tty is true only when stdout is a real terminal (otherwise the values are the $COLUMNS/$LINES-or-80x24 fallback).",
+			Errors:     "Never throws; a non-terminal stdout yields the fallback with tty:false.",
+			Example:    `const { columns } = runtime.termSize(); const bar = "=".repeat(Math.min(columns, 40));`,
+		},
+		"open": {
+			Summary: "Open a URL or file path in the OS default handler (the user's normal GUI browser for URLs) via the platform opener — macOS `open`, Linux `xdg-open`/`gnome-open`, Windows rundll32/`start` — feature-detected on PATH. Fire-and-forget: resolves once the opener is spawned, not when the browser closes. The target is passed as a single argument with no shell, so special characters can't inject.",
+			Params: []scriptengine.Param{
+				{Name: "target", Type: "string", Desc: "A URL or file path to hand to the OS default handler. Passed as one argument with no shell interpolation; must be non-empty."},
+			},
+			ReturnType: "Promise<void>",
+			Returns:    "Promise<void> — resolves once the opener process has been spawned (the browser's lifetime is not awaited).",
+			Errors:     "Throws (\"runtime.open: …\") if target is missing/empty, if no OS opener is found on PATH (see runtime.openAvailable), or if the opener fails to start.",
+			Example:    `await runtime.open("https://example.com");`,
+		},
+		"openAvailable": {
+			Summary:    "Whether an OS opener is available on PATH — an advisory for runtime.open. True when the platform opener (open / xdg-open / gnome-open / rundll32) is found. A value (property), not a function.",
+			ReturnType: "boolean",
+			Returns:    "boolean — true if runtime.open can launch a handler on this host; false otherwise (in which case runtime.open throws).",
+			Errors:     "Not callable — accessing it never throws.",
+			Example:    `if (runtime.openAvailable) await runtime.open(url);`,
+		},
 	}
 }
