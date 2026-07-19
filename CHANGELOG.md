@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.99.1] — 2026-07-19
+
 ### Fixed
 - **Symlinked entry scripts now resolve imports against the real file.** When an
   entry script is invoked through a symlink — the common "symlink a `bin/`

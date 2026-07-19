@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.99.0 (2026-07-19).
+covered is v0.1.0 (2026-05-25) through v0.99.1 (2026-07-19).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -221,6 +221,17 @@ Exits 0 normally (a missing tool is fine — everything is optional enrichment) 
 token after the script path as `runtime.argv[2:]`. Scripts can begin with
 a `#!` shebang line (stripped before transpile, line numbers preserved),
 making `#!/usr/bin/env -S sercon run` practical.
+
+v0.99.1 completed the picture for the intended deployment — a `bin/` launcher
+**symlinked onto `PATH`**. Previously the entry script's relative
+`import`/`require` specifiers resolved against the symlink's directory (its
+module id came from `filepath.Abs`, which doesn't follow symlinks), so
+`../lib/…` broke unless the launcher was a wrapper passing the real path.
+`Engine.RunFile` now `filepath.EvalSymlinks`-resolves the entry path (falling
+back to the unresolved path on a broken link), and the CLI's default `-root`
+does the same via a shared helper — so a symlinked launcher runs identically to
+invoking the real file, and `runtime.argv[1]` is the real path. Surfaced by the
+DailyScripts port.
 
 ### `--watch` live re-run (v0.5.9)
 
