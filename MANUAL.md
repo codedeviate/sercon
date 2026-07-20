@@ -1983,6 +1983,19 @@ first (Node-like); reads and `stat` reject when the target is absent. See
   with ≥1 match (rg `-l`; stops at the first hit per file).
 - `fs.grepCount(opts)` — like `fs.grep` but returns
   `{ path, count }[]` per-file counts (rg `-c`).
+- `fs.tail(path, opts?)` — **follow a file** and yield each new line (async
+  iterator), like `tail -f`. `opts.from` picks the start: `"end"` (default —
+  only lines appended after the call), `"start"` (whole file then follow), or a
+  positive integer `N` (last `N` lines then follow). Survives log rotation and
+  truncation. `for await (const line of fs.tail(path)) { … }`; `break` (or a Run
+  timeout) stops it. Pure-Go (`fsnotify` + a poll fallback); throws if the file
+  is absent at start.
+- `fs.grepStream(path, opts)` — **follow + match** (`tail -f | grep`): yield only
+  lines matching `opts.pattern` as `{ line, column, match, text }`. Matching runs
+  Go-side with `fs.grep`'s RE2 engine, so only matches cross into the script.
+  Same `from`/rotation behaviour as `fs.tail`; `opts` also takes `fixed`, `case`,
+  `word`, `invert`. `line` is a session-relative counter, not a file line number;
+  multiline/context are not supported here (use `fs.grep`).
 
 Unreadable files/dirs are **skipped** by default; pass `strict: true` to
 throw on the first error instead. Traversal is parallel and pure-Go
@@ -2072,6 +2085,23 @@ for await (const m of fs.grep({ pattern: "TODO\\(.*\\)", type: "ts", stream: tru
 
 Use `fs.grepFiles(...)` for just the file list, or `fs.grepCount(...)` for
 per-file counts. See §17 (`fs.grep`).
+
+##### 5.6.2.7 Follow a log and react to error lines
+
+Watch a growing log for problems without shelling out to `tail`/`grep` — the
+match runs in-process and only ERROR lines reach the script.
+
+```ts
+for await (const m of fs.grepStream("/var/log/app.log", { pattern: "ERROR|FATAL" })) {
+  runtime.log(`hit @${m.line}: ${m.text}`);
+  await net.email.send({ /* alert … */ });
+}
+```
+
+`fs.grepStream` starts at end-of-file by default (only new lines); pass
+`from: 50` to replay the last 50 lines first, or `from: "start"` for the whole
+file. Use `fs.tail(path)` when you want every line (grep/parse in-script). Both
+survive log rotation. See §17 (`fs.tail`, `fs.grepStream`).
 
 ### 5.7 `net`
 
@@ -13866,7 +13896,28 @@ Like fs.grep but returns just the paths of files with at least one match (rg -l)
 const files = await fs.grepFiles({ pattern: "deprecated", type: "go" });
 ```
 
-#### 17.7.7 fs.mkdir
+#### 17.7.7 fs.grepStream
+
+```
+grepStream(path: string, opts: { pattern: string, fixed?: boolean, case?: "smart" | "sensitive" | "insensitive", word?: boolean, invert?: boolean, from?: "end" | "start" | number }): AsyncIterable<{ line: number; column: number; match: string; text: string }>
+```
+
+Follow a file and yield only lines matching a pattern, as an async iterator (tail + grep). Matching runs Go-side with fs.grep's RE2 engine, so only matches cross into the script. `from` works as in fs.tail. Long-lived: `break` (or a Run timeout) stops it.
+
+**Parameters**
+
+- `path` *(string)* — The file to follow. Must exist when the call is made (v1 throws otherwise).
+- `opts` *({ pattern: string, fixed?: boolean, case?: "smart" | "sensitive" | "insensitive", word?: boolean, invert?: boolean, from?: "end" | "start" | number })* — pattern is a RE2 regex (or a literal with fixed:true). case defaults to smart (case-insensitive unless the pattern has an uppercase char). word matches on word boundaries; invert yields non-matching lines. from is as in fs.tail. Multiline and context lines are not supported here — use fs.grep for those.
+
+**Returns:** An async iterator yielding { line, column, match, text } per matching line. `line` is a 1-based counter of lines observed since the follow started (session-relative, NOT a file line number); `column` is a 1-based rune offset; `match` is the matched substring; `text` is the full line.
+
+**Throws:** Throws ("fs.grepStream: …") if path/pattern is missing, the pattern is an invalid regex, the file does not exist at start, or `from` is invalid.
+
+```ts
+for await (const m of fs.grepStream("/var/log/app.log", { pattern: "ERROR|FATAL" })) { runtime.log(m.text); }
+```
+
+#### 17.7.8 fs.mkdir
 
 ```
 mkdir(path: string): Promise<{ path: string }>
@@ -13886,9 +13937,9 @@ Create a directory, including any missing parents (mkdir -p). Idempotent.
 await fs.mkdir("report/assets");
 ```
 
-#### 17.7.8 fs.path
+#### 17.7.9 fs.path
 
-##### 17.7.8.1 fs.path.basename
+##### 17.7.9.1 fs.path.basename
 
 ```
 basename(path: string, suffix?: string): string
@@ -13909,7 +13960,7 @@ Final segment of a path; optional suffix is stripped if it matches.
 const b = fs.path.basename("/var/log/app.log", ".log"); // "app"
 ```
 
-##### 17.7.8.2 fs.path.dirname
+##### 17.7.9.2 fs.path.dirname
 
 ```
 dirname(path: string): string
@@ -13929,7 +13980,7 @@ Directory portion of a path. POSIX-style; trailing slashes are stripped.
 const d = fs.path.dirname("/var/log/app.log"); // "/var/log"
 ```
 
-#### 17.7.9 fs.readBytes
+#### 17.7.10 fs.readBytes
 
 ```
 readBytes(path: string): Promise<Uint8Array>
@@ -13949,7 +14000,7 @@ Read an entire file as bytes.
 const bytes = await fs.readBytes("shot.png");
 ```
 
-#### 17.7.10 fs.readText
+#### 17.7.11 fs.readText
 
 ```
 readText(path: string): Promise<string>
@@ -13969,7 +14020,7 @@ Read an entire file as a UTF-8 string.
 const html = await fs.readText("report/index.html");
 ```
 
-#### 17.7.11 fs.remove
+#### 17.7.12 fs.remove
 
 ```
 remove(path: string): Promise<{ path: string }>
@@ -13989,7 +14040,7 @@ Remove a file or a directory tree (recursive). No error if the path is already a
 await fs.remove("report"); // clean slate
 ```
 
-#### 17.7.12 fs.stat
+#### 17.7.13 fs.stat
 
 ```
 stat(path: string): Promise<{ size: number; isDir: boolean; modifiedMs: number }>
@@ -14010,7 +14061,28 @@ const st = await fs.stat("report/index.html");
 runtime.log(st.size, st.isDir, st.modifiedMs);
 ```
 
-#### 17.7.13 fs.writeBytes
+#### 17.7.14 fs.tail
+
+```
+tail(path: string, opts?: { from?: "end" | "start" | number }): AsyncIterable<string>
+```
+
+Follow a file and yield each new line (like `tail -f`) as an async iterator. Survives log rotation and truncation. `from` controls where reading starts: "end" (default, new lines only), "start" (whole file then follow), or a positive integer N (last N lines then follow). Long-lived: iterate with `for await`, `break` (or a Run timeout) stops it. Backed by a pure-Go fsnotify follower with a poll fallback.
+
+**Parameters**
+
+- `path` *(string)* — The file to follow. Must exist when the call is made (v1 throws otherwise).
+- `opts` *({ from?: "end" | "start" | number }, optional)* — from: "end" (default) delivers only lines appended after the call; "start" replays the whole file then follows; a positive integer N replays the last N lines then follows.
+
+**Returns:** An async iterator yielding each new line as a string (trailing newline/\r stripped). `for await (const line of fs.tail(path)) { … }`; `break` stops the follow.
+
+**Throws:** Throws ("fs.tail: …") if path is missing/empty, the file does not exist at start, or `from` is not "end"/"start"/a non-negative number.
+
+```ts
+for await (const line of fs.tail("/var/log/app.log")) { runtime.log(line); break; }
+```
+
+#### 17.7.15 fs.writeBytes
 
 ```
 writeBytes(path: string, data: Uint8Array): Promise<{ path: string; bytes: number }>
@@ -14032,7 +14104,7 @@ const shot = await d.screenshot();
 await fs.writeBytes("shot.png", new Uint8Array(shot.bytes));
 ```
 
-#### 17.7.14 fs.writeText
+#### 17.7.16 fs.writeText
 
 ```
 writeText(path: string, text: string): Promise<{ path: string; bytes: number }>

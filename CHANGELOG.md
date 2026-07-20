@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`fs.tail` and `fs.grepStream`.** Native, pure-Go file following — `fs.tail`
+  yields each new line (like `tail -f`) as an async iterator; `fs.grepStream`
+  yields only lines matching a pattern (`tail -f | grep`), matched Go-side with
+  fs.grep's RE2 engine. `from` selects the start (`"end"` default / `"start"` /
+  last-N). Survives log rotation and truncation (fsnotify + poll fallback), roots
+  in the Run context, and stops on `break`. No new dependency. Examples:
+  `examples/scripts/fs-tail.ts`.
+
 ## [0.100.0] — 2026-07-19
 
 ### Added
