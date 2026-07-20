@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -289,6 +290,64 @@ func fsTailBinding(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengin
 			return followFile(ctx, path, from, func(line string) error {
 				select {
 				case out <- line:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+		}
+		return fsSearchStream(vm, loop, eng, produce)
+	}
+}
+
+// fsGrepStreamBinding implements fs.grepStream(path, opts) → async iterator of
+// { line, column, match, text } for lines matching opts.pattern, following the
+// file. Reuses fs.grep's compiled matcher; `line` is a session-relative counter.
+func fsGrepStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		arg := call.Argument(0)
+		if arg == nil || goja.IsUndefined(arg) || goja.IsNull(arg) || arg.String() == "" {
+			panic(vm.NewTypeError("fs.grepStream: path is required"))
+		}
+		path := arg.String()
+		opts := optsArgMap(call, 1)
+		pattern := optString(opts, "pattern", "")
+		if pattern == "" {
+			panic(vm.NewTypeError("fs.grepStream: pattern is required"))
+		}
+		from, err := parseTailFrom(opts)
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("fs.grepStream: %w", err)))
+		}
+		ic := caseInsensitive(optString(opts, "case", "smart"), pattern)
+		m, err := compileGrepMatcher(pattern, optBool(opts, "fixed", false), optBool(opts, "word", false), ic, false)
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("fs.grepStream: %w", err)))
+		}
+		m.invert = optBool(opts, "invert", false)
+		if _, serr := os.Stat(path); serr != nil {
+			panic(vm.NewGoError(fmt.Errorf("fs.grepStream: %w", serr)))
+		}
+		lineNo := 0
+		produce := func(ctx context.Context, out chan<- any) error {
+			return followFile(ctx, path, from, func(line string) error {
+				lineNo++
+				lb := []byte(line)
+				off, ln := m.findFirst(lb)
+				hit := off >= 0
+				if m.invert {
+					hit = !hit
+				}
+				if !hit {
+					return nil
+				}
+				item := map[string]any{"line": lineNo, "column": 1, "match": "", "text": line}
+				if off >= 0 {
+					item["column"] = utf8.RuneCount(lb[:off]) + 1
+					item["match"] = string(lb[off : off+ln])
+				}
+				select {
+				case out <- item:
 					return nil
 				case <-ctx.Done():
 					return ctx.Err()

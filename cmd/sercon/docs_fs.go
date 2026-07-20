@@ -172,5 +172,16 @@ runtime.log(st.size, st.isDir, st.modifiedMs);`,
 			Errors:     "Throws (\"fs.tail: …\") if path is missing/empty, the file does not exist at start, or `from` is not \"end\"/\"start\"/a non-negative number.",
 			Example:    "for await (const line of fs.tail(\"/var/log/app.log\")) { runtime.log(line); break; }",
 		},
+		"grepStream": {
+			Summary: "Follow a file and yield only lines matching a pattern, as an async iterator (tail + grep). Matching runs Go-side with fs.grep's RE2 engine, so only matches cross into the script. `from` works as in fs.tail. Long-lived: `break` (or a Run timeout) stops it.",
+			Params: []scriptengine.Param{
+				{Name: "path", Type: "string", Desc: "The file to follow. Must exist when the call is made (v1 throws otherwise)."},
+				{Name: "opts", Type: "{ pattern: string, fixed?: boolean, case?: \"smart\" | \"sensitive\" | \"insensitive\", word?: boolean, invert?: boolean, from?: \"end\" | \"start\" | number }", Desc: "pattern is a RE2 regex (or a literal with fixed:true). case defaults to smart (case-insensitive unless the pattern has an uppercase char). word matches on word boundaries; invert yields non-matching lines. from is as in fs.tail. Multiline and context lines are not supported here — use fs.grep for those."},
+			},
+			ReturnType: "AsyncIterable<{ line: number; column: number; match: string; text: string }>",
+			Returns:    "An async iterator yielding { line, column, match, text } per matching line. `line` is a 1-based counter of lines observed since the follow started (session-relative, NOT a file line number); `column` is a 1-based rune offset; `match` is the matched substring; `text` is the full line.",
+			Errors:     "Throws (\"fs.grepStream: …\") if path/pattern is missing, the pattern is an invalid regex, the file does not exist at start, or `from` is invalid.",
+			Example:    "for await (const m of fs.grepStream(\"/var/log/app.log\", { pattern: \"ERROR|FATAL\" })) { runtime.log(m.text); }",
+		},
 	}
 }

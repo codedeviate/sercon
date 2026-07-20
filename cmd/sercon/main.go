@@ -469,13 +469,14 @@ func registerSurface(e *scriptengine.Engine) error {
 	}
 	if err := e.RegisterNamespaceFactory("fs", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		m := map[string]any{
-			"path":      pathNamespace(vm),
-			"archive":   archiveNamespace(vm, loop),
-			"find":      fsFindBinding(vm, loop, e),
-			"grep":      fsGrepBinding(vm, loop, e),
-			"grepFiles": fsGrepFilesBinding(vm, loop),
-			"grepCount": fsGrepCountBinding(vm, loop),
-			"tail":      fsTailBinding(vm, loop, e),
+			"path":       pathNamespace(vm),
+			"archive":    archiveNamespace(vm, loop),
+			"find":       fsFindBinding(vm, loop, e),
+			"grep":       fsGrepBinding(vm, loop, e),
+			"grepFiles":  fsGrepFilesBinding(vm, loop),
+			"grepCount":  fsGrepCountBinding(vm, loop),
+			"tail":       fsTailBinding(vm, loop, e),
+			"grepStream": fsGrepStreamBinding(vm, loop, e),
 		}
 		for k, v := range fileNamespace(vm, loop) {
 			m[k] = v

@@ -51,6 +51,36 @@ func TestFsTail_FollowsAppends(t *testing.T) {
 	}
 }
 
+// fs.grepStream follows a file and yields only matching lines (Go-side match).
+func TestFsGrepStream_MatchesOnly(t *testing.T) {
+	eng := tailEng(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.log")
+	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		for _, s := range []string{"info: ok\n", "ERROR: boom\n", "info: fine\n", "ERROR: again\n"} {
+			f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+			_, _ = f.WriteString(s)
+			_ = f.Close()
+			time.Sleep(30 * time.Millisecond)
+		}
+	}()
+	_, err := eng.Run(context.Background(), "gs.ts", `
+		const hits = [];
+		for await (const m of fs.grepStream(`+"`"+path+"`"+`, { pattern: "ERROR", fixed: true })) {
+			hits.push(m.text);
+			if (hits.length === 2) break;
+		}
+		if (hits.join("|") !== "ERROR: boom|ERROR: again") throw new Error("got: " + hits.join("|"));
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
 // A missing file throws synchronously (spec: no wait-for-create in v1).
 func TestFsTail_MissingFileThrows(t *testing.T) {
 	eng := tailEng(t)

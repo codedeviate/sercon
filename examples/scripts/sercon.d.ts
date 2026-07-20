@@ -1011,6 +1011,13 @@ declare const fs: {
    */
   grepFiles(opts: GrepOptions): Promise<string[]>;
   /**
+   * Follow a file and yield only lines matching a pattern, as an async iterator (tail + grep). Matching runs Go-side with fs.grep's RE2 engine, so only matches cross into the script. `from` works as in fs.tail. Long-lived: `break` (or a Run timeout) stops it.
+   * @param path The file to follow. Must exist when the call is made (v1 throws otherwise).
+   * @param opts pattern is a RE2 regex (or a literal with fixed:true). case defaults to smart (case-insensitive unless the pattern has an uppercase char). word matches on word boundaries; invert yields non-matching lines. from is as in fs.tail. Multiline and context lines are not supported here — use fs.grep for those.
+   * @returns An async iterator yielding { line, column, match, text } per matching line. `line` is a 1-based counter of lines observed since the follow started (session-relative, NOT a file line number); `column` is a 1-based rune offset; `match` is the matched substring; `text` is the full line.
+   */
+  grepStream(path: string, opts: { pattern: string, fixed?: boolean, case?: "smart" | "sensitive" | "insensitive", word?: boolean, invert?: boolean, from?: "end" | "start" | number }): AsyncIterable<{ line: number; column: number; match: string; text: string }>;
+  /**
    * Create a directory, including any missing parents (mkdir -p). Idempotent.
    * @param path Directory path to create (mode 0755). Existing directories are fine.
    * @returns Promise resolving to { path }.
