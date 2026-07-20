@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -201,6 +202,27 @@ func TestFollowFile_ContextCancelStops(t *testing.T) {
 		// returned promptly — good
 	case <-time.After(2 * time.Second):
 		t.Fatal("followFile did not return after ctx cancel")
+	}
+}
+
+func TestFollowFile_OnLineErrorStops(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log")
+	if err := os.WriteFile(path, []byte("boom\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	onLine := func(string) error { return fmt.Errorf("stop") }
+	go func() { done <- followFile(ctx, path, tailFrom{mode: "start"}, onLine) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected followFile to return the onLine error, got nil")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("followFile did not return after onLine returned an error")
 	}
 }
 

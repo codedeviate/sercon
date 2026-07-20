@@ -65,9 +65,9 @@ func followFile(ctx context.Context, path string, from tailFrom, onLine func(str
 	if err != nil {
 		return fmt.Errorf("fs.tail: %w", err)
 	}
-	f, info, ok := openFileStat(abs)
-	if !ok {
-		return fmt.Errorf("fs.tail: %w", &os.PathError{Op: "open", Path: abs, Err: os.ErrNotExist})
+	f, info, err := openFileStat(abs)
+	if err != nil {
+		return fmt.Errorf("fs.tail: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -106,15 +106,18 @@ func followFile(ctx context.Context, path string, from tailFrom, onLine func(str
 
 	// rotate swaps to a freshly opened file at abs when it is a different inode.
 	rotate := func() error {
-		nf, ni, ok := openFileStat(abs)
-		if !ok {
+		nf, ni, oerr := openFileStat(abs)
+		if oerr != nil {
 			return nil // path momentarily gone; a later event/poll retries
 		}
 		if os.SameFile(info, ni) {
 			_ = nf.Close()
 			return nil
 		}
-		_, _ = readLines(f, &offset, &partial, onLine) // flush tail of old file
+		if _, err := readLines(f, &offset, &partial, onLine); err != nil { // flush tail of old file
+			_ = nf.Close()
+			return err
+		}
 		_ = f.Close()
 		f, info, offset, partial = nf, ni, 0, nil
 		_ = watcher.Add(abs)
@@ -153,9 +156,11 @@ func followFile(ctx context.Context, path string, from tailFrom, onLine func(str
 			case serr != nil:
 				// path gone (mid-rotation); keep current handle, retry next tick
 			case !os.SameFile(info, st):
+				// rotate() ends with its own drain(); don't drain again below.
 				if err := rotate(); err != nil {
 					return err
 				}
+				continue
 			case st.Size() < offset:
 				offset, partial = 0, nil // truncated in place
 			}
@@ -166,18 +171,19 @@ func followFile(ctx context.Context, path string, from tailFrom, onLine func(str
 	}
 }
 
-// openFileStat opens path and stats it; ok=false on any error.
-func openFileStat(path string) (*os.File, os.FileInfo, bool) {
+// openFileStat opens path and stats it, returning the real open/stat error so
+// callers can distinguish "does not exist" from permission / fd-exhaustion.
+func openFileStat(path string) (*os.File, os.FileInfo, error) {
 	f, err := os.Open(path) //nolint:gosec // scripts choose the follow target
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, err
 	}
 	info, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
-		return nil, nil, false
+		return nil, nil, err
 	}
-	return f, info, true
+	return f, info, nil
 }
 
 // readLines reads from *offset to EOF, appends to *partial, and calls onLine for
