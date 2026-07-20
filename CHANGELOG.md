@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.101.0] — 2026-07-20
+
 ### Added
 - **`fs.tail` and `fs.grepStream`.** Native, pure-Go file following — `fs.tail`
   yields each new line (like `tail -f`) as an async iterator; `fs.grepStream`

@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.100.0 (2026-07-19).
+covered is v0.1.0 (2026-05-25) through v0.101.0 (2026-07-20).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -485,6 +485,23 @@ protection): v0.4.14 (`api.archive.*`), stdlib-only.
   `type:`-preset filter that returned zero results. v1 reads `.gitignore` +
   `.ignore` only (no cross-file negation). Three new authorized pure-Go deps;
   stays cgo-free. Examples: `fs-find.ts`, `fs-grep.ts`.
+
+- **File following — `fs.tail` + `fs.grepStream` (v0.101.0)** — the `tail -f`
+  and `tail -f | grep` pattern in-process, so a script can watch an error log
+  without shelling out. `fs.tail(path, opts?)` is an async iterator of new lines;
+  `fs.grepStream(path, opts)` follows and yields only matching lines
+  (`{ line, column, match, text }`, matched Go-side with `fs.grep`'s RE2 engine,
+  so only matches cross into JS). `from` picks the start — `"end"` (default; new
+  lines only), `"start"`, or last-N. A shared `followFile` core hand-rolled on
+  the already-vendored `fsnotify` (**no new dependency**) with a 1s poll fallback
+  handles **log rotation and truncation** (inode compare via `os.SameFile` for
+  rename/recreate; size-shrink for copytruncate). Both bindings reuse the
+  `fsSearchStream` async-iterator generator built for `fs.find`/`fs.grep`
+  (`HoldRun` keep-alive, cancellable producer, on-loop `next()`, Run-context
+  cancellation), so `break` stops the follow cleanly. Built subagent-driven; the
+  review loop caught a swallowed `onLine` error in the rotation flush. `grepStream`'s
+  `line` is a session-relative counter (not a file line number); multiline/context
+  are `fs.grep`'s job. Surfaced by the DailyScripts port. Example: `fs-tail.ts`.
 
 ### `net`
 
