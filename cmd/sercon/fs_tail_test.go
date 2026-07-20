@@ -65,7 +65,7 @@ func TestFollowFile_FromEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var c collector
-	go func() { _ = followFile(ctx, path, tailFrom{mode: "end"}, c.add) }()
+	go func() { _ = followFile(ctx, "fs.tail", path, tailFrom{mode: "end"}, c.add) }()
 
 	// Give the follower a moment to seek to EOF, then append.
 	time.Sleep(100 * time.Millisecond)
@@ -87,7 +87,7 @@ func TestFollowFile_FromStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var c collector
-	go func() { _ = followFile(ctx, path, tailFrom{mode: "start"}, c.add) }()
+	go func() { _ = followFile(ctx, "fs.tail", path, tailFrom{mode: "start"}, c.add) }()
 	appendLine(t, path, "c")
 	got := waitForLines(t, &c, 3)
 	if len(got) != 3 || got[0] != "a" || got[2] != "c" {
@@ -104,7 +104,7 @@ func TestFollowFile_FromLastNLines(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var c collector
-	go func() { _ = followFile(ctx, path, tailFrom{mode: "lines", n: 2}, c.add) }()
+	go func() { _ = followFile(ctx, "fs.tail", path, tailFrom{mode: "lines", n: 2}, c.add) }()
 	got := waitForLines(t, &c, 2)
 	if len(got) != 2 || got[0] != "l4" || got[1] != "l5" {
 		t.Fatalf("from:2 delivered %v, want [l4 l5]", got)
@@ -120,7 +120,7 @@ func TestFollowFile_PartialLineBuffered(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var c collector
-	go func() { _ = followFile(ctx, path, tailFrom{mode: "end"}, c.add) }()
+	go func() { _ = followFile(ctx, "fs.tail", path, tailFrom{mode: "end"}, c.add) }()
 	time.Sleep(100 * time.Millisecond)
 	// Write a line in two fragments; only the completed line should surface.
 	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
@@ -144,7 +144,7 @@ func TestFollowFile_Truncation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var c collector
-	go func() { _ = followFile(ctx, path, tailFrom{mode: "end"}, c.add) }()
+	go func() { _ = followFile(ctx, "fs.tail", path, tailFrom{mode: "end"}, c.add) }()
 	time.Sleep(100 * time.Millisecond)
 	appendLine(t, path, "before")
 	waitForLines(t, &c, 1)
@@ -168,7 +168,7 @@ func TestFollowFile_RotationRenameRecreate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var c collector
-	go func() { _ = followFile(ctx, path, tailFrom{mode: "end"}, c.add) }()
+	go func() { _ = followFile(ctx, "fs.tail", path, tailFrom{mode: "end"}, c.add) }()
 	time.Sleep(100 * time.Millisecond)
 	appendLine(t, path, "pre-rotate")
 	waitForLines(t, &c, 1)
@@ -194,7 +194,9 @@ func TestFollowFile_ContextCancelStops(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- followFile(ctx, path, tailFrom{mode: "end"}, func(string) error { return nil }) }()
+	go func() {
+		done <- followFile(ctx, "fs.tail", path, tailFrom{mode: "end"}, func(string) error { return nil })
+	}()
 	time.Sleep(100 * time.Millisecond)
 	cancel()
 	select {
@@ -215,7 +217,7 @@ func TestFollowFile_OnLineErrorStops(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	onLine := func(string) error { return fmt.Errorf("stop") }
-	go func() { done <- followFile(ctx, path, tailFrom{mode: "start"}, onLine) }()
+	go func() { done <- followFile(ctx, "fs.tail", path, tailFrom{mode: "start"}, onLine) }()
 	select {
 	case err := <-done:
 		if err == nil {
@@ -227,7 +229,7 @@ func TestFollowFile_OnLineErrorStops(t *testing.T) {
 }
 
 func TestFollowFile_MissingFileErrors(t *testing.T) {
-	err := followFile(context.Background(), filepath.Join(t.TempDir(), "nope"), tailFrom{mode: "end"}, func(string) error { return nil })
+	err := followFile(context.Background(), "fs.tail", filepath.Join(t.TempDir(), "nope"), tailFrom{mode: "end"}, func(string) error { return nil })
 	if err == nil {
 		t.Fatal("expected an error for a missing file")
 	}

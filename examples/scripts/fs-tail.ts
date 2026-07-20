@@ -1,13 +1,18 @@
 // fs.tail — follow a growing file (like `tail -f`). Self-terminating demo:
-// append a few lines via a background shell, tail from the end, stop after them.
+// append a few lines in the background, tail from the end, stop after them.
 const path = `${runtime.env.get("TMPDIR") ?? "/tmp"}/sercon-tail-${runtime.time.nowMs()}.log`;
 await fs.writeText(path, ""); // create empty
 
-// Append 3 lines in the background (>> genuinely appends; no truncation race).
+// appendLine appends one line without a shell: `tee -a` gets the path as a
+// literal argv element (no shell interpolation → no injection) and the content
+// via stdin. This genuinely appends (no truncate-then-rewrite race with tail).
+const appendLine = (file: string, text: string) =>
+  services.exec.shell(["tee", "-a", file], { stdin: text + "\n" });
+
 (async () => {
   for (const msg of ["line 1", "line 2", "line 3"]) {
     await runtime.time.sleep(40);
-    await services.exec.shell(["/bin/sh", "-c", `printf '%s\\n' ${JSON.stringify(msg)} >> ${JSON.stringify(path)}`]);
+    await appendLine(path, msg);
   }
 })();
 
@@ -25,7 +30,7 @@ await fs.writeText(errPath, "");
 (async () => {
   for (const msg of ["info: up", "ERROR: disk full", "info: retry"]) {
     await runtime.time.sleep(40);
-    await services.exec.shell(["/bin/sh", "-c", `printf '%s\\n' ${JSON.stringify(msg)} >> ${JSON.stringify(errPath)}`]);
+    await appendLine(errPath, msg);
   }
 })();
 for await (const m of fs.grepStream(errPath, { pattern: "ERROR", fixed: true })) {

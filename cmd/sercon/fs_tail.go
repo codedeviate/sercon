@@ -64,15 +64,17 @@ func linesFrom(n int) (tailFrom, error) {
 // a 1s poll fallback. It calls onLine for each complete line (trailing \n and
 // \r stripped), surviving copytruncate-style truncation and rename/recreate
 // rotation. It returns when ctx is canceled or onLine returns an error, and
-// returns an error immediately if path does not exist.
-func followFile(ctx context.Context, path string, from tailFrom, onLine func(string) error) error {
+// returns an error immediately if path does not exist. who prefixes error
+// messages with the calling binding name (e.g. "fs.tail" or "fs.grepStream")
+// so a surfaced error is attributed correctly.
+func followFile(ctx context.Context, who, path string, from tailFrom, onLine func(string) error) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("fs.tail: %w", err)
+		return fmt.Errorf("%s: %w", who, err)
 	}
 	f, info, err := openFileStat(abs)
 	if err != nil {
-		return fmt.Errorf("fs.tail: %w", err)
+		return fmt.Errorf("%s: %w", who, err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -83,7 +85,7 @@ func followFile(ctx context.Context, path string, from tailFrom, onLine func(str
 	case "lines":
 		offset, err = seekLastNLines(f, info.Size(), from.n)
 		if err != nil {
-			return fmt.Errorf("fs.tail: %w", err)
+			return fmt.Errorf("%s: %w", who, err)
 		}
 	default: // "end"
 		offset = info.Size()
@@ -91,7 +93,7 @@ func followFile(ctx context.Context, path string, from tailFrom, onLine func(str
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return fmt.Errorf("fs.tail: %w", err)
+		return fmt.Errorf("%s: %w", who, err)
 	}
 	defer func() { _ = watcher.Close() }()
 	// Watch the parent dir (catches Create of a rotated replacement) and the
@@ -287,7 +289,7 @@ func fsTailBinding(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengin
 			panic(vm.NewGoError(fmt.Errorf("fs.tail: %w", serr)))
 		}
 		produce := func(ctx context.Context, out chan<- any) error {
-			return followFile(ctx, path, from, func(line string) error {
+			return followFile(ctx, "fs.tail", path, from, func(line string) error {
 				select {
 				case out <- line:
 					return nil
@@ -330,7 +332,7 @@ func fsGrepStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scrip
 		}
 		lineNo := 0
 		produce := func(ctx context.Context, out chan<- any) error {
-			return followFile(ctx, path, from, func(line string) error {
+			return followFile(ctx, "fs.grepStream", path, from, func(line string) error {
 				lineNo++
 				lb := []byte(line)
 				off, ln := m.findFirst(lb)
