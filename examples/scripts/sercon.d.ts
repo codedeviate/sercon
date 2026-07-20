@@ -1056,6 +1056,13 @@ declare const fs: {
    */
   stat(path: string): Promise<{ size: number; isDir: boolean; modifiedMs: number }>;
   /**
+   * Follow a file and yield each new line (like `tail -f`) as an async iterator. Survives log rotation and truncation. `from` controls where reading starts: "end" (default, new lines only), "start" (whole file then follow), or a positive integer N (last N lines then follow). Long-lived: iterate with `for await`, `break` (or a Run timeout) stops it. Backed by a pure-Go fsnotify follower with a poll fallback.
+   * @param path The file to follow. Must exist when the call is made (v1 throws otherwise).
+   * @param opts from: "end" (default) delivers only lines appended after the call; "start" replays the whole file then follows; a positive integer N replays the last N lines then follows.
+   * @returns An async iterator yielding each new line as a string (trailing newline/\r stripped). `for await (const line of fs.tail(path)) { … }`; `break` stops the follow.
+   */
+  tail(path: string, opts?: { from?: "end" | "start" | number }): AsyncIterable<string>;
+  /**
    * Write binary data (a Uint8Array) to a file, truncating. Fails if the parent directory does not exist.
    * @param path Output file path (CWD-relative or absolute).
    * @param data Bytes to write (mode 0644). Pass a Uint8Array (e.g. new Uint8Array(shot.bytes)).

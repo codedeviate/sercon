@@ -475,6 +475,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"grep":      fsGrepBinding(vm, loop, e),
 			"grepFiles": fsGrepFilesBinding(vm, loop),
 			"grepCount": fsGrepCountBinding(vm, loop),
+			"tail":      fsTailBinding(vm, loop, e),
 		}
 		for k, v := range fileNamespace(vm, loop) {
 			m[k] = v

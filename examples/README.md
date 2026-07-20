@@ -83,6 +83,7 @@ Or pick individual scripts:
 | `fs-report.ts` | `fs` file API (`writeText`/`writeBytes`/`readText`/`readBytes`/`mkdir`/`exists`/`remove`/`stat`) — builds an illustrated per-step screenshot report; captures real screenshots when a WebDriver is present, else records steps without images. |
 | `fs-find.ts` | `fs.find` — fast file search (fd-like): builds a small tree in `$TMPDIR`, finds `.go` files by glob and `.md` by extension with `stat`, self-checks. Fully offline. |
 | `fs-grep.ts` | `fs.grep` / `fs.grepFiles` / `fs.grepCount` — content search (rg-like): builds a small tree in `$TMPDIR`, finds a literal TODO with line numbers, lists files-with-matches and per-file counts, self-checks. Fully offline. |
+| `fs-tail.ts` | `fs.tail` — follow a growing file (`tail -f`): appends a few lines in the background, tails from the end, stops after them. Self-terminating; offline. |
 | `typst.ts` | `services.typst` — compile inline Typst to PDF bytes + PNG file, version/fonts/query; self-skips without the typst CLI. |
 | `pdf-extract.ts` | Render/extract PDFs via poppler (`services.pdf`): `info`, `toImage` (page 1 → PNG bytes), `toText`; self-skips without poppler. |
 | `doctor.ts` | `services.doctor()` — report external tool requirements (installed/version/conflict) and assert required features (e.g. `["git"]`); `--doctor` is the CLI form. |

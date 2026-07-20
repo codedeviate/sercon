@@ -161,5 +161,16 @@ runtime.log(st.size, st.isDir, st.modifiedMs);`,
 			Errors:     "Throws (\"fs.grepCount: …\") if pattern is missing/invalid, or on the first error when strict:true.",
 			Example:    "const counts = await fs.grepCount({ pattern: \"import\", type: \"ts\" });",
 		},
+		"tail": {
+			Summary: "Follow a file and yield each new line (like `tail -f`) as an async iterator. Survives log rotation and truncation. `from` controls where reading starts: \"end\" (default, new lines only), \"start\" (whole file then follow), or a positive integer N (last N lines then follow). Long-lived: iterate with `for await`, `break` (or a Run timeout) stops it. Backed by a pure-Go fsnotify follower with a poll fallback.",
+			Params: []scriptengine.Param{
+				{Name: "path", Type: "string", Desc: "The file to follow. Must exist when the call is made (v1 throws otherwise)."},
+				{Name: "opts", Type: "{ from?: \"end\" | \"start\" | number }", Optional: true, Desc: "from: \"end\" (default) delivers only lines appended after the call; \"start\" replays the whole file then follows; a positive integer N replays the last N lines then follows."},
+			},
+			ReturnType: "AsyncIterable<string>",
+			Returns:    "An async iterator yielding each new line as a string (trailing newline/\\r stripped). `for await (const line of fs.tail(path)) { … }`; `break` stops the follow.",
+			Errors:     "Throws (\"fs.tail: …\") if path is missing/empty, the file does not exist at start, or `from` is not \"end\"/\"start\"/a non-negative number.",
+			Example:    "for await (const line of fs.tail(\"/var/log/app.log\")) { runtime.log(line); break; }",
+		},
 	}
 }

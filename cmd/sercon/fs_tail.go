@@ -9,7 +9,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // tailPollInterval is the poll-fallback cadence — covers filesystems/editors
@@ -263,4 +267,34 @@ func seekLastNLines(f *os.File, size int64, n int) (int64, error) {
 		}
 	}
 	return 0, nil // fewer than n lines → start of file
+}
+
+// fsTailBinding implements fs.tail(path, opts?) → async iterator of line strings
+// following the file. Missing file throws synchronously (v1).
+func fsTailBinding(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine.Engine) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		arg := call.Argument(0)
+		if arg == nil || goja.IsUndefined(arg) || goja.IsNull(arg) || arg.String() == "" {
+			panic(vm.NewTypeError("fs.tail: path is required"))
+		}
+		path := arg.String()
+		from, err := parseTailFrom(optsArgMap(call, 1))
+		if err != nil {
+			panic(vm.NewGoError(fmt.Errorf("fs.tail: %w", err)))
+		}
+		if _, serr := os.Stat(path); serr != nil {
+			panic(vm.NewGoError(fmt.Errorf("fs.tail: %w", serr)))
+		}
+		produce := func(ctx context.Context, out chan<- any) error {
+			return followFile(ctx, path, from, func(line string) error {
+				select {
+				case out <- line:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+		}
+		return fsSearchStream(vm, loop, eng, produce)
+	}
 }
