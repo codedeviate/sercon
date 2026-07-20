@@ -71,10 +71,35 @@ func TestFsGrepStream_MatchesOnly(t *testing.T) {
 	_, err := eng.Run(context.Background(), "gs.ts", `
 		const hits = [];
 		for await (const m of fs.grepStream(`+"`"+path+"`"+`, { pattern: "ERROR", fixed: true })) {
-			hits.push(m.text);
+			hits.push({ line: m.line, column: m.column, text: m.text });
 			if (hits.length === 2) break;
 		}
-		if (hits.join("|") !== "ERROR: boom|ERROR: again") throw new Error("got: " + hits.join("|"));
+		const got = hits.map(h => h.line + ":" + h.column + ":" + h.text).join("|");
+		// Session-relative line counter (all 4 lines observed; matches are #2 and #4)
+		// and 1-based rune column ("ERROR" starts each line, so column 1).
+		if (got !== "2:1:ERROR: boom|4:1:ERROR: again") throw new Error("got: " + got);
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+}
+
+// fs.grepStream throws synchronously on a missing pattern and on a missing file.
+func TestFsGrepStream_ThrowsOnMissingPatternAndFile(t *testing.T) {
+	eng := tailEng(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "real.log")
+	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := eng.Run(context.Background(), "gs.ts", `
+		let noPattern = false;
+		// A real file, but no pattern → the pattern check must fire.
+		try { fs.grepStream(`+"`"+path+"`"+`, {}); } catch (e) { noPattern = true; }
+		if (!noPattern) throw new Error("expected fs.grepStream to throw when pattern is missing");
+		let noFile = false;
+		try { fs.grepStream("/no/such/file/here.log", { pattern: "x" }); } catch (e) { noFile = true; }
+		if (!noFile) throw new Error("expected fs.grepStream to throw for a missing file");
 	`)
 	if err != nil {
 		t.Fatalf("run: %v", err)
