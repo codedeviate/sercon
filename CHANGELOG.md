@@ -8,6 +8,19 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Fixed
+- **`services.exec.interactive` no longer drops the first keystroke** after a
+  prior command. The stdin→pty copy was a fire-and-forget goroutine that parked
+  in a blocking `read(os.Stdin)` and outlived its session; on the next
+  interactive call a second reader parked on the same fd, and the kernel could
+  hand the user's first keystroke to the stale reader — which wrote it to the
+  now-closed old pty and lost it (only the first byte, only after a back-to-back
+  session). The reader is now interruptible (a self-pipe watched alongside stdin
+  via `poll`) and joined before `interactive()` returns, so exactly one reader
+  exists at a time. It reads stdin only when `poll` reports data ready, leaving
+  fd 0's blocking mode untouched (a later non-interactive child that inherits
+  stdin is unaffected). Unix only; the Windows inherit path was never affected.
+
 ## [0.101.0] — 2026-07-20
 
 ### Added
