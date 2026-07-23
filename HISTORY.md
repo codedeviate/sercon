@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.101.0 (2026-07-20).
+covered is v0.1.0 (2026-05-25) through v0.101.1 (2026-07-23).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -617,6 +617,14 @@ pseudo-terminal (color/progress) support on Unix: v0.35.0.
 `docker -it` / `ssh` / interactive REPLs — Unix pty + raw mode + `SIGWINCH`,
 restored on every exit path; non-TTY and Windows inherit the raw handles):
 v0.98.0, surfaced by the DailyScripts port (its `inherit`-stdio `sysCall`).
+v0.101.1 fixed a first-keystroke-dropped bug: the stdin→pty pump was a
+fire-and-forget goroutine that parked in a blocking `read(os.Stdin)` and
+outlived its session, so a back-to-back interactive call left two readers on
+fd 0 and the kernel could hand the first byte to the stale one (which wrote it
+to the closed old pty and lost it). The reader is now interruptible (a
+self-pipe watched alongside stdin via `poll`) and joined before the call
+returns — exactly one reader at a time — and reads only when `poll` reports
+data, so fd 0's blocking mode is never changed.
 
 **`services.exec.http`** (recon-with-curl-fallback HTTP client): v0.4.18.
 

@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.101.1] — 2026-07-23
+
 ### Fixed
 - **`services.exec.interactive` no longer drops the first keystroke** after a
   prior command. The stdin→pty copy was a fire-and-forget goroutine that parked
