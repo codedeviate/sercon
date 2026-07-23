@@ -930,13 +930,14 @@ func TestMCPPhase2ResourceUpdated_NoTransport_ResolvesWithoutHang(t *testing.T) 
 // hops back onto the loop via callJSHandler and would hang forever if the
 // loop had already exited.
 func TestMCPCompletion(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	eng := scriptengine.New(scriptengine.Options{DisableConsole: true})
 
 	var ms *mcpServer
-	served := make(chan struct{})
+	served := make(chan struct{}) // closed in serve(): ms.srv exists (for connect)
+	ready := make(chan struct{})  // closed in ready(): the script finished registering
 	done := make(chan struct{})
 
 	if err := eng.RegisterNamespaceFactory("test", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
@@ -955,6 +956,13 @@ func TestMCPCompletion(t *testing.T) {
 				return ms.handle(vm)
 			},
 			"ready": func() goja.Value {
+				// ready() is the script's LAST statement — it runs only after
+				// srv.prompt/resourceTemplate/completion have registered
+				// ms.completionCB. Signal that before holding the run, so the
+				// test gates Complete on registration being done (gating on
+				// `served`, closed back in serve(), raced the completion
+				// callback registration and returned empty values under load).
+				close(ready)
 				release := eng.HoldRun("test-mcp-completion-ready")
 				go func() {
 					defer release()
@@ -1008,6 +1016,21 @@ test.ready();
 		t.Fatalf("connect: %v", err)
 	}
 	defer sess.Close()
+
+	// Wait until the script has registered the prompt/template/completion
+	// handler (ready()), not merely created the server (served), before
+	// completing — otherwise the completion callback may still be nil and the
+	// handler returns empty values. Back-stopped by runErr (script failed
+	// before ready) and ctx (timeout) so a failure never hangs the test.
+	select {
+	case <-ready:
+	case err := <-runErr:
+		close(done)
+		t.Fatalf("script ended before registering completion handler: %v", err)
+	case <-ctx.Done():
+		close(done)
+		t.Fatalf("timed out waiting for the script to register the completion handler")
+	}
 
 	promptRes, err := sess.Complete(ctx, &mcp.CompleteParams{
 		Ref:      &mcp.CompleteReference{Type: "ref/prompt", Name: "greet"},
