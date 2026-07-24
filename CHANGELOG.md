@@ -8,6 +8,16 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Changed
+- **Docs: the `db` binding reference (§17.6) is now usable at a glance.** Its
+  chapter intro now explains the shared SQL handle (`exec`/`query`/`queryValue`/
+  `begin`/`prepare`/`close`, obtained from `open()`), the Redis/Valkey/memcached/
+  LDAP/DICT handle shapes, and the per-engine placeholder syntax, and points to
+  the full db guide (MANUAL §5.8) for recipes and type mapping — so a reader
+  landing on the reference no longer sees only `open()`. Fixed stale `§17.5.11`
+  cross-references in the §5.8 guide (the db reference is now §17.6.10) and a
+  stale `§17.2`→`§17.3.10` `codec.xml` link.
+
 ## [0.101.1] — 2026-07-23
 
 ### Fixed

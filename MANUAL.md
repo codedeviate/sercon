@@ -2784,7 +2784,7 @@ await conn.close();
 `query()` resolves to an array of row objects keyed by column name;
 `queryValue()` resolves to the first column of the first row (or `null`
 when nothing matches). Always `close()` — there is no finalizer.
-Signatures: §17.5.11 (`db.sqlite.open`).
+Signatures: §17.6.10 (`db.sqlite.open`).
 runnable: `examples/scripts/sqlite.ts`
 
 ##### 5.8.2.2 Insert with parameterized statements
@@ -2808,7 +2808,7 @@ const data = await conn.queryValue("SELECT data FROM files WHERE name = ?", "log
 Mixed types are fine — goja exports JS numbers/strings/`null`/
 `Uint8Array` straight through to the driver; `exec()` resolves to `{
 rowsAffected, lastInsertId }`, and a `BLOB` column round-trips back out as
-a `Uint8Array`. Signatures: §17.5.11 (`db.sqlite.open`).
+a `Uint8Array`. Signatures: §17.6.10 (`db.sqlite.open`).
 runnable: `examples/scripts/sqlite.ts`
 
 ##### 5.8.2.3 Run a transaction
@@ -2833,7 +2833,7 @@ await tx2.rollback();
 `commit()`/`rollback()` — every `begin()` must reach exactly one of the
 two, or the connection leaks. Bulk writes inside a transaction (looping
 `tx.exec(...)` over a batch, as in the ETL recipe below) is the standard
-shape for a batch load. Signatures: §17.5.11 (`db.sqlite.open`).
+shape for a batch load. Signatures: §17.6.10 (`db.sqlite.open`).
 runnable: `examples/scripts/sqlite.ts`
 
 ##### 5.8.2.4 Apply a simple migration
@@ -2869,7 +2869,7 @@ async function migrate() {
 
 A `schema_version` table tracks the highest applied migration; the runner
 applies only migrations greater than the recorded version, so re-running
-`migrate()` is a no-op. Signatures: §17.5.11 (`db.sqlite.open`).
+`migrate()` is a no-op. Signatures: §17.6.10 (`db.sqlite.open`).
 runnable: `examples/scripts/advanced/sqlite-migration.ts`
 
 ##### 5.8.2.5 Sweep an ETL load
@@ -2916,8 +2916,8 @@ The full script goes on to export `summary` as both JSON
 (`JSON.stringify`) and XML (`codec.xml.encode`) — a sweep like this is the
 usual shape for a scheduled load-and-report job: bulk-insert under one
 transaction, look up via a prepared statement, aggregate with `GROUP BY`,
-then hand the row objects to a codec. Signatures: §17.5.11
-(`db.sqlite.open`), §17.2 (`codec.xml`).
+then hand the row objects to a codec. Signatures: §17.6.10
+(`db.sqlite.open`), §17.3.10 (`codec.xml`).
 runnable: `examples/scripts/advanced/sqlite-etl.ts`
 
 ### 5.9 `services`
@@ -13447,7 +13447,7 @@ const { header, payload } = crypto.jwt.view(tok);
 
 ### 17.6 db
 
-Database / KV / directory clients: SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, Redis, Valkey, memcached, LDAP, dict.
+Database / KV / directory clients (all pure-Go, no cgo): SQLite, PostgreSQL, MySQL/MariaDB, SQL Server, ClickHouse, Oracle, Redis, Valkey, memcached, LDAP, and DICT. The six SQL engines share ONE handle — open() resolves to { exec, query, queryValue, begin, prepare, close } — so the query API is identical across them; only the DSN/options and placeholder syntax differ per engine (shown on each open() below). exec runs a non-SELECT and resolves { rowsAffected, lastInsertId }; query resolves one ordered object per row; queryValue resolves the first column of the first row (or null); begin() returns a transaction and prepare() a compiled statement (both with the same exec/query/queryValue surface). Redis/Valkey use { do, ping, close } (do(cmd, ...args) runs any RESP command); memcached uses { get, set, delete }; LDAP uses { rootDSE, search, close }; DICT is a one-shot define/match. Each subsection below documents its connection call — for the handle methods, per-engine placeholder syntax (? / $1 / @p1 / :1), JS↔SQL type mapping, transactions, prepared statements, and runnable recipes, see the db guide in §5.8.
 
 #### 17.6.1 db.clickhouse
 
