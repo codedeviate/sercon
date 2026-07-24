@@ -44,9 +44,11 @@ func TestManualSectionRefs(t *testing.T) {
 	heading := regexp.MustCompile(`^#{3,5} (17(?:\.\d+)+) (\S+)$`)
 	member := map[string]string{}  // ns.member -> "17.a.b.c"
 	chapter := map[string]string{} // ns -> "17.a"
+	realNum := map[string]bool{}   // every §17.x number that is a real heading
 	for _, l := range lines[gen:] {
 		if m := heading.FindStringSubmatch(l); m != nil {
 			num, name := m[1], m[2]
+			realNum[num] = true
 			if strings.Contains(name, ".") {
 				member[name] = num
 			} else {
@@ -58,9 +60,38 @@ func TestManualSectionRefs(t *testing.T) {
 		t.Fatal("parsed no §17 member headings — heading format may have changed")
 	}
 
+	prose := strings.Join(lines[:gen], "\n")
+
+	// Broad check: every §17.x reference in the prose must resolve to a real §17
+	// heading — either exactly or as the parent of one (a chapter/sub-namespace
+	// ref like §17.5.2, or a range endpoint). Catches stale/dangling numbers that
+	// carry no `(ns.member)` token, which the namespaced check below can't see.
+	// Scoped to §17 so external citations (e.g. "RFC 7519 §4.1.6") don't trip it.
+	num17 := regexp.MustCompile(`§(17(?:\.\d+)+)`)
+	var dangling []string
+	for _, m := range num17.FindAllStringSubmatch(prose, -1) {
+		n := m[1]
+		if realNum[n] {
+			continue
+		}
+		isParent := false
+		for r := range realNum {
+			if strings.HasPrefix(r, n+".") {
+				isParent = true
+				break
+			}
+		}
+		if !isParent {
+			dangling = append(dangling, "§"+n)
+		}
+	}
+	if len(dangling) > 0 {
+		t.Fatalf("§17 references in MANUAL.md pointing at non-existent sections (%d): %s",
+			len(dangling), strings.Join(dangling, ", "))
+	}
+
 	// Namespaced prose refs: §17.x (`ns.member`) — the checkable, recurring class.
 	ref := regexp.MustCompile("§(17(?:\\.\\d+)+)\\s*\\(`([a-z][a-zA-Z0-9]*(?:\\.[a-zA-Z0-9*]+)+)`\\)")
-	prose := strings.Join(lines[:gen], "\n")
 
 	var bad []string
 	for _, m := range ref.FindAllStringSubmatch(prose, -1) {

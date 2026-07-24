@@ -535,7 +535,7 @@ runs, after the ESM→CJS rewrite + async IIFE wrapper) and every
 module-resolution event, so debugging an unexpected resolve target or a
 mis-rewritten import is straightforward.
 
-The CLI registers thirteen reserved top-level globals; see the next section.
+The CLI registers fifteen reserved top-level globals; see the next section.
 
 ### 4.2 `--watch`: re-run on file change
 
@@ -845,13 +845,13 @@ sercon -emit-dts sercon.d.ts     # emit just the reserved-global .d.ts directly
 
 ## 5. Reserved globals (script surface)
 
-sercon scripts get thirteen reserved top-level globals. Use them directly —
+sercon scripts get fifteen reserved top-level globals. Use them directly —
 there is no enclosing namespace. The full per-binding reference is the
 generated `examples/scripts/sercon.d.ts`; this section is the at-a-glance
 prose.
 
 **Reserved names:** `runtime`, `crypto`, `text`, `codec`, `fs`, `net`,
-`db`, `server`, `services`, `tui`, `image`, `web`, `audio`. User code can shadow these with a
+`db`, `cloud`, `services`, `tui`, `image`, `web`, `audio`, `server`, `mcp`. User code can shadow these with a
 local `let`/`const`/`var` per normal JavaScript scoping — sercon does
 not intervene at runtime. `server` (added in v0.10.0) covers inbound
 listeners — see [section 6](#6-servers) for the long-form treatment.
@@ -866,7 +866,7 @@ internally.
 
 ### 5.1 `console` (browser/Node compatibility)
 
-Beyond the thirteen reserved globals, sercon provides a `console` global so
+Beyond the fifteen reserved globals, sercon provides a `console` global so
 scripts pasted from a browser or Node run unchanged:
 
 | Method | Stream |
@@ -1139,7 +1139,7 @@ const contents = await fs.readText("./notes.txt");
 const fileDigest = crypto.hash.sha256(contents);
 ```
 
-Signatures: §17.4.11 (`sha256`); the same shape covers `md5`/`sha1`/
+Signatures: §17.5.2.5 (`crypto.hash.sha256`); the same shape covers `md5`/`sha1`/
 `sha384`/`sha512`/`sha3_256`/`sha3_512`/`blake3`/`crc32` (§17.5.2.1–§17.5.2.9).
 runnable: `examples/scripts/hash.ts`
 
@@ -1183,8 +1183,8 @@ expired token rather than throwing — check `.valid` before trusting
 `claims`. The hash comparison is a second, independent check: it catches
 a payload that was swapped out *without* touching the token (the
 signature alone can't detect that, since the token never contained the
-payload itself). Signatures: §17.4.11 (`sha256`), §17.4.16 (`sign`),
-§17.4.17 (`validate`).
+payload itself). Signatures: §17.5.2.5 (`crypto.hash.sha256`), §17.5.3.1 (`crypto.jwt.sign`),
+§17.5.3.2 (`crypto.jwt.validate`).
 runnable: `examples/scripts/advanced/crypto-pipeline.ts`
 
 ##### 5.3.5.3 Encrypt and decrypt with age
@@ -1233,7 +1233,7 @@ them enforced. Asymmetric algorithms (`EdDSA`, `RS*`, `PS*`, `ES*`) use
 the same three calls with a PEM or JWK `secret` instead of raw bytes; a
 PEM key with an `HS*` algorithm is a cross-check error and throws at
 `sign`/`validate` rather than silently misbehaving.
-Signatures: §17.4.16 (`sign`), §17.4.18 (`view`), §17.4.17 (`validate`).
+Signatures: §17.5.3.1 (`crypto.jwt.sign`), §17.5.3.3 (`crypto.jwt.view`), §17.5.3.2 (`crypto.jwt.validate`).
 runnable: `examples/scripts/jwt.ts`
 
 ### 5.4 `text`
@@ -1399,8 +1399,8 @@ runtime.log(urlSafe, back); // "YT9i" "a?b"
 padding — URL-safe input (`-`/`_`) is *not* auto-detected and throws.
 `base64UrlEncode`/`base64UrlDecode` use the URL-safe alphabet (RFC 4648
 §5): encode emits no padding, and decode accepts both padded and unpadded
-input. Signatures: §17.12.16 (`base64Encode`), §17.12.15 (`base64Decode`),
-§17.12.18 (`base64UrlEncode`), §17.12.17 (`base64UrlDecode`).
+input. Signatures: §17.14.8.2 (`text.str.base64Encode`), §17.14.8.1 (`text.str.base64Decode`),
+§17.14.8.4 (`text.str.base64UrlEncode`), §17.14.8.3 (`text.str.base64UrlDecode`).
 runnable: `examples/scripts/strings.ts`
 
 ### 5.5 `codec`
@@ -8763,7 +8763,7 @@ All six providers are built on a small shared core (`core/`):
   timestamp+random base36 string. Every kcov3 mutation also accepts an
   optional `{ idempotencyKey? }` as its last argument so a caller can pin a
   stable key across retries of the same logical call — see
-  [§16.1.8.7](#161807-retry-safely-with-idempotency-kcov3).
+  [§16.1.8.7](#16187-retry-safely-with-idempotency-kcov3).
 - **Amounts are integer minor units** (öre / cents), matching the provider APIs.
   `core/money.ts` exposes `major`/`minor` helpers if you need to convert.
 
@@ -8969,7 +8969,7 @@ a **Bearer access token** (`Authorization: Bearer <accessToken>`). kcov3
 mutations carry an idempotency key — auto-generated fresh per call by
 default, or pass `{ idempotencyKey }` to pin a stable value across retries
 so a retried capture/refund isn't double-applied (see
-[§16.1.8.7](#161807-retry-safely-with-idempotency-kcov3)). Any non-2xx
+[§16.1.8.7](#16187-retry-safely-with-idempotency-kcov3)). Any non-2xx
 throws a `PaymentError { provider, status, body, requestId? }`.
 
 **Config & test-vs-prod.** `client(overrides?)` reads env with precedence

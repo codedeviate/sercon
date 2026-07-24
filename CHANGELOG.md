@@ -20,11 +20,18 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   or reordered (adding `cloud`/`mcp` shifted `codec`/`net`/`services`/etc. by a
   chapter, and headings are now deeply hierarchical, e.g. `codec.toml.parse` is
   §17.3.9.1), but the hand-written "Signatures: §17.x (`ns.member`)" links in the
-  prose guides had drifted. Rewrote ~35 of them to their current numbers (crypto,
-  codec, net, services, image, text, web, db, …). Added `TestManualSectionRefs`
-  as a durable guard: it rebuilds the member→number map from the generated §17
-  headings and fails on any stale namespaced §17 prose reference, with the exact
-  correction, so this can't silently rot again.
+  prose guides had drifted. Rewrote ~40 of them to their current numbers (crypto
+  hash/JWT, codec, net, services, image, text, web, db, base64, …), including
+  bare-method signature lines (e.g. `(sha256)` → `(crypto.hash.sha256)`) so they
+  read unambiguously. Added `TestManualSectionRefs` as a durable guard: it
+  rebuilds the member→number map from the generated §17 headings and fails on any
+  stale namespaced §17 prose reference *and* on any §17 reference pointing at a
+  section that doesn't exist, each with the exact correction — so this can't
+  silently rot again.
+- **Docs: corrected the reserved-globals count and list.** The manual said
+  "thirteen reserved top-level globals" in three places and its "Reserved names"
+  list omitted `cloud` and `mcp`; both are now "fifteen" and the full list, and a
+  dead in-manual anchor link to §16.1.8.7 (wrong slug) was fixed.
 
 ## [0.101.1] — 2026-07-23
 
