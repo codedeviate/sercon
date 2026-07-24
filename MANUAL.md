@@ -1140,7 +1140,7 @@ const fileDigest = crypto.hash.sha256(contents);
 ```
 
 Signatures: §17.4.11 (`sha256`); the same shape covers `md5`/`sha1`/
-`sha384`/`sha512`/`sha3_256`/`sha3_512`/`blake3`/`crc32` (§17.4.7–§17.4.15).
+`sha384`/`sha512`/`sha3_256`/`sha3_512`/`blake3`/`crc32` (§17.5.2.1–§17.5.2.9).
 runnable: `examples/scripts/hash.ts`
 
 ##### 5.3.5.2 Verify a payload's integrity with a hash claim
@@ -1377,9 +1377,9 @@ text.str.stripHtml("<b>hi</b>");   // "hi"
 `trim`/`ltrim`/`rtrim` take a PHP-style cutset **mask**, not a prefix —
 every character in the mask is stripped (default mask is the whitespace
 set `" \t\n\r\v\f"`). `reverse` and the `pad` family count runes, so
-multi-byte text stays intact. Signatures: §17.12.32 (`trim`), §17.12.22
-(`ltrim`), §17.12.29 (`rtrim`), §17.12.25 (`pad`), §17.12.21 (`lpad`),
-§17.12.28 (`rpad`), §17.12.27 (`reverse`), §17.12.31 (`stripHtml`).
+multi-byte text stays intact. Signatures: §17.14.8.18 (`text.str.trim`), §17.14.8.8
+(`text.str.ltrim`), §17.14.8.15 (`text.str.rtrim`), §17.14.8.11 (`text.str.pad`), §17.14.8.7 (`text.str.lpad`),
+§17.14.8.14 (`text.str.rpad`), §17.14.8.13 (`text.str.reverse`), §17.14.8.17 (`text.str.stripHtml`).
 runnable: `examples/scripts/strings.ts`
 
 ##### 5.4.2.3 Base64 encode/decode
@@ -1782,8 +1782,7 @@ runtime.assert.equal(back.flags.debug, true, "round-trip bool");
 Tables become nested objects, arrays become JS arrays, and ints/floats/bools
 map to their JS equivalents; only datetimes come back as strings. The
 top-level value passed to `stringify` must be an object (TOML documents are
-tables). Signatures: §17.2.28 (`codec.toml.parse`), §17.2.29
-(`codec.toml.stringify`).
+tables). Signatures: §17.3.9.1 (`codec.toml.parse`), §17.3.9.2 (`codec.toml.stringify`).
 runnable: `examples/scripts/codec-toml.ts`
 
 ##### 5.5.9.2 Parse and stringify a YAML document
@@ -1831,7 +1830,7 @@ CSV is one of `codec.sheet`'s formats, not a standalone codec — pass
 `opts.format: "csv"` to both `read` and `write`. Unlike XLSX/ODS, CSV is
 untyped: every cell round-trips as a string (`42` becomes `"42"`). See
 §5.5.7 above for the XLSX/ODS-typed and legacy-format variants. Signatures:
-§17.2.26 (`codec.sheet.read`), §17.2.27 (`codec.sheet.write`).
+§17.3.8.2 (`codec.sheet.read`), §17.3.8.3 (`codec.sheet.write`).
 runnable: `examples/scripts/sheet.ts`
 
 ##### 5.5.9.4 Convert a parsed document into another format
@@ -1857,7 +1856,7 @@ strings, numbers, booleans), the value one format parses is exactly what
 another format's encoder accepts — no adapter layer needed. `codec.xml.encode`
 without `opts.rootName` requires a single-key object naming the root, so a
 multi-key parse result (like a TOML table) needs `rootName` to wrap it.
-Signatures: §17.2.28 (`codec.toml.parse`), §17.2.31 (`codec.xml.encode`).
+Signatures: §17.3.9.1 (`codec.toml.parse`), §17.3.10.2 (`codec.xml.encode`).
 runnable: `examples/scripts/codec-toml.ts`, `examples/scripts/codec-xml.ts`
 
 ##### 5.5.9.5 Parse and apply a `.env` file
@@ -1904,9 +1903,7 @@ const back = codec.perl.parseDumper(pl);
 when the output feeds a canonical-hash comparison; `codec.php.varDump` /
 `codec.perl.dumper` are debug formats and their parsers are best-effort
 (`parseVarDump` throws on lossy markers like `*RECURSION*` — see §5.5.4).
-Signatures: §17.2.21 (`codec.php.serialize`), §17.2.22
-(`codec.php.unserialize`), §17.2.17 (`codec.perl.dumper`), §17.2.18
-(`codec.perl.parseDumper`).
+Signatures: §17.3.7.3 (`codec.php.serialize`), §17.3.7.4 (`codec.php.unserialize`), §17.3.6.1 (`codec.perl.dumper`), §17.3.6.2 (`codec.perl.parseDumper`).
 runnable: `examples/scripts/dump-codec.ts`
 
 ### 5.6 `fs`
@@ -2551,7 +2548,7 @@ if (r.ok) {
 }
 ```
 
-See §17.8.16 (`net.http.request`) for the full `opts` shape.
+See §17.10.4.3 (`net.http.request`) for the full `opts` shape.
 
 ##### 5.7.9.2 Probe a host:port for reachability + latency
 
@@ -2582,7 +2579,7 @@ for (const k of ["spf", "dmarc", "mtaSts", "tlsRpt", "bimi"] as const) {
 }
 ```
 
-See §17.8.7 (`net.email.all`). **Note:** there is no standalone DKIM probe — DKIM is a
+See §17.10.3.1 (`net.email.all`). **Note:** there is no standalone DKIM probe — DKIM is a
 per-message signature keyed by a selector, not a single domain-wide DNS
 record the way SPF/DMARC/MTA-STS/TLS-RPT/BIMI are, so it isn't part of the
 `net.email` surface.
@@ -2784,7 +2781,7 @@ await conn.close();
 `query()` resolves to an array of row objects keyed by column name;
 `queryValue()` resolves to the first column of the first row (or `null`
 when nothing matches). Always `close()` — there is no finalizer.
-Signatures: §17.6.10 (`db.sqlite.open`).
+Signatures: §17.6.10.1 (`db.sqlite.open`).
 runnable: `examples/scripts/sqlite.ts`
 
 ##### 5.8.2.2 Insert with parameterized statements
@@ -2808,7 +2805,7 @@ const data = await conn.queryValue("SELECT data FROM files WHERE name = ?", "log
 Mixed types are fine — goja exports JS numbers/strings/`null`/
 `Uint8Array` straight through to the driver; `exec()` resolves to `{
 rowsAffected, lastInsertId }`, and a `BLOB` column round-trips back out as
-a `Uint8Array`. Signatures: §17.6.10 (`db.sqlite.open`).
+a `Uint8Array`. Signatures: §17.6.10.1 (`db.sqlite.open`).
 runnable: `examples/scripts/sqlite.ts`
 
 ##### 5.8.2.3 Run a transaction
@@ -2833,7 +2830,7 @@ await tx2.rollback();
 `commit()`/`rollback()` — every `begin()` must reach exactly one of the
 two, or the connection leaks. Bulk writes inside a transaction (looping
 `tx.exec(...)` over a batch, as in the ETL recipe below) is the standard
-shape for a batch load. Signatures: §17.6.10 (`db.sqlite.open`).
+shape for a batch load. Signatures: §17.6.10.1 (`db.sqlite.open`).
 runnable: `examples/scripts/sqlite.ts`
 
 ##### 5.8.2.4 Apply a simple migration
@@ -2869,7 +2866,7 @@ async function migrate() {
 
 A `schema_version` table tracks the highest applied migration; the runner
 applies only migrations greater than the recorded version, so re-running
-`migrate()` is a no-op. Signatures: §17.6.10 (`db.sqlite.open`).
+`migrate()` is a no-op. Signatures: §17.6.10.1 (`db.sqlite.open`).
 runnable: `examples/scripts/advanced/sqlite-migration.ts`
 
 ##### 5.8.2.5 Sweep an ETL load
@@ -2916,8 +2913,7 @@ The full script goes on to export `summary` as both JSON
 (`JSON.stringify`) and XML (`codec.xml.encode`) — a sweep like this is the
 usual shape for a scheduled load-and-report job: bulk-insert under one
 transaction, look up via a prepared statement, aggregate with `GROUP BY`,
-then hand the row objects to a codec. Signatures: §17.6.10
-(`db.sqlite.open`), §17.3.10 (`codec.xml`).
+then hand the row objects to a codec. Signatures: §17.6.10.1 (`db.sqlite.open`), §17.3.10 (`codec.xml`).
 runnable: `examples/scripts/advanced/sqlite-etl.ts`
 
 ### 5.9 `services`
@@ -4124,7 +4120,7 @@ const need = await services.doctor(["git"]);
 runtime.assert.ok(need.satisfied, "git must be installed");
 ```
 
-See §17.11.18 (`services.doctor`) for the full report shape.
+See §17.13.3 (`services.doctor`) for the full report shape.
 
 ##### 5.9.8.2 Render a Typst document to a PDF
 
@@ -4147,7 +4143,7 @@ if (!services.typst.available) {
 }
 ```
 
-See §17.11.47 (`services.typst.compile`) and §17.11.36 (`services.pdf.info`).
+See §17.13.8.2 (`services.typst.compile`) and §17.13.7.3 (`services.pdf.info`).
 
 ##### 5.9.8.3 Drive a headless browser to screenshot / extract
 
@@ -4687,7 +4683,7 @@ runtime.log(`${thumb.width}x${thumb.height} grayscale, written as PNG + JPEG`);
 `resize`'s `0` dimension computes the missing side to preserve aspect
 ratio; `bytes(format)` picks the encoder independently of how the source
 was decoded, so one resized handle can feed as many output formats as you
-need. Signatures: §17.7.1 (`image.decode`) — handle methods appear inline
+need. Signatures: §17.8.6 (`image.decode`) — handle methods appear inline
 on its `Image` return type; see the handle-methods table above for the
 full list.
 runnable: `examples/recipes/image-pipeline.ts`
@@ -4714,8 +4710,7 @@ already know the orientation integer; `autoOrient` drives the same
 transform from the source's own `Orientation` tag (a no-op when the tag is
 absent or unreadable — it never throws). `rotate90()`/`rotate180()`/
 `rotate270()` are the lossless quarter-turn siblings of `orient` for a
-fixed rotation that isn't EXIF-driven. Signatures: §17.7.1
-(`image.decode`), §17.7.8 (`image.open`).
+fixed rotation that isn't EXIF-driven. Signatures: §17.8.6 (`image.decode`), §17.8.16 (`image.open`).
 runnable: `examples/scripts/image.ts`
 
 ##### 5.11.5.3 Apply brightness / contrast / filter adjustments
@@ -4731,7 +4726,7 @@ runtime.assert.equal(out.width, 8, "resized width");
 `[-100, 100]`), `gamma(g)`, `sharpen(sigma)`, and `invert()` share the same
 shape as `grayscale()`/`blur(sigma)` above — chain any of them the same
 way; each returns a fresh handle so the source is never mutated.
-Signatures: §17.7.1 (`image.decode`) — see the handle-methods table above
+Signatures: §17.8.6 (`image.decode`) — see the handle-methods table above
 for the full adjustment/filter method list.
 runnable: `examples/scripts/image.ts`
 
@@ -4753,8 +4748,7 @@ re-encoding to anything lossy would destroy the hidden bits. `extract`
 auto-detects the bit depth from the stego header, so higher-capacity
 payloads (`opts.bits`, 1..4) need no extra argument on the way back out;
 `image.stego.capacity(carrier, { bits })` tells you how many bytes fit
-before you embed. Signatures: §17.7.14 (`image.stego.embed`), §17.7.15
-(`image.stego.extract`), §17.7.12 (`image.stego.capacity`).
+before you embed. Signatures: §17.8.29.5 (`image.stego.embed`), §17.8.29.6 (`image.stego.extract`), §17.8.29.3 (`image.stego.capacity`).
 runnable: `examples/recipes/stego-hide.ts`, `examples/scripts/stego.ts`
 
 ##### 5.11.5.5 Build a two-frame animation
@@ -4780,8 +4774,7 @@ runtime.assert.equal(back.frames.length, 2, "round-trip frame count");
 Each frame's `image` is a regular Image handle, so building an animation
 is just assembling already-familiar handles into a `frames` array — swap
 `{ format: "gif" }` for `{ format: "apng" }` for full-color output (GIF
-palettizes to 256 colors with dithering). Signatures: §17.7.3
-(`image.encodeFrames`), §17.7.2 (`image.decodeFrames`).
+palettizes to 256 colors with dithering). Signatures: §17.8.8 (`image.encodeFrames`), §17.8.7 (`image.decodeFrames`).
 runnable: `examples/scripts/image-anim.ts`
 
 ### 5.12 `web`
@@ -4919,7 +4912,7 @@ for (const item of feed.items) {
 ```
 
 Format (RSS/Atom/JSON-feed) is auto-detected; `feedType` reports which one.
-See §17.14.1 (`web.feed.load`); the feed result model is in §5.12.1. runnable: `examples/scripts/web-feed.ts`
+See §17.16.1.1 (`web.feed.load`); the feed result model is in §5.12.1. runnable: `examples/scripts/web-feed.ts`
 
 ##### 5.12.5.2 Crawl a sitemap, expanding an index
 
@@ -4936,7 +4929,7 @@ every child sitemap and merges their URLs into `urls` (single-level,
 bounded; a child that is itself an index is not recursed). Per-child
 fetch/parse failures land in `errors[]` instead of throwing, so check that
 array rather than wrapping the call in try/catch.
-See §17.14.5 (`web.sitemap.load`); the sitemap result model is in §5.12.2. runnable: `examples/scripts/web-sitemap.ts`
+See §17.16.3.1 (`web.sitemap.load`); the sitemap result model is in §5.12.2. runnable: `examples/scripts/web-sitemap.ts`
 
 ##### 5.12.5.3 Scrape a page with CSS selectors
 
@@ -4948,7 +4941,7 @@ const title = doc.find("h1").text();
 
 `find` returns the first match or `null`; `findAll` returns a `Node[]` you
 can `.map`/`.forEach` over, each entry chainable the same way as the root.
-See §17.14.3 (`web.html.load`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
+See §17.16.2.1 (`web.html.load`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
 
 ##### 5.12.5.4 Extract with XPath
 
@@ -4962,7 +4955,7 @@ const firstHref = doc.xpath("//a/@href").text(); // "/a"
 `xpath`/`xpathAll` mirror `find`/`findAll` but take an XPath expression
 instead of a CSS selector — useful when a selector can't express the
 match (attribute values, text-content predicates, ancestor axes).
-See §17.14.4 (`web.html.parse`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
+See §17.16.2.2 (`web.html.parse`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
 
 ### 5.13 `audio`
 

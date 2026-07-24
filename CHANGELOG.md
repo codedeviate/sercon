@@ -14,9 +14,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   `begin`/`prepare`/`close`, obtained from `open()`), the Redis/Valkey/memcached/
   LDAP/DICT handle shapes, and the per-engine placeholder syntax, and points to
   the full db guide (MANUAL §5.8) for recipes and type mapping — so a reader
-  landing on the reference no longer sees only `open()`. Fixed stale `§17.5.11`
-  cross-references in the §5.8 guide (the db reference is now §17.6.10) and a
-  stale `§17.2`→`§17.3.10` `codec.xml` link.
+  landing on the reference no longer sees only `open()`.
+- **Docs: repaired stale `§17` cross-references throughout the manual.** The
+  generated §17 binding reference is renumbered whenever a namespace is added
+  or reordered (adding `cloud`/`mcp` shifted `codec`/`net`/`services`/etc. by a
+  chapter, and headings are now deeply hierarchical, e.g. `codec.toml.parse` is
+  §17.3.9.1), but the hand-written "Signatures: §17.x (`ns.member`)" links in the
+  prose guides had drifted. Rewrote ~35 of them to their current numbers (crypto,
+  codec, net, services, image, text, web, db, …). Added `TestManualSectionRefs`
+  as a durable guard: it rebuilds the member→number map from the generated §17
+  headings and fails on any stale namespaced §17 prose reference, with the exact
+  correction, so this can't silently rot again.
 
 ## [0.101.1] — 2026-07-23
 
