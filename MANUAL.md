@@ -1336,6 +1336,46 @@ charset=Shift_JIS`.
   that only speaks Latin-1. `encode` has no lossy fallback: a character
   with no representation in the target charset rejects rather than being
   silently dropped.
+- **`text.case.*`** — synchronous identifier case conversion. There is no
+  "convert from X to Y" call: every converter runs the same auto-detecting
+  tokenizer first (splitting on separators, lower→upper transitions, and
+  acronym→word boundaries — `HTTPServer` → `[http, server]`), then re-emits
+  the words in the target case. So `text.case.snake(x)` accepts *any* input
+  convention — camelCase, kebab-case, spaced, dotted, path-like, or
+  acronym-laden — with no "source case" to name. Sixteen named converters
+  share this model:
+
+  | Case | Example (`myVarName`) |
+  | --- | --- |
+  | `camel` | `myVarName` |
+  | `pascal` | `MyVarName` |
+  | `snake` | `my_var_name` |
+  | `screamingSnake` | `MY_VAR_NAME` |
+  | `ada` | `My_Var_Name` |
+  | `camelSnake` | `my_Var_Name` |
+  | `kebab` | `my-var-name` |
+  | `train` | `My-Var-Name` |
+  | `screamingKebab` | `MY-VAR-NAME` |
+  | `flat` | `myvarname` |
+  | `upperFlat` | `MYVARNAME` |
+  | `dot` | `my.var.name` |
+  | `path` | `my/var/name` |
+  | `title` | `My Var Name` |
+  | `sentence` | `My var name` |
+  | `capital` | `My Var Name` (synonym of `title`) |
+
+  `flat` and `upperFlat` are **lossy** outputs — once the separators and
+  case boundaries are gone (`myvarname`), the words can't be reliably
+  re-split, so treat them as a one-way rendering, not a round-trippable
+  case. Three aliases cover common names for the same converters:
+  `header` → `train`, `cobol` → `screamingKebab`, `slug` → `kebab` (this
+  `slug` is kebab-casing only — it does **not** transliterate or strip
+  diacritics/punctuation; a real slugifier is out of scope). Beyond the
+  16 named converters, `text.case.split(s)` exposes the tokenizer directly
+  (returns the lowercased word array), `text.case.detect(s)` guesses which
+  case an already-formatted string is in, `text.case.convert(s, name)`
+  dispatches to a case chosen at runtime by name/alias, and
+  `text.case.names()` lists the 16 canonical names.
 
 #### 5.4.2 Recipes
 
@@ -1377,9 +1417,9 @@ text.str.stripHtml("<b>hi</b>");   // "hi"
 `trim`/`ltrim`/`rtrim` take a PHP-style cutset **mask**, not a prefix —
 every character in the mask is stripped (default mask is the whitespace
 set `" \t\n\r\v\f"`). `reverse` and the `pad` family count runes, so
-multi-byte text stays intact. Signatures: §17.14.8.18 (`text.str.trim`), §17.14.8.8
-(`text.str.ltrim`), §17.14.8.15 (`text.str.rtrim`), §17.14.8.11 (`text.str.pad`), §17.14.8.7 (`text.str.lpad`),
-§17.14.8.14 (`text.str.rpad`), §17.14.8.13 (`text.str.reverse`), §17.14.8.17 (`text.str.stripHtml`).
+multi-byte text stays intact. Signatures: §17.14.9.18 (`text.str.trim`), §17.14.9.8
+(`text.str.ltrim`), §17.14.9.15 (`text.str.rtrim`), §17.14.9.11 (`text.str.pad`), §17.14.9.7 (`text.str.lpad`),
+§17.14.9.14 (`text.str.rpad`), §17.14.9.13 (`text.str.reverse`), §17.14.9.17 (`text.str.stripHtml`).
 runnable: `examples/scripts/strings.ts`
 
 ##### 5.4.2.3 Base64 encode/decode
@@ -1399,9 +1439,65 @@ runtime.log(urlSafe, back); // "YT9i" "a?b"
 padding — URL-safe input (`-`/`_`) is *not* auto-detected and throws.
 `base64UrlEncode`/`base64UrlDecode` use the URL-safe alphabet (RFC 4648
 §5): encode emits no padding, and decode accepts both padded and unpadded
-input. Signatures: §17.14.8.2 (`text.str.base64Encode`), §17.14.8.1 (`text.str.base64Decode`),
-§17.14.8.4 (`text.str.base64UrlEncode`), §17.14.8.3 (`text.str.base64UrlDecode`).
+input. Signatures: §17.14.9.2 (`text.str.base64Encode`), §17.14.9.1 (`text.str.base64Decode`),
+§17.14.9.4 (`text.str.base64UrlEncode`), §17.14.9.3 (`text.str.base64UrlDecode`).
 runnable: `examples/scripts/strings.ts`
+
+##### 5.4.2.4 Convert an identifier between conventions
+
+```ts
+// Every converter auto-detects the input's boundaries — mixed input works fine.
+text.case.snake("myVarName");        // "my_var_name"
+text.case.kebab("HTTPServerConfig"); // "http-server-config"
+text.case.pascal("user_id");         // "UserId"
+text.case.camel("my-var--name");     // "myVarName"
+```
+
+Each named converter runs the same tokenizer (split on separators,
+lower→upper transitions, and acronym→word boundaries) then re-emits the
+words in its target case — there is no "from" case to specify.
+Signatures: §17.14.1.19 (`text.case.snake`), §17.14.1.11 (`text.case.kebab`),
+§17.14.1.13 (`text.case.pascal`), §17.14.1.2 (`text.case.camel`).
+runnable: none
+
+##### 5.4.2.5 Convert to a case chosen at runtime
+
+```ts
+const target = "screamingSnake"; // e.g. read from config or a CLI flag
+runtime.log(text.case.names());  // ["camel","pascal","snake", ... ] — valid names
+
+const out = text.case.convert("parseHTTP2Response", target);
+runtime.log(out); // "PARSE_HTTP2_RESPONSE"
+
+// Aliases (header/cobol/slug) are accepted too:
+text.case.convert("Content-Type", "header"); // "Content-Type"
+```
+
+`convert` accepts any canonical name from `names()` plus the aliases
+(`header`, `cobol`, `slug`) and throws — listing the valid names in the
+message — on anything else. Signatures: §17.14.1.6 (`text.case.convert`),
+§17.14.1.12 (`text.case.names`).
+runnable: none
+
+##### 5.4.2.6 Tokenize with split / guess with detect
+
+```ts
+text.case.split("getHTTPCode");   // ["get", "http", "code"]
+text.case.split("__foo--bar//"); // ["foo", "bar"] — separator runs collapse
+
+text.case.detect("my_var_name");  // "snake"
+text.case.detect("MyVarName");    // "pascal"
+text.case.detect("myvarname");    // "camel" — a single flat word matches many converters
+text.case.detect("my Mixed_Up");  // "unknown" — no converter reproduces it exactly
+```
+
+`split` is the primitive every named converter builds on: it always
+returns lowercased words. `detect` is a heuristic — it returns the first
+case (in `names()` order) whose converter round-trips the input exactly,
+or `"unknown"` when none does; a single lowercase word matches several
+converters and resolves to `"camel"` since it comes first in that order.
+Signatures: §17.14.1.20 (`text.case.split`), §17.14.1.7 (`text.case.detect`).
+runnable: none
 
 ### 5.5 `codec`
 
@@ -18942,9 +19038,468 @@ runtime.log("ready:", r.ready);
 
 String / regex / charset / data manipulation — all text-shaped transforms.
 
-#### 17.14.1 text.charset
+#### 17.14.1 text.case
 
-##### 17.14.1.1 text.charset.decode
+##### 17.14.1.1 text.case.ada
+
+```
+ada(input: string): string
+```
+
+Convert to Ada_Case (every word capitalized, underscore-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "My_Var_Name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.ada("my-var"); // "My_Var"
+```
+
+##### 17.14.1.2 text.case.camel
+
+```
+camel(input: string): string
+```
+
+Convert to camelCase (first word lower, rest capitalized, no separator).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "myVarName".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.camel("my-var-name"); // "myVarName"
+```
+
+##### 17.14.1.3 text.case.camelSnake
+
+```
+camelSnake(input: string): string
+```
+
+Convert to camel_Snake_Case (first word lower, rest capitalized, underscore-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "my_Var_Name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.camelSnake("my-var"); // "my_Var"
+```
+
+##### 17.14.1.4 text.case.capital
+
+```
+capital(input: string): string
+```
+
+Convert to Capital Case (every word capitalized, space-separated). Synonym of title.
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "My Var Name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.capital("my_var_name"); // "My Var Name"
+```
+
+##### 17.14.1.5 text.case.cobol
+
+```
+cobol(input: string): string
+```
+
+Alias of screamingKebab (COBOL-CASE).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "MY-VAR-NAME".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.cobol("myVar"); // "MY-VAR"
+```
+
+##### 17.14.1.6 text.case.convert
+
+```
+convert(input: string, name: string): string
+```
+
+Convert input to the named case (dynamic dispatch; accepts canonical names and aliases).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert.
+- `name` *(string)* — A case name from names() (e.g. "snake", "kebab") or an alias (header/cobol/slug).
+
+**Returns:** string — input rendered in the requested case.
+
+**Throws:** Throws a TypeError if input/name is missing; throws if name is not a known case (the message lists valid names).
+
+```ts
+text.case.convert("userID", "kebab"); // "user-id"
+```
+
+##### 17.14.1.7 text.case.detect
+
+```
+detect(input: string): string
+```
+
+Best-effort guess of the input's case name (heuristic).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — the first case name whose converter reproduces the input exactly, or "unknown". Multiword inputs detect cleanly; a single lowercase word resolves to "camel"; empty input is "unknown".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.detect("my_var"); // "snake"
+```
+
+##### 17.14.1.8 text.case.dot
+
+```
+dot(input: string): string
+```
+
+Convert to dot.case (all lower, dot-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "my.var.name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.dot("myVarName"); // "my.var.name"
+```
+
+##### 17.14.1.9 text.case.flat
+
+```
+flat(input: string): string
+```
+
+Convert to flatcase (all lower, no separator). Lossy: boundaries are gone and cannot be recovered.
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "myvarname".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.flat("myVarName"); // "myvarname"
+```
+
+##### 17.14.1.10 text.case.header
+
+```
+header(input: string): string
+```
+
+Alias of train (Header-Case, e.g. Content-Type).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "My-Var-Name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.header("content-type"); // "Content-Type"
+```
+
+##### 17.14.1.11 text.case.kebab
+
+```
+kebab(input: string): string
+```
+
+Convert to kebab-case (all lower, hyphen-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "my-var-name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.kebab("myVarName"); // "my-var-name"
+```
+
+##### 17.14.1.12 text.case.names
+
+```
+names(): string[]
+```
+
+List the canonical case names (drives convert() and detect(); excludes aliases).
+
+**Returns:** string[] — the 16 canonical case names in priority order.
+
+**Throws:** None.
+
+```ts
+text.case.names(); // ["camel","pascal","snake",...]
+```
+
+##### 17.14.1.13 text.case.pascal
+
+```
+pascal(input: string): string
+```
+
+Convert to PascalCase (every word capitalized, no separator).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "MyVarName".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.pascal("my_var"); // "MyVar"
+```
+
+##### 17.14.1.14 text.case.path
+
+```
+path(input: string): string
+```
+
+Convert to path/case (all lower, slash-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "my/var/name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.path("myVarName"); // "my/var/name"
+```
+
+##### 17.14.1.15 text.case.screamingKebab
+
+```
+screamingKebab(input: string): string
+```
+
+Convert to SCREAMING-KEBAB-CASE (all upper, hyphen-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "MY-VAR-NAME".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.screamingKebab("myVar"); // "MY-VAR"
+```
+
+##### 17.14.1.16 text.case.screamingSnake
+
+```
+screamingSnake(input: string): string
+```
+
+Convert to SCREAMING_SNAKE_CASE (all upper, underscore-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "MY_VAR_NAME".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.screamingSnake("myVar"); // "MY_VAR"
+```
+
+##### 17.14.1.17 text.case.sentence
+
+```
+sentence(input: string): string
+```
+
+Convert to Sentence case (first word capitalized, rest lower, space-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "My var name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.sentence("my_var_name"); // "My var name"
+```
+
+##### 17.14.1.18 text.case.slug
+
+```
+slug(input: string): string
+```
+
+Alias of kebab. NOTE: kebab only — does NOT transliterate or strip diacritics/punctuation.
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "my-var-name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.slug("My Var"); // "my-var"
+```
+
+##### 17.14.1.19 text.case.snake
+
+```
+snake(input: string): string
+```
+
+Convert to snake_case (all lower, underscore-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "my_var_name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.snake("myVarName"); // "my_var_name"
+```
+
+##### 17.14.1.20 text.case.split
+
+```
+split(input: string): string[]
+```
+
+Tokenize any input into an array of lowercased words (the primitive every converter builds on).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string[] — lowercased words; boundaries detected at lower→upper transitions, acronym→word (HTTPServer→[http,server]), and separators (_ - . / whitespace). Empty/separator-only input → [].
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.split("getHTTPCode"); // ["get","http","code"]
+```
+
+##### 17.14.1.21 text.case.title
+
+```
+title(input: string): string
+```
+
+Convert to Title Case (every word capitalized, space-separated). Synonym of capital.
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "My Var Name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.title("my_var_name"); // "My Var Name"
+```
+
+##### 17.14.1.22 text.case.train
+
+```
+train(input: string): string
+```
+
+Convert to Train-Case (every word capitalized, hyphen-separated).
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "My-Var-Name".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.train("my_var"); // "My-Var"
+```
+
+##### 17.14.1.23 text.case.upperFlat
+
+```
+upperFlat(input: string): string
+```
+
+Convert to UPPERFLATCASE (all upper, no separator). Lossy: boundaries are gone.
+
+**Parameters**
+
+- `input` *(string)* — The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+
+**Returns:** string — e.g. "MYVARNAME".
+
+**Throws:** Throws a TypeError if input is missing, null, or undefined.
+
+```ts
+text.case.upperFlat("myVar"); // "MYVAR"
+```
+
+#### 17.14.2 text.charset
+
+##### 17.14.2.1 text.charset.decode
 
 ```
 decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>
@@ -18965,7 +19520,7 @@ Decode bytes in a named charset to a UTF-8 string.
 const s = await text.charset.decode(bytes, "Windows-1252");
 ```
 
-##### 17.14.1.2 text.charset.detect
+##### 17.14.2.2 text.charset.detect
 
 ```
 detect(input: string | Uint8Array | ArrayBuffer): Promise<{ charset: string; confidence: number; language?: string; candidates: { charset: string; confidence: number; language?: string }[] }>
@@ -18986,7 +19541,7 @@ const r = await text.charset.detect(bytes);
 runtime.log(r.charset, r.confidence);
 ```
 
-##### 17.14.1.3 text.charset.encode
+##### 17.14.2.3 text.charset.encode
 
 ```
 encode(input: string, charset: string): Promise<Uint8Array>
@@ -19007,9 +19562,9 @@ Encode a UTF-8 string to bytes in the named charset.
 const bytes = await text.charset.encode("café", "ISO-8859-1");
 ```
 
-#### 17.14.2 text.diff
+#### 17.14.3 text.diff
 
-##### 17.14.2.1 text.diff.compare
+##### 17.14.3.1 text.diff.compare
 
 ```
 compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number; fromFile?: string; toFile?: string }): Promise<{ identical: boolean; binary: boolean; added: number; removed: number; diff: string; format: "unified" }>
@@ -19032,9 +19587,9 @@ const d = await text.diff.compare("a\n", "b\n");
 runtime.log(d.diff, d.added, d.removed);
 ```
 
-#### 17.14.3 text.jq
+#### 17.14.4 text.jq
 
-##### 17.14.3.1 text.jq.query
+##### 17.14.4.1 text.jq.query
 
 ```
 query(data: unknown, filter: string): Promise<unknown>
@@ -19055,7 +19610,7 @@ Run a jq filter over data and return the first emitted value (or null).
 const name = await text.jq.query(obj, ".users[0].name");
 ```
 
-##### 17.14.3.2 text.jq.queryAll
+##### 17.14.4.2 text.jq.queryAll
 
 ```
 queryAll(data: unknown, filter: string): Promise<unknown[]>
@@ -19076,9 +19631,9 @@ Run a jq filter and drain the iterator into an array.
 const ids = await text.jq.queryAll(obj, ".users[].id");
 ```
 
-#### 17.14.4 text.markdown
+#### 17.14.5 text.markdown
 
-##### 17.14.4.1 text.markdown.toHtml
+##### 17.14.5.1 text.markdown.toHtml
 
 ```
 toHtml(md: string, opts?: { gfm?: boolean, hardBreaks?: boolean }): string
@@ -19099,9 +19654,9 @@ Render a Markdown string to an HTML string (CommonMark, backed by the pure-Go go
 const html = text.markdown.toHtml("# Hi\n\n- a\n- b");
 ```
 
-#### 17.14.5 text.preg
+#### 17.14.6 text.preg
 
-##### 17.14.5.1 text.preg.match
+##### 17.14.6.1 text.preg.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -19122,7 +19677,7 @@ First hit of /pattern/flags against subject, or null. Returns { match, groups, i
 const m = text.preg.match("/(\\d+)/", "x42"); // { match: "42", groups: ["42"], index: 1 }
 ```
 
-##### 17.14.5.2 text.preg.matchAll
+##### 17.14.6.2 text.preg.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -19143,7 +19698,7 @@ Every hit of /pattern/flags against subject, as an array of { match, groups, ind
 const all = text.preg.matchAll("/\\d+/", "1 22 333"); // 3 matches
 ```
 
-##### 17.14.5.3 text.preg.replace
+##### 17.14.6.3 text.preg.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -19165,9 +19720,9 @@ Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / 
 text.preg.replace("/(\\w+)@/", "${1}_at_", "a@b"); // "a_at_b"
 ```
 
-#### 17.14.6 text.preg2
+#### 17.14.7 text.preg2
 
-##### 17.14.6.1 text.preg2.match
+##### 17.14.7.1 text.preg2.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -19188,7 +19743,7 @@ First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/ba
 const m = text.preg2.match("/(?<=@)\\w+/", "a@host"); // { match: "host", ... }
 ```
 
-##### 17.14.6.2 text.preg2.matchAll
+##### 17.14.7.2 text.preg2.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -19209,7 +19764,7 @@ Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, 
 const all = text.preg2.matchAll("/\\w+/", "a b c"); // 3 matches
 ```
 
-##### 17.14.6.3 text.preg2.replace
+##### 17.14.7.3 text.preg2.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -19231,9 +19786,9 @@ Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 /
 text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 ```
 
-#### 17.14.7 text.stego
+#### 17.14.8 text.stego
 
-##### 17.14.7.1 text.stego.embed
+##### 17.14.8.1 text.stego.embed
 
 ```
 embed(cover: string, payload: string | Uint8Array, opts?: { password?: string }): string
@@ -19255,7 +19810,7 @@ Hide a payload inside cover text using zero-width characters (U+200B / U+200C), 
 const out = text.stego.embed("Hello there.", "meet at noon", { password: "s3cret" });
 ```
 
-##### 17.14.7.2 text.stego.extract
+##### 17.14.8.2 text.stego.extract
 
 ```
 extract(stegoText: string, opts?: { password?: string }): string | Uint8Array
@@ -19276,9 +19831,9 @@ Recover a payload hidden by text.stego.embed. Scans the string for zero-width ca
 const msg = text.stego.extract(out, { password: "s3cret" });
 ```
 
-#### 17.14.8 text.str
+#### 17.14.9 text.str
 
-##### 17.14.8.1 text.str.base64Decode
+##### 17.14.9.1 text.str.base64Decode
 
 ```
 base64Decode(input: string): string
@@ -19298,7 +19853,7 @@ Decode standard (RFC 4648) base64 with padding. The standard alphabet only — U
 text.str.base64Decode("aGk="); // "hi"
 ```
 
-##### 17.14.8.2 text.str.base64Encode
+##### 17.14.9.2 text.str.base64Encode
 
 ```
 base64Encode(input: string): string
@@ -19318,7 +19873,7 @@ Standard base64 (with padding).
 text.str.base64Encode("hi"); // "aGk="
 ```
 
-##### 17.14.8.3 text.str.base64UrlDecode
+##### 17.14.9.3 text.str.base64UrlDecode
 
 ```
 base64UrlDecode(input: string): string
@@ -19338,7 +19893,7 @@ Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded inpu
 text.str.base64UrlDecode("YT9i"); // "a?b"
 ```
 
-##### 17.14.8.4 text.str.base64UrlEncode
+##### 17.14.9.4 text.str.base64UrlEncode
 
 ```
 base64UrlEncode(input: string): string
@@ -19358,7 +19913,7 @@ URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe t
 text.str.base64UrlEncode("a?b"); // "YT9i"
 ```
 
-##### 17.14.8.5 text.str.br2nl
+##### 17.14.9.5 text.str.br2nl
 
 ```
 br2nl(input: string): string
@@ -19378,7 +19933,7 @@ Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
 text.str.br2nl("a<br/>b"); // "a\nb"
 ```
 
-##### 17.14.8.6 text.str.htmlEntityDecode
+##### 17.14.9.6 text.str.htmlEntityDecode
 
 ```
 htmlEntityDecode(input: string): string
@@ -19398,7 +19953,7 @@ Decode named and numeric HTML entities to their UTF-8 equivalents.
 text.str.htmlEntityDecode("a &amp; b"); // "a & b"
 ```
 
-##### 17.14.8.7 text.str.lpad
+##### 17.14.9.7 text.str.lpad
 
 ```
 lpad(input: string, len: number, padChar?: string): string
@@ -19420,7 +19975,7 @@ Shortcut for pad(side: 'left').
 text.str.lpad("7", 3, "0"); // "007"
 ```
 
-##### 17.14.8.8 text.str.ltrim
+##### 17.14.9.8 text.str.ltrim
 
 ```
 ltrim(input: string, mask?: string): string
@@ -19441,7 +19996,7 @@ Like trim, left side only.
 text.str.ltrim("--x", "-"); // "x"
 ```
 
-##### 17.14.8.9 text.str.nl2br
+##### 17.14.9.9 text.str.nl2br
 
 ```
 nl2br(input: string, xhtml?: boolean): string
@@ -19462,7 +20017,7 @@ Replace newlines with <br> (or <br/> when xhtml=true).
 text.str.nl2br("a\nb"); // "a<br>\nb"
 ```
 
-##### 17.14.8.10 text.str.normalizeNewlines
+##### 17.14.9.10 text.str.normalizeNewlines
 
 ```
 normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string
@@ -19483,7 +20038,7 @@ Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr
 text.str.normalizeNewlines("a\r\nb", "lf"); // "a\nb"
 ```
 
-##### 17.14.8.11 text.str.pad
+##### 17.14.9.11 text.str.pad
 
 ```
 pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string
@@ -19506,7 +20061,7 @@ Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', 
 text.str.pad("7", 3, "0", "left"); // "007"
 ```
 
-##### 17.14.8.12 text.str.printf
+##### 17.14.9.12 text.str.printf
 
 ```
 printf(format: string, ...args: unknown[]): void
@@ -19527,7 +20082,7 @@ sprintf + write to stdout.
 text.str.printf("%d items\n", 3);
 ```
 
-##### 17.14.8.13 text.str.reverse
+##### 17.14.9.13 text.str.reverse
 
 ```
 reverse(input: string): string
@@ -19547,7 +20102,7 @@ Rune-aware reversal — `reverse('café')` is `'éfac'`.
 text.str.reverse("café"); // "éfac"
 ```
 
-##### 17.14.8.14 text.str.rpad
+##### 17.14.9.14 text.str.rpad
 
 ```
 rpad(input: string, len: number, padChar?: string): string
@@ -19569,7 +20124,7 @@ Shortcut for pad(side: 'right').
 text.str.rpad("7", 3, "."); // "7.."
 ```
 
-##### 17.14.8.15 text.str.rtrim
+##### 17.14.9.15 text.str.rtrim
 
 ```
 rtrim(input: string, mask?: string): string
@@ -19590,7 +20145,7 @@ Like trim, right side only.
 text.str.rtrim("x...", "."); // "x"
 ```
 
-##### 17.14.8.16 text.str.sprintf
+##### 17.14.9.16 text.str.sprintf
 
 ```
 sprintf(format: string, ...args: unknown[]): string
@@ -19611,7 +20166,7 @@ Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 text.str.sprintf("%s=%d", "n", 5); // "n=5"
 ```
 
-##### 17.14.8.17 text.str.stripHtml
+##### 17.14.9.17 text.str.stripHtml
 
 ```
 stripHtml(input: string): string
@@ -19631,7 +20186,7 @@ Remove HTML tags and decode common entities.
 text.str.stripHtml("<b>hi</b>"); // "hi"
 ```
 
-##### 17.14.8.18 text.str.trim
+##### 17.14.9.18 text.str.trim
 
 ```
 trim(input: string, mask?: string): string
@@ -19652,7 +20207,7 @@ Strip whitespace (or any char in the optional mask string) from both ends.
 text.str.trim("  hi  "); // "hi"
 ```
 
-##### 17.14.8.19 text.str.urlDecode
+##### 17.14.9.19 text.str.urlDecode
 
 ```
 urlDecode(input: string): string
@@ -19672,7 +20227,7 @@ Inverse of urlEncode.
 text.str.urlDecode("a+b%26c"); // "a b&c"
 ```
 
-##### 17.14.8.20 text.str.urlEncode
+##### 17.14.9.20 text.str.urlEncode
 
 ```
 urlEncode(input: string): string
