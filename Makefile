@@ -126,6 +126,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/stego-analyze.ts \
 	examples/scripts/text-stego.ts \
 	examples/scripts/text-markdown.ts \
+	examples/scripts/text-case.ts \
 	examples/scripts/audio-stego.ts \
 	examples/scripts/audio-format.ts \
 	examples/scripts/tui-keys.ts \

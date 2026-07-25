@@ -1403,10 +1403,24 @@ await c.ping();
 await c.close();`)
 	note("callTool never throws for a tool-level failure — check isError, same soft-failure contract as mcp.serve's tool handlers; a thrown/rejected promise here means the transport or protocol itself failed. Phase 1 is consume-only: no host-side responder yet for the server's own sampling/elicitation/roots calls, no change notifications/subscriptions, no OAuth client — those are later phases. See examples/scripts/mcp-client-http.ts (hermetic, make-demo) and mcp-client-stdio.ts (subprocess-driven, Go-tested via cmd/sercon/mcp_client_test.go), and MANUAL.md §5.15.3 / the generated §17.9.1 reference.")
 
+	header(73, "Case conversion (text.case)")
+	code(`// Convert identifiers between naming conventions; auto-detecting split too.
+const id = "getHTTPResponseCode";
+
+text.case.snake(id);           // "get_http_response_code"
+text.case.kebab(id);           // "get-http-response-code"
+text.case.pascal(id);          // "GetHttpResponseCode"
+text.case.convert(id, "title"); // "Get Http Response Code" (dynamic dispatch)
+
+text.case.split(id);           // ["get","http","response","code"] (acronym-aware)
+text.case.detect("get_http");  // "snake"
+text.case.names();             // all 16 canonical case names`)
+	note("16 canonical cases (camel/pascal/snake/screamingSnake/ada/camelSnake/kebab/train/screamingKebab/flat/upperFlat/dot/path/title/sentence/capital) plus header/cobol/slug aliases. The tokenizer is acronym-aware (HTTPServer → [http, server]) and works from any input case, not just the one you started with. Pure-Go, no dependencies. See examples/scripts/text-case.ts and MANUAL.md §5.4 / the generated §17.14 reference.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 72
+const exampleCount = 73

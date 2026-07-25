@@ -8,6 +8,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+- **`text.case` — case conversion.** A new `text.case.*` sub-namespace converts
+  identifiers between 16 naming conventions (camel/pascal/snake/
+  screamingSnake/ada/camelSnake/kebab/train/screamingKebab/flat/upperFlat/dot/
+  path/title/sentence/capital) with an auto-detecting tokenizer (any input →
+  target case; acronym-aware, e.g. `HTTPServer`), plus `split`/`detect`/
+  `convert`/`names` primitives and `header`/`cobol`/`slug` aliases. Pure-Go,
+  no new dependencies.
+
 ### Changed
 - **Docs: the `db` guide (MANUAL §5.8) now covers every engine family.** The
   Concepts primer gained a six-engine SQL connection matrix (open argument /
