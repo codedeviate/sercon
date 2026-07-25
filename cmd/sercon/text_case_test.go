@@ -25,6 +25,12 @@ func TestCaseSplit(t *testing.T) {
 		{"FOO", []string{"foo"}},
 		{"", nil},
 		{"___", nil},
+		// Acronym/digit boundary edges (regression-lock verified behavior).
+		{"serverHTTP", []string{"server", "http"}},   // trailing acronym run
+		{"IOStream", []string{"io", "stream"}},       // leading acronym run
+		{"ABc", []string{"a", "bc"}},                 // 2-cap run → split before last cap
+		{"v2A", []string{"v2", "a"}},                 // digit run then a capital word
+		{"HTML5Parser", []string{"html5", "parser"}}, // digit attaches to acronym
 	}
 	for _, c := range cases {
 		if got := caseSplit(c.in); !reflect.DeepEqual(got, c.want) {
