@@ -461,6 +461,146 @@ declare const crypto: {
 
 /** String / regex / charset / data manipulation — all text-shaped transforms. */
 declare const text: {
+  case: {
+    /**
+     * Convert to Ada_Case (every word capitalized, underscore-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "My_Var_Name".
+     */
+    ada(input: string): string;
+    /**
+     * Convert to camelCase (first word lower, rest capitalized, no separator).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "myVarName".
+     */
+    camel(input: string): string;
+    /**
+     * Convert to camel_Snake_Case (first word lower, rest capitalized, underscore-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "my_Var_Name".
+     */
+    camelSnake(input: string): string;
+    /**
+     * Convert to Capital Case (every word capitalized, space-separated). Synonym of title.
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "My Var Name".
+     */
+    capital(input: string): string;
+    /**
+     * Alias of screamingKebab (COBOL-CASE).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "MY-VAR-NAME".
+     */
+    cobol(input: string): string;
+    /**
+     * Convert input to the named case (dynamic dispatch; accepts canonical names and aliases).
+     * @param input The string to convert.
+     * @param name A case name from names() (e.g. "snake", "kebab") or an alias (header/cobol/slug).
+     * @returns string — input rendered in the requested case.
+     */
+    convert(input: string, name: string): string;
+    /**
+     * Best-effort guess of the input's case name (heuristic).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — the first case name whose converter reproduces the input exactly, or "unknown". Multiword inputs detect cleanly; a single lowercase word resolves to "camel"; empty input is "unknown".
+     */
+    detect(input: string): string;
+    /**
+     * Convert to dot.case (all lower, dot-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "my.var.name".
+     */
+    dot(input: string): string;
+    /**
+     * Convert to flatcase (all lower, no separator). Lossy: boundaries are gone and cannot be recovered.
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "myvarname".
+     */
+    flat(input: string): string;
+    /**
+     * Alias of train (Header-Case, e.g. Content-Type).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "My-Var-Name".
+     */
+    header(input: string): string;
+    /**
+     * Convert to kebab-case (all lower, hyphen-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "my-var-name".
+     */
+    kebab(input: string): string;
+    /**
+     * List the canonical case names (drives convert() and detect(); excludes aliases).
+     * @returns string[] — the 16 canonical case names in priority order.
+     */
+    names(): string[];
+    /**
+     * Convert to PascalCase (every word capitalized, no separator).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "MyVarName".
+     */
+    pascal(input: string): string;
+    /**
+     * Convert to path/case (all lower, slash-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "my/var/name".
+     */
+    path(input: string): string;
+    /**
+     * Convert to SCREAMING-KEBAB-CASE (all upper, hyphen-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "MY-VAR-NAME".
+     */
+    screamingKebab(input: string): string;
+    /**
+     * Convert to SCREAMING_SNAKE_CASE (all upper, underscore-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "MY_VAR_NAME".
+     */
+    screamingSnake(input: string): string;
+    /**
+     * Convert to Sentence case (first word capitalized, rest lower, space-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "My var name".
+     */
+    sentence(input: string): string;
+    /**
+     * Alias of kebab. NOTE: kebab only — does NOT transliterate or strip diacritics/punctuation.
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "my-var-name".
+     */
+    slug(input: string): string;
+    /**
+     * Convert to snake_case (all lower, underscore-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "my_var_name".
+     */
+    snake(input: string): string;
+    /**
+     * Tokenize any input into an array of lowercased words (the primitive every converter builds on).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string[] — lowercased words; boundaries detected at lower→upper transitions, acronym→word (HTTPServer→[http,server]), and separators (_ - . / whitespace). Empty/separator-only input → [].
+     */
+    split(input: string): string[];
+    /**
+     * Convert to Title Case (every word capitalized, space-separated). Synonym of capital.
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "My Var Name".
+     */
+    title(input: string): string;
+    /**
+     * Convert to Train-Case (every word capitalized, hyphen-separated).
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "My-Var-Name".
+     */
+    train(input: string): string;
+    /**
+     * Convert to UPPERFLATCASE (all upper, no separator). Lossy: boundaries are gone.
+     * @param input The string to convert. Word boundaries are auto-detected (camelCase, snake_case, kebab-case, spaces, dot/path, and acronym runs like HTTPServer).
+     * @returns string — e.g. "MYVARNAME".
+     */
+    upperFlat(input: string): string;
+  };
   charset: {
     /**
      * Decode bytes in a named charset to a UTF-8 string.

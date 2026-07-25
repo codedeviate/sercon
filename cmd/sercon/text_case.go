@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/dop251/goja"
 )
 
 // caseSplit tokenizes s into lowercased words. Boundaries: separator runs
@@ -175,4 +177,47 @@ func caseDetect(s string) string {
 		}
 	}
 	return "unknown"
+}
+
+// textCaseNamespace exposes the case converters + split/detect/convert/names
+// as text.case.*. All members are pure synchronous string functions.
+func textCaseNamespace(vm *goja.Runtime) map[string]any {
+	requireString := func(label string, v goja.Value) string {
+		if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+			panic(vm.NewTypeError(label + ": expected a string"))
+		}
+		return v.String()
+	}
+	m := map[string]any{
+		"split": func(call goja.FunctionCall) goja.Value {
+			return vm.ToValue(caseSplit(requireString("text.case.split", call.Argument(0))))
+		},
+		"detect": func(call goja.FunctionCall) goja.Value {
+			return vm.ToValue(caseDetect(requireString("text.case.detect", call.Argument(0))))
+		},
+		"convert": func(call goja.FunctionCall) goja.Value {
+			s := requireString("text.case.convert", call.Argument(0))
+			name := requireString("text.case.convert", call.Argument(1))
+			out, err := caseConvert(s, name)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return vm.ToValue(out)
+		},
+		"names": func(call goja.FunctionCall) goja.Value {
+			return vm.ToValue(append([]string(nil), caseNamesOrder...))
+		},
+	}
+	bind := func(label string, fn func(string) string) func(goja.FunctionCall) goja.Value {
+		return func(call goja.FunctionCall) goja.Value {
+			return vm.ToValue(fn(requireString(label, call.Argument(0))))
+		}
+	}
+	for name, fn := range caseConverters {
+		m[name] = bind("text.case."+name, fn)
+	}
+	for alias, canon := range caseAliases {
+		m[alias] = bind("text.case."+alias, caseConverters[canon])
+	}
+	return m
 }

@@ -439,6 +439,7 @@ func registerSurface(e *scriptengine.Engine) error {
 	if err := e.RegisterNamespaceFactory("text", func(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any {
 		return map[string]any{
 			"str":      strNamespace(vm),
+			"case":     textCaseNamespace(vm),
 			"preg":     pregNamespace(vm),
 			"preg2":    preg2Namespace(vm),
 			"charset":  charsetNamespace(vm, loop),

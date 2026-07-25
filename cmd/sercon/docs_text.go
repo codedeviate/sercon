@@ -3,7 +3,7 @@ package main
 import "github.com/codedeviate/sercon/pkg/scriptengine"
 
 func textDocs() map[string]scriptengine.MemberDoc {
-	return map[string]scriptengine.MemberDoc{
+	m := map[string]scriptengine.MemberDoc{
 		"str.trim": {
 			Summary: "Strip whitespace (or any char in the optional mask string) from both ends.",
 			Params: []scriptengine.Param{
@@ -367,4 +367,8 @@ runtime.log(r.charset, r.confidence);`,
 runtime.log(d.diff, d.added, d.removed);`,
 		},
 	}
+	for k, v := range caseDocs() {
+		m[k] = v
+	}
+	return m
 }
