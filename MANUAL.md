@@ -2752,6 +2752,47 @@ above).
   `close()` — a leaked transaction or statement pins a pooled connection
   until the process exits.
 
+**The six SQL engines at a glance.** The handle is identical everywhere;
+only the connection argument, the placeholder token, and the default port
+differ. Pass either the driver's native **DSN string** (used verbatim) or
+the **options object** (assembled into a URL with credentials
+percent-escaped); every server engine pings on `open()`, so a bad DSN or
+unreachable host fails there rather than at the first query.
+
+| Engine | `open()` argument | Placeholder | Default port |
+| --- | --- | --- | --- |
+| `sqlite` | `":memory:"` or a file path | `?` | — (embedded) |
+| `postgres` | DSN, or `{ host, port, user, password, database, sslmode }` | `$1` | 5432 |
+| `mysql` | DSN, or `{ host, port, user, password, database }` | `?` | 3306 |
+| `mssql` | DSN, or `{ host, port, user, password, database }` | `@p1` | 1433 |
+| `clickhouse` | DSN, or `{ …, secure }` (TLS) | `?` | 9000 |
+| `oracle` | DSN, or `{ …, database }` (service name) | `:1` | 1521 |
+
+- **Key-value engines — `redis` / `valkey` / `memcached`.** `redis` and
+  `valkey` share one RESP handle `{ do, ping, close }`: `do(cmd, ...args)`
+  issues any command, so the whole Redis verb surface is reachable without
+  a per-command binding (`do("SET", k, v)`, `do("INCR", c)`,
+  `do("HGETALL", h)`). Replies coerce to the obvious JS value and a missing
+  key resolves to `null`, while RESP errors (`WRONGTYPE`, unknown command)
+  throw; `valkey` additionally accepts `valkey://` / `valkeys://` URLs.
+  `memcached` is a narrower cache handle `{ get, set, delete }` — `set(key,
+  value, expirySeconds?)` (`0`/omitted = never expire), `get` → the string
+  or `null` on a miss, `delete` → `true`/`false`.
+- **Directory and lookup — `ldap` / `dict`.** `ldap.open(url, opts?)` does
+  an anonymous bind (or `opts.bindDN` / `opts.password`) and returns a
+  read-only inspector `{ rootDSE, search, close }`: `search(baseDN,
+  filter?, attrs?)` runs a whole-subtree search returning one ordered `{
+  dn, <attr>: string[] }` object per entry (multi-valued attributes stay
+  arrays; `filter` defaults to `(objectClass=*)`). `dict` is a one-shot RFC
+  2229 client — `define(host, word, opts?)` and `match(host, word, opts?)`
+  each connect, query, and disconnect; a "no match" is data (`found:
+  false` / an empty list), never a thrown error.
+- **Close what you open — with two exceptions.** SQL handles, transactions,
+  prepared statements, the KV (`redis`/`valkey`) handle, and the LDAP
+  handle all expose `close()` and have no GC finalizer, so a leaked handle
+  pins a connection. The exceptions are `memcached` (lazy pool, no ping and
+  no `close`) and `dict` (one-shot, nothing to close).
+
 #### 5.8.2 Recipes
 
 ##### 5.8.2.1 Open a database and query rows
@@ -2915,6 +2956,146 @@ usual shape for a scheduled load-and-report job: bulk-insert under one
 transaction, look up via a prepared statement, aggregate with `GROUP BY`,
 then hand the row objects to a codec. Signatures: §17.6.10.1 (`db.sqlite.open`), §17.3.10 (`codec.xml`).
 runnable: `examples/scripts/advanced/sqlite-etl.ts`
+
+##### 5.8.2.6 Connect to a networked SQL engine
+
+The five server engines take either an options object (assembled into a URL
+with credentials escaped) or a driver DSN string used verbatim — pick
+whichever your config already has.
+
+```ts
+// Options object — host/port/user/password/database (+ engine extras).
+const pg = await db.postgres.open({
+  host: "db.internal", port: 5432, user: "app",
+  password: "s3cr3t", database: "shop", sslmode: "require",
+});
+// …equivalently, a libpq DSN used verbatim:
+// const pg = await db.postgres.open("postgres://app:s3cr3t@db.internal/shop?sslmode=require");
+
+// Placeholders are engine-specific — Postgres uses $1, $2, …
+const rows = await pg.query(
+  "SELECT id, email FROM users WHERE region = $1 AND active = $2",
+  "EU", true,
+);
+await pg.close();
+```
+
+Everything past the connection is the same exec/query/queryValue/begin/
+prepare vocabulary as the SQLite recipes above; only the placeholder token
+changes per the table in §5.8.1 — `?` for MySQL/ClickHouse, `@p1` for SQL
+Server, `:1` for Oracle. **Notes:** for Oracle, `database` is the *service
+name*; for ClickHouse, `secure: true` selects TLS (port 9440). Signatures:
+§17.6.8.1 (`db.postgres.open`), §17.6.6.1 (`db.mysql.open`), §17.6.5.1
+(`db.mssql.open`), §17.6.1.1 (`db.clickhouse.open`), §17.6.7.1
+(`db.oracle.open`).
+
+##### 5.8.2.7 Use Redis or Valkey as a key-value store
+
+One `do(cmd, ...args)` method reaches the entire command surface — strings,
+counters, hashes, lists — so there's no per-verb binding to learn.
+
+```ts
+const r = await db.redis.open("redis://localhost:6379/0");
+
+// A string with an expiry, and a miss that reads back as null (not an error).
+await r.do("SET", "session:42", "active", "EX", 300);
+const session = await r.do("GET", "session:42");  // "active"
+const missing = await r.do("GET", "session:99");  // null
+
+// Counters, hashes, lists — all through do().
+await r.do("INCR", "visits");
+await r.do("HSET", "user:42", "name", "Alice", "tier", "gold");
+const user = await r.do("HGETALL", "user:42");    // ["name","Alice","tier","gold"]
+await r.do("RPUSH", "queue", "job-1", "job-2");
+
+await r.close();
+```
+
+**Notes:** `db.valkey.open("valkey://…")` returns the identical `{ do, ping,
+close }` handle (the RESP-compatible fork). Replies coerce to strings /
+numbers / arrays; a nil reply is `null`, while RESP-level errors
+(`WRONGTYPE`, unknown command) throw. Always `close()`. Signatures:
+§17.6.9.1 (`db.redis.open`), §17.6.11.1 (`db.valkey.open`).
+
+##### 5.8.2.8 Cache-aside with memcached
+
+`get`/`set`/`delete` with a per-key TTL — the classic read-through cache in
+front of a slower source of truth.
+
+```ts
+const mc = await db.memcached.open("localhost:11211");
+
+async function getUser(id: number) {
+  const key = `user:${id}`;
+  const cached = await mc.get(key);              // string | null
+  if (cached !== null) return JSON.parse(cached);
+
+  const fresh = await loadUserFromDB(id);        // your source of truth
+  await mc.set(key, JSON.stringify(fresh), 300); // expire after 5 minutes
+  return fresh;
+}
+
+await mc.delete("user:42"); // invalidate on write
+```
+
+**Notes:** `set(key, value, expirySeconds?)` — `0` or omitted never
+expires. `get` resolves to `null` on a miss and `delete` to `true`/`false`
+for hit/miss — both are data, not errors. There is no `close` (the pool is
+lazy, GC'd with the handle). Signatures: §17.6.4.1 (`db.memcached.open`).
+
+##### 5.8.2.9 Inspect and search an LDAP directory
+
+Read the server's Root DSE for metadata, then run a subtree search — each
+entry comes back as `{ dn, <attr>: string[] }`.
+
+```ts
+const dir = await db.ldap.open("ldap://localhost:389", {
+  bindDN: "cn=admin,dc=example,dc=com", // omit opts entirely for an anonymous bind
+  password: "s3cr3t",
+});
+
+// Server metadata: naming contexts, supported controls, vendor, …
+const meta = await dir.rootDSE();
+runtime.log(meta.namingContexts);
+
+// Whole-subtree search; filter defaults to (objectClass=*) when omitted.
+const people = await dir.search(
+  "ou=people,dc=example,dc=com",
+  "(mail=*@example.com)",
+  ["cn", "mail"],
+);
+for (const p of people) runtime.log(p.dn, p.cn?.[0], p.mail?.[0]);
+
+await dir.close();
+```
+
+**Notes:** this is a read-only inspector — there's no modify/write surface.
+Attribute values are always arrays, even when single-valued (hence
+`p.cn?.[0]`). Signatures: §17.6.3.1 (`db.ldap.open`).
+
+##### 5.8.2.10 Define and match words over DICT
+
+A one-shot RFC 2229 client: `define` fetches definitions, `match` finds
+headwords by strategy. Each call connects, queries, and disconnects.
+
+```ts
+// Definition lookup — "no match" is data (found:false), not an error.
+const def = await db.dict.define("dict.org", "serendipity");
+if (def.found) {
+  for (const d of def.definitions) runtime.log(`[${d.dbName}] ${d.text}`);
+}
+
+// Prefix match across every dictionary.
+const hits = await db.dict.match("dict.org", "seren", { strategy: "prefix" });
+runtime.log(hits.matches.map(m => m.word));
+```
+
+**Notes:** no handle to close — each call is self-contained. `define`
+resolves to `{ word, found, definitions[] }` and `match` to `{ word,
+matches[] }`; `opts` covers `database` (default `"*"` = all), `port`
+(default `"2628"`), `strategy` (match only, default `"prefix"`), and
+`timeout` ms. Signatures: §17.6.2.1 (`db.dict.define`), §17.6.2.2
+(`db.dict.match`).
 
 ### 5.9 `services`
 

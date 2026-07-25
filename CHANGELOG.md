@@ -9,6 +9,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 ## [Unreleased]
 
 ### Changed
+- **Docs: the `db` guide (MANUAL §5.8) now covers every engine family.** The
+  Concepts primer gained a six-engine SQL connection matrix (open argument /
+  placeholder token / default port) plus concept bullets for the key-value
+  (`redis`/`valkey`/`memcached`), directory (`ldap`), and lookup (`dict`)
+  handles and their close/no-close lifecycle; the Recipes section gained five
+  new task-oriented recipes — connect to a networked SQL engine, use
+  Redis/Valkey as a key-value store, cache-aside with memcached, inspect and
+  search an LDAP directory, and define/match words over DICT — so the guide
+  covers the whole `db.*` surface, not just SQLite.
 - **Docs: the `db` binding reference (§17.6) is now usable at a glance.** Its
   chapter intro now explains the shared SQL handle (`exec`/`query`/`queryValue`/
   `begin`/`prepare`/`close`, obtained from `open()`), the Redis/Valkey/memcached/
