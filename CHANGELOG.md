@@ -66,6 +66,11 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   only "SQL databases" (omitting the Redis/Valkey/memcached/LDAP/DICT clients);
   and the §5.8 bullet called `db.dict` a "local dictionary lookup" when it is a
   remote RFC 2229 DICT client. All three now match the actual surface.
+- **Docs: MANUAL §1/§3 now carry the "CLI-first, library unsupported" caveat.**
+  The overview and Library-API sections previously framed `pkg/scriptengine` as
+  a first-class embeddable library; they now state that the `sercon` CLI is the
+  supported product and the engine API is CLI-serving — documented for
+  completeness, not as a stability contract — matching `CLAUDE.md`/`README.md`.
 
 ## [0.101.1] — 2026-07-23
 

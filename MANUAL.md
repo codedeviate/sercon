@@ -22,6 +22,14 @@ parts:
 - `cmd/sercon` — a thin CLI built on the library, useful for ad-hoc test
   scripts and as a working example of every binding kind.
 
+**sercon is CLI-first.** The `sercon` command — reconnaissance,
+troubleshooting, testing — is the supported product; `pkg/scriptengine`
+exists to serve it. Embedding the engine as a library in your own Go
+program is **unsupported and at your own risk**: its API may change without
+notice, and there are no stability or sandboxing guarantees. The Library
+API in §3 is documented because the CLI is built on it, not as a stability
+contract.
+
 The runtime is pure Go: [goja] is the JS engine, [esbuild] (used as a Go
 library) is the TS→JS transpiler, and [goja_nodejs] provides Promises,
 `setTimeout`, `console`, and CommonJS `require`. No cgo, no Node.
@@ -203,6 +211,11 @@ sercon --examples              # colorized, in-depth tour of every feature area
   [§4.6.8](#468-emit-tooling-artifacts-for-your-editor).
 
 ## 3. Library API — `pkg/scriptengine`
+
+> **Unsupported surface.** `pkg/scriptengine` is CLI-serving — documented
+> here for completeness, not as a stability contract (see §1). Its API may
+> change without notice, and there are no sandboxing guarantees; embed it at
+> your own risk.
 
 ### 3.1 `Engine`, `Options`, `New`
 
