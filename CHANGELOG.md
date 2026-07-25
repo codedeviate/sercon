@@ -50,6 +50,17 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   "thirteen reserved top-level globals" in three places and its "Reserved names"
   list omitted `cloud` and `mcp`; both are now "fifteen" and the full list, and a
   dead in-manual anchor link to §16.1.8.7 (wrong slug) was fixed.
+- **Docs: fixed stale bare-method `§17` signature refs + hardened the guard.**
+  The `crypto` encrypt recipe (§5.3) cited `§17.4.x` (now `console.*`) for
+  `keygen`/`encrypt`/`decrypt`/`rekey`/`detectBackend` and the `text.charset`
+  recipe (§5.4.2.1) cited `§17.12.x` (now `server.*`) for `encode`/`decode`/
+  `detect` — corrected to `§17.5.1.x` and `§17.14.2.x`. These slipped past the
+  earlier guard because they are *bare-method* refs (`` (`encode`) ``, no
+  namespace prefix). `TestManualSectionRefs` now adds a third check: a
+  bare-method ref is valid only if the member at the cited number actually ends
+  in `.<member>`, catching a number that resolves to the wrong member (the gap
+  the namespaced and broad checks both missed), with a "did you mean …?"
+  suggestion.
 
 ## [0.101.1] — 2026-07-23
 

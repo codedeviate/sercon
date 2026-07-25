@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -17,10 +18,15 @@ import (
 // prose guides do NOT move with them, so they silently rot — which is exactly
 // how ~two dozen of them drifted before this guard existed.
 //
-// This test builds the authoritative member→number map from the generated §17
-// headings and asserts every namespaced §17 reference in the prose (before the
-// generated chapter) resolves to the current number, failing with the exact
-// corrections needed. Regenerate/fix the prose numbers when it trips.
+// This test builds the authoritative member↔number maps from the generated §17
+// headings and runs three checks over the prose (before the generated chapter):
+//  1. broad — every §17.x number resolves to a real heading (catches dangling numbers);
+//  2. namespaced — every §17.x (`ns.member`) ref cites that member's current number;
+//  3. bare-method — every §17.x (`member`) ref (no namespace prefix, common in recipe
+//     "Signatures:" lines) points at a number whose member actually ends in `.member`
+//     — catching a number that resolves to a real but WRONG member, which (1) and (2) miss.
+//
+// Each failure names the exact correction. Regenerate/fix the prose numbers when it trips.
 func TestManualSectionRefs(t *testing.T) {
 	path := findManual(t)
 	data, err := os.ReadFile(path)
@@ -42,15 +48,17 @@ func TestManualSectionRefs(t *testing.T) {
 
 	// Authoritative map from the generated headings: "#### 17.3.9.1 codec.toml.parse".
 	heading := regexp.MustCompile(`^#{3,5} (17(?:\.\d+)+) (\S+)$`)
-	member := map[string]string{}  // ns.member -> "17.a.b.c"
-	chapter := map[string]string{} // ns -> "17.a"
-	realNum := map[string]bool{}   // every §17.x number that is a real heading
+	member := map[string]string{}    // ns.member -> "17.a.b.c"
+	chapter := map[string]string{}   // ns -> "17.a"
+	realNum := map[string]bool{}     // every §17.x number that is a real heading
+	numToName := map[string]string{} // "17.a.b.c" -> ns.member (reverse of member)
 	for _, l := range lines[gen:] {
 		if m := heading.FindStringSubmatch(l); m != nil {
 			num, name := m[1], m[2]
 			realNum[num] = true
 			if strings.Contains(name, ".") {
 				member[name] = num
+				numToName[num] = name
 			} else {
 				chapter[name] = num
 			}
@@ -110,6 +118,38 @@ func TestManualSectionRefs(t *testing.T) {
 	if len(bad) > 0 {
 		t.Fatalf("stale §17 cross-references in MANUAL.md (%d) — update the prose numbers to match the generated §17:\n  %s",
 			len(bad), strings.Join(bad, "\n  "))
+	}
+
+	// Bare-method prose refs: §17.x (`member`) with no namespace prefix — common
+	// in recipe "Signatures:" lines (e.g. `encode`/`decrypt`). The cited number is
+	// valid only if the member heading at that number ends in `.member`. This
+	// catches a number that resolves to a real heading but the WRONG member — the
+	// gap the namespaced and broad checks above both miss.
+	bareRef := regexp.MustCompile("§(17(?:\\.\\d+)+)\\s*\\(`([a-z][a-zA-Z0-9]*)`\\)")
+	var mismatched []string
+	for _, m := range bareRef.FindAllStringSubmatch(prose, -1) {
+		cur, name := m[1], m[2]
+		full, ok := numToName[cur]
+		if !ok {
+			// Number is not a member heading (a chapter/sub-namespace or dangling);
+			// the broad check already vets resolution, so don't double-report here.
+			continue
+		}
+		if !strings.HasSuffix(full, "."+name) {
+			// Suggest the correct number(s): members whose leaf name matches.
+			var fix []string
+			for mem, num := range member {
+				if strings.HasSuffix(mem, "."+name) {
+					fix = append(fix, "§"+num+" ("+mem+")")
+				}
+			}
+			sort.Strings(fix)
+			mismatched = append(mismatched, "§"+cur+" (`"+name+"`) resolves to `"+full+"`, not a `."+name+"` member; did you mean "+strings.Join(fix, " / ")+"?")
+		}
+	}
+	if len(mismatched) > 0 {
+		t.Fatalf("bare-method §17 cross-references in MANUAL.md citing the wrong member (%d):\n  %s",
+			len(mismatched), strings.Join(mismatched, "\n  "))
 	}
 }
 

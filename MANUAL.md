@@ -1206,8 +1206,8 @@ const armored = crypto.encrypt.encrypt("embed me", alice.publicKey, { armored: t
 
 The wrong private key — or passing a public key where an identity is
 expected — throws a clean error rather than silently failing.
-Signatures: §17.4.4 (`keygen`), §17.4.3 (`encrypt`), §17.4.1 (`decrypt`),
-§17.4.6 (`rekey`), §17.4.2 (`detectBackend`).
+Signatures: §17.5.1.4 (`keygen`), §17.5.1.3 (`encrypt`), §17.5.1.1 (`decrypt`),
+§17.5.1.6 (`rekey`), §17.5.1.2 (`detectBackend`).
 runnable: `examples/scripts/encrypt.ts`
 
 ##### 5.3.5.4 Sign and verify a JWT
@@ -1395,8 +1395,8 @@ runtime.log(guess.charset, guess.confidence);
 
 `charset` names are WHATWG/HTML5 encoding names or aliases (UTF-8,
 ISO-8859-1, Windows-1252, Shift_JIS, GBK, …); an unknown name or bytes
-invalid for that encoding rejects. Signatures: §17.12.3 (`encode`),
-§17.12.1 (`decode`), §17.12.2 (`detect`).
+invalid for that encoding rejects. Signatures: §17.14.2.3 (`encode`),
+§17.14.2.1 (`decode`), §17.14.2.2 (`detect`).
 runnable: `examples/scripts/charset.ts`
 
 ##### 5.4.2.2 Use the string utilities
