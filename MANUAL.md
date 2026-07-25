@@ -88,13 +88,13 @@ treatment.
 
 | Global | What it's for | Reference |
 |---|---|---|
-| `runtime` | script-host scaffolding: `argv`, `env`, secrets, `log`, `sleep`, `exit` | [§5.2](#52-runtime) |
+| `runtime` | script-host scaffolding: `argv`, `env`, secrets, `log`, `sleep` | [§5.2](#52-runtime) |
 | `crypto` | hashing, JWT, age encryption, random bytes | [§5.3](#53-crypto) |
 | `text` | charset decode, string utilities, base64, `jq` | [§5.4](#54-text) |
 | `codec` | encode/decode: barcode, check-digit, compression, docs, dotenv, perl, php, spreadsheets, TOML, XML | [§5.5](#55-codec) |
 | `fs` | file read/write, `mkdir`, `stat`, `exists`, `remove` | [§5.6](#56-fs) |
 | `net` | HTTP client, email send, DNS, TCP/UDP, ping | [§5.7](#57-net) |
-| `db` | SQL databases: query, exec, transactions | [§5.8](#58-db) |
+| `db` | SQL (query/exec/transactions) + Redis/Valkey/memcached, LDAP, DICT clients | [§5.8](#58-db) |
 | `server` | inbound listeners: HTTP/HTTPS, SMTP, WebSocket | [§6](#6-servers) |
 | `services` | external-CLI wrappers: git, gh, ai, agentBrowser, webdriver | [§5.9](#59-services) |
 | `tui` | terminal-UI widgets | [§5.10](#510-tui) |
@@ -2746,7 +2746,7 @@ Database / KV / directory clients:
 - `db.valkey.open(url)` — Valkey client (the RESP-compatible Redis fork; same `{do, ping, close}` handle, accepts `valkey://` / `valkeys://` as well as `redis://`).
 - `db.memcached.open(addr)` — Memcached client.
 - `db.ldap.open(url, opts?)` — LDAP client (search, bind).
-- `db.dict.{define, match}` — local dictionary lookup / fuzzy match.
+- `db.dict.{define, match}` — RFC 2229 DICT client: remote word-definition lookup / prefix match.
 
 **SQL engines (`sqlite` / `postgres` / `mysql` / `mssql` /
 `clickhouse` / `oracle`)** share one handle: `open()` resolves to

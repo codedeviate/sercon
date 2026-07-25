@@ -61,6 +61,11 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   in `.<member>`, catching a number that resolves to the wrong member (the gap
   the namespaced and broad checks both missed), with a "did you mean …?"
   suggestion.
+- **Docs: corrected three stale reserved-globals summaries in MANUAL.md.** The
+  §1 globals table listed a non-existent `runtime.exit`; the `db` row described
+  only "SQL databases" (omitting the Redis/Valkey/memcached/LDAP/DICT clients);
+  and the §5.8 bullet called `db.dict` a "local dictionary lookup" when it is a
+  remote RFC 2229 DICT client. All three now match the actual surface.
 
 ## [0.101.1] — 2026-07-23
 
