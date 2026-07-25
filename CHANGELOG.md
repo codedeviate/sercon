@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.102.0] — 2026-07-25
+
 ### Added
 - **`text.case` — case conversion.** A new `text.case.*` sub-namespace converts
   identifiers between 16 naming conventions (camel/pascal/snake/

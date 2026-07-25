@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.101.1 (2026-07-23).
+covered is v0.1.0 (2026-05-25) through v0.102.0 (2026-07-25).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -421,6 +421,16 @@ lists/autolinks — on by default, plus a `hardBreaks` option). String in,
 string out — complements the existing Markdown → **PDF** path
 (`recon --md-to-pdf`). Surfaced by the DailyScripts port (its `md`/`md2html`
 helper); the new dependency was maintainer-authorized.
+
+**`text.case.*`** (16 case converters + `split`/`detect`/`convert`/`names`):
+v0.102.0, pure-Go and dependency-free. An auto-detecting, acronym-aware
+tokenizer (`HTTPServer` → `[http, server]`; digits attach) splits any input,
+so `text.case.snake(x)` works regardless of the input's current convention —
+there is no "source case" to name. Converters: `camel`/`pascal`/`snake`/
+`screamingSnake`/`ada`/`camelSnake`/`kebab`/`train`/`screamingKebab`/`flat`/
+`upperFlat`/`dot`/`path`/`title`/`sentence`/`capital`, plus `header`/`cobol`/
+`slug` aliases. `detect` best-guesses a case name; `convert(s, name)` and
+`names()` drive dynamic use.
 
 ### `codec`
 
