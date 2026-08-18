@@ -143,13 +143,18 @@ func (s *stream) pop(id uint64) {
 }
 
 // reset drops every redirect and releases the resources they held.
-func (s *stream) reset() {
+func (s *stream) reset() { s.truncateTo(0) }
+
+// truncateTo pops entries until the stack is n deep. reset() is truncateTo(0);
+// a nonzero n drops everything pushed after some earlier point while keeping
+// whatever was already on the stack at that depth (a saved-depth "scope").
+func (s *stream) truncateTo(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for i := len(s.stack) - 1; i >= 0; i-- {
+	for i := len(s.stack) - 1; i >= n; i-- {
 		s.closeDest(i)
+		s.stack = s.stack[:i]
 	}
-	s.stack = nil
 }
 
 // closeDest releases entry i's resources. Called with s.mu held.
@@ -234,22 +239,49 @@ func fileDest(path string, appendMode, tee bool) (destination, error) {
 	}, nil
 }
 
-// processStreamDest folds this stream onto one of the PROCESS streams. It
-// deliberately resolves to os.Stdout / os.Stderr rather than to the other
-// stream object's current destination: that makes a cycle
-// (stdout -> stderr while stderr -> stdout) impossible by construction, and it
-// matches what "fold onto stderr" means everywhere else in sercon.
+// processStreamDest folds this stream onto the CURRENT effective writer of
+// one of the other PROCESS streams — e.g. `runtime.stdout.to("stderr")`
+// composes with whatever stderr is doing right now (silenced, redirected to
+// a file, ...), matching how console.error would behave at this instant.
 //
-// Reads stdioOutStream.base.w / stdioErrStream.base.w without taking either
-// stream's mutex: base.w is written once at construction (newStream) and
-// never mutated afterward, so this is safe without the lock.
+// The resolution happens once, here, rather than through a live reference to
+// the other *stream: that keeps a cycle (stdout -> stderr while
+// stderr -> stdout) impossible by construction, exactly like the old
+// base-only behaviour did, while still snapshotting a real target instead of
+// always jumping straight to the base process stream. It is a snapshot in
+// the same sense a shell's `1>&2` is: later redirects on the target stream
+// don't retroactively move where an already-folded write lands.
 func processStreamDest(name string, tee bool) (destination, error) {
 	switch name {
 	case "stdout":
-		return destination{kind: destStream, name: "stdout", w: stdioOutStream.base.w, tee: tee}, nil
+		return destination{kind: destStream, name: "stdout", w: stdioOutStream.effectiveWriter(), tee: tee}, nil
 	case "stderr":
-		return destination{kind: destStream, name: "stderr", w: stdioErrStream.base.w, tee: tee}, nil
+		return destination{kind: destStream, name: "stderr", w: stdioErrStream.effectiveWriter(), tee: tee}, nil
 	default:
 		return destination{}, fmt.Errorf("unknown stream %q (want \"stdout\" or \"stderr\")", name)
+	}
+}
+
+// effectiveWriter returns the plain io.Writer that a fold onto this stream
+// should target right now: the writer of the current top-of-stack
+// destination when it is one that writes bytes directly (stream / file /
+// buffer), io.Discard when the stream is currently silenced, or the base
+// process stream's writer otherwise (empty stack, or a destCallback top —
+// Task 4 owns giving callbacks a real fold story; until then this falls back
+// to base rather than trying to synchronously drive a JS callback here).
+func (s *stream) effectiveWriter() io.Writer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d := &s.base
+	if n := len(s.stack); n > 0 {
+		d = &s.stack[n-1]
+	}
+	switch d.kind {
+	case destNull:
+		return io.Discard
+	case destStream, destFile, destBuffer:
+		return d.w
+	default:
+		return s.base.w
 	}
 }

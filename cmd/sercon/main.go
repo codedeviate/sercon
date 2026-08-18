@@ -246,6 +246,12 @@ func runOne(eng *scriptengine.Engine, path string, verbose, silent bool, userArg
 	// mcp_stdio_guard.go); disarm restores stdout when the run returns.
 	defer armMCPStdioGuard()()
 
+	// Each Run starts with clean streams: `sercon a.ts b.ts` must not leak a.ts's
+	// redirects into b.ts, and each --watch re-run starts fresh. Reset happens at
+	// the START of a Run, not the end, so the CLI's post-run FAIL/PASS/--verbose
+	// reporting still lands wherever this script left the stream pointed.
+	resetStdio()
+
 	start := time.Now()
 	var err error
 	var val goja.Value
@@ -423,6 +429,8 @@ func registerSurface(e *scriptengine.Engine) error {
 			"termSize":      termSizeFn(vm),
 			"open":          scriptengine.PromisifyAsync(vm, loop, openExtract, openOp),
 			"openAvailable": openAvailable(),
+			"stdout":        outStreamBinding(vm, loop, e, stdioOutStream),
+			"stderr":        outStreamBinding(vm, loop, e, stdioErrStream),
 		}
 	}); err != nil {
 		return err

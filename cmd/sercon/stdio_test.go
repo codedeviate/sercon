@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -12,15 +13,30 @@ import (
 )
 
 // withCapturedStdio points both registry streams at buffers for the duration
-// of a test. It replaces the old consoleOut/consoleErr var swap: because the
-// stream objects are stable and only their destinations move, tests capture by
-// pushing a destination rather than by reassigning a package var.
+// of a test by swapping the *stream package vars themselves (same technique
+// as TestDest_CrossStreamFoldHasNoCycle), rather than pushing a destination
+// onto the existing stream's stack. Two things need that:
+//
+//   - runtime.stdout / runtime.stderr binding tests exercise a one-shot
+//     redirect (silence/to/toFile) and never call the restore their script
+//     received — checking that one behaviour is the whole point of the test.
+//     Pushing onto the shared package-level stream and popping only the
+//     capture entry (by id) would leave that redirect on the stream forever,
+//     for every later test in the package to trip over.
+//   - runOne now calls resetStdio() at the start of every run, which drops
+//     every entry on the stream's STACK. A pushed capture sits on that stack
+//     and would be wiped before the script under test ever wrote a byte. A
+//     swapped-in stream starts with an empty stack and the capture buffer as
+//     its BASE — reset never touches base, so it survives.
 func withCapturedStdio(t *testing.T) (out, errb *bytes.Buffer, restore func()) {
 	t.Helper()
 	out, errb = &bytes.Buffer{}, &bytes.Buffer{}
-	ro := stdioOutStream.push(destination{kind: destBuffer, w: out})
-	re := stdioErrStream.push(destination{kind: destBuffer, w: errb})
-	return out, errb, func() { ro(); re() }
+	oldOut, oldErr := stdioOutStream, stdioErrStream
+	stdioOutStream = newStream("stdout", out)
+	stdioErrStream = newStream("stderr", errb)
+	return out, errb, func() {
+		stdioOutStream, stdioErrStream = oldOut, oldErr
+	}
 }
 
 // A bare stream writes to the process stream it was constructed with.
@@ -288,6 +304,174 @@ func TestStream_TargetInfo(t *testing.T) {
 		t.Fatalf("file: %#v", got)
 	}
 	restore()
+}
+
+// resetStdioForTest emulates the per-Run reset without discarding the test's
+// own capture buffers. The brief's original sketch truncated to depth 1,
+// assuming withCapturedStdio's capture was itself a stack entry; it since
+// moved to swapping the *stream package vars (see withCapturedStdio), so the
+// capture buffer is the swapped stream's BASE, not a stack entry at all — a
+// full truncateTo(0) is what leaves it in place while still dropping
+// everything a script pushed on top, exactly like the real resetStdio().
+func resetStdioForTest(t *testing.T) {
+	t.Helper()
+	stdioOutStream.truncateTo(0)
+	stdioErrStream.truncateTo(0)
+}
+
+// silence() from a script swallows output; the returned restore brings it back.
+func TestBinding_Silence(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		const r = runtime.stdout.silence();
+		console.log("hidden");
+		r();
+		console.log("visible");
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := out.String(), "visible\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// toFile writes to disk; append is honoured.
+func TestBinding_ToFile(t *testing.T) {
+	_, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	path := filepath.Join(t.TempDir(), "s.log")
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		const p = `+strconv.Quote(path)+`;
+		let r = runtime.stdout.toFile(p);
+		console.log("one");
+		r();
+		r = runtime.stdout.toFile(p, { append: true });
+		console.log("two");
+		r();
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if want := "one\ntwo\n"; string(got) != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// A cross-stream fold moves console.log onto stderr.
+func TestBinding_FoldToStderr(t *testing.T) {
+	out, errb, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdout.to("stderr");
+		console.log("folded");
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("stdout should be empty, got %q", out.String())
+	}
+	if got := errb.String(); !strings.Contains(got, "folded") {
+		t.Fatalf("stderr missing folded line: %q", got)
+	}
+}
+
+// tee writes both places.
+func TestBinding_Tee(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	path := filepath.Join(t.TempDir(), "tee.log")
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdout.toFile(`+strconv.Quote(path)+`, { tee: true });
+		console.log("seen-twice");
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if want := "seen-twice\n"; string(got) != want {
+		t.Fatalf("file: got %q want %q", got, want)
+	}
+	if want := "seen-twice\n"; out.String() != want {
+		t.Fatalf("stdout: got %q want %q", out.String(), want)
+	}
+}
+
+// target() reports the effective destination.
+func TestBinding_Target(t *testing.T) {
+	_, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stderr.silence();
+		export default runtime.stderr.target().kind;
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := val.Export(); got != "null" {
+		t.Fatalf("target kind: got %v want \"null\"", got)
+	}
+}
+
+// tee onto the void is a script bug, caught at the call site.
+func TestBinding_TeeNullThrows(t *testing.T) {
+	_, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	_, err := eng.Run(testCtx(), "s.ts", `runtime.stdout.to("null", { tee: true });`)
+	if err == nil {
+		t.Fatal("expected a throw for to(\"null\", { tee: true })")
+	}
+	if !strings.Contains(err.Error(), "tee") {
+		t.Fatalf("error should mention tee: %v", err)
+	}
+}
+
+// An unopenable file throws at the call site rather than at write time.
+func TestBinding_ToFileOpenErrorThrows(t *testing.T) {
+	_, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	bad := filepath.Join(t.TempDir(), "missing-dir", "x.log")
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `runtime.stdout.toFile(`+strconv.Quote(bad)+`);`); err == nil {
+		t.Fatal("expected a throw for an unopenable path")
+	}
+}
+
+// resetStdio between runs gives the second script clean streams.
+func TestRegistry_ResetBetweenRuns(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "a.ts", `runtime.stdout.silence(); console.log("a-hidden");`); err != nil {
+		t.Fatalf("run a: %v", err)
+	}
+	// runOne calls resetStdio() before each engine call; emulate that here.
+	resetStdioForTest(t)
+	if _, err := eng.Run(testCtx(), "b.ts", `console.log("b-visible");`); err != nil {
+		t.Fatalf("run b: %v", err)
+	}
+	if got, want := out.String(), "b-visible\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
 }
 
 func newTestEngine(t *testing.T) *scriptengine.Engine {

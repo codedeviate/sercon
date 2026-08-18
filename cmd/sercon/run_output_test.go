@@ -12,15 +12,22 @@ import (
 // captureStdout runs fn with the stdout registry stream redirected to a
 // buffer and returns what was written. Predates the registry (it used to
 // swap the os.Stdout package var behind a pipe); everything script-facing
-// that used to write to a bare os.Stdout now goes through stdioOutStream, so
-// pushing a destBuffer there is what actually observes it — reassigning
-// os.Stdout itself would no longer be seen by the registry's stable writer.
+// that used to write to a bare os.Stdout now goes through stdioOutStream.
+//
+// Swaps the stdioOutStream package var itself (buffer as the new stream's
+// BASE) rather than pushing a destination onto the existing stream's stack:
+// fn() here is run(...)/runRun(...), which reaches runOne, which now calls
+// resetStdio() at the start of every run. That drops every entry on the
+// stream's stack — a pushed capture would be gone before the script under
+// test wrote a byte. reset() never touches base, so a swapped-in stream's
+// capture buffer survives it.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	var buf bytes.Buffer
-	restore := stdioOutStream.push(destination{kind: destBuffer, w: &buf})
+	oldOut := stdioOutStream
+	stdioOutStream = newStream("stdout", &buf)
 	fn()
-	restore()
+	stdioOutStream = oldOut
 	return buf.String()
 }
 
