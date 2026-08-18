@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -64,5 +65,42 @@ func TestRunRun_FlagsBeforeScript(t *testing.T) {
 	}
 	if code := runRun([]string{"-timeout", "5s", script}); code != exitOK {
 		t.Fatalf("expected exitOK with a leading flag, got %d", code)
+	}
+}
+
+// -v wires engOpts.Verbose to the stderr registry stream (not a bare
+// os.Stderr), so a script's own runtime.stderr redirect also catches the
+// engine's transpile trace.
+func TestRunRun_VerboseTraceRoutesToStderrRegistry(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "ok.ts")
+	if err := os.WriteFile(script, []byte(`runtime.log("x");`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, errb, restore := withCapturedStdio(t)
+	defer restore()
+	if code := runRun([]string{"-v", script}); code != exitOK {
+		t.Fatalf("expected exitOK, got %d", code)
+	}
+	if !strings.Contains(errb.String(), "transpile entry") {
+		t.Fatalf("expected transpile trace on stderr registry, got %q", errb.String())
+	}
+}
+
+// The FAIL line stays on stdout (mirroring main.go's default mode) but must
+// go through the registry rather than a bare fmt.Printf to the real stdout.
+func TestRunRun_FailRoutesToStdoutRegistry(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "bad.ts")
+	if err := os.WriteFile(script, []byte(`throw new Error("boom");`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+	if code := runRun([]string{script}); code == exitOK {
+		t.Fatalf("expected non-OK exit code")
+	}
+	if !strings.Contains(out.String(), "FAIL ") {
+		t.Fatalf("expected FAIL line on stdout registry, got %q", out.String())
 	}
 }

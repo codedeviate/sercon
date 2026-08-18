@@ -191,7 +191,7 @@ func strNamespace(vm *goja.Runtime) map[string]any {
 			for _, a := range call.Arguments[1:] {
 				args = append(args, a.Export())
 			}
-			fmt.Printf(format, args...)
+			fmt.Fprintf(stdioOut(), format, args...)
 			return goja.Undefined()
 		},
 		"normalizeNewlines": func(call goja.FunctionCall) goja.Value {

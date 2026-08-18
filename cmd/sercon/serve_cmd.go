@@ -85,7 +85,7 @@ func runServe(args []string) int {
 	servePortOverride = *portOverride
 	serveAccessLogger = stderrAccessLogger
 	serveSMTPLogger = smtpStderrLogger
-	serveReadyWriter = os.Stdout
+	serveReadyWriter = stdioOut()
 	defer func() {
 		servePortOverride = 0
 		serveAccessLogger = nil
@@ -131,7 +131,7 @@ func runServe(args []string) int {
 		if signaledShutdown.Load() && errors.Is(err, context.Canceled) {
 			return exitOK
 		}
-		fmt.Fprintf(os.Stderr, "FAIL %s: %s\n", scriptPath, err)
+		fmt.Fprintf(stdioErr(), "FAIL %s: %s\n", scriptPath, err)
 		return classifyErr(err)
 	}
 	return exitOK
@@ -140,7 +140,7 @@ func runServe(args []string) int {
 // stderrAccessLogger writes one access-log line per request to stderr.
 // Format: timestamp remote method path status dur_us
 func stderrAccessLogger(remote, method, path string, status int, dur time.Duration) {
-	fmt.Fprintf(os.Stderr, "%s %s %s %s %d %dµs\n",
+	fmt.Fprintf(stdioErr(), "%s %s %s %s %d %dµs\n",
 		time.Now().UTC().Format(time.RFC3339), remote, method, path, status, dur.Microseconds())
 }
 
@@ -152,10 +152,10 @@ func smtpStderrLogger(remote, stage, detail string, accepted bool, dur time.Dura
 		verdict = "REJECTED"
 	}
 	if detail == "" {
-		fmt.Fprintf(os.Stderr, "%s %s %s %s %dµs\n",
+		fmt.Fprintf(stdioErr(), "%s %s %s %s %dµs\n",
 			time.Now().UTC().Format(time.RFC3339), remote, stage, verdict, dur.Microseconds())
 		return
 	}
-	fmt.Fprintf(os.Stderr, "%s %s %s %s %s %dµs\n",
+	fmt.Fprintf(stdioErr(), "%s %s %s %s %s %dµs\n",
 		time.Now().UTC().Format(time.RFC3339), remote, stage, detail, verdict, dur.Microseconds())
 }

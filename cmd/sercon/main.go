@@ -213,7 +213,7 @@ func run(args []string) int {
 		// (always 0 on clean shutdown via Ctrl-C; usage errors on
 		// setup failure). Per-script throws inside a watch session
 		// are logged but don't propagate as the process exit.
-		return runWatchLoop(eng, scripts, scriptRoot, *verbose, os.Stdout, userArgs)
+		return runWatchLoop(eng, scripts, scriptRoot, *verbose, stdioOut(), userArgs)
 	}
 
 	worst := exitOK

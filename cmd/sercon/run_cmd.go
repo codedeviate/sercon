@@ -64,7 +64,7 @@ func runRun(args []string) int {
 		DisableConsole: true, // CLI provides its own clean `console` (console.go)
 	}
 	if *verbose {
-		engOpts.Verbose = os.Stderr
+		engOpts.Verbose = stdioErrStream
 	}
 	engOpts.ModuleLoader = favroLoader(paymentprovidersLoader(engOpts.ModuleLoader))
 	eng := scriptengine.New(engOpts)
@@ -78,7 +78,7 @@ func runRun(args []string) int {
 		if script == "-" {
 			label = "<stdin>"
 		}
-		fmt.Printf("FAIL %s: %s\n", label, err)
+		fmt.Fprintf(stdioOut(), "FAIL %s: %s\n", label, err)
 		return classifyErr(err)
 	}
 	return exitOK

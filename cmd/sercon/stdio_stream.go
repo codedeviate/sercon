@@ -162,6 +162,12 @@ func (s *stream) closeDest(i int) {
 		// A trailing partial line goes to the destination BENEATH the
 		// callback, not to the callback: that is deterministic and needs no
 		// live event loop, so nothing is lost when a script exits mid-line.
+		//
+		// takePartial() and stop() are called here with s.mu held (closeDest
+		// is only ever reached from pop()/reset(), both locked). The real
+		// lineCallback (Task 4) must not re-enter the stream (no Write/push/
+		// pop back onto s) or block waiting on the event loop from either
+		// method, or this deadlocks.
 		if rest := d.cb.takePartial(); len(rest) > 0 {
 			s.writeAt(i, append(rest, '\n'))
 		}

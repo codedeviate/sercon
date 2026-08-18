@@ -122,6 +122,21 @@ func TestRegistry_ConsoleAndRuntimeLogRouted(t *testing.T) {
 	}
 }
 
+// text.printf is script-facing output exactly like console.log / runtime.log
+// and must go through the same registry.
+func TestRegistry_TextPrintfRouted(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `text.str.printf("%s=%d\n", "x", 42);`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := out.String(), "x=42\n"; got != want {
+		t.Fatalf("printf: got %q want %q", got, want)
+	}
+}
+
 func newTestEngine(t *testing.T) *scriptengine.Engine {
 	t.Helper()
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
