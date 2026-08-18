@@ -2,41 +2,26 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// captureStdout runs fn with os.Stdout redirected to a pipe and returns what
-// was written.
+// captureStdout runs fn with the stdout registry stream redirected to a
+// buffer and returns what was written. Predates the registry (it used to
+// swap the os.Stdout package var behind a pipe); everything script-facing
+// that used to write to a bare os.Stdout now goes through stdioOutStream, so
+// pushing a destBuffer there is what actually observes it — reassigning
+// os.Stdout itself would no longer be seen by the registry's stable writer.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = w
-	done := make(chan string, 1)
-	go func() {
-		var b strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, err := r.Read(buf)
-			if n > 0 {
-				b.Write(buf[:n])
-			}
-			if err != nil {
-				break
-			}
-		}
-		done <- b.String()
-	}()
+	var buf bytes.Buffer
+	restore := stdioOutStream.push(destination{kind: destBuffer, w: &buf})
 	fn()
-	_ = w.Close()
-	os.Stdout = orig
-	return <-done
+	restore()
+	return buf.String()
 }
 
 func writeScript(t *testing.T, name, body string) string {

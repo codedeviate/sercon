@@ -2,19 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/dop251/goja"
-)
-
-// consoleOut / consoleErr are the destinations for the console shim. They're
-// package vars so tests can capture the routed output; production leaves them
-// as the process streams.
-var (
-	consoleOut io.Writer = os.Stdout
-	consoleErr io.Writer = os.Stderr
 )
 
 // consoleNamespace wires the `console` global — a browser/Node-style shim so
@@ -34,11 +24,11 @@ func consoleNamespace(vm *goja.Runtime) map[string]any {
 		return strings.Join(parts, " ")
 	}
 	toStdout := func(call goja.FunctionCall) goja.Value {
-		fmt.Fprintln(consoleOut, line(call))
+		fmt.Fprintln(stdioOut(), line(call))
 		return goja.Undefined()
 	}
 	toStderr := func(call goja.FunctionCall) goja.Value {
-		fmt.Fprintln(consoleErr, line(call))
+		fmt.Fprintln(stdioErr(), line(call))
 		return goja.Undefined()
 	}
 	table := func(call goja.FunctionCall) goja.Value {
@@ -54,10 +44,10 @@ func consoleNamespace(vm *goja.Runtime) map[string]any {
 			}
 		}
 		if out, ok := consoleTableString(vm, call.Argument(0), columns); ok {
-			fmt.Fprintln(consoleOut, out)
+			fmt.Fprintln(stdioOut(), out)
 		} else {
 			// Non-tabular input (a primitive): behave like console.log(data).
-			fmt.Fprintln(consoleOut, formatValue(vm, call.Argument(0)))
+			fmt.Fprintln(stdioOut(), formatValue(vm, call.Argument(0)))
 		}
 		return goja.Undefined()
 	}

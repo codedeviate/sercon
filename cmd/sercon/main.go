@@ -164,7 +164,7 @@ func run(args []string) int {
 		DisableConsole: true, // CLI provides its own clean `console` (console.go)
 	}
 	if *verbose {
-		engOpts.Verbose = os.Stderr
+		engOpts.Verbose = stdioErrStream
 	}
 	engOpts.ModuleLoader = favroLoader(paymentprovidersLoader(engOpts.ModuleLoader))
 	eng := scriptengine.New(engOpts)
@@ -231,7 +231,7 @@ func run(args []string) int {
 			label = "<stdin>"
 		}
 		if !*silent {
-			fmt.Printf("FAIL %s: %s\n", label, err)
+			fmt.Fprintf(stdioOut(), "FAIL %s: %s\n", label, err)
 		}
 	}
 	return worst
@@ -263,13 +263,13 @@ func runOne(eng *scriptengine.Engine, path string, verbose, silent bool, userArg
 	dur := time.Since(start)
 	if err != nil {
 		if verbose {
-			fmt.Fprintf(os.Stderr, "  duration: %s\n", dur)
+			fmt.Fprintf(stdioErr(), "  duration: %s\n", dur)
 		}
 		return err
 	}
 	printRunResult(val)
 	if verbose && !silent {
-		fmt.Printf("PASS %s (%s)\n", label, dur.Round(time.Millisecond))
+		fmt.Fprintf(stdioOut(), "PASS %s (%s)\n", label, dur.Round(time.Millisecond))
 	}
 	return nil
 }
@@ -285,7 +285,7 @@ func printRunResult(val goja.Value) {
 	if err != nil {
 		return
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(stdioOut(), string(data))
 }
 
 // classifyErr maps an Engine error to one of the documented exit codes.
@@ -335,7 +335,7 @@ func registerSurface(e *scriptengine.Engine) error {
 				for _, a := range call.Arguments {
 					parts = append(parts, formatValue(vm, a))
 				}
-				fmt.Println(strings.Join(parts, " "))
+				fmt.Fprintln(stdioOut(), strings.Join(parts, " "))
 				return goja.Undefined()
 			},
 			"setDeadline": func(call goja.FunctionCall) goja.Value {

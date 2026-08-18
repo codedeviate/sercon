@@ -258,7 +258,7 @@ func pickFallbackOutput() io.Writer {
 	if tuiOutputForTest != nil {
 		return tuiOutputForTest
 	}
-	return os.Stdout
+	return stdioOut()
 }
 
 // isTTY reports whether w is a real terminal. It uses term.IsTerminal
