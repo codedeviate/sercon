@@ -35,6 +35,12 @@ func withCapturedStdio(t *testing.T) (out, errb *bytes.Buffer, restore func()) {
 	stdioOutStream = newStream("stdout", out)
 	stdioErrStream = newStream("stderr", errb)
 	return out, errb, func() {
+		// Release whatever the script pushed and never popped (an open file
+		// from toFile, eventually a callback goroutine once Task 4 lands)
+		// before dropping the swapped-in stream — closeDest only runs via
+		// reset()/pop(), never by falling out of scope.
+		stdioOutStream.reset()
+		stdioErrStream.reset()
 		stdioOutStream, stdioErrStream = oldOut, oldErr
 	}
 }
@@ -263,6 +269,17 @@ func TestDest_CrossStreamFoldHasNoCycle(t *testing.T) {
 	stdioErrStream = newStream("stderr", errBase)
 	defer func() { stdioOutStream, stdioErrStream = oldOut, oldErr }()
 
+	// Push a decoy onto each stream's OWN stack before resolving the fold
+	// that targets it. processStreamDest must resolve to the PROCESS stream
+	// (the base) and bypass these decoys entirely; an implementation that
+	// instead resolved to "whatever the target stream's current effective
+	// destination is" would land here instead — the discriminating case a
+	// prior version of this test missed (it resolved both folds while both
+	// stacks were still empty, so either implementation agreed).
+	var errDecoy, outDecoy bytes.Buffer
+	stdioErrStream.push(destination{kind: destBuffer, w: &errDecoy}) // target of stdout's fold
+	stdioOutStream.push(destination{kind: destBuffer, w: &outDecoy}) // target of stderr's fold
+
 	dOut, err := processStreamDest("stderr", false)
 	if err != nil {
 		t.Fatalf("processStreamDest: %v", err)
@@ -274,7 +291,8 @@ func TestDest_CrossStreamFoldHasNoCycle(t *testing.T) {
 	stdioOutStream.push(dOut) // stdout -> stderr
 	stdioErrStream.push(dErr) // stderr -> stdout
 
-	// Neither write may recurse; both land on a process stream exactly once.
+	// Neither write may recurse; both must land on the process stream exactly
+	// once, bypassing the decoy sitting on the target stream's own stack.
 	_, _ = stdioOutStream.Write([]byte("o\n"))
 	_, _ = stdioErrStream.Write([]byte("e\n"))
 
@@ -283,6 +301,12 @@ func TestDest_CrossStreamFoldHasNoCycle(t *testing.T) {
 	}
 	if got, want := outBase.String(), "e\n"; got != want {
 		t.Fatalf("stdout base: got %q want %q", got, want)
+	}
+	if errDecoy.Len() != 0 {
+		t.Fatalf("fold must bypass stderr's own stack, got %q", errDecoy.String())
+	}
+	if outDecoy.Len() != 0 {
+		t.Fatalf("fold must bypass stdout's own stack, got %q", outDecoy.String())
 	}
 }
 
@@ -304,19 +328,6 @@ func TestStream_TargetInfo(t *testing.T) {
 		t.Fatalf("file: %#v", got)
 	}
 	restore()
-}
-
-// resetStdioForTest emulates the per-Run reset without discarding the test's
-// own capture buffers. The brief's original sketch truncated to depth 1,
-// assuming withCapturedStdio's capture was itself a stack entry; it since
-// moved to swapping the *stream package vars (see withCapturedStdio), so the
-// capture buffer is the swapped stream's BASE, not a stack entry at all — a
-// full truncateTo(0) is what leaves it in place while still dropping
-// everything a script pushed on top, exactly like the real resetStdio().
-func resetStdioForTest(t *testing.T) {
-	t.Helper()
-	stdioOutStream.truncateTo(0)
-	stdioErrStream.truncateTo(0)
 }
 
 // silence() from a script swallows output; the returned restore brings it back.
@@ -464,8 +475,12 @@ func TestRegistry_ResetBetweenRuns(t *testing.T) {
 	if _, err := eng.Run(testCtx(), "a.ts", `runtime.stdout.silence(); console.log("a-hidden");`); err != nil {
 		t.Fatalf("run a: %v", err)
 	}
-	// runOne calls resetStdio() before each engine call; emulate that here.
-	resetStdioForTest(t)
+	// runOne calls resetStdio() before each engine call; call the real thing
+	// directly rather than through a test-only alias — with withCapturedStdio
+	// now swapping the *stream package vars, the capture buffer is the
+	// swapped stream's base, which resetStdio() (truncateTo(0) on both
+	// streams) never touches, so it's already safe to call here unmodified.
+	resetStdio()
 	if _, err := eng.Run(testCtx(), "b.ts", `console.log("b-visible");`); err != nil {
 		t.Fatalf("run b: %v", err)
 	}

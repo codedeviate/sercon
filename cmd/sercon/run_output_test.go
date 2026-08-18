@@ -27,6 +27,9 @@ func captureStdout(t *testing.T, fn func()) string {
 	oldOut := stdioOutStream
 	stdioOutStream = newStream("stdout", &buf)
 	fn()
+	// Release anything fn() pushed and never popped before dropping the
+	// swapped-in stream (see withCapturedStdio's matching comment).
+	stdioOutStream.reset()
 	stdioOutStream = oldOut
 	return buf.String()
 }
