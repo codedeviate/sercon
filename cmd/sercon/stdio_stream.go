@@ -88,10 +88,13 @@ func (s *stream) writeDest(d *destination, level int, p []byte) {
 			s.writeAt(level-1, p)
 		}
 		return
-	default:
+	case destStream, destFile, destBuffer:
 		if _, err := d.w.Write(p); err != nil {
 			s.failover(d, level, err, p)
 		}
+	default:
+		// Defensive: an unhandled kind must not nil-deref d.w. Treat it as a
+		// no-op rather than guessing at a writer that was never set up for it.
 	}
 }
 
@@ -200,4 +203,53 @@ func (s *stream) targetInfo() map[string]any {
 		info["kind"] = "buffer"
 	}
 	return info
+}
+
+// nullDest discards everything written to it.
+func nullDest(tee bool) destination {
+	return destination{kind: destNull, tee: tee}
+}
+
+// fileDest opens path and returns a destination that owns the file — it is
+// closed when the entry is popped or reset. Opening errors surface HERE, at the
+// script's own call site, rather than at some later write deep in a library.
+func fileDest(path string, appendMode, tee bool) (destination, error) {
+	flags := os.O_CREATE | os.O_WRONLY
+	if appendMode {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	f, err := os.OpenFile(path, flags, 0o644)
+	if err != nil {
+		return destination{}, err
+	}
+	return destination{
+		kind:   destFile,
+		w:      f,
+		file:   f,
+		path:   path,
+		append: appendMode,
+		tee:    tee,
+	}, nil
+}
+
+// processStreamDest folds this stream onto one of the PROCESS streams. It
+// deliberately resolves to os.Stdout / os.Stderr rather than to the other
+// stream object's current destination: that makes a cycle
+// (stdout -> stderr while stderr -> stdout) impossible by construction, and it
+// matches what "fold onto stderr" means everywhere else in sercon.
+//
+// Reads stdioOutStream.base.w / stdioErrStream.base.w without taking either
+// stream's mutex: base.w is written once at construction (newStream) and
+// never mutated afterward, so this is safe without the lock.
+func processStreamDest(name string, tee bool) (destination, error) {
+	switch name {
+	case "stdout":
+		return destination{kind: destStream, name: "stdout", w: stdioOutStream.base.w, tee: tee}, nil
+	case "stderr":
+		return destination{kind: destStream, name: "stderr", w: stdioErrStream.base.w, tee: tee}, nil
+	default:
+		return destination{}, fmt.Errorf("unknown stream %q (want \"stdout\" or \"stderr\")", name)
+	}
 }

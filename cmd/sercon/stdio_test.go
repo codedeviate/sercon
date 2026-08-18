@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -135,6 +137,157 @@ func TestRegistry_TextPrintfRouted(t *testing.T) {
 	if got, want := out.String(), "x=42\n"; got != want {
 		t.Fatalf("printf: got %q want %q", got, want)
 	}
+}
+
+// silence: a null destination swallows output without touching the base.
+func TestDest_Null(t *testing.T) {
+	var base bytes.Buffer
+	s := newStream("stdout", &base)
+	restore := s.push(nullDest(false))
+	_, _ = s.Write([]byte("swallowed\n"))
+	restore()
+	_, _ = s.Write([]byte("kept\n"))
+	if got, want := base.String(), "kept\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// A file destination truncates by default and appends on request.
+func TestDest_FileTruncateAndAppend(t *testing.T) {
+	var base bytes.Buffer
+	path := filepath.Join(t.TempDir(), "log.txt")
+
+	s := newStream("stdout", &base)
+	d, err := fileDest(path, false, false)
+	if err != nil {
+		t.Fatalf("fileDest: %v", err)
+	}
+	restore := s.push(d)
+	_, _ = s.Write([]byte("first\n"))
+	restore() // closes the file
+
+	d2, err := fileDest(path, true, false) // append
+	if err != nil {
+		t.Fatalf("fileDest append: %v", err)
+	}
+	restore2 := s.push(d2)
+	_, _ = s.Write([]byte("second\n"))
+	restore2()
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if want := "first\nsecond\n"; string(got) != want {
+		t.Fatalf("append: got %q want %q", got, want)
+	}
+
+	d3, err := fileDest(path, false, false) // truncate
+	if err != nil {
+		t.Fatalf("fileDest truncate: %v", err)
+	}
+	restore3 := s.push(d3)
+	_, _ = s.Write([]byte("third\n"))
+	restore3()
+
+	got, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if want := "third\n"; string(got) != want {
+		t.Fatalf("truncate: got %q want %q", got, want)
+	}
+}
+
+// fileDest reports an unopenable path at the call site, not at write time.
+func TestDest_FileOpenError(t *testing.T) {
+	if _, err := fileDest(filepath.Join(t.TempDir(), "no-such-dir", "x.log"), false, false); err == nil {
+		t.Fatal("expected an error for a missing parent directory")
+	}
+}
+
+// tee writes to the new destination AND to the destination beneath it.
+func TestDest_Tee(t *testing.T) {
+	var base, sink bytes.Buffer
+	s := newStream("stdout", &base)
+	restore := s.push(destination{kind: destBuffer, w: &sink, tee: true})
+	_, _ = s.Write([]byte("both\n"))
+	restore()
+	if got, want := sink.String(), "both\n"; got != want {
+		t.Fatalf("sink: got %q want %q", got, want)
+	}
+	if got, want := base.String(), "both\n"; got != want {
+		t.Fatalf("base: got %q want %q", got, want)
+	}
+}
+
+// tee resolves to the destination beneath, not unconditionally to the base:
+// teeing on top of a silence() writes only to the new destination.
+func TestDest_TeeOntoSilence(t *testing.T) {
+	var base, sink bytes.Buffer
+	s := newStream("stdout", &base)
+	s.push(nullDest(false))
+	s.push(destination{kind: destBuffer, w: &sink, tee: true})
+	_, _ = s.Write([]byte("only-sink\n"))
+	if got, want := sink.String(), "only-sink\n"; got != want {
+		t.Fatalf("sink: got %q want %q", got, want)
+	}
+	if base.Len() != 0 {
+		t.Fatalf("base should be empty, got %q", base.String())
+	}
+	s.reset()
+}
+
+// A cross-stream fold resolves to the PROCESS stream, so two streams folded at
+// each other cannot ping-pong.
+func TestDest_CrossStreamFoldHasNoCycle(t *testing.T) {
+	outBase, errBase := &bytes.Buffer{}, &bytes.Buffer{}
+	oldOut, oldErr := stdioOutStream, stdioErrStream
+	stdioOutStream = newStream("stdout", outBase)
+	stdioErrStream = newStream("stderr", errBase)
+	defer func() { stdioOutStream, stdioErrStream = oldOut, oldErr }()
+
+	dOut, err := processStreamDest("stderr", false)
+	if err != nil {
+		t.Fatalf("processStreamDest: %v", err)
+	}
+	dErr, err := processStreamDest("stdout", false)
+	if err != nil {
+		t.Fatalf("processStreamDest: %v", err)
+	}
+	stdioOutStream.push(dOut) // stdout -> stderr
+	stdioErrStream.push(dErr) // stderr -> stdout
+
+	// Neither write may recurse; both land on a process stream exactly once.
+	_, _ = stdioOutStream.Write([]byte("o\n"))
+	_, _ = stdioErrStream.Write([]byte("e\n"))
+
+	if got, want := errBase.String(), "o\n"; got != want {
+		t.Fatalf("stderr base: got %q want %q", got, want)
+	}
+	if got, want := outBase.String(), "e\n"; got != want {
+		t.Fatalf("stdout base: got %q want %q", got, want)
+	}
+}
+
+// targetInfo describes the effective destination.
+func TestStream_TargetInfo(t *testing.T) {
+	var base bytes.Buffer
+	s := newStream("stdout", &base)
+	if got := s.targetInfo(); got["kind"] != "stream" || got["name"] != "stdout" || got["depth"] != 0 {
+		t.Fatalf("base: %#v", got)
+	}
+	path := filepath.Join(t.TempDir(), "t.log")
+	d, err := fileDest(path, true, true)
+	if err != nil {
+		t.Fatalf("fileDest: %v", err)
+	}
+	restore := s.push(d)
+	got := s.targetInfo()
+	if got["kind"] != "file" || got["path"] != path || got["append"] != true || got["tee"] != true || got["depth"] != 1 {
+		t.Fatalf("file: %#v", got)
+	}
+	restore()
 }
 
 func newTestEngine(t *testing.T) *scriptengine.Engine {
