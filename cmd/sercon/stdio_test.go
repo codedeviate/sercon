@@ -489,6 +489,118 @@ func TestRegistry_ResetBetweenRuns(t *testing.T) {
 	}
 }
 
+// scoped applies the redirect for the callback's duration and restores after.
+func TestBinding_ScopedRestores(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		await runtime.stdout.scoped("null", async () => {
+			console.log("hidden");
+			await runtime.time.sleep(5);
+			console.log("also-hidden");
+		});
+		console.log("visible");
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := out.String(), "visible\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// scoped restores even when the callback throws, and the throw propagates.
+func TestBinding_ScopedRestoresOnThrow(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		let threw = false;
+		try {
+			await runtime.stdout.scoped("null", () => { throw new Error("boom"); });
+		} catch (e) {
+			threw = true;
+		}
+		runtime.assert.ok(threw, "the throw must propagate");
+		console.log("visible");
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := out.String(), "visible\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// scoped accepts an optional opts object between the target and the callback.
+func TestBinding_ScopedWithOpts(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	path := filepath.Join(t.TempDir(), "scoped.log")
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		await runtime.stdout.scoped({ file: `+strconv.Quote(path)+` }, { tee: true }, () => {
+			console.log("teed");
+		});
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if want := "teed\n"; string(got) != want {
+		t.Fatalf("file: got %q want %q", got, want)
+	}
+	if want := "teed\n"; out.String() != want {
+		t.Fatalf("stdout: got %q want %q", out.String(), want)
+	}
+}
+
+// capture returns everything written during the callback, and nothing leaks.
+func TestBinding_Capture(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		const text = await runtime.stdout.capture(async () => {
+			console.log("captured-1");
+			await runtime.time.sleep(5);
+			console.log("captured-2");
+		});
+		export default text;
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := val.Export(), "captured-1\ncaptured-2\n"; got != want {
+		t.Fatalf("captured: got %q want %q", got, want)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("capture must be exclusive; stdout got %q", out.String())
+	}
+}
+
+// capture works with a synchronous callback too.
+func TestBinding_CaptureSyncFn(t *testing.T) {
+	_, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		export default await runtime.stderr.capture(() => { console.error("sync"); });
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := val.Export(), "sync\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
 func newTestEngine(t *testing.T) *scriptengine.Engine {
 	t.Helper()
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})

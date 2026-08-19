@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"sync"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -40,7 +42,125 @@ func outStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengi
 		"target": func(goja.FunctionCall) goja.Value {
 			return vm.ToValue(s.targetInfo())
 		},
+		// scoped(target, fn) or scoped(target, opts, fn)
+		"scoped": func(call goja.FunctionCall) goja.Value {
+			target := call.Argument(0)
+			optsArg := call.Argument(1)
+			fnArg := call.Argument(2)
+			if _, ok := goja.AssertFunction(fnArg); !ok {
+				// Two-argument form: the callback sits where opts would.
+				fnArg = optsArg
+				optsArg = goja.Undefined()
+			}
+			fn, ok := goja.AssertFunction(fnArg)
+			if !ok {
+				panic(vm.NewGoError(fmt.Errorf("scoped: last argument must be a function")))
+			}
+			d, err := parseStreamTarget(vm, loop, e, s.base.name, target, teeOpt(optsArg))
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			restore := s.push(d)
+			return callScopedFn(vm, fn, restore, func() goja.Value { return goja.Undefined() })
+		},
+		// capture(fn) -> Promise<string>
+		"capture": func(call goja.FunctionCall) goja.Value {
+			fn, ok := goja.AssertFunction(call.Argument(0))
+			if !ok {
+				panic(vm.NewGoError(fmt.Errorf("capture: argument must be a function")))
+			}
+			// Always exclusive — never tees. Use scoped with { tee: true } to
+			// keep output on the terminal as well.
+			sink := &lockedBuffer{}
+			restore := s.push(destination{kind: destBuffer, w: sink})
+			return callScopedFn(vm, fn, restore, func() goja.Value { return vm.ToValue(sink.String()) })
+		},
 	}
+}
+
+// lockedBuffer is capture()'s sink. The stream mutex already serialises writes,
+// but capture() reads the buffer from the loop after the callback settles, so
+// the buffer carries its own lock to keep that read safe under -race.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// settleAfter runs cleanup once result has settled, then resolves the returned
+// promise with value() (or rejects with result's rejection reason).
+//
+// It handles a sync and an async fn with one path: if result is a thenable we
+// chain onto it, otherwise cleanup runs immediately. Either way the caller gets
+// a Promise back, so `await` is always correct and a synchronous fn cannot leak
+// the redirect.
+func settleAfter(vm *goja.Runtime, result goja.Value, cleanup func(), value func() goja.Value) goja.Value {
+	promise, resolve, reject := vm.NewPromise()
+
+	thenable := false
+	if obj, ok := result.(*goja.Object); ok && obj != nil {
+		if then, ok := goja.AssertFunction(obj.Get("then")); ok {
+			thenable = true
+			onOK := vm.ToValue(func(goja.FunctionCall) goja.Value {
+				cleanup()
+				_ = resolve(value())
+				return goja.Undefined()
+			})
+			onErr := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				cleanup()
+				_ = reject(call.Argument(0))
+				return goja.Undefined()
+			})
+			if _, err := then(obj, onOK, onErr); err != nil {
+				cleanup()
+				_ = reject(vm.NewGoError(err))
+			}
+		}
+	}
+	if !thenable {
+		cleanup()
+		_ = resolve(value())
+	}
+	return vm.ToValue(promise)
+}
+
+// callScopedFn invokes fn, converting a Go-side error from fn(...) — how goja
+// surfaces a synchronous JS throw — into a rejected promise after cleanup has
+// run.
+func callScopedFn(vm *goja.Runtime, fn goja.Callable, cleanup func(), value func() goja.Value) (out goja.Value) {
+	res, err := fn(goja.Undefined())
+	if err != nil {
+		cleanup()
+		promise, _, reject := vm.NewPromise()
+		_ = reject(exceptionValue(vm, err))
+		return vm.ToValue(promise)
+	}
+	return settleAfter(vm, res, cleanup, value)
+}
+
+// exceptionValue recovers the original thrown JS value from a synchronous
+// throw. fn(...) reports a JS throw as a *goja.Exception; vm.ToValue(err)
+// on that would wrap it as an opaque Go value — losing the message and
+// failing `instanceof Error` on the JS side — so unwrap it back to the value
+// the script actually threw. Any other Go-side error (there's currently no
+// path that produces one here) still surfaces as a proper Error object
+// rather than being swallowed.
+func exceptionValue(vm *goja.Runtime, err error) goja.Value {
+	if exc, ok := err.(*goja.Exception); ok {
+		return exc.Value()
+	}
+	return vm.NewGoError(err)
 }
 
 // restoreFn wraps a Go restore closure as a JS function. The closure is already
