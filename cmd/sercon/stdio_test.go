@@ -522,6 +522,103 @@ func TestBinding_ScopedRestoresOnThrow(t *testing.T) {
 			await runtime.stdout.scoped("null", () => { throw new Error("boom"); });
 		} catch (e) {
 			threw = true;
+			// The original Error must round-trip through the rejection, not an
+			// opaque wrapped Go value: pins exceptionValue against a regression
+			// back to vm.ToValue(err) / vm.NewGoError(err).
+			runtime.assert.ok(e instanceof Error, "caught value must be an Error");
+			runtime.assert.ok(e.message === "boom", "message must round-trip, got " + e.message);
+		}
+		runtime.assert.ok(threw, "the throw must propagate");
+		console.log("visible");
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := out.String(), "visible\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// scoped restores even when reading the callback's result's `then` property
+// panics. goja's (*Object).Get panics with a *goja.Exception when a getter
+// throws (a JS getter, or a revoked Proxy) — settleAfter calls Get("then")
+// unguarded, and by then the redirect has already been pushed. callScopedFn
+// must still restore before that panic continues on its way to becoming the
+// script's catchable throw.
+func TestBinding_ScopedRestoresOnThenGetterThrow(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		let threw = false;
+		try {
+			await runtime.stdout.scoped("null", () => ({ get then() { throw new Error("boom"); } }));
+		} catch (e) {
+			threw = true;
+		}
+		runtime.assert.ok(threw, "the throw must propagate");
+		console.log("visible");
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := out.String(), "visible\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// scoped restores when an async callback's returned promise REJECTS (as
+// opposed to TestBinding_ScopedRestoresOnThrow, which covers a synchronous
+// throw) — exercising settleAfter's onErr branch, the other cleanup() call
+// site, with the same fidelity check as the synchronous-throw test.
+func TestBinding_ScopedRestoresOnAsyncReject(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		let threw = false;
+		try {
+			await runtime.stdout.scoped("null", async () => {
+				await runtime.time.sleep(5);
+				throw new Error("boom");
+			});
+		} catch (e) {
+			threw = true;
+			runtime.assert.ok(e instanceof Error, "caught value must be an Error");
+			runtime.assert.ok(e.message === "boom", "message must round-trip, got " + e.message);
+		}
+		runtime.assert.ok(threw, "the throw must propagate");
+		console.log("visible");
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := out.String(), "visible\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// scoped preserves the thrown Error's identity when calling result.then
+// itself throws synchronously — distinct from TestBinding_ScopedRestoresOnAsyncReject
+// (a normal rejection delivered through the onErr callback, which already
+// carried the real value through call.Argument(0)): this hits settleAfter's
+// OTHER cleanup+reject site, `if _, err := then(obj, onOK, onErr); err !=
+// nil`, which used to wrap err in vm.NewGoError directly instead of going
+// through exceptionValue.
+func TestBinding_ScopedRestoresOnThenCallThrow(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		let threw = false;
+		try {
+			await runtime.stdout.scoped("null", () => ({
+				then() { throw new Error("boom"); },
+			}));
+		} catch (e) {
+			threw = true;
+			runtime.assert.ok(e instanceof Error, "caught value must be an Error");
+			runtime.assert.ok(e.message === "boom", "message must round-trip, got " + e.message);
 		}
 		runtime.assert.ok(threw, "the throw must propagate");
 		console.log("visible");
@@ -540,10 +637,15 @@ func TestBinding_ScopedWithOpts(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "scoped.log")
 	eng := newTestEngine(t)
+	// The trailing console.log AFTER the scope closes is the discriminating
+	// part: if the sync-success restore leaked, "after" would still be teed
+	// into the file (proving the redirect was never popped) instead of only
+	// reaching stdout's base.
 	if _, err := eng.Run(testCtx(), "s.ts", `
 		await runtime.stdout.scoped({ file: `+strconv.Quote(path)+` }, { tee: true }, () => {
 			console.log("teed");
 		});
+		console.log("after");
 	`); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -552,9 +654,9 @@ func TestBinding_ScopedWithOpts(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 	if want := "teed\n"; string(got) != want {
-		t.Fatalf("file: got %q want %q", got, want)
+		t.Fatalf("file: got %q want %q — restore must have leaked", got, want)
 	}
-	if want := "teed\n"; out.String() != want {
+	if want := "teed\nafter\n"; out.String() != want {
 		t.Fatalf("stdout: got %q want %q", out.String(), want)
 	}
 }

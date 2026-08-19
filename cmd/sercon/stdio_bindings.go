@@ -124,7 +124,7 @@ func settleAfter(vm *goja.Runtime, result goja.Value, cleanup func(), value func
 			})
 			if _, err := then(obj, onOK, onErr); err != nil {
 				cleanup()
-				_ = reject(vm.NewGoError(err))
+				_ = reject(exceptionValue(vm, err))
 			}
 		}
 	}
@@ -138,7 +138,22 @@ func settleAfter(vm *goja.Runtime, result goja.Value, cleanup func(), value func
 // callScopedFn invokes fn, converting a Go-side error from fn(...) — how goja
 // surfaces a synchronous JS throw — into a rejected promise after cleanup has
 // run.
-func callScopedFn(vm *goja.Runtime, fn goja.Callable, cleanup func(), value func() goja.Value) (out goja.Value) {
+//
+// settleAfter reads result.then via (*goja.Object).Get, which goja documents
+// as panicking with a *goja.Exception when the read itself throws (a JS
+// getter, or a revoked Proxy) — and that read happens after cleanup's push is
+// already live. The deferred recover is the only thing standing between that
+// panic and a permanently leaked redirect: it restores, then re-panics with
+// the same value so the panic still reaches goja's call boundary and becomes
+// the script's catchable throw, same as every other panic(vm.NewGoError(...))
+// site in this file.
+func callScopedFn(vm *goja.Runtime, fn goja.Callable, cleanup func(), value func() goja.Value) goja.Value {
+	defer func() {
+		if r := recover(); r != nil {
+			cleanup() // idempotent — push's restore is sync.Once-guarded
+			panic(r)
+		}
+	}()
 	res, err := fn(goja.Undefined())
 	if err != nil {
 		cleanup()
