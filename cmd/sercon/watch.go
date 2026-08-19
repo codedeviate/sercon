@@ -156,6 +156,15 @@ func runWatchLoop(eng *scriptengine.Engine, scripts []string, scriptRoot string,
 			// Bust the module cache so edited imports are re-read; the
 			// registry otherwise caches compiled bytecode across runs.
 			eng.ResetModuleCache()
+			// Drop the previous run's leftover redirects BEFORE the separator
+			// and the banner. runOne resets at the start of every Run, but
+			// that happens after runOnceForWatch has already written its
+			// header — so an unrestored silence() (or a file redirect) from
+			// run N used to swallow run N+1's separator and its
+			// "--- sercon re-run @ … ---" line. This is not a harmful double
+			// reset: it drops exactly what runOne's own reset would have
+			// dropped a moment later, leaving nothing for it to discard.
+			resetStdio()
 			fmt.Fprintln(out, "")
 			runOnceForWatch(eng, affected, graphs, verbose, out, "re-run", userArgs)
 		case err, ok := <-watcher.Errors:

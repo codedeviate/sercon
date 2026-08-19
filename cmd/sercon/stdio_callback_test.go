@@ -207,6 +207,54 @@ func TestCallback_TeeDoesNotDuplicateOnPop(t *testing.T) {
 	}
 }
 
+// A TEE'd callback whose queue overflows must not write the overflowing bytes
+// beneath twice. writeDest's fall-through and writeAt's tee branch both target
+// the destination beneath, so an unconditional fall-through doubled every
+// overflowing line — breaking the delivered-once half of the contract.
+func TestCallback_TeeOverflowFallsThroughBeneathOnce(t *testing.T) {
+	var base strings.Builder
+	s := newStream("stdout", &base)
+
+	// No live loop, so nothing ever drains: the first 2 lines queue and the
+	// remaining 3 overflow.
+	cb := &lineCallback{queueCap: 2}
+	s.push(destination{kind: destCallback, cb: cb, tee: true})
+	for i := 0; i < 5; i++ {
+		_, _ = s.Write([]byte("line\n"))
+	}
+	s.reset() // tee'd: the pop flush is skipped, so this adds nothing
+
+	// The tee already wrote all 5 writes beneath as they arrived. The 3
+	// overflowing writes must not appear a second time.
+	if got, want := strings.Count(base.String(), "line\n"), 5; got != want {
+		t.Fatalf("base saw %d lines, want %d (base=%q)", got, want, base.String())
+	}
+}
+
+// A TEE'd handler that itself logs — the documented normal case for a tee'd
+// logger — re-enters on every line. That re-entrant write falls through to the
+// destination beneath, and the tee branch writes it beneath as well, so an
+// unconditional fall-through double-printed every single line.
+func TestCallback_TeeReentrantWriteReachesBeneathOnce(t *testing.T) {
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdout.to(line => { console.log("echo:" + line); }, { tee: true });
+		console.log("trigger");
+		await runtime.time.sleep(20);
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// "trigger" reaches the base once, via the tee, at write time. The
+	// handler's own console.log is refused by the re-entrancy guard and reaches
+	// the base once, via the tee again — not twice.
+	if got, want := out.String(), "trigger\necho:trigger\n"; got != want {
+		t.Fatalf("got %q want %q (a repeated \"echo:trigger\" is the double-write)", got, want)
+	}
+}
+
 // A handler that throws on every line must not lose output silently: each
 // thrown line has already left the queue by the time the throw is
 // detected, so it can't also be flushed to the destination beneath the way

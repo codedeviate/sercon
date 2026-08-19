@@ -207,6 +207,19 @@ func run(args []string) int {
 		}
 	}
 
+	// Exit drain. resetStdio() at the START of a Run (see runOne) is what keeps
+	// post-run reporting landing wherever the script left the stream pointed —
+	// but on the LAST (or only) run nothing ever pops that stack again. A line
+	// callback the script left in place then swallows the exit-time writes for
+	// good: tryFeed queues the line, loop.RunOnLoop fails because the loop is
+	// already dead, and the process exits with the default-export JSON and the
+	// PASS/FAIL line still sitting in the queue. Popping the stack here — AFTER
+	// every reporting write, which is exactly what deferring buys — flushes
+	// those queued lines (and any trailing partial line) to the destination
+	// beneath, i.e. the real stream. Cheap and idempotent when the script left
+	// nothing pushed.
+	defer resetStdio()
+
 	if *watch {
 		// --watch is a long-running mode: do the initial run, then
 		// block on fsnotify. It owns its own exit code semantics

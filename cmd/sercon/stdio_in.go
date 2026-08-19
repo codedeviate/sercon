@@ -322,7 +322,16 @@ func parseInSource(vm *goja.Runtime, v goja.Value) (inEntry, error) {
 		return inEntry{}, fmt.Errorf("from: object source needs a `file` or `text` property")
 	}
 	if v.String() == "stdin" {
-		return inEntry{kind: "stdin", r: bufio.NewReader(os.Stdin)}, nil
+		// SHARE the base entry's reader rather than wrapping os.Stdin a second
+		// time. A fresh bufio.Reader over fd 0 cannot see whatever the base
+		// reader has already buffered (so a script that swaps in a fixture and
+		// then pushes "stdin" back to read real input sees a false EOF), and
+		// anything the second reader buffers is discarded when it is popped.
+		//
+		// base.r is assigned once, in stdioInSource's initialiser, and never
+		// mutated — so no stateMu is needed to read it. file stays nil: this
+		// entry does not own os.Stdin and must never close it on pop.
+		return inEntry{kind: "stdin", r: stdioInSource.base.r}, nil
 	}
 	return inEntry{}, fmt.Errorf("from: unknown source %q (want { file }, { text }, or \"stdin\")", v.String())
 }

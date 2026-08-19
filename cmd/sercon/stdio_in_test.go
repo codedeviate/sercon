@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +22,43 @@ func TestStdin_FromStringRead(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	if got, want := val.Export(), "hello\nworld\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// from("stdin") pushes the REAL process stdin as a new entry — documented as
+// exactly that — so it must share the base entry's reader rather than wrapping
+// fd 0 a second time. A second bufio.Reader cannot see what the base reader has
+// already buffered (so a script that swaps in a fixture and then pushes "stdin"
+// back to read real input saw a false EOF), and anything it buffers itself is
+// thrown away when it is popped.
+func TestStdin_FromStdinSharesTheBaseReader(t *testing.T) {
+	// Swap the whole source so "the real stdin" is a deterministic fixture
+	// rather than whatever fd 0 happens to be under `go test`.
+	old := stdioInSource
+	stdioInSource = &inSource{base: inEntry{kind: "stdin", r: bufio.NewReader(strings.NewReader("a\nb\nc\n"))}}
+	t.Cleanup(func() {
+		stdioInSource.reset()
+		stdioInSource = old
+	})
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		const first = await runtime.stdin.readLine();
+		const restore = runtime.stdin.from("stdin");
+		const second = await runtime.stdin.readLine();
+		restore();
+		const third = await runtime.stdin.readLine();
+		const show = (v) => v === null ? "EOF" : v;
+		export default [show(first), show(second), show(third)].join("|");
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// b, not EOF: the pushed entry continues the same reader. And c afterwards:
+	// popping it must not have discarded buffered bytes (nor closed os.Stdin —
+	// the entry owns no file).
+	if got, want := val.Export(), "a|b|c"; got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }

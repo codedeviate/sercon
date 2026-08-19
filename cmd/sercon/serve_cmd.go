@@ -68,7 +68,10 @@ func runServe(args []string) int {
 		DisableConsole: true, // CLI provides its own clean `console` (console.go)
 	}
 	if *verbose {
-		engOpts.Verbose = os.Stderr
+		// Through the registry, like main.go's run() and run_cmd.go's runRun():
+		// engine tracing is script-lifetime output and a served script must be
+		// able to redirect it along with everything else.
+		engOpts.Verbose = stdioErrStream
 	}
 	engOpts.ModuleLoader = favroLoader(paymentprovidersLoader(engOpts.ModuleLoader))
 	eng := scriptengine.New(engOpts)
@@ -92,6 +95,13 @@ func runServe(args []string) int {
 		serveSMTPLogger = nil
 		serveReadyWriter = nil
 	}()
+
+	// Exit drain — see the matching defer in main.go's run(). serve has exactly
+	// one run and no next-run reset to lean on, so without this a line callback
+	// the script left pushed swallows the FAIL line on the way out (the loop
+	// that would have delivered it is gone by then). Deferred, so it runs after
+	// that write.
+	defer resetStdio()
 
 	// Signal handling for graceful shutdown.
 	var signaledShutdown atomic.Bool

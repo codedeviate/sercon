@@ -26,11 +26,15 @@ func captureStdout(t *testing.T, fn func()) string {
 	var buf bytes.Buffer
 	oldOut := stdioOutStream
 	stdioOutStream = newStream("stdout", &buf)
+	// Deferred, so a t.Fatal (runtime.Goexit) inside fn() cannot leave the
+	// package var swapped for every later test in the package. Releases
+	// anything fn() pushed and never popped before dropping the swapped-in
+	// stream (see withCapturedStdio's matching comment).
+	defer func() {
+		stdioOutStream.reset()
+		stdioOutStream = oldOut
+	}()
 	fn()
-	// Release anything fn() pushed and never popped before dropping the
-	// swapped-in stream (see withCapturedStdio's matching comment).
-	stdioOutStream.reset()
-	stdioOutStream = oldOut
 	return buf.String()
 }
 
@@ -71,6 +75,49 @@ func TestRunOutput_DefaultPrintsFail(t *testing.T) {
 	}
 	if code == exitOK {
 		t.Errorf("failing script should yield non-OK exit code")
+	}
+}
+
+// A script that leaves a line callback pushed must still get its
+// `export default` result and its PASS line out. Nothing pops that entry after
+// the last run, so the CLI's post-run writes were enqueued for a handler that
+// could never run (the loop is already dead, loop.RunOnLoop returns false) and
+// the process exited with them still in the queue. run()'s deferred
+// resetStdio() pops the entry after the reporting writes, which flushes the
+// queue to the destination beneath — the real stream.
+//
+// Deliberately does NOT use captureStdout: that helper reset()s the swapped-in
+// stream before returning the buffer, which would drain the callback itself and
+// make this test pass with or without the fix. The buffer is snapshotted the
+// moment run() returns instead.
+func TestRunOutput_PostRunDrainFlushesLineCallback(t *testing.T) {
+	sc := writeScript(t, "cb.ts", `
+		runtime.stdout.to(line => {});
+		export default { answer: 42 };
+	`)
+
+	var buf bytes.Buffer
+	oldOut := stdioOutStream
+	stdioOutStream = newStream("stdout", &buf)
+	var got string
+	var code int
+	func() {
+		defer func() {
+			stdioOutStream.reset()
+			stdioOutStream = oldOut
+		}()
+		code = run([]string{"--verbose", sc})
+		got = buf.String() // before the harness's own reset()
+	}()
+
+	if code != exitOK {
+		t.Fatalf("exit code %d, want %d", code, exitOK)
+	}
+	if !strings.Contains(got, `{"answer":42}`) {
+		t.Errorf("the default-export result must survive a left-behind line callback; got:\n%q", got)
+	}
+	if !strings.Contains(got, "PASS ") {
+		t.Errorf("the PASS line must survive a left-behind line callback; got:\n%q", got)
 	}
 }
 

@@ -73,6 +73,13 @@ func runRun(args []string) int {
 		return exitUsage
 	}
 
+	// Exit drain — see the matching defer in main.go's run(). Without it a line
+	// callback the script left pushed swallows this subcommand's FAIL line and
+	// the default-export JSON, because the loop that would have delivered them
+	// is already gone. Deferred so it runs after those writes have been handed
+	// to the stream, not before.
+	defer resetStdio()
+
 	if err := runOne(eng, script, *verbose, false, userArgs); err != nil {
 		label := script
 		if script == "-" {

@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/codedeviate/sercon/pkg/scriptengine"
@@ -34,15 +36,24 @@ func withCapturedStdio(t *testing.T) (out, errb *bytes.Buffer, restore func()) {
 	oldOut, oldErr := stdioOutStream, stdioErrStream
 	stdioOutStream = newStream("stdout", out)
 	stdioErrStream = newStream("stderr", errb)
-	return out, errb, func() {
-		// Release whatever the script pushed and never popped (an open file
-		// from toFile, eventually a callback goroutine once Task 4 lands)
-		// before dropping the swapped-in stream — closeDest only runs via
-		// reset()/pop(), never by falling out of scope.
-		stdioOutStream.reset()
-		stdioErrStream.reset()
-		stdioOutStream, stdioErrStream = oldOut, oldErr
+	var once sync.Once
+	restore = func() {
+		once.Do(func() {
+			// Release whatever the script pushed and never popped (an open
+			// file from toFile, a live line callback) before dropping the
+			// swapped-in stream — closeDest only runs via reset()/pop(),
+			// never by falling out of scope.
+			stdioOutStream.reset()
+			stdioErrStream.reset()
+			stdioOutStream, stdioErrStream = oldOut, oldErr
+		})
 	}
+	// Also registered as a Cleanup, so the package vars are restored even if a
+	// test forgets its `defer restore()` or a helper t.Fatals before reaching
+	// it. sync.Once makes the second call a no-op rather than resetting the
+	// real streams a second time.
+	t.Cleanup(restore)
+	return out, errb, restore
 }
 
 // A bare stream writes to the process stream it was constructed with.
@@ -307,6 +318,113 @@ func TestDest_CrossStreamFoldHasNoCycle(t *testing.T) {
 	}
 	if outDecoy.Len() != 0 {
 		t.Fatalf("fold must bypass stdout's own stack, got %q", outDecoy.String())
+	}
+}
+
+// failingWriter fails its first `failures` writes with a fixed error, then
+// records everything handed to it afterwards. Lets a test drive stream.failover
+// deterministically without needing a real full disk.
+type failingWriter struct {
+	failures int
+	got      strings.Builder
+}
+
+func (w *failingWriter) Write(p []byte) (int, error) {
+	if w.failures > 0 {
+		w.failures--
+		return 0, errors.New("simulated write failure")
+	}
+	return w.got.Write(p)
+}
+
+// A failed write on the BASE destination must not silence the process stream.
+// There is nothing beneath the base to fall over to, and reset() is
+// truncateTo(0), which never touches base — so demoting it to destNull (as an
+// earlier version did unconditionally) killed stdout for the life of the
+// process, not even recoverable by runtime.stdout.reset() or the between-Run
+// resetStdio(). One transient error would take out a whole --watch session.
+func TestFailover_BaseKeepsWritingAfterATransientError(t *testing.T) {
+	finish := captureRealStderr(t)
+
+	w := &failingWriter{failures: 1}
+	s := newStream("stdout", w)
+	_, _ = s.Write([]byte("during-the-failure\n")) // this one is lost, unavoidably
+	_, _ = s.Write([]byte("kept-1\n"))
+	_, _ = s.Write([]byte("kept-2\n"))
+	s.reset() // the recovery must not depend on a reset — nor be undone by one
+	_, _ = s.Write([]byte("kept-3\n"))
+	diag := finish()
+
+	if got, want := w.got.String(), "kept-1\nkept-2\nkept-3\n"; got != want {
+		t.Fatalf("later writes must still reach the underlying writer: got %q want %q", got, want)
+	}
+	if s.base.kind != destStream {
+		t.Fatalf("base kind is %v; the process stream must never be demoted to destNull", s.base.kind)
+	}
+	// Reported once (the d.failed flag), and worded as a write failure — at
+	// level 0 there is no redirect to name, so "redirect to stdout failed"
+	// would describe something that does not exist.
+	if n := strings.Count(diag, "sercon: stdout write failed:"); n != 1 {
+		t.Fatalf("got %d base-write diagnostics, want exactly 1 (stderr=%q)", n, diag)
+	}
+	if strings.Contains(diag, "redirect to") {
+		t.Fatalf("base failure must not be described as a redirect: %q", diag)
+	}
+}
+
+// A failed write on a STACKED destination falls through to the destination
+// beneath it, and reports once — not once per line.
+func TestFailover_StackedFallsThroughBeneathAndReportsOnce(t *testing.T) {
+	finish := captureRealStderr(t)
+
+	var base strings.Builder
+	s := newStream("stdout", &base)
+	bad := &failingWriter{failures: 100} // never recovers
+	// Shaped like a toFile redirect onto a full disk (file left nil: this entry
+	// owns no *os.File for closeDest to close).
+	s.push(destination{kind: destFile, w: bad, path: "/tmp/full-disk.log"})
+
+	_, _ = s.Write([]byte("a\n"))
+	_, _ = s.Write([]byte("b\n"))
+	_, _ = s.Write([]byte("c\n"))
+	s.reset()
+	diag := finish()
+
+	// The failing write itself reaches the destination beneath — here the base,
+	// since this is the only redirect. The entry is then taken out of service
+	// (destNull), so later writes to it are discarded rather than retried; see
+	// the note in the final-fix report about that asymmetry, which this test
+	// pins as today's behaviour rather than endorsing it.
+	if got, want := base.String(), "a\n"; got != want {
+		t.Fatalf("base: got %q want %q", got, want)
+	}
+	if n := strings.Count(diag, "failed:"); n != 1 {
+		t.Fatalf("got %d diagnostics for 3 failing writes, want exactly 1 (stderr=%q)", n, diag)
+	}
+	if !strings.Contains(diag, "redirect to /tmp/full-disk.log failed:") {
+		t.Fatalf("a stacked failure should name the redirect: %q", diag)
+	}
+}
+
+// A TEE'd destination whose own write fails must write that line beneath
+// exactly once: failover used to fall through to level-1 and then writeAt's
+// tee branch wrote the same bytes beneath again, so the failing line appeared
+// twice ("a\na\nb\n").
+func TestFailover_TeeWritesTheFailingLineBeneathOnce(t *testing.T) {
+	finish := captureRealStderr(t)
+
+	var base strings.Builder
+	s := newStream("stdout", &base)
+	bad := &failingWriter{failures: 100}
+	s.push(destination{kind: destBuffer, w: bad, tee: true})
+
+	_, _ = s.Write([]byte("a\n"))
+	_, _ = s.Write([]byte("b\n"))
+	s.reset()
+	_ = finish()
+
+	if got, want := base.String(), "a\nb\n"; got != want {
+		t.Fatalf("base: got %q want %q (a repeated \"a\\n\" is the double-write)", got, want)
 	}
 }
 
