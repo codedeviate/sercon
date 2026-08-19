@@ -239,9 +239,16 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 		// stream, never onto whatever the other handle currently has pushed —
 		// that is what makes a stdout<->stderr cycle impossible by
 		// construction. Covers console.*, runtime.log, the default-export
-		// JSON, PASS/FAIL, --verbose and the TUI non-TTY fallback — not child
-		// processes started via services.exec.*, which inherit the raw
-		// process fds.
+		// JSON, PASS/FAIL, --verbose and the TUI non-TTY fallback. A child
+		// process is out of scope for a different reason, not a uniform one:
+		// services.exec.shell/.run, services.git, services.gh and
+		// services.typst.* all CAPTURE the child's output into a buffer
+		// handed back to the script, so the child never touches sercon's own
+		// streams — redirection is simply irrelevant to it, though a script
+		// that then prints the captured string itself has that print follow
+		// the redirect like any other write. Only services.exec.interactive
+		// genuinely bypasses redirection, by inheriting fd 1/2 (and, on the
+		// input side, fd 0) directly.
 		"stdout.to": {
 			Summary: "Point stdout at a target and return a restore function. The target is \"stdout\"/\"stderr\" (fold onto that process stream), \"null\" (discard), { file, append? } (a file), or a function (called with each completed line). Redirects nest: the restore pops its own entry, so nested and out-of-order restores both behave, and calling it twice is a no-op.",
 			Params: []scriptengine.Param{
@@ -250,7 +257,7 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "() => void",
 			Returns:    "() => void — an idempotent restore function that removes this redirect.",
-			Errors:     "Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the \"null\" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr.",
+			Errors:     "Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the \"null\" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.log while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.",
 			Example:    "const restore = runtime.stdout.to({ file: \"/tmp/out.log\" }, { tee: true });\nconsole.log(\"goes to both\");\nrestore();",
 		},
 		"stdout.toFile": {
@@ -316,7 +323,7 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			},
 			ReturnType: "() => void",
 			Returns:    "() => void — an idempotent restore function that removes this redirect.",
-			Errors:     "Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the \"null\" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr.",
+			Errors:     "Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the \"null\" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.error while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.",
 			Example:    "const restore = runtime.stderr.to(\"stdout\");\nconsole.error(\"now on stdout too\");\nrestore();",
 		},
 		"stderr.toFile": {

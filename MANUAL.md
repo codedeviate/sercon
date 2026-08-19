@@ -1084,13 +1084,34 @@ writers: `console.*`, `runtime.log`, `text.str.printf`, the default-export
 JSON printed after a run, the `sercon run` subcommand's own `FAIL`/verbose
 output, the `--watch` banner, the TUI's non-TTY fallback renderer, and —
 notably — `sercon serve`'s `READY` line and its access log, so a served
-script can redirect its own supervisor's readiness line and request log. It
-does **not** cover child processes: anything launched through
-`services.exec.*` (or `services.git`/`services.gh`/etc., which shell out)
-inherits the real process file descriptors directly, untouched by any script-
-side redirect. Interactive input has the same boundary on the input side: the
-TUI's key-input reader and `services.exec.interactive` read file descriptor 0
-directly, bypassing `runtime.stdin` entirely.
+script can redirect its own supervisor's readiness line and request log.
+
+A child process is a different story, and not a uniform one.
+`services.exec.shell`/`.run`, `services.git`, `services.gh`, and
+`services.typst.*` all **capture** the child's output into a buffer that
+they hand back to the script — the child never touches sercon's own process
+streams, so redirection is simply irrelevant to it either way; if the
+script then prints that captured string itself, *that* print follows the
+redirect like any other write. What genuinely bypasses redirection is a
+child that **inherits** file descriptor 1/2 directly:
+`services.exec.interactive`, the "wire this subprocess to my real terminal"
+primitive (`ssh`, `docker exec -it`, interactive REPLs and pagers). The same
+boundary holds on the input side: the TUI's key-input reader and
+`services.exec.interactive` read file descriptor 0 directly, so a
+`runtime.stdin` source swap does not reach them either. The rule to
+remember: redirection covers what **sercon itself** reads/writes, not a
+separate process holding its own copy of the fd.
+
+**A function target's delivery has its own caveats.** Lines reach the
+handler on a later tick, in write order, never synchronously with the write
+that produced them. The pending-line queue is bounded (1024 lines); on
+overflow, or on a write that re-enters the handler (the handler's own
+`console.log` while it is running), the write falls through to the
+destination *beneath* the callback instead of blocking or being lost twice.
+Any line still queued when the redirect is popped or the run ends is written
+to that same destination beneath rather than delivered late. A handler that
+throws has that one line reported once on the real stderr — not retried,
+not recovered — without aborting the rest of the run.
 
 **`FAIL`/`PASS` stay on stdout; `--verbose`'s duration line is on stderr** —
 and both follow whatever the script left `runtime.stdout`/`runtime.stderr`
@@ -1189,6 +1210,37 @@ for await (const line of runtime.stdin.lines()) {
   already drained before the script starts running, so `runtime.stdin.lines()`
   ends immediately unless a source has been swapped in with
   `from`/`fromFile`/`fromString`.
+
+##### 5.2.2.5 Route each line to your own handler
+
+Send every line straight to your own logger instead of a file, so a script's
+output feeds a webhook, a structured logger, or a test spy.
+
+```ts
+const seen: string[] = [];
+const stop = runtime.stdout.to((line) => {
+  seen.push(line);
+});
+console.log("first");
+console.log("second");
+await runtime.time.sleep(0); // delivery is queued, not synchronous
+stop();
+runtime.assert.equal(seen.join(","), "first,second");
+```
+
+**Notes**
+- Delivery is queued and asynchronous: a line lands on a later tick, never in
+  the same call as the `console.log` that produced it. Any awaited
+  microtask/macrotask (even `time.sleep(0)`) is enough to let it drain before
+  inspecting the result.
+- The pending-line queue is bounded (1024 lines). On overflow — or on a write
+  that re-enters the handler, e.g. the handler itself calling `console.log` —
+  the write falls through to whatever destination is beneath the callback
+  instead of blocking or being silently dropped.
+- Any line still queued when the redirect is popped or the run ends is
+  written to the destination beneath rather than delivered to the handler.
+- A handler that throws has that one line reported once on the real
+  stderr (not retried); the rest of the run continues.
 
 ### 5.3 `crypto`
 
@@ -17454,7 +17506,7 @@ Point stderr at a target and return a restore function. The target is "stdout"/"
 
 **Returns:** () => void — an idempotent restore function that removes this redirect.
 
-**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr.
+**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.error while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
 
 ```ts
 const restore = runtime.stderr.to("stdout");
@@ -17800,7 +17852,7 @@ Point stdout at a target and return a restore function. The target is "stdout"/"
 
 **Returns:** () => void — an idempotent restore function that removes this redirect.
 
-**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr.
+**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.log while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
 
 ```ts
 const restore = runtime.stdout.to({ file: "/tmp/out.log" }, { tee: true });
