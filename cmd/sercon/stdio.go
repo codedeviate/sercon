@@ -29,4 +29,5 @@ func stdioErr() io.Writer { return stdioErrStream }
 func resetStdio() {
 	stdioOutStream.reset()
 	stdioErrStream.reset()
+	stdioInSource.reset()
 }

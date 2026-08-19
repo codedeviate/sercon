@@ -431,6 +431,7 @@ func registerSurface(e *scriptengine.Engine) error {
 			"openAvailable": openAvailable(),
 			"stdout":        outStreamBinding(vm, loop, e, stdioOutStream),
 			"stderr":        outStreamBinding(vm, loop, e, stdioErrStream),
+			"stdin":         inStreamBinding(vm, loop, e),
 		}
 	}); err != nil {
 		return err
