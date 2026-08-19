@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -24,14 +26,18 @@ const lineQueueCap = 1024
 // late but strictly ordered.
 //
 // The guarantee this establishes: a line is delivered to the handler while
-// the loop is turning, and otherwise written to the destination beneath —
-// never dropped. There is deliberately no HoldRun keeping the run alive on
-// the queue's behalf (an earlier version of this file parked one, but
-// acquiring it from tryFeed — which runs off-loop as often as not — meant
-// touching the shared goja.Runtime from a foreign goroutine). The accepted
-// cost is that a line written moments before the run ends reaches the
-// destination beneath rather than the handler: see stop() and the
-// destCallback case in stream.closeDest.
+// the loop is turning; otherwise it is written to the destination beneath —
+// never silently dropped. A line whose handler throws is the one exception to
+// "delivered": it has already left the queue, so it cannot also be flushed
+// beneath (see reportThrow) — that throw is reported once on the real
+// process stderr and not retried, so the failure is visible even though the
+// line's content isn't recovered. There is deliberately no HoldRun keeping
+// the run alive on the queue's behalf (an earlier version of this file
+// parked one, but acquiring it from tryFeed — which runs off-loop as often
+// as not — meant touching the shared goja.Runtime from a foreign goroutine).
+// The accepted cost is that a line written moments before the run ends
+// reaches the destination beneath rather than the handler: see stop() and
+// the destCallback case in stream.closeDest.
 type lineCallback struct {
 	mu       sync.Mutex
 	buf      []byte   // bytes since the last newline
@@ -40,16 +46,20 @@ type lineCallback struct {
 	draining bool // a drain is scheduled or running
 	inCall   bool // the handler is executing right now (re-entrancy guard)
 	stopped  bool
+	reported bool // a handler throw has already been reported on stderr
 
-	fn   goja.Callable
-	loop *eventloop.EventLoop
+	fn         goja.Callable
+	loop       *eventloop.EventLoop
+	streamName string // "stdout" | "stderr", for the reportThrow diagnostic
 }
 
 // callbackDest builds a destCallback entry from a JS function target.
-func callbackDest(loop *eventloop.EventLoop, fn goja.Callable, tee bool) (destination, error) {
+// streamName identifies the stream this is being pushed onto ("stdout" |
+// "stderr"), used only to name the stream in a reportThrow diagnostic.
+func callbackDest(loop *eventloop.EventLoop, streamName string, fn goja.Callable, tee bool) (destination, error) {
 	return destination{
 		kind: destCallback,
-		cb:   &lineCallback{fn: fn, loop: loop, queueCap: lineQueueCap},
+		cb:   &lineCallback{fn: fn, loop: loop, queueCap: lineQueueCap, streamName: streamName},
 		tee:  tee,
 	}, nil
 }
@@ -96,7 +106,15 @@ func (c *lineCallback) tryFeed(p []byte) bool {
 	c.mu.Unlock()
 
 	if needDrain && loop != nil {
-		loop.RunOnLoop(func(vm *goja.Runtime) { c.drain(vm) })
+		if !loop.RunOnLoop(func(vm *goja.Runtime) { c.drain(vm) }) {
+			// The loop is already terminated: nothing will ever drain this
+			// queue. Clear draining so a later tryFeed (unlikely once the
+			// loop is gone, but not impossible mid-teardown) doesn't find
+			// it permanently latched true and skip scheduling forever.
+			c.mu.Lock()
+			c.draining = false
+			c.mu.Unlock()
+		}
 	}
 	return true
 }
@@ -125,13 +143,38 @@ func (c *lineCallback) drain(vm *goja.Runtime) {
 				c.mu.Unlock()
 				_ = recover() // a handler that throws loses that line, nothing else
 			}()
-			_, _ = fn(goja.Undefined(), vm.ToValue(line))
+			if _, err := fn(goja.Undefined(), vm.ToValue(line)); err != nil {
+				c.reportThrow(err)
+			}
 		}()
 	}
 }
 
+// reportThrow surfaces a handler's JS throw once per entry, on the real
+// process stderr — never through the redirectable stream. The line that
+// triggered it has already left the queue by the time AssertFunction's
+// wrapper returns the error, so it cannot be flushed to the destination
+// beneath the way a still-queued or partial line can; report-and-drop is the
+// only safe remedy. Routing it back through the stream instead would need
+// s.Write, which re-enters this same callback — and by then the deferred
+// inCall reset in drain has already run, so the re-entrancy guard would be
+// false and it would recurse into the handler that just threw.
+func (c *lineCallback) reportThrow(err error) {
+	c.mu.Lock()
+	already := c.reported
+	c.reported = true
+	name := c.streamName
+	c.mu.Unlock()
+	if already {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "sercon: %s callback handler threw: %v\n", name, err)
+}
+
 // takePartial removes and returns any buffered bytes that never got a newline.
-// The stream writes them to the destination beneath when this entry is popped.
+// The stream writes them to the destination beneath when this entry is popped
+// — unless the entry is teed, in which case those bytes already reached the
+// destination beneath at write time and re-emitting them would duplicate.
 func (c *lineCallback) takePartial() []byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -143,9 +186,9 @@ func (c *lineCallback) takePartial() []byte {
 // stop marks the callback dead and returns any complete lines that were
 // queued but never delivered, oldest first. There is no live event loop
 // guarantee here (see the package doc comment above), so the stream writes
-// these to the destination beneath rather than losing them — the same
-// deal takePartial makes for a trailing partial line, and closeDest applies
-// both in queue order: whole lines first, then the partial.
+// these to the destination beneath rather than losing them — unless the
+// entry is teed, in which case the raw bytes already reached the destination
+// beneath at write time (see closeDest's destCallback case for the guard).
 //
 // Called with the stream's mutex held (closeDest is only reached from
 // pop()/reset(), both locked), so this must not block or call into JS.

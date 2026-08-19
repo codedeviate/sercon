@@ -15,7 +15,7 @@ import (
 func outStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengine.Engine, s *stream) map[string]any {
 	return map[string]any{
 		"to": func(call goja.FunctionCall) goja.Value {
-			d, err := parseStreamTarget(vm, loop, e, call.Argument(0), teeOpt(call.Argument(1)))
+			d, err := parseStreamTarget(vm, loop, e, s.base.name, call.Argument(0), teeOpt(call.Argument(1)))
 			if err != nil {
 				panic(vm.NewGoError(err))
 			}
@@ -70,19 +70,22 @@ func boolOpt(v goja.Value, name string) bool {
 }
 
 // parseStreamTarget turns a StreamTarget JS value into a destination.
+// streamName ("stdout" | "stderr") identifies the stream this target is
+// being pushed onto — only used to name the stream in a function target's
+// reportThrow diagnostic (see stdio_callback.go).
 //
 //	"stdout" | "stderr"          -> fold onto that PROCESS stream
 //	"null"                       -> discard
 //	{ file, append? }            -> a file
 //	(line: string) => void       -> a JS line handler
-func parseStreamTarget(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengine.Engine, target goja.Value, tee bool) (destination, error) {
+func parseStreamTarget(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengine.Engine, streamName string, target goja.Value, tee bool) (destination, error) {
 	if target == nil || goja.IsUndefined(target) || goja.IsNull(target) {
 		return destination{}, fmt.Errorf("to: a target is required (\"stdout\" | \"stderr\" | \"null\" | { file } | function)")
 	}
 
 	// A callable target is a line handler.
 	if fn, ok := goja.AssertFunction(target); ok {
-		return callbackDest(loop, fn, tee)
+		return callbackDest(loop, streamName, fn, tee)
 	}
 
 	if obj, ok := target.(*goja.Object); ok {

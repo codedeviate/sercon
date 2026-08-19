@@ -174,16 +174,26 @@ func (s *stream) closeDest(i int) {
 		// lines first (oldest first, as they'd have been delivered), then
 		// the trailing partial line.
 		//
+		// Both flushes are skipped when the entry is teed: writeAt's tee
+		// branch already wrote these same raw bytes beneath at write time
+		// (see the tee branch below), so re-emitting them here would
+		// duplicate every line still queued when the run ends — up to
+		// queueCap of them.
+		//
 		// stop() and takePartial() are called here with s.mu held (closeDest
 		// is only ever reached from pop()/reset(), both locked). lineCallback
 		// must not re-enter the stream (no Write/push/pop back onto s) or
 		// block waiting on the event loop from either method, or this
 		// deadlocks.
-		for _, line := range d.cb.stop() {
-			s.writeAt(i, append([]byte(line), '\n'))
-		}
-		if rest := d.cb.takePartial(); len(rest) > 0 {
-			s.writeAt(i, append(rest, '\n'))
+		leftover := d.cb.stop()
+		rest := d.cb.takePartial()
+		if !d.tee {
+			for _, line := range leftover {
+				s.writeAt(i, append([]byte(line), '\n'))
+			}
+			if len(rest) > 0 {
+				s.writeAt(i, append(rest, '\n'))
+			}
 		}
 	}
 }

@@ -1,9 +1,58 @@
 package main
 
 import (
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
+
+// queueLen reports how many complete lines are currently queued, under
+// cb.mu. Test-only: several Go-level tests drive tryFeed directly with a
+// nil loop (so no drain ever runs) and need to observe the queue; reading
+// cb.queue straight from the test is safe only by accident of those tests
+// being single-goroutine, and stops being safe the moment a live-loop
+// variant is added.
+func (c *lineCallback) queueLen() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.queue)
+}
+
+// queuedLine returns the i'th queued line (0 == oldest), under the same
+// lock as queueLen. Test-only; see queueLen.
+func (c *lineCallback) queuedLine(i int) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.queue[i]
+}
+
+// captureRealStderr redirects the process's real os.Stderr — not the
+// redirectable stdioErrStream — to a pipe for the rest of the test.
+// reportThrow (stdio_callback.go) writes there directly and deliberately
+// bypasses the stream, so verifying it means capturing the OS-level file
+// descriptor rather than swapping the package registry the way
+// withCapturedStdio does. Call the returned finish() once, after the code
+// under test has run, to restore os.Stderr and get everything written to it.
+func captureRealStderr(t *testing.T) (finish func() string) {
+	t.Helper()
+	old := os.Stderr
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = pw
+	return func() string {
+		os.Stderr = old
+		_ = pw.Close()
+		data, err := io.ReadAll(pr)
+		_ = pr.Close()
+		if err != nil {
+			t.Fatalf("read captured stderr: %v", err)
+		}
+		return string(data)
+	}
+}
 
 // A function target receives complete lines, in order, without the newline.
 func TestCallback_ReceivesLinesInOrder(t *testing.T) {
@@ -41,14 +90,14 @@ func TestCallback_BuffersPartialLine(t *testing.T) {
 	// Two partial writes that together make one line: nothing may be queued
 	// until the newline arrives, and nothing may fall through to the base.
 	_, _ = s.Write([]byte("half-"))
-	if got := len(cb.queue); got != 0 {
+	if got := cb.queueLen(); got != 0 {
 		t.Fatalf("queued %d lines before the newline, want 0", got)
 	}
 	_, _ = s.Write([]byte("a-line\n"))
-	if got, want := len(cb.queue), 1; got != want {
+	if got, want := cb.queueLen(), 1; got != want {
 		t.Fatalf("queued %d lines, want %d", got, want)
 	}
-	if got, want := cb.queue[0], "half-a-line"; got != want {
+	if got, want := cb.queuedLine(0), "half-a-line"; got != want {
 		t.Fatalf("queued %q want %q", got, want)
 	}
 	if base.Len() != 0 {
@@ -130,5 +179,62 @@ func TestCallback_QueuedLinesFlushedBeneathOnPop(t *testing.T) {
 
 	if got, want := base.String(), "one\ntwo\nthree\ntrailing-partial\n"; got != want {
 		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+// A tee'd callback already writes each write's raw bytes to the destination
+// beneath as they arrive (stream.writeAt's tee branch). Whatever is still
+// queued or buffered when the entry is popped must NOT be flushed beneath a
+// second time — that would duplicate every undelivered line, up to
+// queueCap of them.
+func TestCallback_TeeDoesNotDuplicateOnPop(t *testing.T) {
+	var base strings.Builder
+	s := newStream("stdout", &base)
+
+	// A callback with no live loop never drains, so these lines and the
+	// trailing partial stay queued/buffered until pop — the exact window
+	// the tee-and-flush-beneath overlap would double-write in.
+	cb := &lineCallback{queueCap: lineQueueCap}
+	restore := s.push(destination{kind: destCallback, cb: cb, tee: true})
+	_, _ = s.Write([]byte("one\ntwo\n"))
+	_, _ = s.Write([]byte("trailing-partial"))
+	restore()
+
+	// The tee already wrote both writes' raw bytes beneath as they
+	// happened; popping must add nothing further.
+	if got, want := base.String(), "one\ntwo\ntrailing-partial"; got != want {
+		t.Fatalf("got %q want %q (a repeat of \"one\\ntwo\\n\" or \"trailing-partial\\n\" means a duplicate)", got, want)
+	}
+}
+
+// A handler that throws on every line must not lose output silently: each
+// thrown line has already left the queue by the time the throw is
+// detected, so it can't also be flushed to the destination beneath the way
+// a still-queued or partial line can. Exactly one diagnostic reaches the
+// real process stderr — not the redirectable stream, and not once per
+// thrown line — no matter how many lines throw.
+func TestCallback_ThrowingHandlerReportsOnceOnRealStderr(t *testing.T) {
+	_, _, restoreStdio := withCapturedStdio(t)
+	defer restoreStdio()
+	finish := captureRealStderr(t)
+
+	eng := newTestEngine(t)
+	if _, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdout.to(line => { throw new Error("boom: " + line); });
+		console.log("one");
+		console.log("two");
+		console.log("three");
+		await runtime.time.sleep(10);
+	`); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	got := finish()
+	const marker = "sercon: stdout callback handler threw:"
+	if n := strings.Count(got, marker); n != 1 {
+		t.Fatalf("got %d diagnostic lines for 3 throws, want exactly 1 (stderr=%q)", n, got)
+	}
+	if !strings.Contains(got, "boom: one") {
+		t.Fatalf("diagnostic should report the first (oldest-delivered) throw, got %q", got)
 	}
 }
