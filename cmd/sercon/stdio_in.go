@@ -29,20 +29,42 @@ type inEntry struct {
 // inSource is the stdin side of the registry: a stack of sources with one
 // bufio.Reader over the effective one.
 //
-// A single mutex serialises reads as well as source swaps, so two concurrent
-// readLine() calls cannot interleave halves of a line.
+// Two separate mutexes, deliberately not one:
+//
+//   - stateMu guards the stack/nextID structure (push, pop, reset,
+//     sourceInfo). It is only ever held briefly, never across a blocking
+//     read.
+//   - readMu serialises the actual blocking reads (read, readLine) against
+//     each other, so two concurrent readLine() calls cannot interleave
+//     halves of a line.
+//
+// A single shared mutex across both would mean a blocking read against the
+// real process stdin (a TTY, or a pipe that's never closed) parks holding
+// it — and resetStdio() (called at the START of every Run, including
+// --watch re-runs) would then hang forever waiting for stateMu, since it
+// runs on the main goroutine. Splitting the locks means reset/pop/push/
+// source() never wait on an in-flight read: a reset or pop that closes a
+// file out from under a concurrent read just makes that read error out
+// (or, for the real stdin, leaves it parked — see read()'s doc — but
+// without blocking anything else).
+//
+// read()/readLine() snapshot the active entry's *bufio.Reader under stateMu
+// before starting the actual (unlocked-by-stateMu) I/O, then serialise the
+// I/O itself under readMu.
 type inSource struct {
-	mu     sync.Mutex
-	base   inEntry
-	stack  []inEntry
-	nextID uint64
+	readMu sync.Mutex
+
+	stateMu sync.Mutex
+	base    inEntry
+	stack   []inEntry
+	nextID  uint64
 }
 
 var stdioInSource = &inSource{
 	base: inEntry{kind: "stdin", r: bufio.NewReader(os.Stdin)},
 }
 
-// active returns the effective entry. Called with mu held.
+// active returns the effective entry. Called with stateMu held.
 func (s *inSource) active() *inEntry {
 	if n := len(s.stack); n > 0 {
 		return &s.stack[n-1]
@@ -50,24 +72,36 @@ func (s *inSource) active() *inEntry {
 	return &s.base
 }
 
+// activeReader snapshots the effective entry's reader under stateMu, for
+// callers that then read from it without holding stateMu (see the type doc).
+func (s *inSource) activeReader() *bufio.Reader {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.active().r
+}
+
 // read drains the active source.
 //
 // Known limitation: a blocking read against the real process stdin cannot be
 // interrupted by the run's deadline — the run is still killed, but this
 // goroutine parks until the pipe closes. File and string sources have no such
-// issue, since they never block indefinitely.
+// issue, since they never block indefinitely. Because the lock held across
+// that block is readMu, not stateMu, a stuck read never blocks push/pop/
+// reset/source() on later Runs — see the type doc.
 func (s *inSource) read() ([]byte, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return io.ReadAll(s.active().r)
+	r := s.activeReader()
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+	return io.ReadAll(r)
 }
 
 // readLine returns the next line without its newline. ok is false at EOF. A
 // final line with no trailing newline is still returned.
 func (s *inSource) readLine() (line string, ok bool, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	text, err := s.active().r.ReadString('\n')
+	r := s.activeReader()
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+	text, err := r.ReadString('\n')
 	switch {
 	case err == nil:
 		return strings.TrimSuffix(text, "\n"), true, nil
@@ -81,20 +115,20 @@ func (s *inSource) readLine() (line string, ok bool, err error) {
 }
 
 func (s *inSource) push(e inEntry) (restore func()) {
-	s.mu.Lock()
+	s.stateMu.Lock()
 	s.nextID++
 	e.id = s.nextID
 	id := e.id
 	s.stack = append(s.stack, e)
-	s.mu.Unlock()
+	s.stateMu.Unlock()
 
 	var once sync.Once
 	return func() { once.Do(func() { s.pop(id) }) }
 }
 
 func (s *inSource) pop(id uint64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	for i := range s.stack {
 		if s.stack[i].id != id {
 			continue
@@ -109,8 +143,8 @@ func (s *inSource) pop(id uint64) {
 
 // reset drops every source swap, closing any files they opened.
 func (s *inSource) reset() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	for i := range s.stack {
 		if s.stack[i].file != nil {
 			_ = s.stack[i].file.Close()
@@ -121,8 +155,8 @@ func (s *inSource) reset() {
 
 // sourceInfo describes the active source for runtime.stdin.source().
 func (s *inSource) sourceInfo() map[string]any {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	e := s.active()
 	info := map[string]any{"kind": e.kind}
 	if e.path != "" {
@@ -147,37 +181,6 @@ func fileEntry(path string) (inEntry, error) {
 	return inEntry{kind: "file", path: path, r: bufio.NewReader(f), file: f}, nil
 }
 
-// installLinesIterProg makes the object returned by lines() an AsyncIterable.
-// Same pattern as server_ws.go: *goja.Program is safe to share across
-// runtimes, so compile once and run per-VM.
-var installLinesIterProg = goja.MustCompile("internal:install-stdin-lines-iter",
-	`(obj) => { obj[Symbol.asyncIterator] = function() { return this; }; }`, false)
-
-// wrapStdinScopedFnProg wraps stdin.scoped's callback in a compiled async
-// function that hands its resolved value to a Go-side capture callback right
-// before the wrapper's own promise settles.
-//
-// This exists because stdin.scoped must resolve to the CALLBACK's own value
-// (unlike the output-side scoped, which always resolves to undefined —
-// see stdio_bindings.go's callScopedFn/settleAfter). Those two helpers only
-// support a fixed `value func() goja.Value`, evaluated after cleanup; they
-// have no hook to observe what the callback's promise actually resolved
-// with. Rather than re-deriving that here in Go — which would mean
-// re-reading `result.then` ourselves and re-implementing the exact
-// panic-on-throwing-getter guard `callScopedFn` already carries (a Critical
-// finding from Task 5's review) — the capture happens in JS, where member
-// access and `await` are native operations with no equivalent Go-level
-// Object.Get panic to guard against. The wrapper is still driven through
-// callScopedFn/settleAfter unchanged for the actual chaining, cleanup
-// ordering, and error fidelity; only the resolved-value capture is new.
-//
-// `await fn()` resolves `captured` (via the closure below) strictly before
-// the wrapper's own `return v` settles its promise, so by the time
-// settleAfter's onOK fires on that same promise, `captured` already holds
-// the real value.
-var wrapStdinScopedFnProg = goja.MustCompile("internal:wrap-stdin-scoped-fn",
-	`(fn, capture) => { return async function() { const v = await fn(); capture(v); return v; }; }`, false)
-
 // inStreamBinding builds the runtime.stdin handle.
 func inStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengine.Engine) map[string]any {
 	s := stdioInSource
@@ -195,18 +198,20 @@ func inStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengin
 	// read() / readLine() / lines() simply observe EOF immediately.
 	read := scriptengine.PromisifyAsync(vm, loop,
 		func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
-		func(_ context.Context, _ struct{}) (any, error) {
+		func(_ context.Context, _ struct{}) (string, error) {
 			b, err := s.read()
 			if err != nil {
-				return nil, err
+				return "", err
 			}
 			return string(b), nil
 		})
 
 	readBytes := scriptengine.PromisifyAsync(vm, loop,
 		func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
-		func(_ context.Context, _ struct{}) (any, error) { return s.read() })
+		func(_ context.Context, _ struct{}) ([]byte, error) { return s.read() })
 
+	// readLine resolves to a string or to null (EOF), so its resolved type
+	// can't be pinned down to one Go type — it stays `any`.
 	readLine := scriptengine.PromisifyAsync(vm, loop,
 		func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
 		func(_ context.Context, _ struct{}) (any, error) {
@@ -229,16 +234,8 @@ func inStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengin
 			if err := obj.Set("next", readLinesNext(vm, loop, s)); err != nil {
 				panic(vm.NewGoError(fmt.Errorf("lines: %w", err)))
 			}
-			installVal, err := vm.RunProgram(installLinesIterProg)
-			if err != nil {
-				panic(vm.NewGoError(fmt.Errorf("lines: install async iterator: %w", err)))
-			}
-			installFn, ok := goja.AssertFunction(installVal)
-			if !ok {
-				panic(vm.NewGoError(fmt.Errorf("lines: install async iterator: not callable")))
-			}
-			if _, err := installFn(goja.Undefined(), vm.ToValue(obj)); err != nil {
-				panic(vm.NewGoError(fmt.Errorf("lines: install async iterator: %w", err)))
+			if err := installAsyncIterator(vm, obj); err != nil {
+				panic(vm.NewGoError(fmt.Errorf("lines: %w", err)))
 			}
 			return vm.ToValue(obj)
 		},
@@ -267,43 +264,22 @@ func inStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengin
 			return vm.ToValue(s.sourceInfo())
 		},
 		"scoped": func(call goja.FunctionCall) goja.Value {
-			fnArg := call.Argument(1)
-			if _, ok := goja.AssertFunction(fnArg); !ok {
+			fn, ok := goja.AssertFunction(call.Argument(1))
+			if !ok {
 				panic(vm.NewGoError(fmt.Errorf("scoped: second argument must be a function")))
 			}
 			entry, err := parseInSource(vm, call.Argument(0))
 			if err != nil {
 				panic(vm.NewGoError(err))
 			}
-
-			// See wrapStdinScopedFnProg's doc: the wrapper captures fn's
-			// resolved value into `captured` before its own promise settles,
-			// so callScopedFn/settleAfter can be reused unchanged while still
-			// resolving stdin.scoped to the callback's own value.
-			wrapVal, err := vm.RunProgram(wrapStdinScopedFnProg)
-			if err != nil {
-				panic(vm.NewGoError(fmt.Errorf("scoped: %w", err)))
-			}
-			wrapFn, ok := goja.AssertFunction(wrapVal)
-			if !ok {
-				panic(vm.NewGoError(fmt.Errorf("scoped: value wrapper is not callable")))
-			}
-			captured := goja.Undefined()
-			captureFn := vm.ToValue(func(c goja.FunctionCall) goja.Value {
-				captured = c.Argument(0)
-				return goja.Undefined()
-			})
-			wrappedVal, err := wrapFn(goja.Undefined(), fnArg, captureFn)
-			if err != nil {
-				panic(vm.NewGoError(fmt.Errorf("scoped: %w", err)))
-			}
-			wrapped, ok := goja.AssertFunction(wrappedVal)
-			if !ok {
-				panic(vm.NewGoError(fmt.Errorf("scoped: wrapped callback is not callable")))
-			}
-
 			restore := s.push(entry)
-			return callScopedFn(vm, wrapped, restore, func() goja.Value { return captured })
+			// Unlike the output-side scoped (always undefined) or capture
+			// (always the buffer), stdin.scoped resolves to the callback's
+			// own resolved value: settleAfter's value callback now receives
+			// that value directly (call.Argument(0) from the thenable's
+			// onOK, or the plain result in the synchronous path), so this
+			// is just the identity function.
+			return callScopedFn(vm, fn, restore, func(v goja.Value) goja.Value { return v })
 		},
 	}
 }

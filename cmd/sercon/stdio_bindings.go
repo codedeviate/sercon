@@ -61,7 +61,7 @@ func outStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengi
 				panic(vm.NewGoError(err))
 			}
 			restore := s.push(d)
-			return callScopedFn(vm, fn, restore, func() goja.Value { return goja.Undefined() })
+			return callScopedFn(vm, fn, restore, func(goja.Value) goja.Value { return goja.Undefined() })
 		},
 		// capture(fn) -> Promise<string>
 		"capture": func(call goja.FunctionCall) goja.Value {
@@ -73,7 +73,7 @@ func outStreamBinding(vm *goja.Runtime, loop *eventloop.EventLoop, e *scriptengi
 			// keep output on the terminal as well.
 			sink := &lockedBuffer{}
 			restore := s.push(destination{kind: destBuffer, w: sink})
-			return callScopedFn(vm, fn, restore, func() goja.Value { return vm.ToValue(sink.String()) })
+			return callScopedFn(vm, fn, restore, func(goja.Value) goja.Value { return vm.ToValue(sink.String()) })
 		},
 	}
 }
@@ -99,22 +99,31 @@ func (b *lockedBuffer) String() string {
 }
 
 // settleAfter runs cleanup once result has settled, then resolves the returned
-// promise with value() (or rejects with result's rejection reason).
+// promise with value(resolved) (or rejects with result's rejection reason).
+//
+// value receives the value result actually settled with: call.Argument(0)
+// from the thenable's onOK, or result itself in the synchronous path. The
+// output-side callers (stdout/stderr scoped, capture) ignore it and always
+// resolve to a fixed value; runtime.stdin.scoped (stdio_in.go) needs the
+// real one, since it must resolve to the callback's own returned/resolved
+// value rather than a fixed undefined. Widening this parameter — rather than
+// stdin.scoped re-deriving the resolved value itself — keeps the thenable
+// detection and the Get("then") panic guard below in exactly one place.
 //
 // It handles a sync and an async fn with one path: if result is a thenable we
 // chain onto it, otherwise cleanup runs immediately. Either way the caller gets
 // a Promise back, so `await` is always correct and a synchronous fn cannot leak
 // the redirect.
-func settleAfter(vm *goja.Runtime, result goja.Value, cleanup func(), value func() goja.Value) goja.Value {
+func settleAfter(vm *goja.Runtime, result goja.Value, cleanup func(), value func(resolved goja.Value) goja.Value) goja.Value {
 	promise, resolve, reject := vm.NewPromise()
 
 	thenable := false
 	if obj, ok := result.(*goja.Object); ok && obj != nil {
 		if then, ok := goja.AssertFunction(obj.Get("then")); ok {
 			thenable = true
-			onOK := vm.ToValue(func(goja.FunctionCall) goja.Value {
+			onOK := vm.ToValue(func(call goja.FunctionCall) goja.Value {
 				cleanup()
-				_ = resolve(value())
+				_ = resolve(value(call.Argument(0)))
 				return goja.Undefined()
 			})
 			onErr := vm.ToValue(func(call goja.FunctionCall) goja.Value {
@@ -130,7 +139,7 @@ func settleAfter(vm *goja.Runtime, result goja.Value, cleanup func(), value func
 	}
 	if !thenable {
 		cleanup()
-		_ = resolve(value())
+		_ = resolve(value(result))
 	}
 	return vm.ToValue(promise)
 }
@@ -147,7 +156,7 @@ func settleAfter(vm *goja.Runtime, result goja.Value, cleanup func(), value func
 // the same value so the panic still reaches goja's call boundary and becomes
 // the script's catchable throw, same as every other panic(vm.NewGoError(...))
 // site in this file.
-func callScopedFn(vm *goja.Runtime, fn goja.Callable, cleanup func(), value func() goja.Value) goja.Value {
+func callScopedFn(vm *goja.Runtime, fn goja.Callable, cleanup func(), value func(resolved goja.Value) goja.Value) goja.Value {
 	defer func() {
 		if r := recover(); r != nil {
 			cleanup() // idempotent — push's restore is sync.Once-guarded

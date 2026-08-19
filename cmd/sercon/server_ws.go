@@ -42,13 +42,37 @@ type wsState struct {
 }
 
 // installAsyncIteratorProg is the compiled JS that installs the
-// Symbol.asyncIterator method on the WebSocket object. *goja.Program is
-// safe to share across runtimes, so we compile once at package init and
-// run per-VM with vm.RunProgram. Per-Run execution is safe because the
-// arrow function captures nothing — it only writes a fresh function
-// onto the supplied object.
+// Symbol.asyncIterator method on a host object. *goja.Program is safe to
+// share across runtimes, so we compile once at package init and run per-VM
+// with vm.RunProgram. Per-Run execution is safe because the arrow function
+// captures nothing — it only writes a fresh function onto the supplied
+// object.
+//
+// Shared by every host object whose iteration protocol is "call next()
+// until {done: true}": the WebSocket connection below and
+// runtime.stdin.lines() (stdio_in.go), via the installAsyncIterator helper.
 var installAsyncIteratorProg = goja.MustCompile("internal:install-async-iter",
 	`(obj) => { obj[Symbol.asyncIterator] = function() { return this; }; }`, false)
+
+// installAsyncIterator sets obj[Symbol.asyncIterator] to a function that
+// returns obj itself, via the compiled installAsyncIteratorProg. Extracted
+// so every "call next() until {done: true}" host object shares one
+// implementation instead of re-copying the RunProgram/AssertFunction/call
+// dance at each call site.
+func installAsyncIterator(vm *goja.Runtime, obj *goja.Object) error {
+	installVal, err := vm.RunProgram(installAsyncIteratorProg)
+	if err != nil {
+		return fmt.Errorf("install async iterator: %w", err)
+	}
+	installFn, ok := goja.AssertFunction(installVal)
+	if !ok {
+		return fmt.Errorf("install async iterator: not callable")
+	}
+	if _, err := installFn(goja.Undefined(), vm.ToValue(obj)); err != nil {
+		return fmt.Errorf("install async iterator: %w", err)
+	}
+	return nil
+}
 
 // wsUpgradeOrderHook, when non-nil, is invoked with "accept" right after
 // websocket.Accept returns and with "markFinal" right before
@@ -268,18 +292,9 @@ func upgradeWebSocketImpl(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scri
 		return vm.ToValue(promise)
 	})
 
-	// Install Symbol.asyncIterator. The compiled program returns the
-	// arrow function; we call it with the obj as the sole argument.
-	installVal, err := vm.RunProgram(installAsyncIteratorProg)
-	if err != nil {
-		panic(vm.NewGoError(fmt.Errorf("install async iterator: %w", err)))
-	}
-	installFn, ok := goja.AssertFunction(installVal)
-	if !ok {
-		panic(vm.NewGoError(fmt.Errorf("install async iterator: not callable")))
-	}
-	if _, err := installFn(goja.Undefined(), vm.ToValue(obj)); err != nil {
-		panic(vm.NewGoError(fmt.Errorf("install async iterator: %w", err)))
+	// Install Symbol.asyncIterator.
+	if err := installAsyncIterator(vm, obj); err != nil {
+		panic(vm.NewGoError(err))
 	}
 
 	return vm.ToValue(obj)

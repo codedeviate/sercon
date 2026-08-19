@@ -82,7 +82,9 @@ func TestStdin_LinesAsyncIterator(t *testing.T) {
 	}
 }
 
-// readBytes returns raw bytes as a Uint8Array.
+// readBytes returns raw bytes as a Go-slice-backed array-like object (goja
+// wraps []byte this way, not as an actual Uint8Array — instanceof Uint8Array
+// is false; length and indexing are what matter here).
 func TestStdin_ReadBytes(t *testing.T) {
 	defer stdioInSource.reset()
 
@@ -172,5 +174,146 @@ func TestStdin_SourceInfo(t *testing.T) {
 	}
 	if got := val.Export(); got != "text" {
 		t.Fatalf("got %v want \"text\"", got)
+	}
+}
+
+// scoped restores the outer source even when the callback throws
+// synchronously, and the throw propagates with the original Error intact.
+// Mirrors TestBinding_ScopedRestoresOnThrow (stdio_test.go) for the input
+// side, where settleAfter's value callback now has to be exercised through
+// the callback-error path rather than the fixed-value path.
+func TestStdin_ScopedRestoresOnThrow(t *testing.T) {
+	defer stdioInSource.reset()
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdin.fromString("outer\n");
+		let threw = false;
+		try {
+			await runtime.stdin.scoped({ text: "inner\n" }, () => { throw new Error("boom"); });
+		} catch (e) {
+			threw = true;
+			runtime.assert.ok(e instanceof Error, "caught value must be an Error");
+			runtime.assert.ok(e.message === "boom", "message must round-trip, got " + e.message);
+		}
+		runtime.assert.ok(threw, "the throw must propagate");
+		export default await runtime.stdin.readLine();
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := val.Export(), "outer"; got != want {
+		t.Fatalf("got %q want %q — source was not restored", got, want)
+	}
+}
+
+// scoped restores the outer source even when reading the callback's
+// result's `then` property panics (a throwing getter, or a revoked Proxy).
+// Mirrors TestBinding_ScopedRestoresOnThenGetterThrow.
+func TestStdin_ScopedRestoresOnThenGetterThrow(t *testing.T) {
+	defer stdioInSource.reset()
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdin.fromString("outer\n");
+		let threw = false;
+		try {
+			await runtime.stdin.scoped({ text: "inner\n" }, () => ({ get then() { throw new Error("boom"); } }));
+		} catch (e) {
+			threw = true;
+		}
+		runtime.assert.ok(threw, "the throw must propagate");
+		export default await runtime.stdin.readLine();
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := val.Export(), "outer"; got != want {
+		t.Fatalf("got %q want %q — source was not restored", got, want)
+	}
+}
+
+// scoped restores the outer source when an async callback's returned
+// promise REJECTS (as opposed to a synchronous throw). Mirrors
+// TestBinding_ScopedRestoresOnAsyncReject.
+func TestStdin_ScopedRestoresOnAsyncReject(t *testing.T) {
+	defer stdioInSource.reset()
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdin.fromString("outer\n");
+		let threw = false;
+		try {
+			await runtime.stdin.scoped({ text: "inner\n" }, async () => {
+				await runtime.time.sleep(5);
+				throw new Error("boom");
+			});
+		} catch (e) {
+			threw = true;
+			runtime.assert.ok(e instanceof Error, "caught value must be an Error");
+			runtime.assert.ok(e.message === "boom", "message must round-trip, got " + e.message);
+		}
+		runtime.assert.ok(threw, "the throw must propagate");
+		export default await runtime.stdin.readLine();
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := val.Export(), "outer"; got != want {
+		t.Fatalf("got %q want %q — source was not restored", got, want)
+	}
+}
+
+// scoped preserves the thrown Error's identity when calling result.then
+// itself throws synchronously (distinct from the async-reject case above:
+// this hits settleAfter's OTHER cleanup+reject site). Mirrors
+// TestBinding_ScopedRestoresOnThenCallThrow.
+func TestStdin_ScopedRestoresOnThenCallThrow(t *testing.T) {
+	defer stdioInSource.reset()
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdin.fromString("outer\n");
+		let threw = false;
+		try {
+			await runtime.stdin.scoped({ text: "inner\n" }, () => ({
+				then() { throw new Error("boom"); },
+			}));
+		} catch (e) {
+			threw = true;
+			runtime.assert.ok(e instanceof Error, "caught value must be an Error");
+			runtime.assert.ok(e.message === "boom", "message must round-trip, got " + e.message);
+		}
+		runtime.assert.ok(threw, "the throw must propagate");
+		export default await runtime.stdin.readLine();
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := val.Export(), "outer"; got != want {
+		t.Fatalf("got %q want %q — source was not restored", got, want)
+	}
+}
+
+// Two readLine() calls kicked off concurrently (via Promise.all, which
+// invokes PromisifyAsync's on-loop extract for both before either goroutine
+// runs) must not interleave halves of a line. This exercises inSource's
+// readMu directly — the thing that has to keep serialising reads once
+// stateMu/readMu are split (see inSource's doc in stdio_in.go), and it fails
+// under -race if the read path is ever left unsynchronised.
+func TestStdin_ReadLineConcurrentNoInterleave(t *testing.T) {
+	defer stdioInSource.reset()
+
+	eng := newTestEngine(t)
+	val, err := eng.Run(testCtx(), "s.ts", `
+		runtime.stdin.fromString("aaaa\nbbbb\n");
+		const [a, b] = await Promise.all([runtime.stdin.readLine(), runtime.stdin.readLine()]);
+		export default [a, b].sort().join("|");
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got, want := val.Export(), "aaaa|bbbb"; got != want {
+		t.Fatalf("got %q want %q — a line was split or interleaved", got, want)
 	}
 }
