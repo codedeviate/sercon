@@ -312,7 +312,7 @@ declare const runtime: {
      */
     capture(fn: () => void | Promise<void>): Promise<string>;
     /**
-     * Drop every redirect this script has pushed onto stderr — the whole stack, not just the last push — closing any files they opened and reverting to the real process stderr. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect.
+     * Drop every redirect this script has pushed onto stderr — the whole stack, not just the last push — closing any files they opened and reverting to the real process stderr. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect — and once more as the process exits, after the CLI's last reporting write, so a line callback left pushed can't take the FAIL line or the --verbose duration with it.
      * @returns void.
      */
     reset(): void;
@@ -414,7 +414,7 @@ declare const runtime: {
      */
     capture(fn: () => void | Promise<void>): Promise<string>;
     /**
-     * Drop every redirect this script has pushed onto stdout — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdout. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect.
+     * Drop every redirect this script has pushed onto stdout — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdout. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect — and once more as the process exits, after the CLI's last reporting write, so a line callback left pushed can't take the default-export JSON or the PASS/FAIL line with it.
      * @returns void.
      */
     reset(): void;

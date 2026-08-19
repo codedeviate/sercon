@@ -18,8 +18,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   even on a throw; `capture()` resolves to everything the callback wrote;
   `target()` inspects the effective destination. Covers `console.*`,
   `runtime.log`, the default-export JSON, `PASS`/`FAIL`, `--verbose` and the TUI
-  fallback — not child processes, which inherit the raw process fds. Redirects
-  reset at the start of each script.
+  fallback. Child processes are outside it, for two different reasons:
+  `services.exec.shell`/`.run`, `services.git`, `services.gh` and
+  `services.typst.*` all *capture* the child's output into a buffer handed back
+  to the script, so they never touch sercon's own streams and redirection is
+  simply irrelevant to them; only `services.exec.interactive` genuinely bypasses
+  redirection, by inheriting file descriptor 1/2 (and 0) directly. Redirects
+  reset at the start of each script, and once more as the process exits — after
+  the last reporting write — so a line callback the script left in place cannot
+  swallow the result JSON or the `PASS`/`FAIL` line.
 - **`runtime.stdin`.** `read()` / `readBytes()` / `readLine()` / `lines()` let a
   script consume piped input for the first time, and
   `from()` / `fromFile()` / `fromString()` swap the source so an interactive
