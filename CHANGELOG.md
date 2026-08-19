@@ -8,6 +8,33 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Added
+
+- **Script-controlled stdio redirection.** `runtime.stdout` / `runtime.stderr`
+  can be pointed at the process stream, `"null"`, a file (truncate or append),
+  the other standard stream, or a JS line callback — optionally teeing — via
+  `to()` / `toFile()` / `silence()`, each returning an idempotent restore
+  function. `scoped()` applies a redirect for a callback's duration and restores
+  even on a throw; `capture()` resolves to everything the callback wrote;
+  `target()` inspects the effective destination. Covers `console.*`,
+  `runtime.log`, the default-export JSON, `PASS`/`FAIL`, `--verbose` and the TUI
+  fallback — not child processes, which inherit the raw process fds. Redirects
+  reset at the start of each script.
+- **`runtime.stdin`.** `read()` / `readBytes()` / `readLine()` / `lines()` let a
+  script consume piped input for the first time, and
+  `from()` / `fromFile()` / `fromString()` swap the source so an interactive
+  script is testable without a real pipe. `source()` reports the active source
+  and whether the real stdin is a terminal.
+
+### Changed
+
+- `console.*`, `runtime.log`, `PASS`/`FAIL`, `--verbose` output and the TUI
+  non-TTY fallback now write through an internal stdio stream registry rather
+  than directly to `os.Stdout` / `os.Stderr`. Streams are unchanged (`FAIL`
+  stays on stdout); this also fixes a latent data race, since the previous
+  `consoleOut` / `consoleErr` package vars were read from server-handler and
+  async-op goroutines without synchronisation.
+
 ## [0.102.0] — 2026-07-25
 
 ### Added

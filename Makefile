@@ -119,6 +119,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/net-sockets.ts \
 	examples/scripts/load.ts \
 	examples/scripts/capture-file.ts \
+	examples/scripts/stdio-redirect.ts \
 	examples/scripts/image.ts \
 	examples/scripts/image-anim.ts \
 	examples/scripts/exif.ts \

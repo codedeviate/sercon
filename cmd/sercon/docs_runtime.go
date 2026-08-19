@@ -231,5 +231,236 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Errors:     "Not callable — accessing it never throws.",
 			Example:    `if (runtime.openAvailable) await runtime.open(url);`,
 		},
+
+		// runtime.stdout / runtime.stderr — script-controlled stdio redirection.
+		// The seven members are identical in shape between the two streams;
+		// each entry below describes its own stream by name. A stream-name
+		// target ("stdout"/"stderr") always folds onto the real PROCESS
+		// stream, never onto whatever the other handle currently has pushed —
+		// that is what makes a stdout<->stderr cycle impossible by
+		// construction. Covers console.*, runtime.log, the default-export
+		// JSON, PASS/FAIL, --verbose and the TUI non-TTY fallback — not child
+		// processes started via services.exec.*, which inherit the raw
+		// process fds.
+		"stdout.to": {
+			Summary: "Point stdout at a target and return a restore function. The target is \"stdout\"/\"stderr\" (fold onto that process stream), \"null\" (discard), { file, append? } (a file), or a function (called with each completed line). Redirects nest: the restore pops its own entry, so nested and out-of-order restores both behave, and calling it twice is a no-op.",
+			Params: []scriptengine.Param{
+				{Name: "target", Type: `"stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void)`, Desc: "Where the stream should go. A stream name folds onto that PROCESS stream (so stdout→stderr and stderr→stdout cannot ping-pong); \"null\" discards; an object writes to a file, truncating unless append is true; a function receives each completed line without its newline, delivered on the next tick in write order."},
+				{Name: "opts", Type: "{ tee?: boolean }", Optional: true, Desc: "tee also writes to the destination beneath this one in the stack — so teeing on top of a silence() still writes only to the new target. tee is rejected with the \"null\" target."},
+			},
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that removes this redirect.",
+			Errors:     "Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the \"null\" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr.",
+			Example:    "const restore = runtime.stdout.to({ file: \"/tmp/out.log\" }, { tee: true });\nconsole.log(\"goes to both\");\nrestore();",
+		},
+		"stdout.toFile": {
+			Summary: "Redirect stdout to a file, truncating unless append is true, and return a restore function. Shorthand for stdout.to({ file, append }, { tee }).",
+			Params: []scriptengine.Param{
+				{Name: "path", Type: "string", Desc: "Output file path. Opened immediately, at the call site — a bad path or a permission error surfaces here rather than at some later write."},
+				{Name: "opts", Type: "{ append?: boolean, tee?: boolean }", Optional: true, Desc: "append opens with O_APPEND instead of truncating (default false). tee also writes to whatever destination was beneath this one when it was pushed."},
+			},
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that closes the file and removes this redirect.",
+			Errors:     "Throws (\"toFile: …\") if the file cannot be opened (missing parent directory, permission denied, etc). A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr.",
+			Example:    "const stop = runtime.stdout.toFile(\"/tmp/out.log\", { append: true, tee: true });\nconsole.log(\"on screen and in the file\");\nstop();",
+		},
+		"stdout.silence": {
+			Summary:    "Discard everything written to stdout until the returned restore function is called. Shorthand for stdout.to(\"null\").",
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that removes the silence and reveals whatever was beneath it.",
+			Errors:     "Never throws.",
+			Example:    "const unsilence = runtime.stdout.silence();\nconsole.log(\"nobody sees this\");\nunsilence();",
+		},
+		"stdout.reset": {
+			Summary:    "Drop every redirect this script has pushed onto stdout — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdout. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect.",
+			ReturnType: "void",
+			Returns:    "void.",
+			Errors:     "Never throws.",
+			Example:    "runtime.stdout.to(\"null\");\nrunUntrusted();\nruntime.stdout.reset(); // back to the real stdout, however deep the stack got",
+		},
+		"stdout.target": {
+			Summary:    "Inspect the effective stdout destination without changing it.",
+			ReturnType: `{ kind: "stream" | "null" | "file" | "callback" | "buffer"; tee: boolean; depth: number; name?: "stdout" | "stderr"; path?: string; append?: boolean }`,
+			Returns:    `The current top-of-stack destination: kind identifies its type (name is set only for kind "stream"; path/append only for kind "file"); tee reports whether it also writes to the destination beneath it; depth is how many redirects are currently pushed (0 means stdout is unredirected).`,
+			Errors:     "Never throws.",
+			Example:    `if (runtime.stdout.target().kind === "null") console.log("currently silenced");`,
+		},
+		"stdout.scoped": {
+			Summary: "Apply a target to stdout for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).",
+			Params: []scriptengine.Param{
+				{Name: "target", Type: `"stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void)`, Desc: "Same target union as `to`."},
+				{Name: "opts", Type: "{ tee?: boolean }", Optional: true, Desc: "Same as `to`'s opts; only meaningful in the three-argument form."},
+				{Name: "fn", Type: "() => void | Promise<void>", Desc: "Called with no arguments. Its own return value is discarded — scoped always resolves to undefined."},
+			},
+			ReturnType: "Promise<void>",
+			Returns:    "Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.",
+			Errors:     "Rejects with whatever fn threw or its promise rejected with, after restoring the redirect. Throws synchronously (before touching the stream) for the same reasons as `to`, or if the last argument is not a function.",
+			Example:    "await runtime.stdout.scoped(\"null\", () => {\n  console.log(\"never printed\");\n});\nconsole.log(\"back to normal\");",
+		},
+		"stdout.capture": {
+			Summary: "Run fn (sync or async) with stdout captured to an in-memory buffer, and resolve to everything it wrote. Always exclusive — unlike `to`/`scoped`, capture never tees; use scoped with { tee: true } if the terminal should also see the output.",
+			Params: []scriptengine.Param{
+				{Name: "fn", Type: "() => void | Promise<void>", Desc: "Called with no arguments; its own return value is ignored."},
+			},
+			ReturnType: "Promise<string>",
+			Returns:    "Promise<string> — everything written to stdout while fn ran, in write order. The redirect has already been restored by the time this resolves.",
+			Errors:     "Rejects with whatever fn threw or its promise rejected with, after restoring the redirect. Throws synchronously if the argument is not a function.",
+			Example:    "const out = await runtime.stdout.capture(() => {\n  console.log(\"one\");\n  console.log(\"two\");\n});\nruntime.assert.equal(out, \"one\\ntwo\\n\");",
+		},
+
+		"stderr.to": {
+			Summary: "Point stderr at a target and return a restore function. The target is \"stdout\"/\"stderr\" (fold onto that process stream), \"null\" (discard), { file, append? } (a file), or a function (called with each completed line). Redirects nest: the restore pops its own entry, so nested and out-of-order restores both behave, and calling it twice is a no-op.",
+			Params: []scriptengine.Param{
+				{Name: "target", Type: `"stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void)`, Desc: "Where the stream should go. \"stdout\" folds stderr onto the PROCESS stdout (so stdout→stderr and stderr→stdout cannot ping-pong); \"null\" discards; an object writes to a file, truncating unless append is true; a function receives each completed line without its newline, delivered on the next tick in write order."},
+				{Name: "opts", Type: "{ tee?: boolean }", Optional: true, Desc: "tee also writes to the destination beneath this one in the stack — so teeing on top of a silence() still writes only to the new target. tee is rejected with the \"null\" target."},
+			},
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that removes this redirect.",
+			Errors:     "Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the \"null\" target. A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr.",
+			Example:    "const restore = runtime.stderr.to(\"stdout\");\nconsole.error(\"now on stdout too\");\nrestore();",
+		},
+		"stderr.toFile": {
+			Summary: "Redirect stderr to a file, truncating unless append is true, and return a restore function. Shorthand for stderr.to({ file, append }, { tee }).",
+			Params: []scriptengine.Param{
+				{Name: "path", Type: "string", Desc: "Output file path. Opened immediately, at the call site — a bad path or a permission error surfaces here rather than at some later write."},
+				{Name: "opts", Type: "{ append?: boolean, tee?: boolean }", Optional: true, Desc: "append opens with O_APPEND instead of truncating (default false). tee also writes to whatever destination was beneath this one when it was pushed."},
+			},
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that closes the file and removes this redirect.",
+			Errors:     "Throws (\"toFile: …\") if the file cannot be opened (missing parent directory, permission denied, etc). A later write failure does NOT throw: the destination fails over to the process stream and one warning is printed on the real stderr.",
+			Example:    "const stop = runtime.stderr.toFile(\"/tmp/err.log\", { append: true, tee: true });\nconsole.error(\"on screen and in the file\");\nstop();",
+		},
+		"stderr.silence": {
+			Summary:    "Discard everything written to stderr until the returned restore function is called. Shorthand for stderr.to(\"null\").",
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that removes the silence and reveals whatever was beneath it.",
+			Errors:     "Never throws.",
+			Example:    "const unsilence = runtime.stderr.silence();\nconsole.error(\"nobody sees this\");\nunsilence();",
+		},
+		"stderr.reset": {
+			Summary:    "Drop every redirect this script has pushed onto stderr — the whole stack, not just the last push — closing any files they opened and reverting to the real process stderr. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect.",
+			ReturnType: "void",
+			Returns:    "void.",
+			Errors:     "Never throws.",
+			Example:    "runtime.stderr.to(\"null\");\nrunUntrusted();\nruntime.stderr.reset(); // back to the real stderr, however deep the stack got",
+		},
+		"stderr.target": {
+			Summary:    "Inspect the effective stderr destination without changing it.",
+			ReturnType: `{ kind: "stream" | "null" | "file" | "callback" | "buffer"; tee: boolean; depth: number; name?: "stdout" | "stderr"; path?: string; append?: boolean }`,
+			Returns:    `The current top-of-stack destination: kind identifies its type (name is set only for kind "stream"; path/append only for kind "file"); tee reports whether it also writes to the destination beneath it; depth is how many redirects are currently pushed (0 means stderr is unredirected).`,
+			Errors:     "Never throws.",
+			Example:    `if (runtime.stderr.target().kind === "null") console.error("currently silenced");`,
+		},
+		"stderr.scoped": {
+			Summary: "Apply a target to stderr for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).",
+			Params: []scriptengine.Param{
+				{Name: "target", Type: `"stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void)`, Desc: "Same target union as `to`."},
+				{Name: "opts", Type: "{ tee?: boolean }", Optional: true, Desc: "Same as `to`'s opts; only meaningful in the three-argument form."},
+				{Name: "fn", Type: "() => void | Promise<void>", Desc: "Called with no arguments. Its own return value is discarded — scoped always resolves to undefined."},
+			},
+			ReturnType: "Promise<void>",
+			Returns:    "Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.",
+			Errors:     "Rejects with whatever fn threw or its promise rejected with, after restoring the redirect. Throws synchronously (before touching the stream) for the same reasons as `to`, or if the last argument is not a function.",
+			Example:    "await runtime.stderr.scoped(\"null\", () => {\n  console.error(\"never printed\");\n});\nconsole.error(\"back to normal\");",
+		},
+		"stderr.capture": {
+			Summary: "Run fn (sync or async) with stderr captured to an in-memory buffer, and resolve to everything it wrote. Always exclusive — unlike `to`/`scoped`, capture never tees; use scoped with { tee: true } if the terminal should also see the output.",
+			Params: []scriptengine.Param{
+				{Name: "fn", Type: "() => void | Promise<void>", Desc: "Called with no arguments; its own return value is ignored."},
+			},
+			ReturnType: "Promise<string>",
+			Returns:    "Promise<string> — everything written to stderr while fn ran, in write order. The redirect has already been restored by the time this resolves.",
+			Errors:     "Rejects with whatever fn threw or its promise rejected with, after restoring the redirect. Throws synchronously if the argument is not a function.",
+			Example:    "const out = await runtime.stderr.capture(() => {\n  console.error(\"one\");\n  console.error(\"two\");\n});\nruntime.assert.equal(out, \"one\\ntwo\\n\");",
+		},
+
+		// runtime.stdin — a swappable, readable input source. read/readBytes/
+		// readLine/lines drain the CURRENT source (the real process stdin
+		// unless from/fromFile/fromString has pushed something else). Reads
+		// off different members serialise against each other (one shared read
+		// lock), so two concurrent reads can never split a line or a chunk.
+		"stdin.read": {
+			Summary:    "Read every remaining byte from the current stdin source as a UTF-8 string, blocking until EOF. Concurrent calls with readBytes/readLine/lines serialise, so two readers can never split a read.",
+			ReturnType: "Promise<string>",
+			Returns:    "Promise<string> — the rest of the source's bytes, decoded as UTF-8, from the current position through EOF.",
+			Errors:     "Rejects if the underlying source returns a read error. Blocking on the real process stdin cannot be interrupted by the run's deadline — the run itself is still killed, but this call parks until the pipe closes; a file or string source always reaches EOF. Note: when the script itself came from stdin (`sercon -`), stdin is already drained and this resolves to \"\" immediately.",
+			Example:    "const body = await runtime.stdin.read();\nruntime.log(\"got\", body.length, \"bytes\");",
+		},
+		"stdin.readBytes": {
+			Summary:    "Read every remaining byte from the current stdin source as raw bytes, blocking until EOF. Concurrent calls with read/readLine/lines serialise, so two readers can never split a read.",
+			ReturnType: "Promise<Uint8Array>",
+			Returns:    "Promise<Uint8Array> — the rest of the source's bytes from the current position through EOF. This is goja's Go-slice-backed wrapper around the underlying []byte, not a native JS Uint8Array: `instanceof Uint8Array` is false, though .length and indexing work as expected.",
+			Errors:     "Rejects if the underlying source returns a read error. Blocking on the real process stdin cannot be interrupted by the run's deadline — the run itself is still killed, but this call parks until the pipe closes. Note: when the script itself came from stdin (`sercon -`), stdin is already drained and this resolves to a zero-length result immediately.",
+			Example:    "const b = await runtime.stdin.readBytes();\nruntime.log(b.length, b[0]);",
+		},
+		"stdin.readLine": {
+			Summary:    "Read one line from the current stdin source, without its trailing newline. Resolves to null at EOF. A final line with no trailing newline is still returned. Concurrent calls serialise, so two readers can never split a line.",
+			ReturnType: "Promise<string | null>",
+			Returns:    "Promise<string | null> — the next line without its newline, or null once the source is exhausted.",
+			Errors:     "Rejects if the underlying source returns a read error. Note: when the script itself came from stdin (`sercon -`), stdin is already drained and this resolves to null immediately.",
+			Example:    "let line;\nwhile ((line = await runtime.stdin.readLine()) !== null) {\n  runtime.log(\"got\", line);\n}",
+		},
+		"stdin.lines": {
+			Summary:    "Async-iterate the current stdin source one line at a time (no trailing newline), stopping at EOF. Equivalent to calling readLine() in a loop; `for await` is just more idiomatic.",
+			ReturnType: "AsyncIterable<string>",
+			Returns:    "An async iterator yielding each line as a string. `for await (const line of runtime.stdin.lines())`; `break` simply stops calling readLine again — it does not close or reset the source.",
+			Errors:     "The iterator's next() rejects if the underlying source returns a read error, propagating out of the `for await`.",
+			Example:    "for await (const line of runtime.stdin.lines()) {\n  runtime.log(line.toUpperCase());\n}",
+		},
+		"stdin.from": {
+			Summary: "Push a new stdin source and return a restore function that pops it back off. source is { file: string } (opened immediately), { text: string } (an in-memory string), or \"stdin\" (the real process stdin, pushed as a new entry above whatever is currently active).",
+			Params: []scriptengine.Param{
+				{Name: "source", Type: `{ file: string } | { text: string } | "stdin"`, Desc: "Which source becomes active. A { file } is opened immediately, at the call site — a missing file or a permission error surfaces here. { text } and \"stdin\" cannot fail to open."},
+			},
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that closes the file (if any) and pops this source back off, uncovering whatever was active before.",
+			Errors:     "Throws (\"from: …\") if source is missing, is an object with neither `file` nor `text`, is an unrecognised string, or (for a { file } source) the file cannot be opened.",
+			Example:    "const restore = runtime.stdin.from({ text: \"a\\nb\\n\" });\nconst first = await runtime.stdin.readLine();\nrestore();",
+		},
+		"stdin.fromFile": {
+			Summary: "Push a file as the stdin source and return a restore function. Shorthand for stdin.from({ file: path }).",
+			Params: []scriptengine.Param{
+				{Name: "path", Type: "string", Desc: "Path to the file to read from. Opened immediately, at the call site."},
+			},
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that closes the file and pops this source back off.",
+			Errors:     "Throws (\"fromFile: …\") if the file cannot be opened (missing, permission denied).",
+			Example:    "const restore = runtime.stdin.fromFile(\"fixtures/input.txt\");\nconst all = await runtime.stdin.read();\nrestore();",
+		},
+		"stdin.fromString": {
+			Summary: "Push an in-memory string as the stdin source and return a restore function. Shorthand for stdin.from({ text }).",
+			Params: []scriptengine.Param{
+				{Name: "text", Type: "string", Desc: "Content to serve as stdin from now on."},
+			},
+			ReturnType: "() => void",
+			Returns:    "() => void — an idempotent restore function that pops this source back off.",
+			Errors:     "Never throws.",
+			Example:    "runtime.stdin.fromString(\"alpha\\nbeta\\n\");\nfor await (const line of runtime.stdin.lines()) runtime.log(line);",
+		},
+		"stdin.reset": {
+			Summary:    "Drop every source swap this script has pushed onto stdin — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdin. Called automatically at the start of every Run, same as the stdout/stderr reset.",
+			ReturnType: "void",
+			Returns:    "void.",
+			Errors:     "Never throws.",
+			Example:    "runtime.stdin.fromString(\"test input\\n\");\n// ... read it ...\nruntime.stdin.reset(); // back to the real stdin",
+		},
+		"stdin.source": {
+			Summary:    "Describe the currently active stdin source, without reading from it.",
+			ReturnType: `{ kind: "stdin" | "file" | "text"; path?: string; tty: boolean }`,
+			Returns:    `{ kind, path?, tty } — kind is which source is active (path is set only for kind "file"); tty is true only when kind is "stdin" and the real process stdin is a terminal — a file or string source is never a terminal, and a script itself read from stdin (` + "`sercon -`" + `) leaves the real stdin already drained.`,
+			Errors:     "Never throws.",
+			Example:    `if (runtime.stdin.source().tty) console.log("waiting for interactive input…");`,
+		},
+		"stdin.scoped": {
+			Summary: "Push a stdin source for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Unlike the stdout/stderr scoped (which always resolves to undefined), this resolves to fn's own resolved value.",
+			Params: []scriptengine.Param{
+				{Name: "source", Type: `{ file: string } | { text: string } | "stdin"`, Desc: "Same source union as `from`."},
+				{Name: "fn", Type: "() => unknown | Promise<unknown>", Desc: "Called with no arguments; its resolved value becomes scoped's own resolved value."},
+			},
+			ReturnType: "Promise<unknown>",
+			Returns:    "Promise<unknown> — resolves to whatever fn returned (or its promise resolved with), after the source has already been restored.",
+			Errors:     "Rejects with whatever fn threw or its promise rejected with, after restoring the source. Throws synchronously (before touching the stack) for the same reasons as `from`, or if the second argument is not a function.",
+			Example:    "const total = await runtime.stdin.scoped({ text: \"1\\n2\\n3\\n\" }, async () => {\n  let sum = 0;\n  for await (const line of runtime.stdin.lines()) sum += Number(line);\n  return sum;\n});",
+		},
 	}
 }
