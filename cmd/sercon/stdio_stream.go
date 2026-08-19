@@ -167,19 +167,24 @@ func (s *stream) closeDest(i int) {
 			d.file = nil
 		}
 	case destCallback:
-		// A trailing partial line goes to the destination BENEATH the
-		// callback, not to the callback: that is deterministic and needs no
-		// live event loop, so nothing is lost when a script exits mid-line.
+		// Anything the callback never got to hand off goes to the
+		// destination BENEATH it instead: that's deterministic and needs no
+		// live event loop, so nothing is lost when a script exits mid-line
+		// or ends before the loop drains this entry. Order is queued whole
+		// lines first (oldest first, as they'd have been delivered), then
+		// the trailing partial line.
 		//
-		// takePartial() and stop() are called here with s.mu held (closeDest
-		// is only ever reached from pop()/reset(), both locked). The real
-		// lineCallback (Task 4) must not re-enter the stream (no Write/push/
-		// pop back onto s) or block waiting on the event loop from either
-		// method, or this deadlocks.
+		// stop() and takePartial() are called here with s.mu held (closeDest
+		// is only ever reached from pop()/reset(), both locked). lineCallback
+		// must not re-enter the stream (no Write/push/pop back onto s) or
+		// block waiting on the event loop from either method, or this
+		// deadlocks.
+		for _, line := range d.cb.stop() {
+			s.writeAt(i, append([]byte(line), '\n'))
+		}
 		if rest := d.cb.takePartial(); len(rest) > 0 {
 			s.writeAt(i, append(rest, '\n'))
 		}
-		d.cb.stop()
 	}
 }
 

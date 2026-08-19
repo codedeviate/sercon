@@ -111,3 +111,24 @@ func TestCallback_OverflowFallsThrough(t *testing.T) {
 	}
 	s.reset()
 }
+
+// With no live loop to drain it, whatever is still queued when the callback
+// is popped is written to the destination beneath — in order, followed by
+// any trailing partial line. This is the guarantee that replaced holding the
+// run open for delivery: a line queued moments before the run ends reaches
+// the destination beneath rather than the handler, but it is never dropped.
+func TestCallback_QueuedLinesFlushedBeneathOnPop(t *testing.T) {
+	var base strings.Builder
+	s := newStream("stdout", &base)
+
+	// A callback with no live loop never drains, so writes just accumulate.
+	cb := &lineCallback{queueCap: lineQueueCap}
+	restore := s.push(destination{kind: destCallback, cb: cb})
+	_, _ = s.Write([]byte("one\ntwo\nthree\n"))
+	_, _ = s.Write([]byte("trailing-partial"))
+	restore() // pops: queued lines land first, then the partial
+
+	if got, want := base.String(), "one\ntwo\nthree\ntrailing-partial\n"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}

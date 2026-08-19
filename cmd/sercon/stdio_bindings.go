@@ -82,7 +82,7 @@ func parseStreamTarget(vm *goja.Runtime, loop *eventloop.EventLoop, e *scripteng
 
 	// A callable target is a line handler.
 	if fn, ok := goja.AssertFunction(target); ok {
-		return callbackDest(loop, e, fn, tee)
+		return callbackDest(loop, fn, tee)
 	}
 
 	if obj, ok := target.(*goja.Object); ok {

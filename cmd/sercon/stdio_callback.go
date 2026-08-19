@@ -6,8 +6,6 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
-
-	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // lineQueueCap bounds how many complete lines may await delivery to a JS
@@ -24,6 +22,16 @@ const lineQueueCap = 1024
 // LoopCallable.Call from on-loop deadlocks. Enqueueing plus a fire-and-forget
 // loop.RunOnLoop drain sidesteps both with one mechanism: delivery is one tick
 // late but strictly ordered.
+//
+// The guarantee this establishes: a line is delivered to the handler while
+// the loop is turning, and otherwise written to the destination beneath —
+// never dropped. There is deliberately no HoldRun keeping the run alive on
+// the queue's behalf (an earlier version of this file parked one, but
+// acquiring it from tryFeed — which runs off-loop as often as not — meant
+// touching the shared goja.Runtime from a foreign goroutine). The accepted
+// cost is that a line written moments before the run ends reaches the
+// destination beneath rather than the handler: see stop() and the
+// destCallback case in stream.closeDest.
 type lineCallback struct {
 	mu       sync.Mutex
 	buf      []byte   // bytes since the last newline
@@ -33,17 +41,15 @@ type lineCallback struct {
 	inCall   bool // the handler is executing right now (re-entrancy guard)
 	stopped  bool
 
-	fn      goja.Callable
-	loop    *eventloop.EventLoop
-	eng     *scriptengine.Engine
-	release func() // the active HoldRun release, non-nil while queued
+	fn   goja.Callable
+	loop *eventloop.EventLoop
 }
 
 // callbackDest builds a destCallback entry from a JS function target.
-func callbackDest(loop *eventloop.EventLoop, e *scriptengine.Engine, fn goja.Callable, tee bool) (destination, error) {
+func callbackDest(loop *eventloop.EventLoop, fn goja.Callable, tee bool) (destination, error) {
 	return destination{
 		kind: destCallback,
-		cb:   &lineCallback{fn: fn, loop: loop, eng: e, queueCap: lineQueueCap},
+		cb:   &lineCallback{fn: fn, loop: loop, queueCap: lineQueueCap},
 		tee:  tee,
 	}, nil
 }
@@ -85,9 +91,6 @@ func (c *lineCallback) tryFeed(p []byte) bool {
 	needDrain := len(c.queue) > 0 && !c.draining
 	if needDrain {
 		c.draining = true
-		if c.eng != nil {
-			c.release = c.eng.HoldRun("stdio line callback")
-		}
 	}
 	loop := c.loop
 	c.mu.Unlock()
@@ -105,12 +108,7 @@ func (c *lineCallback) drain(vm *goja.Runtime) {
 		c.mu.Lock()
 		if c.stopped || len(c.queue) == 0 {
 			c.draining = false
-			release := c.release
-			c.release = nil
 			c.mu.Unlock()
-			if release != nil {
-				release()
-			}
 			return
 		}
 		line := c.queue[0]
@@ -142,15 +140,20 @@ func (c *lineCallback) takePartial() []byte {
 	return rest
 }
 
-// stop marks the callback dead and releases any HoldRun it was holding.
-func (c *lineCallback) stop() {
+// stop marks the callback dead and returns any complete lines that were
+// queued but never delivered, oldest first. There is no live event loop
+// guarantee here (see the package doc comment above), so the stream writes
+// these to the destination beneath rather than losing them — the same
+// deal takePartial makes for a trailing partial line, and closeDest applies
+// both in queue order: whole lines first, then the partial.
+//
+// Called with the stream's mutex held (closeDest is only reached from
+// pop()/reset(), both locked), so this must not block or call into JS.
+func (c *lineCallback) stop() []string {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.stopped = true
+	leftover := c.queue
 	c.queue = nil
-	release := c.release
-	c.release = nil
-	c.mu.Unlock()
-	if release != nil {
-		release()
-	}
+	return leftover
 }
