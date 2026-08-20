@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
-## [Unreleased]
+## [0.103.0] — 2026-08-20
 
 ### Added
 
@@ -41,6 +41,12 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   stays on stdout); this also fixes a latent data race, since the previous
   `consoleOut` / `consoleErr` package vars were read from server-handler and
   async-op goroutines without synchronisation.
+- The same registry now also carries `text.str.printf`, the `sercon run`
+  subcommand's `FAIL` line and `--verbose` trace, the `--watch` re-run banner,
+  and `sercon serve`'s READY line and access log — so all of them honour a
+  script's redirects. Note the consequence for `serve`: a served script can
+  redirect the readiness line its supervisor is waiting on, and its own access
+  log.
 
 ## [0.102.0] — 2026-07-25
 

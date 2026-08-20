@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.102.0 (2026-07-25).
+covered is v0.1.0 (2026-05-25) through v0.103.0 (2026-08-20).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -372,6 +372,48 @@ even add a deadline to a `-timeout 0` run, or disable its timeout entirely from
 within. Named `setDeadline` (not `setTimeout`) to avoid conflation with the JS
 global event-loop timer. Backed by the resettable run watcher + `SetRunTimeout`
 in §1.
+
+`runtime.stdout` / `runtime.stderr` / `runtime.stdin` (v0.103.0) let a script
+control where its own output goes, and read piped input for the first time.
+The CLI's two `consoleOut`/`consoleErr` package vars became a **stream
+registry**: each stream is a stable `io.Writer` holding a mutex-guarded *stack*
+of destinations whose top is effective, so a redirect moves the destination
+without re-plumbing any writer. A destination is the process stream, `"null"`,
+a file (truncate/append), the other standard stream, or a JS `(line) => void`
+callback — optionally `tee`ing to the destination beneath. `to`/`toFile`/
+`silence` each return an *idempotent* restore that pops its own entry by id, so
+nested and out-of-order restores both behave (the same contract `HoldRun`'s
+`release` has); `scoped` applies a redirect for a callback's duration and
+restores even on a throw; `capture` resolves to what the callback wrote;
+`target` inspects the effective destination. `runtime.stdin` adds
+`read`/`readBytes`/`readLine`/`lines` plus `from`/`fromFile`/`fromString` to
+swap the source, which makes an interactive script testable without a real pipe.
+
+A **Go-level writer swap**, deliberately not the fd-level `dup2` lever
+`mcp.serve()` uses (§4): portable to Windows, unit-testable, and able to express
+tee, a line callback, and a per-stream file. Three design points earned their
+keep during review. A cross-stream fold resolves to the *process* stream, never
+to the other handle's current destination — that makes a `stdout→stderr` +
+`stderr→stdout` cycle impossible by construction. The line callback cannot call
+into JS from `tryFeed` (it runs under the stream mutex, and off-loop whenever a
+server handler writes), so it enqueues and drains via `loop.RunOnLoop`: one tick
+late, strictly ordered, with overflow and re-entrant writes falling through to
+the destination beneath. And an `Engine.HoldRun` in that path had to be removed
+outright — it calls `bumpLoopSync(vm)`, a goja Runtime operation only safe on the
+loop goroutine — so undelivered lines flush beneath on close instead. The
+resulting guarantee: a write reaches the handler while the loop turns, and
+otherwise lands on the destination beneath. Never dropped. Redirects reset at the
+start of each Run *and* once more as the process exits, after the last reporting
+write, so a callback left in place cannot swallow the result JSON or `PASS`/`FAIL`.
+
+Coverage is sercon's own writers — `console.*`, `runtime.log`, the
+default-export JSON, `PASS`/`FAIL`, `--verbose`, the TUI fallback,
+`text.str.printf`, `sercon run`'s diagnostics, the `--watch` banner, and
+`sercon serve`'s READY line and access log. Child processes are outside it for
+two different reasons: `services.exec.shell`/`.run`, `git`, `gh` and `typst.*`
+all *capture* output into a buffer handed back to the script, so they never touch
+these streams; only `services.exec.interactive` genuinely bypasses redirection,
+by inheriting fd 1/2/0.
 
 ### `crypto`
 
