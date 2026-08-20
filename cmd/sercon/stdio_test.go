@@ -390,27 +390,38 @@ func TestFailover_StackedFallsThroughBeneathAndReportsOnce(t *testing.T) {
 	s.reset()
 	diag := finish()
 
-	// The failing write itself reaches the destination beneath — here the base,
-	// since this is the only redirect. The entry is then taken out of service
-	// (destNull), so later writes to it are discarded rather than retried; see
-	// the note in the final-fix report about that asymmetry, which this test
-	// pins as today's behaviour rather than endorsing it.
-	if got, want := base.String(), "a\n"; got != want {
+	// Every write reaches the destination beneath — here the base, since this is
+	// the only redirect. The failing one falls through from failover; the entry
+	// is then marked dead, and writeDest routes each later write beneath as
+	// well, so a destination going bad costs at most the write in flight when it
+	// failed. Nothing after it is dropped.
+	if got, want := base.String(), "a\nb\nc\n"; got != want {
 		t.Fatalf("base: got %q want %q", got, want)
 	}
+	// Attempted exactly once: a dead entry is never written to again, so the
+	// second and third writes never reached the broken writer (and so there is
+	// only ever one error to report).
+	if got := 100 - bad.failures; got != 1 {
+		t.Fatalf("the broken writer saw %d write attempts, want 1", got)
+	}
 	if n := strings.Count(diag, "failed:"); n != 1 {
-		t.Fatalf("got %d diagnostics for 3 failing writes, want exactly 1 (stderr=%q)", n, diag)
+		t.Fatalf("got %d diagnostics for 3 writes, want exactly 1 (stderr=%q)", n, diag)
 	}
 	if !strings.Contains(diag, "redirect to /tmp/full-disk.log failed:") {
 		t.Fatalf("a stacked failure should name the redirect: %q", diag)
 	}
 }
 
-// A TEE'd destination whose own write fails must write that line beneath
-// exactly once: failover used to fall through to level-1 and then writeAt's
-// tee branch wrote the same bytes beneath again, so the failing line appeared
-// twice ("a\na\nb\n").
-func TestFailover_TeeWritesTheFailingLineBeneathOnce(t *testing.T) {
+// A TEE'd destination whose own write fails must write each line beneath
+// exactly once. Two overlapping fall-through routes make this easy to get
+// wrong, and both must stay conditional on !d.tee:
+//
+//   - the failing write ("a"): failover used to fall through to level-1 and
+//     then writeAt's tee branch wrote the same bytes beneath again, giving
+//     "a\na\nb\n";
+//   - every write AFTER the failure ("b"): writeDest's dead branch routes it
+//     beneath, and writeAt's tee branch would write it beneath again.
+func TestFailover_TeeWritesEachLineBeneathOnce(t *testing.T) {
 	finish := captureRealStderr(t)
 
 	var base strings.Builder
@@ -418,13 +429,20 @@ func TestFailover_TeeWritesTheFailingLineBeneathOnce(t *testing.T) {
 	bad := &failingWriter{failures: 100}
 	s.push(destination{kind: destBuffer, w: bad, tee: true})
 
-	_, _ = s.Write([]byte("a\n"))
-	_, _ = s.Write([]byte("b\n"))
+	_, _ = s.Write([]byte("a\n")) // fails, marks the entry dead
+	_, _ = s.Write([]byte("b\n")) // takes the dead route
+	_, _ = s.Write([]byte("c\n"))
 	s.reset()
-	_ = finish()
+	diag := finish()
 
-	if got, want := base.String(), "a\nb\n"; got != want {
-		t.Fatalf("base: got %q want %q (a repeated \"a\\n\" is the double-write)", got, want)
+	if got, want := base.String(), "a\nb\nc\n"; got != want {
+		t.Fatalf("base: got %q want %q (a repeated line is the double-write)", got, want)
+	}
+	if got := 100 - bad.failures; got != 1 {
+		t.Fatalf("the broken writer saw %d write attempts, want 1", got)
+	}
+	if n := strings.Count(diag, "failed:"); n != 1 {
+		t.Fatalf("got %d diagnostics, want exactly 1 (stderr=%q)", n, diag)
 	}
 }
 

@@ -30,6 +30,7 @@ type destination struct {
 	tee    bool          // also write to the destination beneath this one
 	id     uint64        // identity for out-of-order pop
 	failed bool          // a write error has already been reported for this entry
+	dead   bool          // a write failed: never write here again, pass beneath
 }
 
 // stream is one output stream. It is the stable io.Writer every consumer holds;
@@ -77,6 +78,21 @@ func (s *stream) writeAt(i int, p []byte) {
 // writeDest dispatches one destination. level is the entry's stack level so a
 // fall-through can target the destination beneath it.
 func (s *stream) writeDest(d *destination, level int, p []byte) {
+	// An entry whose write has already failed is never written to again — but
+	// the bytes are not lost: this and every later write continue to the
+	// destination BENEATH it, exactly as the failing write did (see failover).
+	// Only stack entries can be dead; the base is exempt (failover's level 0
+	// branch), so writeAt(level-1) here always has somewhere to go.
+	//
+	// A teed entry needs no fall-through: writeAt's tee branch writes these same
+	// bytes beneath as soon as this returns, and doing both would duplicate
+	// every line — the same double-write shape as the callback branch below.
+	if d.dead {
+		if !d.tee {
+			s.writeAt(level-1, p)
+		}
+		return
+	}
 	switch d.kind {
 	case destNull:
 		return
@@ -104,26 +120,27 @@ func (s *stream) writeDest(d *destination, level int, p []byte) {
 	}
 }
 
-// failover reports a write error once per destination, sends THIS write to the
-// destination beneath, and takes the failing entry out of service so it is
-// never retried. A console.log buried in a library is the wrong place to
-// surface a full disk, so this never throws.
+// failover reports a write error once per destination, marks the entry dead so
+// it is never written to again, and sends this write to the destination
+// beneath. Every later write follows the same route (see writeDest's dead
+// branch), so a destination that goes bad costs at most the one write that was
+// in flight when it failed — nothing after it is dropped. A console.log buried
+// in a library is the wrong place to surface a full disk, so this never throws.
 //
-// Note the asymmetry that follows from "out of service" being destNull: later
-// writes to a dropped stacked entry are discarded rather than continuing to the
-// destination beneath (unless the entry was pushed with tee, whose branch in
-// writeAt keeps running). Documented as-is; changing it is a behaviour change,
-// not a comment fix.
+// Note "dead", not destNull: overwriting kind would discard every later write
+// instead of passing it beneath, would make target() report a "null" redirect
+// the script never asked for, and would stop closeDest from closing a destFile
+// entry's *os.File on pop.
 //
-// The BASE destination (level 0) is deliberately exempt from the demotion:
-// it IS the process stream, there is nothing beneath it to fall over to, and
-// destNull-ing it would silence the process for the rest of its life —
-// reset() is truncateTo(0), which never touches base, so not even
-// runtime.stdout.reset() or the between-Run resetStdio() could bring it back.
-// One transient EAGAIN/EIO on stdout would take out an entire --watch session.
-// Before this branch existed a failed write was simply ignored and the next
-// one retried, which is the behaviour restored here: report once (via the same
-// d.failed flag, so a persistently broken stream doesn't spam), keep trying.
+// The BASE destination (level 0) is deliberately exempt: it IS the process
+// stream, there is nothing beneath it to fall through to, and marking it dead
+// would silence the process for the rest of its life — reset() is
+// truncateTo(0), which never touches base, so not even runtime.stdout.reset()
+// or the between-Run resetStdio() could bring it back. One transient
+// EAGAIN/EIO on stdout would take out an entire --watch session. Before this
+// branch existed a failed write was simply ignored and the next one retried,
+// which is the behaviour restored here: report once (via the same d.failed
+// flag, so a persistently broken stream doesn't spam), keep trying.
 func (s *stream) failover(d *destination, level int, err error, p []byte) {
 	if !d.failed {
 		d.failed = true
@@ -139,9 +156,9 @@ func (s *stream) failover(d *destination, level int, err error, p []byte) {
 		}
 	}
 	if level == 0 {
-		return // see the doc comment: never demote the process stream
+		return // see the doc comment: the process stream is never taken out of service
 	}
-	d.kind = destNull // stop retrying this entry
+	d.dead = true // stop writing here; writeDest routes everything beneath now
 	// A teed entry needs no fall-through here: writeAt's tee branch writes
 	// these same bytes beneath as soon as writeDest returns, and doing both
 	// would duplicate this one line (delivered-once, again).
