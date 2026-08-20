@@ -1417,10 +1417,29 @@ text.case.detect("get_http");  // "snake"
 text.case.names();             // all 16 canonical case names`)
 	note("16 canonical cases (camel/pascal/snake/screamingSnake/ada/camelSnake/kebab/train/screamingKebab/flat/upperFlat/dot/path/title/sentence/capital) plus header/cobol/slug aliases. The tokenizer is acronym-aware (HTTPServer → [http, server]) and works from any input case, not just the one you started with. Pure-Go, no dependencies. See examples/scripts/text-case.ts and MANUAL.md §5.4 / the generated §17.14 reference.")
 
+	header(74, "Redirect your own output (runtime.stdout / stderr / stdin)")
+	code(`// Every setter returns an idempotent restore fn; redirects nest.
+const restore = runtime.stderr.silence();
+await noisyThing();
+restore();
+
+// scoped() restores even if the body throws; capture() gives you the text.
+const text = await runtime.stdout.capture(() => { console.log("hi"); });
+
+// A file (with tee), a fold onto the other stream, or your own handler.
+runtime.stdout.toFile("/tmp/out.log", { append: true, tee: true });
+runtime.stderr.to("stdout");
+runtime.stdout.to(line => myLogger.info(line));
+
+// stdin is readable and swappable — testable without a real pipe.
+runtime.stdin.fromString("a\nb\n");
+for await (const line of runtime.stdin.lines()) runtime.log(line);`)
+	note("Covers sercon's own writers (console.*, runtime.log, the default-export JSON, PASS/FAIL, --verbose, the TUI fallback). services.exec.shell/.run, services.git, services.gh and services.typst.* capture a child's output into a buffer instead of touching sercon's streams, so redirection is simply irrelevant to them; only services.exec.interactive genuinely bypasses it, by inheriting fd 1/2 (and fd 0) directly. Redirects reset at the start of each script, so `sercon a.ts b.ts` and --watch re-runs start clean, plus once more on the way out (after the last reporting write) so a line callback left pushed can't swallow the result JSON or PASS/FAIL. See examples/scripts/stdio-redirect.ts and MANUAL.md §5.2 / the generated §17.11 reference.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 73
+const exampleCount = 74

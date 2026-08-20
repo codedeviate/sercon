@@ -1043,6 +1043,216 @@ runtime.assert.equal(2 + 2, 4);
 const args = runtime.argv.slice(2);   // post-`--` user args
 ```
 
+#### 5.2.1 Script-controlled stdio: `runtime.stdout` / `runtime.stderr` / `runtime.stdin`
+
+A script can redirect, silence, tee, or capture sercon's own writers, and can
+swap what `runtime.stdin` reads from. Full member signatures are in the
+generated §17.11 reference (`runtime.stdout`, `runtime.stderr`,
+`runtime.stdin`); this section is the mental model.
+
+**The three handles.** `runtime.stdout` and `runtime.stderr` are output
+handles with an identical member set — `to(target, opts?)`, `toFile(path,
+opts?)`, `silence()`, `reset()`, `target()`, `scoped(target, opts?, fn)`,
+`capture(fn)`. `runtime.stdin` is the input side — `read()`, `readBytes()`,
+`readLine()`, `lines()`, `from(source)`, `fromFile(path)`,
+`fromString(text)`, `reset()`, `source()`, `scoped(source, fn)`.
+
+**Redirects are a stack, not a single slot.** Every setter that changes a
+destination or source returns an idempotent restore function; calling it pops
+*that* entry back off, wherever it ended up in the stack — so nested and
+out-of-order restores both behave, and a restore called twice is a no-op.
+`reset()` drops the whole stack at once (used by the CLI itself at the start
+of every Run — see below).
+
+**A stream-name target always folds onto the real process stream.**
+`runtime.stdout.to("stderr")` and `runtime.stderr.to("stdout")` both resolve
+to the actual `os.Stdout` / `os.Stderr`, never to whatever the other handle
+currently has pushed. That is deliberate: it makes a fold cycle
+(`stdout → stderr` while `stderr → stdout`) impossible by construction, at the
+cost that folding onto a stream bypasses whatever that stream's own redirect
+stack — a `capture()` buffer, a line callback, a file — currently holds.
+
+**`tee` writes to the destination *beneath* the one you're pushing**, not
+unconditionally to the terminal. Teeing on top of an existing `silence()`
+still only reaches the new target and whatever was silenced beneath it — it
+does not resurrect the real terminal. `capture()` never tees; it is always
+exclusive. `toFile`/`to` reject `{ tee: true }` combined with the `"null"`
+target (nothing to tee onto).
+
+**What this covers, and what it does not.** Redirection reroutes sercon's own
+writers: `console.*`, `runtime.log`, `text.str.printf`, the default-export
+JSON printed after a run, the `sercon run` subcommand's own `FAIL`/verbose
+output, the `--watch` banner, the TUI's non-TTY fallback renderer, and —
+notably — `sercon serve`'s `READY` line and its access log, so a served
+script can redirect its own supervisor's readiness line and request log.
+
+A child process is a different story, and not a uniform one.
+`services.exec.shell`/`.run`, `services.git`, `services.gh`, and
+`services.typst.*` all **capture** the child's output into a buffer that
+they hand back to the script — the child never touches sercon's own process
+streams, so redirection is simply irrelevant to it either way; if the
+script then prints that captured string itself, *that* print follows the
+redirect like any other write. What genuinely bypasses redirection is a
+child that **inherits** file descriptor 1/2 directly:
+`services.exec.interactive`, the "wire this subprocess to my real terminal"
+primitive (`ssh`, `docker exec -it`, interactive REPLs and pagers). The same
+boundary holds on the input side: the TUI's key-input reader and
+`services.exec.interactive` read file descriptor 0 directly, so a
+`runtime.stdin` source swap does not reach them either. The rule to
+remember: redirection covers what **sercon itself** reads/writes, not a
+separate process holding its own copy of the fd.
+
+**A function target's delivery has its own caveats.** Lines reach the
+handler on a later tick, in write order, never synchronously with the write
+that produced them. The pending-line queue is bounded (1024 lines); on
+overflow, or on a write that re-enters the handler (the handler's own
+`console.log` while it is running), the write falls through to the
+destination *beneath* the callback instead of blocking or being lost twice.
+Any line still queued when the redirect is popped or the run ends is written
+to that same destination beneath rather than delivered late. A handler that
+throws has that one line reported once on the real stderr — not retried,
+not recovered — without aborting the rest of the run.
+
+**`FAIL`/`PASS` stay on stdout; `--verbose`'s duration line is on stderr** —
+and both follow whatever the script left `runtime.stdout`/`runtime.stderr`
+pointed at, because the CLI's own post-run reporting writes through the same
+registry the script does.
+
+**Redirects reset at the start of every Run, not the end.** `sercon a.ts
+b.ts` gives `b.ts` clean streams regardless of what `a.ts` did, and each
+`--watch` re-run starts clean too. Resetting at the *start* (rather than
+after) is what lets the CLI's own `FAIL`/`PASS`/`--verbose` reporting still
+land wherever the script itself left the stream — the reset only clears the
+slate for the *next* run. There is one further reset on the way out, *after*
+that final reporting write: it exists so a function target left pushed by the
+last (or only) run cannot swallow the result JSON and the `PASS`/`FAIL` line —
+delivery needs a live event loop, and by then there isn't one, so popping the
+entry flushes whatever it still holds to the destination beneath it.
+
+**`runtime.stdin` reads block until EOF**, off the event loop, so `await` on
+them never stalls the loop; concurrent read calls serialise against each
+other so two callers can never split a line or a chunk. When the script
+itself was read from stdin (`sercon -`), the real stdin is already drained by
+the time the script runs, so every read resolves immediately (empty string /
+zero bytes / `null`) unless the script has swapped in a file or string source
+first.
+
+#### 5.2.2 Recipes
+
+##### 5.2.2.1 Silence a noisy dependency for one call
+
+Some library call insists on printing to stdout/stderr and there is no quiet
+flag. Wrap just that call.
+
+```ts
+const restore = runtime.stderr.silence();
+try {
+  await noisyThirdPartyThing();
+} finally {
+  restore();
+}
+```
+
+**Notes**
+- `scoped()` (below) does the try/finally for you when the noisy call is a
+  single function.
+
+##### 5.2.2.2 Log to a file while still watching the terminal
+
+Append a run's output to a log file without losing the live terminal view —
+`tee` writes to both the new target and whatever was there before.
+
+```ts
+const stopLogging = runtime.stdout.toFile("/tmp/my-script.log", {
+  append: true,
+  tee: true,
+});
+console.log("this line lands in the file AND on screen");
+stopLogging();
+```
+
+**Notes**
+- Drop `append` to truncate the file on each run instead.
+- A later write failure (disk full, file removed) does not throw — the
+  destination is marked dead and every subsequent write falls through to the
+  destination *beneath* it in the stack (here, with one redirect pushed, that is
+  the process stream; deeper in a stack it is whatever sits below, not
+  necessarily the terminal). So a destination that goes bad costs at most the
+  one write that was in flight when it failed; nothing after it is lost. The
+  failure is reported once on the real stderr, not once per line.
+- The process stream itself is never taken out of service that way: a failed
+  write straight to stdout/stderr is reported once and later writes are still
+  attempted, so a single transient error can't silence the rest of the session.
+
+##### 5.2.2.3 Assert on what a function printed
+
+Testing a function that logs, without touching its implementation.
+
+```ts
+const output = await runtime.stdout.capture(() => {
+  reportStatus({ ok: true });
+});
+runtime.assert.ok(output.includes("ok"), "reportStatus should mention ok");
+```
+
+**Notes**
+- `capture()` is always exclusive (never tees) and restores stdout — even if
+  the callback throws — before its promise settles.
+- Use `runtime.stderr.capture(fn)` for a function that logs warnings/errors
+  instead.
+
+##### 5.2.2.4 Read piped input line by line
+
+Consume `sercon script.ts < data.txt` (or a real interactive terminal) a line
+at a time, and make the same script testable without a real pipe.
+
+```ts
+for await (const line of runtime.stdin.lines()) {
+  if (line === "") break;
+  runtime.log("got:", line);
+}
+```
+
+**Notes**
+- To unit-test the same code path, swap the source first:
+  `runtime.stdin.fromString("a\nb\n\n");` then run the loop above — no pipe
+  needed.
+- If the *script itself* was read from stdin (`sercon -`), the real stdin is
+  already drained before the script starts running, so `runtime.stdin.lines()`
+  ends immediately unless a source has been swapped in with
+  `from`/`fromFile`/`fromString`.
+
+##### 5.2.2.5 Route each line to your own handler
+
+Send every line straight to your own logger instead of a file, so a script's
+output feeds a webhook, a structured logger, or a test spy.
+
+```ts
+const seen: string[] = [];
+const stop = runtime.stdout.to((line) => {
+  seen.push(line);
+});
+console.log("first");
+console.log("second");
+await runtime.time.sleep(0); // delivery is queued, not synchronous
+stop();
+runtime.assert.equal(seen.join(","), "first,second");
+```
+
+**Notes**
+- Delivery is queued and asynchronous: a line lands on a later tick, never in
+  the same call as the `console.log` that produced it. Any awaited
+  microtask/macrotask (even `time.sleep(0)`) is enough to let it drain before
+  inspecting the result.
+- The pending-line queue is bounded (1024 lines). On overflow — or on a write
+  that re-enters the handler, e.g. the handler itself calling `console.log` —
+  the write falls through to whatever destination is beneath the callback
+  instead of blocking or being silently dropped.
+- Any line still queued when the redirect is popped or the run ends is
+  written to the destination beneath rather than delivered to the handler.
+- A handler that throws has that one line reported once on the real
+  stderr (not retried); the rest of the run continues.
+
 ### 5.3 `crypto`
 
 Hashing, JWT, and age/PGP encryption. Three sub-namespaces:
@@ -17189,7 +17399,502 @@ Set the running script's wall-clock kill deadline to now + ms (replacing any pri
 runtime.setDeadline(30000); // give this run 30s from now
 ```
 
-#### 17.11.12 runtime.termSize
+#### 17.11.12 runtime.stderr
+
+##### 17.11.12.1 runtime.stderr.capture
+
+```
+capture(fn: () => void | Promise<void>): Promise<string>
+```
+
+Run fn (sync or async) with stderr captured to an in-memory buffer, and resolve to everything it wrote. Always exclusive — unlike `to`/`scoped`, capture never tees; use scoped with { tee: true } if the terminal should also see the output.
+
+**Parameters**
+
+- `fn` *(() => void | Promise<void>)* — Called with no arguments; its own return value is ignored.
+
+**Returns:** Promise<string> — everything written to stderr while fn ran, in write order. The redirect has already been restored by the time this resolves.
+
+**Throws:** Rejects with whatever fn threw or its promise rejected with, after restoring the redirect. Throws synchronously if the argument is not a function.
+
+```ts
+const out = await runtime.stderr.capture(() => {
+  console.error("one");
+  console.error("two");
+});
+runtime.assert.equal(out, "one\ntwo\n");
+```
+
+##### 17.11.12.2 runtime.stderr.reset
+
+```
+reset(): void
+```
+
+Drop every redirect this script has pushed onto stderr — the whole stack, not just the last push — closing any files they opened and reverting to the real process stderr. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect — and once more as the process exits, after the CLI's last reporting write, so a line callback left pushed can't take the FAIL line or the --verbose duration with it.
+
+**Returns:** void.
+
+**Throws:** Never throws.
+
+```ts
+runtime.stderr.to("null");
+runUntrusted();
+runtime.stderr.reset(); // back to the real stderr, however deep the stack got
+```
+
+##### 17.11.12.3 runtime.stderr.scoped
+
+```
+scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }, fn: () => void | Promise<void>): Promise<void>
+```
+
+Apply a target to stderr for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).
+
+**Parameters**
+
+- `target` *("stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void))* — Same target union as `to`.
+- `opts` *({ tee?: boolean }, optional)* — Same as `to`'s opts; only meaningful in the three-argument form.
+- `fn` *(() => void | Promise<void>)* — Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
+
+**Returns:** Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.
+
+**Throws:** Rejects with whatever fn threw or its promise rejected with, after restoring the redirect. Throws synchronously (before touching the stream) for the same reasons as `to`, or if the last argument is not a function.
+
+```ts
+await runtime.stderr.scoped("null", () => {
+  console.error("never printed");
+});
+console.error("back to normal");
+```
+
+##### 17.11.12.4 runtime.stderr.silence
+
+```
+silence(): () => void
+```
+
+Discard everything written to stderr until the returned restore function is called. Shorthand for stderr.to("null").
+
+**Returns:** () => void — an idempotent restore function that removes the silence and reveals whatever was beneath it.
+
+**Throws:** Never throws.
+
+```ts
+const unsilence = runtime.stderr.silence();
+console.error("nobody sees this");
+unsilence();
+```
+
+##### 17.11.12.5 runtime.stderr.target
+
+```
+target(): { kind: "stream" | "null" | "file" | "callback" | "buffer"; tee: boolean; depth: number; name?: "stdout" | "stderr"; path?: string; append?: boolean }
+```
+
+Inspect the effective stderr destination without changing it.
+
+**Returns:** The current top-of-stack destination: kind identifies its type (name is set only for kind "stream"; path/append only for kind "file"); tee reports whether it also writes to the destination beneath it; depth is how many redirects are currently pushed (0 means stderr is unredirected).
+
+**Throws:** Never throws.
+
+```ts
+if (runtime.stderr.target().kind === "null") console.error("currently silenced");
+```
+
+##### 17.11.12.6 runtime.stderr.to
+
+```
+to(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }): () => void
+```
+
+Point stderr at a target and return a restore function. The target is "stdout"/"stderr" (fold onto that process stream), "null" (discard), { file, append? } (a file), or a function (called with each completed line). Redirects nest: the restore pops its own entry, so nested and out-of-order restores both behave, and calling it twice is a no-op.
+
+**Parameters**
+
+- `target` *("stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void))* — Where the stream should go. "stdout" folds stderr onto the PROCESS stdout (so stdout→stderr and stderr→stdout cannot ping-pong); "null" discards; an object writes to a file, truncating unless append is true; a function receives each completed line without its newline, delivered on the next tick in write order.
+- `opts` *({ tee?: boolean }, optional)* — tee also writes to the destination beneath this one in the stack — so teeing on top of a silence() still writes only to the new target. tee is rejected with the "null" target.
+
+**Returns:** () => void — an idempotent restore function that removes this redirect.
+
+**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.error while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
+
+```ts
+const restore = runtime.stderr.to("stdout");
+console.error("now on stdout too");
+restore();
+```
+
+##### 17.11.12.7 runtime.stderr.toFile
+
+```
+toFile(path: string, opts?: { append?: boolean, tee?: boolean }): () => void
+```
+
+Redirect stderr to a file, truncating unless append is true, and return a restore function. Shorthand for stderr.to({ file, append }, { tee }).
+
+**Parameters**
+
+- `path` *(string)* — Output file path. Opened immediately, at the call site — a bad path or a permission error surfaces here rather than at some later write.
+- `opts` *({ append?: boolean, tee?: boolean }, optional)* — append opens with O_APPEND instead of truncating (default false). tee also writes to whatever destination was beneath this one when it was pushed.
+
+**Returns:** () => void — an idempotent restore function that closes the file and removes this redirect.
+
+**Throws:** Throws ("toFile: …") if the file cannot be opened (missing parent directory, permission denied, etc). A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session.
+
+```ts
+const stop = runtime.stderr.toFile("/tmp/err.log", { append: true, tee: true });
+console.error("on screen and in the file");
+stop();
+```
+
+#### 17.11.13 runtime.stdin
+
+##### 17.11.13.1 runtime.stdin.from
+
+```
+from(source: { file: string } | { text: string } | "stdin"): () => void
+```
+
+Push a new stdin source and return a restore function that pops it back off. source is { file: string } (opened immediately), { text: string } (an in-memory string), or "stdin" (the real process stdin, pushed as a new entry above whatever is currently active).
+
+**Parameters**
+
+- `source` *({ file: string } | { text: string } | "stdin")* — Which source becomes active. A { file } is opened immediately, at the call site — a missing file or a permission error surfaces here. { text } and "stdin" cannot fail to open.
+
+**Returns:** () => void — an idempotent restore function that closes the file (if any) and pops this source back off, uncovering whatever was active before.
+
+**Throws:** Throws ("from: …") if source is missing, is an object with neither `file` nor `text`, is an unrecognised string, or (for a { file } source) the file cannot be opened.
+
+```ts
+const restore = runtime.stdin.from({ text: "a\nb\n" });
+const first = await runtime.stdin.readLine();
+restore();
+```
+
+##### 17.11.13.2 runtime.stdin.fromFile
+
+```
+fromFile(path: string): () => void
+```
+
+Push a file as the stdin source and return a restore function. Shorthand for stdin.from({ file: path }).
+
+**Parameters**
+
+- `path` *(string)* — Path to the file to read from. Opened immediately, at the call site.
+
+**Returns:** () => void — an idempotent restore function that closes the file and pops this source back off.
+
+**Throws:** Throws ("fromFile: …") if the file cannot be opened (missing, permission denied).
+
+```ts
+const restore = runtime.stdin.fromFile("fixtures/input.txt");
+const all = await runtime.stdin.read();
+restore();
+```
+
+##### 17.11.13.3 runtime.stdin.fromString
+
+```
+fromString(text: string): () => void
+```
+
+Push an in-memory string as the stdin source and return a restore function. Shorthand for stdin.from({ text }).
+
+**Parameters**
+
+- `text` *(string)* — Content to serve as stdin from now on.
+
+**Returns:** () => void — an idempotent restore function that pops this source back off.
+
+**Throws:** Never throws.
+
+```ts
+runtime.stdin.fromString("alpha\nbeta\n");
+for await (const line of runtime.stdin.lines()) runtime.log(line);
+```
+
+##### 17.11.13.4 runtime.stdin.lines
+
+```
+lines(): AsyncIterable<string>
+```
+
+Async-iterate the current stdin source one line at a time (no trailing newline), stopping at EOF. Equivalent to calling readLine() in a loop; `for await` is just more idiomatic.
+
+**Returns:** An async iterator yielding each line as a string. `for await (const line of runtime.stdin.lines())`; `break` simply stops calling readLine again — it does not close or reset the source.
+
+**Throws:** The iterator's next() rejects if the underlying source returns a read error, propagating out of the `for await`.
+
+```ts
+for await (const line of runtime.stdin.lines()) {
+  runtime.log(line.toUpperCase());
+}
+```
+
+##### 17.11.13.5 runtime.stdin.read
+
+```
+read(...args: unknown[]): Promise<string>
+```
+
+Read every remaining byte from the current stdin source as a UTF-8 string, blocking until EOF. Concurrent calls with readBytes/readLine/lines serialise, so two readers can never split a read.
+
+**Returns:** Promise<string> — the rest of the source's bytes, decoded as UTF-8, from the current position through EOF.
+
+**Throws:** Rejects if the underlying source returns a read error. Blocking on the real process stdin cannot be interrupted by the run's deadline — the run itself is still killed, but this call parks until the pipe closes; a file or string source always reaches EOF. Note: when the script itself came from stdin (`sercon -`), stdin is already drained and this resolves to "" immediately.
+
+```ts
+const body = await runtime.stdin.read();
+runtime.log("got", body.length, "bytes");
+```
+
+##### 17.11.13.6 runtime.stdin.readBytes
+
+```
+readBytes(...args: unknown[]): Promise<Uint8Array>
+```
+
+Read every remaining byte from the current stdin source as raw bytes, blocking until EOF. Concurrent calls with read/readLine/lines serialise, so two readers can never split a read.
+
+**Returns:** Promise<Uint8Array> — the rest of the source's bytes from the current position through EOF. This is goja's Go-slice-backed wrapper around the underlying []byte, not a native JS Uint8Array: `instanceof Uint8Array` is false, though .length and indexing work as expected.
+
+**Throws:** Rejects if the underlying source returns a read error. Blocking on the real process stdin cannot be interrupted by the run's deadline — the run itself is still killed, but this call parks until the pipe closes. Note: when the script itself came from stdin (`sercon -`), stdin is already drained and this resolves to a zero-length result immediately.
+
+```ts
+const b = await runtime.stdin.readBytes();
+runtime.log(b.length, b[0]);
+```
+
+##### 17.11.13.7 runtime.stdin.readLine
+
+```
+readLine(...args: unknown[]): Promise<string | null>
+```
+
+Read one line from the current stdin source, without its trailing newline. Resolves to null at EOF. A final line with no trailing newline is still returned. Concurrent calls serialise, so two readers can never split a line.
+
+**Returns:** Promise<string | null> — the next line without its newline, or null once the source is exhausted.
+
+**Throws:** Rejects if the underlying source returns a read error. Note: when the script itself came from stdin (`sercon -`), stdin is already drained and this resolves to null immediately.
+
+```ts
+let line;
+while ((line = await runtime.stdin.readLine()) !== null) {
+  runtime.log("got", line);
+}
+```
+
+##### 17.11.13.8 runtime.stdin.reset
+
+```
+reset(): void
+```
+
+Drop every source swap this script has pushed onto stdin — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdin. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's source swap, and once more as the process exits: the same reset covers stdin, stdout and stderr together.
+
+**Returns:** void.
+
+**Throws:** Never throws.
+
+```ts
+runtime.stdin.fromString("test input\n");
+// ... read it ...
+runtime.stdin.reset(); // back to the real stdin
+```
+
+##### 17.11.13.9 runtime.stdin.scoped
+
+```
+scoped(source: { file: string } | { text: string } | "stdin", fn: () => unknown | Promise<unknown>): Promise<unknown>
+```
+
+Push a stdin source for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Unlike the stdout/stderr scoped (which always resolves to undefined), this resolves to fn's own resolved value.
+
+**Parameters**
+
+- `source` *({ file: string } | { text: string } | "stdin")* — Same source union as `from`.
+- `fn` *(() => unknown | Promise<unknown>)* — Called with no arguments; its resolved value becomes scoped's own resolved value.
+
+**Returns:** Promise<unknown> — resolves to whatever fn returned (or its promise resolved with), after the source has already been restored.
+
+**Throws:** Rejects with whatever fn threw or its promise rejected with, after restoring the source. Throws synchronously (before touching the stack) for the same reasons as `from`, or if the second argument is not a function.
+
+```ts
+const total = await runtime.stdin.scoped({ text: "1\n2\n3\n" }, async () => {
+  let sum = 0;
+  for await (const line of runtime.stdin.lines()) sum += Number(line);
+  return sum;
+});
+```
+
+##### 17.11.13.10 runtime.stdin.source
+
+```
+source(): { kind: "stdin" | "file" | "text"; path?: string; tty: boolean }
+```
+
+Describe the currently active stdin source, without reading from it.
+
+**Returns:** { kind, path?, tty } — kind is which source is active (path is set only for kind "file"); tty is true only when kind is "stdin" and the real process stdin is a terminal — a file or string source is never a terminal, and a script itself read from stdin (`sercon -`) leaves the real stdin already drained.
+
+**Throws:** Never throws.
+
+```ts
+if (runtime.stdin.source().tty) console.log("waiting for interactive input…");
+```
+
+#### 17.11.14 runtime.stdout
+
+##### 17.11.14.1 runtime.stdout.capture
+
+```
+capture(fn: () => void | Promise<void>): Promise<string>
+```
+
+Run fn (sync or async) with stdout captured to an in-memory buffer, and resolve to everything it wrote. Always exclusive — unlike `to`/`scoped`, capture never tees; use scoped with { tee: true } if the terminal should also see the output.
+
+**Parameters**
+
+- `fn` *(() => void | Promise<void>)* — Called with no arguments; its own return value is ignored.
+
+**Returns:** Promise<string> — everything written to stdout while fn ran, in write order. The redirect has already been restored by the time this resolves.
+
+**Throws:** Rejects with whatever fn threw or its promise rejected with, after restoring the redirect. Throws synchronously if the argument is not a function.
+
+```ts
+const out = await runtime.stdout.capture(() => {
+  console.log("one");
+  console.log("two");
+});
+runtime.assert.equal(out, "one\ntwo\n");
+```
+
+##### 17.11.14.2 runtime.stdout.reset
+
+```
+reset(): void
+```
+
+Drop every redirect this script has pushed onto stdout — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdout. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect — and once more as the process exits, after the CLI's last reporting write, so a line callback left pushed can't take the default-export JSON or the PASS/FAIL line with it.
+
+**Returns:** void.
+
+**Throws:** Never throws.
+
+```ts
+runtime.stdout.to("null");
+runUntrusted();
+runtime.stdout.reset(); // back to the real stdout, however deep the stack got
+```
+
+##### 17.11.14.3 runtime.stdout.scoped
+
+```
+scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }, fn: () => void | Promise<void>): Promise<void>
+```
+
+Apply a target to stdout for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).
+
+**Parameters**
+
+- `target` *("stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void))* — Same target union as `to`.
+- `opts` *({ tee?: boolean }, optional)* — Same as `to`'s opts; only meaningful in the three-argument form.
+- `fn` *(() => void | Promise<void>)* — Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
+
+**Returns:** Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.
+
+**Throws:** Rejects with whatever fn threw or its promise rejected with, after restoring the redirect. Throws synchronously (before touching the stream) for the same reasons as `to`, or if the last argument is not a function.
+
+```ts
+await runtime.stdout.scoped("null", () => {
+  console.log("never printed");
+});
+console.log("back to normal");
+```
+
+##### 17.11.14.4 runtime.stdout.silence
+
+```
+silence(): () => void
+```
+
+Discard everything written to stdout until the returned restore function is called. Shorthand for stdout.to("null").
+
+**Returns:** () => void — an idempotent restore function that removes the silence and reveals whatever was beneath it.
+
+**Throws:** Never throws.
+
+```ts
+const unsilence = runtime.stdout.silence();
+console.log("nobody sees this");
+unsilence();
+```
+
+##### 17.11.14.5 runtime.stdout.target
+
+```
+target(): { kind: "stream" | "null" | "file" | "callback" | "buffer"; tee: boolean; depth: number; name?: "stdout" | "stderr"; path?: string; append?: boolean }
+```
+
+Inspect the effective stdout destination without changing it.
+
+**Returns:** The current top-of-stack destination: kind identifies its type (name is set only for kind "stream"; path/append only for kind "file"); tee reports whether it also writes to the destination beneath it; depth is how many redirects are currently pushed (0 means stdout is unredirected).
+
+**Throws:** Never throws.
+
+```ts
+if (runtime.stdout.target().kind === "null") console.log("currently silenced");
+```
+
+##### 17.11.14.6 runtime.stdout.to
+
+```
+to(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }): () => void
+```
+
+Point stdout at a target and return a restore function. The target is "stdout"/"stderr" (fold onto that process stream), "null" (discard), { file, append? } (a file), or a function (called with each completed line). Redirects nest: the restore pops its own entry, so nested and out-of-order restores both behave, and calling it twice is a no-op.
+
+**Parameters**
+
+- `target` *("stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void))* — Where the stream should go. A stream name folds onto that PROCESS stream (so stdout→stderr and stderr→stdout cannot ping-pong); "null" discards; an object writes to a file, truncating unless append is true; a function receives each completed line without its newline, delivered on the next tick in write order.
+- `opts` *({ tee?: boolean }, optional)* — tee also writes to the destination beneath this one in the stack — so teeing on top of a silence() still writes only to the new target. tee is rejected with the "null" target.
+
+**Returns:** () => void — an idempotent restore function that removes this redirect.
+
+**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.log while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
+
+```ts
+const restore = runtime.stdout.to({ file: "/tmp/out.log" }, { tee: true });
+console.log("goes to both");
+restore();
+```
+
+##### 17.11.14.7 runtime.stdout.toFile
+
+```
+toFile(path: string, opts?: { append?: boolean, tee?: boolean }): () => void
+```
+
+Redirect stdout to a file, truncating unless append is true, and return a restore function. Shorthand for stdout.to({ file, append }, { tee }).
+
+**Parameters**
+
+- `path` *(string)* — Output file path. Opened immediately, at the call site — a bad path or a permission error surfaces here rather than at some later write.
+- `opts` *({ append?: boolean, tee?: boolean }, optional)* — append opens with O_APPEND instead of truncating (default false). tee also writes to whatever destination was beneath this one when it was pushed.
+
+**Returns:** () => void — an idempotent restore function that closes the file and removes this redirect.
+
+**Throws:** Throws ("toFile: …") if the file cannot be opened (missing parent directory, permission denied, etc). A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session.
+
+```ts
+const stop = runtime.stdout.toFile("/tmp/out.log", { append: true, tee: true });
+console.log("on screen and in the file");
+stop();
+```
+
+#### 17.11.15 runtime.termSize
 
 ```
 termSize(): { columns: number; rows: number; tty: boolean }
@@ -17205,9 +17910,9 @@ Current terminal size of the controlling TTY (stdout) as { columns, rows, tty }.
 const { columns } = runtime.termSize(); const bar = "=".repeat(Math.min(columns, 40));
 ```
 
-#### 17.11.13 runtime.time
+#### 17.11.16 runtime.time
 
-##### 17.11.13.1 runtime.time.format
+##### 17.11.16.1 runtime.time.format
 
 ```
 format(ms: number, layout: string, tz?: string): string
@@ -17229,7 +17934,7 @@ Format a unix-ms timestamp through strftime tokens. Optional IANA tz (e.g. 'Euro
 const s = runtime.time.format(runtime.time.nowMs(), "%F %T", "UTC");
 ```
 
-##### 17.11.13.2 runtime.time.nowMs
+##### 17.11.16.2 runtime.time.nowMs
 
 ```
 nowMs(): number
@@ -17245,7 +17950,7 @@ Wall-clock milliseconds since the Unix epoch.
 const t0 = runtime.time.nowMs();
 ```
 
-##### 17.11.13.3 runtime.time.sleep
+##### 17.11.16.3 runtime.time.sleep
 
 ```
 sleep(ms: number): Promise<void>

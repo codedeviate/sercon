@@ -304,6 +304,153 @@ declare const runtime: {
    * @returns void — applies immediately to the in-flight run.
    */
   setDeadline(ms: number): void;
+  stderr: {
+    /**
+     * Run fn (sync or async) with stderr captured to an in-memory buffer, and resolve to everything it wrote. Always exclusive — unlike `to`/`scoped`, capture never tees; use scoped with { tee: true } if the terminal should also see the output.
+     * @param fn Called with no arguments; its own return value is ignored.
+     * @returns Promise<string> — everything written to stderr while fn ran, in write order. The redirect has already been restored by the time this resolves.
+     */
+    capture(fn: () => void | Promise<void>): Promise<string>;
+    /**
+     * Drop every redirect this script has pushed onto stderr — the whole stack, not just the last push — closing any files they opened and reverting to the real process stderr. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect — and once more as the process exits, after the CLI's last reporting write, so a line callback left pushed can't take the FAIL line or the --verbose duration with it.
+     * @returns void.
+     */
+    reset(): void;
+    /**
+     * Apply a target to stderr for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).
+     * @param target Same target union as `to`.
+     * @param opts Same as `to`'s opts; only meaningful in the three-argument form.
+     * @param fn Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
+     * @returns Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.
+     */
+    scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }, fn: () => void | Promise<void>): Promise<void>;
+    /**
+     * Discard everything written to stderr until the returned restore function is called. Shorthand for stderr.to("null").
+     * @returns () => void — an idempotent restore function that removes the silence and reveals whatever was beneath it.
+     */
+    silence(): () => void;
+    /**
+     * Inspect the effective stderr destination without changing it.
+     * @returns The current top-of-stack destination: kind identifies its type (name is set only for kind "stream"; path/append only for kind "file"); tee reports whether it also writes to the destination beneath it; depth is how many redirects are currently pushed (0 means stderr is unredirected).
+     */
+    target(): { kind: "stream" | "null" | "file" | "callback" | "buffer"; tee: boolean; depth: number; name?: "stdout" | "stderr"; path?: string; append?: boolean };
+    /**
+     * Point stderr at a target and return a restore function. The target is "stdout"/"stderr" (fold onto that process stream), "null" (discard), { file, append? } (a file), or a function (called with each completed line). Redirects nest: the restore pops its own entry, so nested and out-of-order restores both behave, and calling it twice is a no-op.
+     * @param target Where the stream should go. "stdout" folds stderr onto the PROCESS stdout (so stdout→stderr and stderr→stdout cannot ping-pong); "null" discards; an object writes to a file, truncating unless append is true; a function receives each completed line without its newline, delivered on the next tick in write order.
+     * @param opts tee also writes to the destination beneath this one in the stack — so teeing on top of a silence() still writes only to the new target. tee is rejected with the "null" target.
+     * @returns () => void — an idempotent restore function that removes this redirect.
+     */
+    to(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }): () => void;
+    /**
+     * Redirect stderr to a file, truncating unless append is true, and return a restore function. Shorthand for stderr.to({ file, append }, { tee }).
+     * @param path Output file path. Opened immediately, at the call site — a bad path or a permission error surfaces here rather than at some later write.
+     * @param opts append opens with O_APPEND instead of truncating (default false). tee also writes to whatever destination was beneath this one when it was pushed.
+     * @returns () => void — an idempotent restore function that closes the file and removes this redirect.
+     */
+    toFile(path: string, opts?: { append?: boolean, tee?: boolean }): () => void;
+  };
+  stdin: {
+    /**
+     * Push a new stdin source and return a restore function that pops it back off. source is { file: string } (opened immediately), { text: string } (an in-memory string), or "stdin" (the real process stdin, pushed as a new entry above whatever is currently active).
+     * @param source Which source becomes active. A { file } is opened immediately, at the call site — a missing file or a permission error surfaces here. { text } and "stdin" cannot fail to open.
+     * @returns () => void — an idempotent restore function that closes the file (if any) and pops this source back off, uncovering whatever was active before.
+     */
+    from(source: { file: string } | { text: string } | "stdin"): () => void;
+    /**
+     * Push a file as the stdin source and return a restore function. Shorthand for stdin.from({ file: path }).
+     * @param path Path to the file to read from. Opened immediately, at the call site.
+     * @returns () => void — an idempotent restore function that closes the file and pops this source back off.
+     */
+    fromFile(path: string): () => void;
+    /**
+     * Push an in-memory string as the stdin source and return a restore function. Shorthand for stdin.from({ text }).
+     * @param text Content to serve as stdin from now on.
+     * @returns () => void — an idempotent restore function that pops this source back off.
+     */
+    fromString(text: string): () => void;
+    /**
+     * Async-iterate the current stdin source one line at a time (no trailing newline), stopping at EOF. Equivalent to calling readLine() in a loop; `for await` is just more idiomatic.
+     * @returns An async iterator yielding each line as a string. `for await (const line of runtime.stdin.lines())`; `break` simply stops calling readLine again — it does not close or reset the source.
+     */
+    lines(): AsyncIterable<string>;
+    /**
+     * Read every remaining byte from the current stdin source as a UTF-8 string, blocking until EOF. Concurrent calls with readBytes/readLine/lines serialise, so two readers can never split a read.
+     * @returns Promise<string> — the rest of the source's bytes, decoded as UTF-8, from the current position through EOF.
+     */
+    read(...args: unknown[]): Promise<string>;
+    /**
+     * Read every remaining byte from the current stdin source as raw bytes, blocking until EOF. Concurrent calls with read/readLine/lines serialise, so two readers can never split a read.
+     * @returns Promise<Uint8Array> — the rest of the source's bytes from the current position through EOF. This is goja's Go-slice-backed wrapper around the underlying []byte, not a native JS Uint8Array: `instanceof Uint8Array` is false, though .length and indexing work as expected.
+     */
+    readBytes(...args: unknown[]): Promise<Uint8Array>;
+    /**
+     * Read one line from the current stdin source, without its trailing newline. Resolves to null at EOF. A final line with no trailing newline is still returned. Concurrent calls serialise, so two readers can never split a line.
+     * @returns Promise<string | null> — the next line without its newline, or null once the source is exhausted.
+     */
+    readLine(...args: unknown[]): Promise<string | null>;
+    /**
+     * Drop every source swap this script has pushed onto stdin — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdin. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's source swap, and once more as the process exits: the same reset covers stdin, stdout and stderr together.
+     * @returns void.
+     */
+    reset(): void;
+    /**
+     * Push a stdin source for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Unlike the stdout/stderr scoped (which always resolves to undefined), this resolves to fn's own resolved value.
+     * @param source Same source union as `from`.
+     * @param fn Called with no arguments; its resolved value becomes scoped's own resolved value.
+     * @returns Promise<unknown> — resolves to whatever fn returned (or its promise resolved with), after the source has already been restored.
+     */
+    scoped(source: { file: string } | { text: string } | "stdin", fn: () => unknown | Promise<unknown>): Promise<unknown>;
+    /**
+     * Describe the currently active stdin source, without reading from it.
+     * @returns { kind, path?, tty } — kind is which source is active (path is set only for kind "file"); tty is true only when kind is "stdin" and the real process stdin is a terminal — a file or string source is never a terminal, and a script itself read from stdin (`sercon -`) leaves the real stdin already drained.
+     */
+    source(): { kind: "stdin" | "file" | "text"; path?: string; tty: boolean };
+  };
+  stdout: {
+    /**
+     * Run fn (sync or async) with stdout captured to an in-memory buffer, and resolve to everything it wrote. Always exclusive — unlike `to`/`scoped`, capture never tees; use scoped with { tee: true } if the terminal should also see the output.
+     * @param fn Called with no arguments; its own return value is ignored.
+     * @returns Promise<string> — everything written to stdout while fn ran, in write order. The redirect has already been restored by the time this resolves.
+     */
+    capture(fn: () => void | Promise<void>): Promise<string>;
+    /**
+     * Drop every redirect this script has pushed onto stdout — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdout. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's redirect — and once more as the process exits, after the CLI's last reporting write, so a line callback left pushed can't take the default-export JSON or the PASS/FAIL line with it.
+     * @returns void.
+     */
+    reset(): void;
+    /**
+     * Apply a target to stdout for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).
+     * @param target Same target union as `to`.
+     * @param opts Same as `to`'s opts; only meaningful in the three-argument form.
+     * @param fn Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
+     * @returns Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.
+     */
+    scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }, fn: () => void | Promise<void>): Promise<void>;
+    /**
+     * Discard everything written to stdout until the returned restore function is called. Shorthand for stdout.to("null").
+     * @returns () => void — an idempotent restore function that removes the silence and reveals whatever was beneath it.
+     */
+    silence(): () => void;
+    /**
+     * Inspect the effective stdout destination without changing it.
+     * @returns The current top-of-stack destination: kind identifies its type (name is set only for kind "stream"; path/append only for kind "file"); tee reports whether it also writes to the destination beneath it; depth is how many redirects are currently pushed (0 means stdout is unredirected).
+     */
+    target(): { kind: "stream" | "null" | "file" | "callback" | "buffer"; tee: boolean; depth: number; name?: "stdout" | "stderr"; path?: string; append?: boolean };
+    /**
+     * Point stdout at a target and return a restore function. The target is "stdout"/"stderr" (fold onto that process stream), "null" (discard), { file, append? } (a file), or a function (called with each completed line). Redirects nest: the restore pops its own entry, so nested and out-of-order restores both behave, and calling it twice is a no-op.
+     * @param target Where the stream should go. A stream name folds onto that PROCESS stream (so stdout→stderr and stderr→stdout cannot ping-pong); "null" discards; an object writes to a file, truncating unless append is true; a function receives each completed line without its newline, delivered on the next tick in write order.
+     * @param opts tee also writes to the destination beneath this one in the stack — so teeing on top of a silence() still writes only to the new target. tee is rejected with the "null" target.
+     * @returns () => void — an idempotent restore function that removes this redirect.
+     */
+    to(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }): () => void;
+    /**
+     * Redirect stdout to a file, truncating unless append is true, and return a restore function. Shorthand for stdout.to({ file, append }, { tee }).
+     * @param path Output file path. Opened immediately, at the call site — a bad path or a permission error surfaces here rather than at some later write.
+     * @param opts append opens with O_APPEND instead of truncating (default false). tee also writes to whatever destination was beneath this one when it was pushed.
+     * @returns () => void — an idempotent restore function that closes the file and removes this redirect.
+     */
+    toFile(path: string, opts?: { append?: boolean, tee?: boolean }): () => void;
+  };
   /**
    * Current terminal size of the controlling TTY (stdout) as { columns, rows, tty }. Synchronous (a single ioctl). When stdout is not a terminal (piped/redirected) tty is false and columns/rows fall back to $COLUMNS/$LINES, then 80x24 — so scripts can format tables/progress bars without special-casing the non-TTY path.
    * @returns { columns, rows, tty } — terminal width/height in character cells; tty is true only when stdout is a real terminal (otherwise the values are the $COLUMNS/$LINES-or-80x24 fallback).

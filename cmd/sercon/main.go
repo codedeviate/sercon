@@ -164,7 +164,7 @@ func run(args []string) int {
 		DisableConsole: true, // CLI provides its own clean `console` (console.go)
 	}
 	if *verbose {
-		engOpts.Verbose = os.Stderr
+		engOpts.Verbose = stdioErrStream
 	}
 	engOpts.ModuleLoader = favroLoader(paymentprovidersLoader(engOpts.ModuleLoader))
 	eng := scriptengine.New(engOpts)
@@ -207,13 +207,26 @@ func run(args []string) int {
 		}
 	}
 
+	// Exit drain. resetStdio() at the START of a Run (see runOne) is what keeps
+	// post-run reporting landing wherever the script left the stream pointed —
+	// but on the LAST (or only) run nothing ever pops that stack again. A line
+	// callback the script left in place then swallows the exit-time writes for
+	// good: tryFeed queues the line, loop.RunOnLoop fails because the loop is
+	// already dead, and the process exits with the default-export JSON and the
+	// PASS/FAIL line still sitting in the queue. Popping the stack here — AFTER
+	// every reporting write, which is exactly what deferring buys — flushes
+	// those queued lines (and any trailing partial line) to the destination
+	// beneath, i.e. the real stream. Cheap and idempotent when the script left
+	// nothing pushed.
+	defer resetStdio()
+
 	if *watch {
 		// --watch is a long-running mode: do the initial run, then
 		// block on fsnotify. It owns its own exit code semantics
 		// (always 0 on clean shutdown via Ctrl-C; usage errors on
 		// setup failure). Per-script throws inside a watch session
 		// are logged but don't propagate as the process exit.
-		return runWatchLoop(eng, scripts, scriptRoot, *verbose, os.Stdout, userArgs)
+		return runWatchLoop(eng, scripts, scriptRoot, *verbose, stdioOut(), userArgs)
 	}
 
 	worst := exitOK
@@ -231,7 +244,7 @@ func run(args []string) int {
 			label = "<stdin>"
 		}
 		if !*silent {
-			fmt.Printf("FAIL %s: %s\n", label, err)
+			fmt.Fprintf(stdioOut(), "FAIL %s: %s\n", label, err)
 		}
 	}
 	return worst
@@ -245,6 +258,12 @@ func runOne(eng *scriptengine.Engine, path string, verbose, silent bool, userArg
 	// It only engages if the script actually calls mcp.serve() (see
 	// mcp_stdio_guard.go); disarm restores stdout when the run returns.
 	defer armMCPStdioGuard()()
+
+	// Each Run starts with clean streams: `sercon a.ts b.ts` must not leak a.ts's
+	// redirects into b.ts, and each --watch re-run starts fresh. Reset happens at
+	// the START of a Run, not the end, so the CLI's post-run FAIL/PASS/--verbose
+	// reporting still lands wherever this script left the stream pointed.
+	resetStdio()
 
 	start := time.Now()
 	var err error
@@ -263,13 +282,13 @@ func runOne(eng *scriptengine.Engine, path string, verbose, silent bool, userArg
 	dur := time.Since(start)
 	if err != nil {
 		if verbose {
-			fmt.Fprintf(os.Stderr, "  duration: %s\n", dur)
+			fmt.Fprintf(stdioErr(), "  duration: %s\n", dur)
 		}
 		return err
 	}
 	printRunResult(val)
 	if verbose && !silent {
-		fmt.Printf("PASS %s (%s)\n", label, dur.Round(time.Millisecond))
+		fmt.Fprintf(stdioOut(), "PASS %s (%s)\n", label, dur.Round(time.Millisecond))
 	}
 	return nil
 }
@@ -285,7 +304,7 @@ func printRunResult(val goja.Value) {
 	if err != nil {
 		return
 	}
-	fmt.Println(string(data))
+	fmt.Fprintln(stdioOut(), string(data))
 }
 
 // classifyErr maps an Engine error to one of the documented exit codes.
@@ -335,7 +354,7 @@ func registerSurface(e *scriptengine.Engine) error {
 				for _, a := range call.Arguments {
 					parts = append(parts, formatValue(vm, a))
 				}
-				fmt.Println(strings.Join(parts, " "))
+				fmt.Fprintln(stdioOut(), strings.Join(parts, " "))
 				return goja.Undefined()
 			},
 			"setDeadline": func(call goja.FunctionCall) goja.Value {
@@ -423,6 +442,9 @@ func registerSurface(e *scriptengine.Engine) error {
 			"termSize":      termSizeFn(vm),
 			"open":          scriptengine.PromisifyAsync(vm, loop, openExtract, openOp),
 			"openAvailable": openAvailable(),
+			"stdout":        outStreamBinding(vm, loop, e, stdioOutStream),
+			"stderr":        outStreamBinding(vm, loop, e, stdioErrStream),
+			"stdin":         inStreamBinding(vm, loop, e),
 		}
 	}); err != nil {
 		return err

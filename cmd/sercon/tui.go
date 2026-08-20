@@ -74,7 +74,7 @@ func tuiNamespace(vm *goja.Runtime, loop *eventloop.EventLoop, eng *scriptengine
 			throw("tui.layout: " + err.Error())
 		}
 		out := pickFallbackOutput()
-		if isTTY(os.Stdout) && out == os.Stdout {
+		if shouldUseRealScreen(out, isTTY(os.Stdout)) {
 			if err := startControllerScreen(c); err != nil {
 				throw("tui.layout: " + err.Error())
 			}
@@ -251,14 +251,27 @@ func setActiveController(c *tui.Controller) {
 
 // pickFallbackOutput returns the writer the non-TTY fallback should use.
 // In tests, withTestStdout swaps this for an in-memory buffer; in
-// production it's os.Stdout.
+// production it's the stdout registry stream (stdioOut(), backed by
+// stdioOutStream), not the bare os.Stdout.
 func pickFallbackOutput() io.Writer {
 	tuiOutputForTestMu.Lock()
 	defer tuiOutputForTestMu.Unlock()
 	if tuiOutputForTest != nil {
 		return tuiOutputForTest
 	}
-	return os.Stdout
+	return stdioOut()
+}
+
+// shouldUseRealScreen decides between the full-screen tcell path and the
+// FallbackPane renderer. Both conditions are required: a real terminal on
+// stdout, AND no test override installed. pickFallbackOutput returns
+// tuiOutputForTest verbatim when a test has set one, so comparing out
+// against the registry stream — not os.Stdout, which out is never
+// pointer-equal to now that pickFallbackOutput returns stdioOut() — is what
+// makes that override observable here. Split out from layout() so the
+// decision itself (not the rendering) can be unit-tested without a real TTY.
+func shouldUseRealScreen(out io.Writer, tty bool) bool {
+	return tty && out == io.Writer(stdioOutStream)
 }
 
 // isTTY reports whether w is a real terminal. It uses term.IsTerminal

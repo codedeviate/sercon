@@ -64,7 +64,7 @@ func runRun(args []string) int {
 		DisableConsole: true, // CLI provides its own clean `console` (console.go)
 	}
 	if *verbose {
-		engOpts.Verbose = os.Stderr
+		engOpts.Verbose = stdioErrStream
 	}
 	engOpts.ModuleLoader = favroLoader(paymentprovidersLoader(engOpts.ModuleLoader))
 	eng := scriptengine.New(engOpts)
@@ -73,12 +73,19 @@ func runRun(args []string) int {
 		return exitUsage
 	}
 
+	// Exit drain — see the matching defer in main.go's run(). Without it a line
+	// callback the script left pushed swallows this subcommand's FAIL line and
+	// the default-export JSON, because the loop that would have delivered them
+	// is already gone. Deferred so it runs after those writes have been handed
+	// to the stream, not before.
+	defer resetStdio()
+
 	if err := runOne(eng, script, *verbose, false, userArgs); err != nil {
 		label := script
 		if script == "-" {
 			label = "<stdin>"
 		}
-		fmt.Printf("FAIL %s: %s\n", label, err)
+		fmt.Fprintf(stdioOut(), "FAIL %s: %s\n", label, err)
 		return classifyErr(err)
 	}
 	return exitOK

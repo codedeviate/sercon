@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -325,5 +326,34 @@ func TestShouldColor_DevNullIsNotTerminal(t *testing.T) {
 	defer f.Close()
 	if shouldColor(f) {
 		t.Fatal("shouldColor(/dev/null) = true; want false")
+	}
+}
+
+// shouldUseRealScreen is what layout() consults to pick tcell's real screen
+// vs. the FallbackPane renderer. It can't be exercised end-to-end without a
+// real TTY, so this asserts the decision directly: real-screen only when
+// stdout is a terminal AND pickFallbackOutput's result is the registry
+// stream itself (no withTestStdout override in play). Regression coverage
+// for the bug where out == os.Stdout could never be true once
+// pickFallbackOutput started returning stdioOut() instead of the bare
+// os.Stdout — that silently forced every real-terminal run onto the
+// fallback pane.
+func TestShouldUseRealScreen(t *testing.T) {
+	var buf bytes.Buffer
+	cases := []struct {
+		name string
+		out  io.Writer
+		tty  bool
+		want bool
+	}{
+		{"tty and registry stream", io.Writer(stdioOutStream), true, true},
+		{"tty but test override installed", &buf, true, false},
+		{"registry stream but not a tty", io.Writer(stdioOutStream), false, false},
+		{"neither", &buf, false, false},
+	}
+	for _, c := range cases {
+		if got := shouldUseRealScreen(c.out, c.tty); got != c.want {
+			t.Errorf("%s: shouldUseRealScreen() = %v, want %v", c.name, got, c.want)
+		}
 	}
 }

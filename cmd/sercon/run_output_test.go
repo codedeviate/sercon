@@ -2,41 +2,40 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// captureStdout runs fn with os.Stdout redirected to a pipe and returns what
-// was written.
+// captureStdout runs fn with the stdout registry stream redirected to a
+// buffer and returns what was written. Predates the registry (it used to
+// swap the os.Stdout package var behind a pipe); everything script-facing
+// that used to write to a bare os.Stdout now goes through stdioOutStream.
+//
+// Swaps the stdioOutStream package var itself (buffer as the new stream's
+// BASE) rather than pushing a destination onto the existing stream's stack:
+// fn() here is run(...)/runRun(...), which reaches runOne, which now calls
+// resetStdio() at the start of every run. That drops every entry on the
+// stream's stack — a pushed capture would be gone before the script under
+// test wrote a byte. reset() never touches base, so a swapped-in stream's
+// capture buffer survives it.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = w
-	done := make(chan string, 1)
-	go func() {
-		var b strings.Builder
-		buf := make([]byte, 4096)
-		for {
-			n, err := r.Read(buf)
-			if n > 0 {
-				b.Write(buf[:n])
-			}
-			if err != nil {
-				break
-			}
-		}
-		done <- b.String()
+	var buf bytes.Buffer
+	oldOut := stdioOutStream
+	stdioOutStream = newStream("stdout", &buf)
+	// Deferred, so a t.Fatal (runtime.Goexit) inside fn() cannot leave the
+	// package var swapped for every later test in the package. Releases
+	// anything fn() pushed and never popped before dropping the swapped-in
+	// stream (see withCapturedStdio's matching comment).
+	defer func() {
+		stdioOutStream.reset()
+		stdioOutStream = oldOut
 	}()
 	fn()
-	_ = w.Close()
-	os.Stdout = orig
-	return <-done
+	return buf.String()
 }
 
 func writeScript(t *testing.T, name, body string) string {
@@ -76,6 +75,49 @@ func TestRunOutput_DefaultPrintsFail(t *testing.T) {
 	}
 	if code == exitOK {
 		t.Errorf("failing script should yield non-OK exit code")
+	}
+}
+
+// A script that leaves a line callback pushed must still get its
+// `export default` result and its PASS line out. Nothing pops that entry after
+// the last run, so the CLI's post-run writes were enqueued for a handler that
+// could never run (the loop is already dead, loop.RunOnLoop returns false) and
+// the process exited with them still in the queue. run()'s deferred
+// resetStdio() pops the entry after the reporting writes, which flushes the
+// queue to the destination beneath — the real stream.
+//
+// Deliberately does NOT use captureStdout: that helper reset()s the swapped-in
+// stream before returning the buffer, which would drain the callback itself and
+// make this test pass with or without the fix. The buffer is snapshotted the
+// moment run() returns instead.
+func TestRunOutput_PostRunDrainFlushesLineCallback(t *testing.T) {
+	sc := writeScript(t, "cb.ts", `
+		runtime.stdout.to(line => {});
+		export default { answer: 42 };
+	`)
+
+	var buf bytes.Buffer
+	oldOut := stdioOutStream
+	stdioOutStream = newStream("stdout", &buf)
+	var got string
+	var code int
+	func() {
+		defer func() {
+			stdioOutStream.reset()
+			stdioOutStream = oldOut
+		}()
+		code = run([]string{"--verbose", sc})
+		got = buf.String() // before the harness's own reset()
+	}()
+
+	if code != exitOK {
+		t.Fatalf("exit code %d, want %d", code, exitOK)
+	}
+	if !strings.Contains(got, `{"answer":42}`) {
+		t.Errorf("the default-export result must survive a left-behind line callback; got:\n%q", got)
+	}
+	if !strings.Contains(got, "PASS ") {
+		t.Errorf("the PASS line must survive a left-behind line callback; got:\n%q", got)
 	}
 }
 

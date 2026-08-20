@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -12,10 +11,8 @@ import (
 // The console shim must route log/info/debug to stdout and warn/error to
 // stderr, with clean space-joined output (no Go-logger timestamp prefix).
 func TestConsole_RoutesAndCleans(t *testing.T) {
-	var out, errb bytes.Buffer
-	oldOut, oldErr := consoleOut, consoleErr
-	consoleOut, consoleErr = &out, &errb
-	defer func() { consoleOut, consoleErr = oldOut, oldErr }()
+	out, errb, restore := withCapturedStdio(t)
+	defer restore()
 
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := registerSurface(eng); err != nil {
@@ -42,10 +39,8 @@ func TestConsole_RoutesAndCleans(t *testing.T) {
 // runConsoleScript runs src with the console shim captured, returning stdout.
 func runConsoleScript(t *testing.T, src string) string {
 	t.Helper()
-	var out, errb bytes.Buffer
-	oldOut, oldErr := consoleOut, consoleErr
-	consoleOut, consoleErr = &out, &errb
-	defer func() { consoleOut, consoleErr = oldOut, oldErr }()
+	out, _, restore := withCapturedStdio(t)
+	defer restore()
 
 	eng := scriptengine.New(scriptengine.Options{ScriptRoot: t.TempDir(), DisableConsole: true})
 	if err := registerSurface(eng); err != nil {
