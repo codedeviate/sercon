@@ -1173,13 +1173,13 @@ stopLogging();
 
 **Notes**
 - Drop `append` to truncate the file on each run instead.
-- A later write failure (disk full, file removed) does not throw — that write
-  falls through to the destination *beneath* the failing one in the stack (here,
-  with one redirect pushed, that is the process stream), and the failing
-  destination is taken out of service, with one warning on the real stderr
-  rather than one per line. Out of service means it is not retried, and later
-  writes to it are discarded unless it was pushed with `{ tee: true }`; popping
-  the redirect (or `reset()`) restores normal behaviour.
+- A later write failure (disk full, file removed) does not throw — the
+  destination is marked dead and every subsequent write falls through to the
+  destination *beneath* it in the stack (here, with one redirect pushed, that is
+  the process stream; deeper in a stack it is whatever sits below, not
+  necessarily the terminal). So a destination that goes bad costs at most the
+  one write that was in flight when it failed; nothing after it is lost. The
+  failure is reported once on the real stderr, not once per line.
 - The process stream itself is never taken out of service that way: a failed
   write straight to stdout/stderr is reported once and later writes are still
   attempted, so a single transient error can't silence the rest of the session.
@@ -17517,7 +17517,7 @@ Point stderr at a target and return a restore function. The target is "stdout"/"
 
 **Returns:** () => void — an idempotent restore function that removes this redirect.
 
-**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: that write falls through to the destination BENEATH the failing one in the stack — which is the real process stream only when this is the sole redirect — and the failing destination is then taken out of service, with one warning printed on the real stderr rather than one per line. Out of service means exactly that: it is never retried, and later writes to it are discarded unless it was pushed with { tee: true } (whose copy beneath keeps flowing). Pop the redirect (or call reset()) to get the stream working normally again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.error while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
+**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.error while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
 
 ```ts
 const restore = runtime.stderr.to("stdout");
@@ -17540,7 +17540,7 @@ Redirect stderr to a file, truncating unless append is true, and return a restor
 
 **Returns:** () => void — an idempotent restore function that closes the file and removes this redirect.
 
-**Throws:** Throws ("toFile: …") if the file cannot be opened (missing parent directory, permission denied, etc). A later write failure does NOT throw: that write falls through to the destination BENEATH the failing one in the stack — which is the real process stream only when this is the sole redirect — and the failing destination is then taken out of service, with one warning printed on the real stderr rather than one per line. Out of service means exactly that: it is never retried, and later writes to it are discarded unless it was pushed with { tee: true } (whose copy beneath keeps flowing). Pop the redirect (or call reset()) to get the stream working normally again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session.
+**Throws:** Throws ("toFile: …") if the file cannot be opened (missing parent directory, permission denied, etc). A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session.
 
 ```ts
 const stop = runtime.stderr.toFile("/tmp/err.log", { append: true, tee: true });
@@ -17692,7 +17692,7 @@ while ((line = await runtime.stdin.readLine()) !== null) {
 reset(): void
 ```
 
-Drop every source swap this script has pushed onto stdin — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdin. Called automatically at the start of every Run, same as the stdout/stderr reset.
+Drop every source swap this script has pushed onto stdin — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdin. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's source swap, and once more as the process exits: the same reset covers stdin, stdout and stderr together.
 
 **Returns:** void.
 
@@ -17863,7 +17863,7 @@ Point stdout at a target and return a restore function. The target is "stdout"/"
 
 **Returns:** () => void — an idempotent restore function that removes this redirect.
 
-**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: that write falls through to the destination BENEATH the failing one in the stack — which is the real process stream only when this is the sole redirect — and the failing destination is then taken out of service, with one warning printed on the real stderr rather than one per line. Out of service means exactly that: it is never retried, and later writes to it are discarded unless it was pushed with { tee: true } (whose copy beneath keeps flowing). Pop the redirect (or call reset()) to get the stream working normally again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.log while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
+**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.log while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
 
 ```ts
 const restore = runtime.stdout.to({ file: "/tmp/out.log" }, { tee: true });
@@ -17886,7 +17886,7 @@ Redirect stdout to a file, truncating unless append is true, and return a restor
 
 **Returns:** () => void — an idempotent restore function that closes the file and removes this redirect.
 
-**Throws:** Throws ("toFile: …") if the file cannot be opened (missing parent directory, permission denied, etc). A later write failure does NOT throw: that write falls through to the destination BENEATH the failing one in the stack — which is the real process stream only when this is the sole redirect — and the failing destination is then taken out of service, with one warning printed on the real stderr rather than one per line. Out of service means exactly that: it is never retried, and later writes to it are discarded unless it was pushed with { tee: true } (whose copy beneath keeps flowing). Pop the redirect (or call reset()) to get the stream working normally again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session.
+**Throws:** Throws ("toFile: …") if the file cannot be opened (missing parent directory, permission denied, etc). A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session.
 
 ```ts
 const stop = runtime.stdout.toFile("/tmp/out.log", { append: true, tee: true });

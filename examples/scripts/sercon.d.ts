@@ -389,7 +389,7 @@ declare const runtime: {
      */
     readLine(...args: unknown[]): Promise<string | null>;
     /**
-     * Drop every source swap this script has pushed onto stdin — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdin. Called automatically at the start of every Run, same as the stdout/stderr reset.
+     * Drop every source swap this script has pushed onto stdin — the whole stack, not just the last push — closing any files they opened and reverting to the real process stdin. Called automatically at the start of every Run (including each script in `sercon a.ts b.ts` and each --watch re-run), so a script never inherits a previous script's source swap, and once more as the process exits: the same reset covers stdin, stdout and stderr together.
      * @returns void.
      */
     reset(): void;
