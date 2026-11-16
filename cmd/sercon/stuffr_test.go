@@ -206,3 +206,58 @@ func TestStuffrJS_Stdin(t *testing.T) {
 		t.Fatalf("unexpected: %q", out)
 	}
 }
+
+func TestStuffrJS_JSONIsPlainObjectWithDocumentOrder(t *testing.T) {
+	res, err := testStuffr(t).run(t.Context(), stuffrRunReq{Argv: []string{"formats", "--json"}, Cwd: "/"})
+	if err != nil || res.Code != 0 {
+		t.Fatalf("run: %v code=%d", err, res.Code)
+	}
+	var doc struct {
+		Formats []json.RawMessage `json:"formats"`
+	}
+	if err := json.Unmarshal(res.Stdout, &doc); err != nil || len(doc.Formats) == 0 {
+		t.Fatalf("parse: %v", err)
+	}
+	dec := json.NewDecoder(strings.NewReader(string(doc.Formats[0])))
+	dec.Token()
+	var keys []string
+	for dec.More() {
+		k, _ := dec.Token()
+		keys = append(keys, k.(string))
+		var skip json.RawMessage
+		dec.Decode(&skip)
+	}
+	out := stuffrScript(t, `
+		const f = await stuffr.formats();
+		runtime.log(Object.keys(f.formats[0]).join(","));
+		runtime.log(Object.getPrototypeOf(f) === Object.prototype, Object.getPrototypeOf(f.formats[0]) === Object.prototype, Array.isArray(f.formats));
+	`)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if lines[0] != strings.Join(keys, ",") {
+		t.Fatalf("key order %q, want %q", lines[0], strings.Join(keys, ","))
+	}
+	if lines[1] != "true true true" {
+		t.Fatalf("not plain: %q", lines[1])
+	}
+}
+
+func TestStuffrJS_VoidHelpersResolveUndefined(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644)
+	out := stuffrScript(t, `
+		const r = await stuffr.pack(["a.txt"], { cwd: `+jsq(dir)+`, output: "a.tar" });
+		runtime.log(r === undefined);
+	`)
+	if !strings.Contains(out, "true") {
+		t.Fatalf("unexpected: %q", out)
+	}
+}
+
+func TestStuffrJS_OptionTypeErrorsAndEmptyStderr(t *testing.T) {
+	if _, err := runScript(t, `await stuffr.pack(["a"], { force: "yes" });`); err == nil || !strings.Contains(err.Error(), "must be a boolean") {
+		t.Fatalf("err = %v", err)
+	}
+	if got := (&stuffrExitError{Argv: []string{"test"}, Code: 1}).Error(); got != "stuffr test exited 1 (failed)" {
+		t.Fatalf("msg = %q", got)
+	}
+}

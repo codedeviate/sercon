@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -49,7 +48,10 @@ func (e *stuffrExitError) Error() string {
 		verb = e.Argv[0]
 	}
 	first, _, _ := strings.Cut(strings.TrimSpace(e.Stderr), "\n")
-	msg := fmt.Sprintf("stuffr %s exited %d (%s): %s", verb, e.Code, stuffrExitKind(e.Code), strings.TrimSpace(first))
+	msg := fmt.Sprintf("stuffr %s exited %d (%s)", verb, e.Code, stuffrExitKind(e.Code))
+	if first = strings.TrimSpace(first); first != "" {
+		msg += ": " + first
+	}
 	if e.Code == 4 {
 		// Exit 4 means the work was done but something was lost or unverified.
 		msg += " (output was written)"
@@ -164,8 +166,19 @@ func parseStuffrOpts(v goja.Value) (stuffrOpts, error) {
 		}
 		return s, nil
 	}
-	boolean := func(key string) bool { b, _ := m[key].(bool); return b }
 	var err error
+	var berr error
+	boolean := func(key string) bool {
+		x, ok := m[key]
+		if !ok || x == nil {
+			return false
+		}
+		b, ok := x.(bool)
+		if !ok && berr == nil {
+			berr = fmt.Errorf("option %q must be a boolean", key)
+		}
+		return b
+	}
 	if o.Output, err = str("output"); err != nil {
 		return o, err
 	}
@@ -182,6 +195,9 @@ func parseStuffrOpts(v goja.Value) (stuffrOpts, error) {
 	o.AllowWeakEncoder = boolean("allowWeakEncoder")
 	o.SamePermissions = boolean("samePermissions")
 	o.Stream = boolean("stream")
+	if berr != nil {
+		return o, berr
+	}
 	switch x := m["level"].(type) {
 	case nil:
 	case int64:
@@ -310,6 +326,14 @@ type stuffrRunOut struct {
 
 type stuffrBytesOut struct{ B []byte }
 
+// stuffrJSONOut carries raw JSON text; conv runs JSON.parse on the loop.
+type stuffrJSONOut struct {
+	Verb string
+	B    []byte
+}
+
+type stuffrVoidOut struct{}
+
 func newUint8Array(vm *goja.Runtime, b []byte) goja.Value {
 	if b == nil {
 		b = []byte{}
@@ -336,6 +360,18 @@ func stuffrOnLoop(vm *goja.Runtime, ab scriptengine.AsyncBinding, ts string) scr
 			return obj
 		case *stuffrBytesOut:
 			return newUint8Array(vm, x.B)
+		case *stuffrVoidOut:
+			return goja.Undefined()
+		case *stuffrJSONOut:
+			parse, ok := goja.AssertFunction(vm.Get("JSON").ToObject(vm).Get("parse"))
+			if !ok {
+				panic(vm.NewTypeError("JSON.parse is unavailable"))
+			}
+			v, err := parse(goja.Undefined(), vm.ToValue(string(x.B)))
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("stuffr %s: invalid JSON output: %w", x.Verb, err)))
+			}
+			return v
 		}
 		return call.Argument(0)
 	}
@@ -354,14 +390,13 @@ func stuffrOnLoop(vm *goja.Runtime, ab scriptengine.AsyncBinding, ts string) scr
 	return scriptengine.AsyncBinding{Func: fn, TSReturnType: ts}
 }
 
-func stuffrNone([]byte) (any, error)    { return nil, nil }
+func stuffrNone([]byte) (any, error)    { return &stuffrVoidOut{}, nil }
 func stuffrBytes(b []byte) (any, error) { return &stuffrBytesOut{B: b}, nil }
-func stuffrJSON(b []byte) (any, error) {
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
-		return nil, fmt.Errorf("stuffr: parse JSON output: %w", err)
-	}
-	return v, nil
+
+// stuffrJSON defers parsing to the loop (see stuffrOnLoop) so scripts get
+// plain JS objects with document key order.
+func stuffrJSON(verb string) func([]byte) (any, error) {
+	return func(b []byte) (any, error) { return &stuffrJSONOut{Verb: verb, B: b}, nil }
 }
 
 // stuffrNamespace builds the `stuffr` global. It never dereferences vm or
@@ -427,9 +462,9 @@ func stuffrNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any
 		"convert": helper("convert", 2, 2, false, stuffrNone, "void"),
 		"test":    helper("test", 1, 1, false, stuffrNone, "void"),
 		"cat":     helper("cat", 1, 1, false, stuffrBytes, "Uint8Array"),
-		"list":    helper("list", 1, 1, false, stuffrJSON, "unknown"),
-		"info":    helper("info", 1, 1, false, stuffrJSON, "unknown"),
-		"formats": helper("formats", 0, 0, false, stuffrJSON, "unknown"),
+		"list":    helper("list", 1, 1, false, stuffrJSON("list"), "unknown"),
+		"info":    helper("info", 1, 1, false, stuffrJSON("info"), "unknown"),
+		"formats": helper("formats", 0, 0, false, stuffrJSON("formats"), "unknown"),
 		"version": stuffrVersion(),
 	}
 }
