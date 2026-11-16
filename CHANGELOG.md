@@ -19,7 +19,10 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   without throwing; `pack` / `unpack` / `convert` / `test` / `cat` / `list` /
   `info` / `formats` are typed helpers that throw on a non-zero exit with
   `{ code, kind, stderr, argv }` (a wasm trap throws `kind: "trap"`), and
-  `stuffr.version` names the embedded build. Extraction safety matches native
+  `stuffr.version` names the embedded build. `pack` / `unpack` / `convert` /
+  `test` resolve `{ warnings: string[] }` (the non-empty stderr lines of the
+  successful run, including fidelity warnings; `stream: true` also tees stderr
+  to the console). Extraction safety matches native
   stuffr (`../`, absolute paths, symlinked ancestors and unsafe symlink targets
   are refused with exit 7). **Interim limits:** only the pure-Rust tier is
   embedded, there are no threads, and extraction applies WASI-default metadata

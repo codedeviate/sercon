@@ -293,3 +293,16 @@ func TestStuffrInterim_MetadataReported(t *testing.T) {
 		}
 	})
 }
+
+func TestStuffrJS_UnpackSurfacesWarnings(t *testing.T) {
+	dir := t.TempDir()
+	makeTar(t, filepath.Join(dir, "x.tar"), []tarEnt{{name: "run.sh", mode: 0o755, body: "#!/bin/sh\n"}})
+	out := stuffrScript(t, `
+		const r = await stuffr.unpack(`+jsq(filepath.Join(dir, "x.tar"))+`, { directory: `+jsq(filepath.Join(dir, "out"))+` });
+		runtime.log("plain", Object.getPrototypeOf(r) === Object.prototype, Array.isArray(r.warnings));
+		runtime.log("hit", r.warnings.some((l: string) => l.includes("missing metadata") && l.includes("mode")));
+	`)
+	if !strings.Contains(out, "plain true true") || !strings.Contains(out, "hit true") {
+		t.Fatalf("unexpected: %q", out)
+	}
+}

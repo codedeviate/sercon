@@ -311,6 +311,9 @@ func stuffrWork(ctx context.Context, c stuffrCall) (any, error) {
 		if res.Code != 0 {
 			return nil, &stuffrExitError{Argv: c.req.Argv, Code: res.Code, Stderr: string(res.Stderr)}
 		}
+		if c.post == nil {
+			return &stuffrWarnOut{Warnings: stuffrWarnings(res.Stderr)}, nil
+		}
 		return c.post(res.Stdout)
 	}
 	return &stuffrRunOut{Code: res.Code, Stdout: res.Stdout, Stderr: string(res.Stderr)}, nil
@@ -332,7 +335,19 @@ type stuffrJSONOut struct {
 	B    []byte
 }
 
-type stuffrVoidOut struct{}
+// stuffrWarnOut carries the non-empty stderr lines of a successful run.
+type stuffrWarnOut struct{ Warnings []string }
+
+// stuffrWarnings splits stderr into its non-empty lines (never nil).
+func stuffrWarnings(stderr []byte) []string {
+	out := []string{}
+	for _, l := range strings.Split(string(stderr), "\n") {
+		if l = strings.TrimRight(l, "\r"); strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
 
 func newUint8Array(vm *goja.Runtime, b []byte) goja.Value {
 	if b == nil {
@@ -360,8 +375,10 @@ func stuffrOnLoop(vm *goja.Runtime, ab scriptengine.AsyncBinding, ts string) scr
 			return obj
 		case *stuffrBytesOut:
 			return newUint8Array(vm, x.B)
-		case *stuffrVoidOut:
-			return goja.Undefined()
+		case *stuffrWarnOut:
+			obj := vm.NewObject()
+			_ = obj.Set("warnings", vm.NewArray(warnVals(vm, x.Warnings)...))
+			return obj
 		case *stuffrJSONOut:
 			parse, ok := goja.AssertFunction(vm.Get("JSON").ToObject(vm).Get("parse"))
 			if !ok {
@@ -390,7 +407,14 @@ func stuffrOnLoop(vm *goja.Runtime, ab scriptengine.AsyncBinding, ts string) scr
 	return scriptengine.AsyncBinding{Func: fn, TSReturnType: ts}
 }
 
-func stuffrNone([]byte) (any, error)    { return &stuffrVoidOut{}, nil }
+func warnVals(vm *goja.Runtime, ws []string) []any {
+	out := make([]any, len(ws))
+	for i, w := range ws {
+		out[i] = vm.ToValue(w)
+	}
+	return out
+}
+
 func stuffrBytes(b []byte) (any, error) { return &stuffrBytesOut{B: b}, nil }
 
 // stuffrJSON defers parsing to the loop (see stuffrOnLoop) so scripts get
@@ -457,10 +481,10 @@ func stuffrNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any
 		}, stuffrWork), "{ code: number; stdout: Uint8Array; stderr: string; text(): string }")
 	return map[string]any{
 		"run":     run,
-		"pack":    helper("pack", 0, 1, true, stuffrNone, "void"),
-		"unpack":  helper("unpack", 1, 1, false, stuffrNone, "void"),
-		"convert": helper("convert", 2, 2, false, stuffrNone, "void"),
-		"test":    helper("test", 1, 1, false, stuffrNone, "void"),
+		"pack":    helper("pack", 0, 1, true, nil, "{ warnings: string[] }"),
+		"unpack":  helper("unpack", 1, 1, false, nil, "{ warnings: string[] }"),
+		"convert": helper("convert", 2, 2, false, nil, "{ warnings: string[] }"),
+		"test":    helper("test", 1, 1, false, nil, "{ warnings: string[] }"),
 		"cat":     helper("cat", 1, 1, false, stuffrBytes, "Uint8Array"),
 		"list":    helper("list", 1, 1, false, stuffrJSON("list"), "unknown"),
 		"info":    helper("info", 1, 1, false, stuffrJSON("info"), "unknown"),

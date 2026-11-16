@@ -241,15 +241,25 @@ func TestStuffrJS_JSONIsPlainObjectWithDocumentOrder(t *testing.T) {
 	}
 }
 
-func TestStuffrJS_VoidHelpersResolveUndefined(t *testing.T) {
+func TestStuffrJS_VoidHelpersResolveWarnings(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644)
 	out := stuffrScript(t, `
 		const r = await stuffr.pack(["a.txt"], { cwd: `+jsq(dir)+`, output: "a.tar" });
-		runtime.log(r === undefined);
+		runtime.log(Object.getPrototypeOf(r) === Object.prototype, Array.isArray(r.warnings), r.warnings.length > 0 && r.warnings.every((l: any) => typeof l === "string"));
 	`)
-	if !strings.Contains(out, "true") {
+	if !strings.Contains(out, "true true true") {
 		t.Fatalf("unexpected: %q", out)
+	}
+}
+
+func TestStuffrWarnings_Lines(t *testing.T) {
+	if got := stuffrWarnings(nil); got == nil || len(got) != 0 {
+		t.Fatalf("empty stderr must give a non-nil empty slice, got %#v", got)
+	}
+	got := stuffrWarnings([]byte("a\r\n\n  \n  - b\n"))
+	if len(got) != 2 || got[0] != "a" || got[1] != "  - b" {
+		t.Fatalf("got %q", got)
 	}
 }
 

@@ -17,7 +17,8 @@ try {
   runtime.assert.equal(entries.length, 1, "one entry");
   runtime.assert.equal(entries[0].name, "a.txt", "entry name");
   await stuffr.test(`${dir}/a.tar.gz`);
-  await stuffr.unpack(`${dir}/a.tar.gz`, { directory: `${dir}/out` });
+  const un = await stuffr.unpack(`${dir}/a.tar.gz`, { directory: `${dir}/out` });
+  runtime.assert.ok(Array.isArray(un.warnings), "unpack resolves { warnings }");
   runtime.assert.equal(await fs.readText(`${dir}/out/a.txt`), text, "content round trip");
 
   // gzip: pack a single file, then decompress it through stdin.
