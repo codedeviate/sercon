@@ -26,12 +26,7 @@ var (
 func testStuffr(t *testing.T) *stuffrRuntime {
 	t.Helper()
 	testStuffrOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "stuffr-wazero-cache-")
-		if err != nil {
-			testStuffrErr = err
-			return
-		}
-		testStuffrRT, testStuffrErr = newStuffrRuntime(context.Background(), dir)
+		testStuffrRT, testStuffrErr = newStuffrRuntime(context.Background(), stuffrCacheDir())
 	})
 	if testStuffrErr != nil {
 		t.Fatal(testStuffrErr)
