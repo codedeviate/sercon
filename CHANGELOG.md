@@ -45,15 +45,15 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ### Fixed
 
-- A `runtime.stdout.to(fn)` / `runtime.stderr.to(fn)` line handler no longer
-  loses part of a line written from another goroutine while the handler is
-  running, such as a server handler, `services.exec.stream`, or
-  `stuffr.run(…, { stream: true })`. The re-entrancy guard (which keeps the
-  handler's own `console.log` from recursing) treated every write during a
-  handler call as re-entrant. A concurrent writer's chunk therefore fell
-  through to the destination beneath mid-line, leaking a fragment there and
-  handing the handler a corrupted line. Only the handler's own goroutine is
-  now treated as re-entrant. This bug was present since 0.103.0.
+- A `runtime.stdout.to(fn)` / `runtime.stderr.to(fn)` line handler now
+  receives lines written from another goroutine while the handler is running,
+  such as `stuffr.run(…, { stream: true })` or `sercon serve`'s access log.
+  Before, such a line could be diverted, wholly or in part, to the
+  destination beneath, and a partly diverted line reached the handler
+  corrupted. The re-entrancy guard (which keeps the handler's own
+  `console.log` from recursing) treated every write during a handler call as
+  re-entrant. Only the handler's own goroutine is now treated as re-entrant.
+  This bug was present since 0.103.0.
 
 ## [0.103.0] — 2026-08-20
 
