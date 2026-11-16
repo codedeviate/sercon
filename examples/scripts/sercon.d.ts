@@ -2631,10 +2631,10 @@ declare const stuffr: {
    * Re-encode an archive or compressed file into another format without a manual unpack.
    * @param input Source path, relative to opts.cwd.
    * @param output Destination path.
-   * @param opts format: target format (default: from the output extension). level, allowWeakEncoder, force and memoryLimit as for pack.
-   * @returns Resolves with { warnings } once the output is written: the non-empty lines of stuffr's stderr from the successful run (its one-line summary, plus any `fidelity warning(s)` lines), or [] when stderr was empty.
+   * @param opts format: target format (default: from the output extension). level, allowWeakEncoder, force, strictFidelity and memoryLimit as for pack.
+   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
    */
-  convert(input: string, output: string, opts?: { format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ warnings: string[] }>;
+  convert(input: string, output: string, opts?: { format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>;
   /**
    * List the formats the embedded build supports, as parsed JSON (runs `stuffr formats --json`). The embedded build has the pure-Rust tier only.
    * @param opts Accepted for symmetry; none of the options changes the result.
@@ -2658,10 +2658,10 @@ declare const stuffr: {
   /**
    * Pack files or directories into an archive or compressed file. The format comes from opts.format or the output extension.
    * @param inputs Paths to pack, relative to opts.cwd. Must not be empty.
-   * @param opts output: destination path. format: e.g. "tar.gz", "zip". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default).
-   * @returns Resolves with { warnings } once the output is written: the non-empty lines of stuffr's stderr from the successful run (its one-line summary, plus any `fidelity warning(s)` lines), or [] when stderr was empty.
+   * @param opts output: destination path. format: e.g. "tar.gz", "zip". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. strictFidelity: exit 4 (kind "degraded") if anything would be lost or unverified. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default).
+   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
    */
-  pack(inputs: string[], opts?: { output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ warnings: string[] }>;
+  pack(inputs: string[], opts?: { output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>;
   /**
    * Run the embedded stuffr with a raw argv and get the exit code and output back — never throws for a non-zero exit. argv[0] is a verb (pack, unpack, list, ...) or a personality name (gzip, unzip, zstdcat, ...), which then returns its reference tool's exit codes.
    * @param argv The stuffr command line, without a program name. A path argument that is exactly `-` means stdin; use `./-` to name a file called `-`.
@@ -2672,17 +2672,17 @@ declare const stuffr: {
   /**
    * Verify an archive's integrity (checksums and structure) without extracting it.
    * @param archive Archive path, relative to opts.cwd.
-   * @param opts cwd, env, stdin, stream and memoryLimit as for run.
-   * @returns Resolves with { warnings } when the archive is intact: the non-empty stderr lines (the verification summary and any warnings).
+   * @param opts strictFidelity: exit 4 (kind "degraded") if anything would be lost or unverified. cwd, env, stdin, stream and memoryLimit as for run.
+   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
    */
-  test(archive: string, opts?: { cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ warnings: string[] }>;
+  test(archive: string, opts?: { strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>;
   /**
    * Extract an archive or decompress a file. Extraction safety equals native stuffr: `../` and absolute entry paths, symlinked ancestors and unsafe symlink targets are refused with exit 7 (kind "unsafe"). Interim: modes, symlinks and owners are not applied (see the manual).
    * @param archive Archive path, relative to opts.cwd.
-   * @param opts directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. memoryLimit: stuffr's --memory-limit.
-   * @returns Resolves with { warnings } when extraction finished with exit 0: the non-empty stderr lines, including stuffr's summary line and any `fidelity warning(s)` entries such as `entry `run.sh` is missing metadata: mode`.
+   * @param opts directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. strictFidelity: exit 4 (kind "degraded") if metadata would be lost, which makes the helper reject — the programmatic way to detect loss (the output is still written). memoryLimit: stuffr's --memory-limit.
+   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
    */
-  unpack(archive: string, opts?: { directory?: string; samePermissions?: boolean; force?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ warnings: string[] }>;
+  unpack(archive: string, opts?: { directory?: string; samePermissions?: boolean; force?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>;
   /**
    * The version string of the embedded stuffr build (the first line of the committed VERSION file, e.g. a git describe plus build date). A plain string value, not a function.
    * @returns The embedded build's version identifier.

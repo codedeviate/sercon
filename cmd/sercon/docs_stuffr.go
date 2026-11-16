@@ -6,7 +6,7 @@ import "github.com/codedeviate/sercon/pkg/scriptengine"
 // Shared option shapes, kept as constants so the d.ts signatures stay in step.
 const (
 	stuffrCommonOpts = "cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number"
-	stuffrWriteOpts  = "force?: boolean; level?: number; allowWeakEncoder?: boolean"
+	stuffrWriteOpts  = "force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean"
 )
 
 const stuffrErrors = "Rejects with a stuffr error carrying `code` (the exit code), `kind` (\"failed\" 1, \"usage\" 2, \"unsupported\" 3, \"degraded\" 4 — output WAS written but something was lost or unverified, \"corrupt\" 5, \"limit\" 6, \"unsafe\" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: \"trap\"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. \"option \\\"force\\\" must be a boolean\")."
@@ -29,33 +29,33 @@ func stuffrDocs() map[string]scriptengine.MemberDoc {
 			Summary: "Pack files or directories into an archive or compressed file. The format comes from opts.format or the output extension.",
 			Params: []scriptengine.Param{
 				{Name: "inputs", Type: "string[]", Desc: "Paths to pack, relative to opts.cwd. Must not be empty."},
-				{Name: "opts", Type: "{ output?: string; format?: string; " + stuffrWriteOpts + "; " + stuffrCommonOpts + " }", Optional: true, Desc: "output: destination path. format: e.g. \"tar.gz\", \"zip\". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default)."},
+				{Name: "opts", Type: "{ output?: string; format?: string; " + stuffrWriteOpts + "; " + stuffrCommonOpts + " }", Optional: true, Desc: "output: destination path. format: e.g. \"tar.gz\", \"zip\". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. strictFidelity: exit 4 (kind \"degraded\") if anything would be lost or unverified. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default)."},
 			},
-			ReturnType: "{ warnings: string[] }",
-			Returns:    "Resolves with { warnings } once the output is written: the non-empty lines of stuffr's stderr from the successful run (its one-line summary, plus any `fidelity warning(s)` lines), or [] when stderr was empty.",
+			ReturnType: "{ messages: string[] }",
+			Returns:    "Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind \"degraded\".",
 			Errors:     stuffrErrors,
-			Example:    "const { warnings } = await stuffr.pack([\"src\"], { cwd: \"/work\", output: \"src.tar.gz\" });\nif (warnings.some((l) => l.includes(\"fidelity warning\"))) runtime.log(warnings);",
+			Example:    "await stuffr.pack([\"src\"], { cwd: \"/work\", output: \"src.tar.gz\" });",
 		},
 		"unpack": {
 			Summary: "Extract an archive or decompress a file. Extraction safety equals native stuffr: `../` and absolute entry paths, symlinked ancestors and unsafe symlink targets are refused with exit 7 (kind \"unsafe\"). Interim: modes, symlinks and owners are not applied (see the manual).",
 			Params: []scriptengine.Param{
 				{Name: "archive", Type: "string", Desc: "Archive path, relative to opts.cwd."},
-				{Name: "opts", Type: "{ directory?: string; samePermissions?: boolean; force?: boolean; " + stuffrCommonOpts + " }", Optional: true, Desc: "directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. memoryLimit: stuffr's --memory-limit."},
+				{Name: "opts", Type: "{ directory?: string; samePermissions?: boolean; force?: boolean; strictFidelity?: boolean; " + stuffrCommonOpts + " }", Optional: true, Desc: "directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. strictFidelity: exit 4 (kind \"degraded\") if metadata would be lost, which makes the helper reject — the programmatic way to detect loss (the output is still written). memoryLimit: stuffr's --memory-limit."},
 			},
-			ReturnType: "{ warnings: string[] }",
-			Returns:    "Resolves with { warnings } when extraction finished with exit 0: the non-empty stderr lines, including stuffr's summary line and any `fidelity warning(s)` entries such as `entry `run.sh` is missing metadata: mode`.",
-			Errors:     stuffrErrors + " A tar holding a symlink fails with exit 3 (\"unsupported\"); a file whose mode cannot be applied extracts with exit 0 and a fidelity warning, which is returned in `warnings`.",
-			Example:    "const { warnings } = await stuffr.unpack(\"src.tar.gz\", { directory: \"/tmp/out\" });\nfor (const w of warnings) runtime.log(w);",
+			ReturnType: "{ messages: string[] }",
+			Returns:    "Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind \"degraded\".",
+			Errors:     stuffrErrors + " A tar holding a symlink fails with exit 3 (\"unsupported\"); a file whose mode cannot be applied extracts with exit 0 and a fidelity warning, which is listed in `messages`, or — with strictFidelity: true — rejects with exit 4 (kind \"degraded\"; the output WAS written).",
+			Example:    "try {\n  await stuffr.unpack(\"src.tar.gz\", { directory: \"/tmp/out\", strictFidelity: true });\n} catch (e: any) {\n  if (e.kind === \"degraded\") runtime.log(\"extracted, but metadata was lost:\", e.stderr);\n  else throw e;\n}",
 		},
 		"convert": {
 			Summary: "Re-encode an archive or compressed file into another format without a manual unpack.",
 			Params: []scriptengine.Param{
 				{Name: "input", Type: "string", Desc: "Source path, relative to opts.cwd."},
 				{Name: "output", Type: "string", Desc: "Destination path."},
-				{Name: "opts", Type: "{ format?: string; " + stuffrWriteOpts + "; " + stuffrCommonOpts + " }", Optional: true, Desc: "format: target format (default: from the output extension). level, allowWeakEncoder, force and memoryLimit as for pack."},
+				{Name: "opts", Type: "{ format?: string; " + stuffrWriteOpts + "; " + stuffrCommonOpts + " }", Optional: true, Desc: "format: target format (default: from the output extension). level, allowWeakEncoder, force, strictFidelity and memoryLimit as for pack."},
 			},
-			ReturnType: "{ warnings: string[] }",
-			Returns:    "Resolves with { warnings } once the output is written: the non-empty lines of stuffr's stderr from the successful run (its one-line summary, plus any `fidelity warning(s)` lines), or [] when stderr was empty.",
+			ReturnType: "{ messages: string[] }",
+			Returns:    "Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind \"degraded\".",
 			Errors:     stuffrErrors,
 			Example:    "await stuffr.convert(\"a.tar.gz\", \"a.tar.xz\");",
 		},
@@ -63,12 +63,12 @@ func stuffrDocs() map[string]scriptengine.MemberDoc {
 			Summary: "Verify an archive's integrity (checksums and structure) without extracting it.",
 			Params: []scriptengine.Param{
 				{Name: "archive", Type: "string", Desc: "Archive path, relative to opts.cwd."},
-				{Name: "opts", Type: "{ " + stuffrCommonOpts + " }", Optional: true, Desc: "cwd, env, stdin, stream and memoryLimit as for run."},
+				{Name: "opts", Type: "{ strictFidelity?: boolean; " + stuffrCommonOpts + " }", Optional: true, Desc: "strictFidelity: exit 4 (kind \"degraded\") if anything would be lost or unverified. cwd, env, stdin, stream and memoryLimit as for run."},
 			},
-			ReturnType: "{ warnings: string[] }",
-			Returns:    "Resolves with { warnings } when the archive is intact: the non-empty stderr lines (the verification summary and any warnings).",
+			ReturnType: "{ messages: string[] }",
+			Returns:    "Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind \"degraded\".",
 			Errors:     stuffrErrors + " A damaged archive rejects with kind \"corrupt\".",
-			Example:    "await stuffr.test(\"backup.tar.zst\");",
+			Example:    "const { messages } = await stuffr.test(\"backup.tar.zst\");\nruntime.log(messages.join(\"\\n\"));",
 		},
 		"cat": {
 			Summary: "Decompress a single-stream compressed file (gzip, xz, zstd, ...) and return the bytes. Plain, uncompressed input is rejected by stuffr.",

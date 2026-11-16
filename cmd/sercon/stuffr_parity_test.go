@@ -294,15 +294,34 @@ func TestStuffrInterim_MetadataReported(t *testing.T) {
 	})
 }
 
-func TestStuffrJS_UnpackSurfacesWarnings(t *testing.T) {
+func TestStuffrJS_UnpackSurfacesMessages(t *testing.T) {
 	dir := t.TempDir()
 	makeTar(t, filepath.Join(dir, "x.tar"), []tarEnt{{name: "run.sh", mode: 0o755, body: "#!/bin/sh\n"}})
 	out := stuffrScript(t, `
 		const r = await stuffr.unpack(`+jsq(filepath.Join(dir, "x.tar"))+`, { directory: `+jsq(filepath.Join(dir, "out"))+` });
-		runtime.log("plain", Object.getPrototypeOf(r) === Object.prototype, Array.isArray(r.warnings));
-		runtime.log("hit", r.warnings.some((l: string) => l.includes("missing metadata") && l.includes("mode")));
+		runtime.log("plain", Object.getPrototypeOf(r) === Object.prototype, Array.isArray(r.messages));
+		runtime.log("hit", r.messages.some((l: string) => l.includes("missing metadata") && l.includes("mode")));
 	`)
 	if !strings.Contains(out, "plain true true") || !strings.Contains(out, "hit true") {
 		t.Fatalf("unexpected: %q", out)
+	}
+}
+
+func TestStuffrJS_StrictFidelityThrowsDegraded(t *testing.T) {
+	dir := t.TempDir()
+	makeTar(t, filepath.Join(dir, "x.tar"), []tarEnt{{name: "run.sh", mode: 0o755, body: "#!/bin/sh\n"}})
+	out := stuffrScript(t, `
+		try {
+			await stuffr.unpack(`+jsq(filepath.Join(dir, "x.tar"))+`, { directory: `+jsq(filepath.Join(dir, "out"))+`, strictFidelity: true });
+			runtime.log("no throw");
+		} catch (e: any) {
+			runtime.log("code", e.code, e.kind, /output was written/.test(e.message));
+		}
+	`)
+	if !strings.Contains(out, "code 4 degraded true") {
+		t.Fatalf("unexpected: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "out", "run.sh")); err != nil {
+		t.Fatalf("extracted file should still exist: %v", err)
 	}
 }

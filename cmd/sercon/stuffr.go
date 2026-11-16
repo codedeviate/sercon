@@ -74,6 +74,7 @@ type stuffrOpts struct {
 	MemoryLimit      string
 	Directory        string
 	SamePermissions  bool
+	StrictFidelity   bool
 
 	Cwd    string
 	Stdin  []byte
@@ -117,12 +118,15 @@ func buildStuffrArgv(verb string, positional []string, o stuffrOpts) []string {
 		sw("--force", o.Force)
 		sw("--allow-weak-encoder", o.AllowWeakEncoder)
 		flag("--memory-limit", o.MemoryLimit)
+		sw("--strict-fidelity", o.StrictFidelity)
 	case "unpack":
 		flag("--directory", o.Directory)
 		sw("--same-permissions", o.SamePermissions)
 		sw("--force", o.Force)
 		flag("--memory-limit", o.MemoryLimit)
+		sw("--strict-fidelity", o.StrictFidelity)
 	case "convert":
+		sw("--strict-fidelity", o.StrictFidelity)
 		flag("--format", o.Format)
 		level()
 		sw("--force", o.Force)
@@ -133,7 +137,10 @@ func buildStuffrArgv(verb string, positional []string, o stuffrOpts) []string {
 		flag("--memory-limit", o.MemoryLimit)
 	case "formats":
 		argv = append(argv, "--json")
-	default: // test, cat
+	case "test":
+		flag("--memory-limit", o.MemoryLimit)
+		sw("--strict-fidelity", o.StrictFidelity)
+	default: // cat
 		flag("--memory-limit", o.MemoryLimit)
 	}
 	if len(positional) > 0 {
@@ -194,6 +201,7 @@ func parseStuffrOpts(v goja.Value) (stuffrOpts, error) {
 	o.Force = boolean("force")
 	o.AllowWeakEncoder = boolean("allowWeakEncoder")
 	o.SamePermissions = boolean("samePermissions")
+	o.StrictFidelity = boolean("strictFidelity")
 	o.Stream = boolean("stream")
 	if berr != nil {
 		return o, berr
@@ -312,7 +320,7 @@ func stuffrWork(ctx context.Context, c stuffrCall) (any, error) {
 			return nil, &stuffrExitError{Argv: c.req.Argv, Code: res.Code, Stderr: string(res.Stderr)}
 		}
 		if c.post == nil {
-			return &stuffrWarnOut{Warnings: stuffrWarnings(res.Stderr)}, nil
+			return &stuffrMsgOut{Messages: stuffrMessages(res.Stderr)}, nil
 		}
 		return c.post(res.Stdout)
 	}
@@ -335,11 +343,11 @@ type stuffrJSONOut struct {
 	B    []byte
 }
 
-// stuffrWarnOut carries the non-empty stderr lines of a successful run.
-type stuffrWarnOut struct{ Warnings []string }
+// stuffrMsgOut carries the non-empty stderr lines of a successful run.
+type stuffrMsgOut struct{ Messages []string }
 
-// stuffrWarnings splits stderr into its non-empty lines (never nil).
-func stuffrWarnings(stderr []byte) []string {
+// stuffrMessages splits stderr into its non-empty lines (never nil).
+func stuffrMessages(stderr []byte) []string {
 	out := []string{}
 	for _, l := range strings.Split(string(stderr), "\n") {
 		if l = strings.TrimRight(l, "\r"); strings.TrimSpace(l) != "" {
@@ -375,9 +383,9 @@ func stuffrOnLoop(vm *goja.Runtime, ab scriptengine.AsyncBinding, ts string) scr
 			return obj
 		case *stuffrBytesOut:
 			return newUint8Array(vm, x.B)
-		case *stuffrWarnOut:
+		case *stuffrMsgOut:
 			obj := vm.NewObject()
-			_ = obj.Set("warnings", vm.NewArray(warnVals(vm, x.Warnings)...))
+			_ = obj.Set("messages", vm.NewArray(msgVals(vm, x.Messages)...))
 			return obj
 		case *stuffrJSONOut:
 			parse, ok := goja.AssertFunction(vm.Get("JSON").ToObject(vm).Get("parse"))
@@ -407,7 +415,7 @@ func stuffrOnLoop(vm *goja.Runtime, ab scriptengine.AsyncBinding, ts string) scr
 	return scriptengine.AsyncBinding{Func: fn, TSReturnType: ts}
 }
 
-func warnVals(vm *goja.Runtime, ws []string) []any {
+func msgVals(vm *goja.Runtime, ws []string) []any {
 	out := make([]any, len(ws))
 	for i, w := range ws {
 		out[i] = vm.ToValue(w)
@@ -481,10 +489,10 @@ func stuffrNamespace(vm *goja.Runtime, loop *eventloop.EventLoop) map[string]any
 		}, stuffrWork), "{ code: number; stdout: Uint8Array; stderr: string; text(): string }")
 	return map[string]any{
 		"run":     run,
-		"pack":    helper("pack", 0, 1, true, nil, "{ warnings: string[] }"),
-		"unpack":  helper("unpack", 1, 1, false, nil, "{ warnings: string[] }"),
-		"convert": helper("convert", 2, 2, false, nil, "{ warnings: string[] }"),
-		"test":    helper("test", 1, 1, false, nil, "{ warnings: string[] }"),
+		"pack":    helper("pack", 0, 1, true, nil, "{ messages: string[] }"),
+		"unpack":  helper("unpack", 1, 1, false, nil, "{ messages: string[] }"),
+		"convert": helper("convert", 2, 2, false, nil, "{ messages: string[] }"),
+		"test":    helper("test", 1, 1, false, nil, "{ messages: string[] }"),
 		"cat":     helper("cat", 1, 1, false, stuffrBytes, "Uint8Array"),
 		"list":    helper("list", 1, 1, false, stuffrJSON("list"), "unknown"),
 		"info":    helper("info", 1, 1, false, stuffrJSON("info"), "unknown"),

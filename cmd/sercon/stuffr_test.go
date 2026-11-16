@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -150,6 +151,15 @@ func TestStuffrJS_MemoryLimitPassed(t *testing.T) {
 	if !strings.Contains(joined, "--memory-limit 1GiB") || !strings.Contains(joined, "-- x") {
 		t.Fatalf("argv = %v", argv)
 	}
+	for _, verb := range []string{"pack", "unpack", "convert", "test"} {
+		a := buildStuffrArgv(verb, []string{"x"}, stuffrOpts{StrictFidelity: true})
+		if !slices.Contains(a, "--strict-fidelity") {
+			t.Fatalf("%s argv = %v", verb, a)
+		}
+		if b := buildStuffrArgv(verb, []string{"x"}, stuffrOpts{}); slices.Contains(b, "--strict-fidelity") {
+			t.Fatalf("%s argv without option = %v", verb, b)
+		}
+	}
 	argv = buildStuffrArgv("pack", []string{"-"}, stuffrOpts{Output: "o.tar", Format: "tar", Level: intp(3), Force: true, AllowWeakEncoder: true})
 	want := "pack --output o.tar --format tar --level 3 --force --allow-weak-encoder -- ./-"
 	if strings.Join(argv, " ") != want {
@@ -241,23 +251,23 @@ func TestStuffrJS_JSONIsPlainObjectWithDocumentOrder(t *testing.T) {
 	}
 }
 
-func TestStuffrJS_VoidHelpersResolveWarnings(t *testing.T) {
+func TestStuffrJS_VoidHelpersResolveMessages(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x"), 0o644)
 	out := stuffrScript(t, `
 		const r = await stuffr.pack(["a.txt"], { cwd: `+jsq(dir)+`, output: "a.tar" });
-		runtime.log(Object.getPrototypeOf(r) === Object.prototype, Array.isArray(r.warnings), r.warnings.length > 0 && r.warnings.every((l: any) => typeof l === "string"));
+		runtime.log(Object.getPrototypeOf(r) === Object.prototype, Array.isArray(r.messages), r.messages.length > 0 && r.messages.every((l: any) => typeof l === "string"));
 	`)
 	if !strings.Contains(out, "true true true") {
 		t.Fatalf("unexpected: %q", out)
 	}
 }
 
-func TestStuffrWarnings_Lines(t *testing.T) {
-	if got := stuffrWarnings(nil); got == nil || len(got) != 0 {
+func TestStuffrMessages_Lines(t *testing.T) {
+	if got := stuffrMessages(nil); got == nil || len(got) != 0 {
 		t.Fatalf("empty stderr must give a non-nil empty slice, got %#v", got)
 	}
-	got := stuffrWarnings([]byte("a\r\n\n  \n  - b\n"))
+	got := stuffrMessages([]byte("a\r\n\n  \n  - b\n"))
 	if len(got) != 2 || got[0] != "a" || got[1] != "  - b" {
 		t.Fatalf("got %q", got)
 	}

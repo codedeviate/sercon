@@ -7950,7 +7950,7 @@ such as `list`, or a *personality* name such as `gzip`, `gunzip`, `zcat`,
 `{ code, stdout, stderr, text() }` — it never throws for a non-zero exit. The
 typed helpers build a safe argv for you (positional paths after `--`) and
 **throw** on a non-zero exit; on success `pack` / `unpack` / `convert` / `test`
-resolve `{ warnings }` (see the interim-limits notes below), `cat` the bytes,
+resolve `{ messages }` (see the interim-limits notes below), `cat` the bytes,
 and `list` / `info` / `formats` parsed JSON. Personalities return *their reference tool's*
 exit codes, and the helpers never map those, so use `run()` for personalities.
 A path argument that is exactly `-` means stdin to stuffr; the helpers rewrite
@@ -7984,11 +7984,14 @@ Observed behaviour:
 - Extracting a tar holding a `0755` file succeeds (exit 0) but the file comes out
   mode `0600`, with stderr `1 fidelity warning(s): entry `run.sh` is missing
   metadata: mode`. The typed `pack` / `unpack` / `convert` / `test` helpers resolve
-  with `{ warnings: string[] }` — the non-empty lines of stuffr's stderr from the
+  with `{ messages: string[] }` — the non-empty lines of stuffr's stderr from the
   successful run (a one-line summary such as `tar -> 1 bytes extracted into …`
-  plus any `fidelity warning(s)` lines) — so a script can see the loss; check
-  for lines containing `fidelity warning`. `warnings` is `[]` only when stderr
-  was empty. Pass `stream: true` to also tee the guest's stderr to the console.
+  plus any `fidelity warning(s)` lines). `messages` is human-readable output for
+  logging, **not** a stable contract to parse, and is effectively never empty.
+  **The programmatic way to detect metadata loss is `strictFidelity: true`** (stuffr's
+  `--strict-fidelity`, accepted by `pack`, `unpack`, `convert` and `test`): loss
+  then makes stuffr exit 4 and the helper throws `kind: "degraded"` — the output
+  was still written. Pass `stream: true` to also tee the guest's stderr to the console.
 - Extracting a tar holding a symlink fails with exit 3 and stderr `stuffr:
   unsupported: this build cannot create symlinks; extract on a unix host`;
   nothing is created.
@@ -8025,8 +8028,8 @@ Full signatures are in §17.14.
 The format is taken from the output extension; paths are relative to `cwd`.
 
 ```ts
-const { warnings } = await stuffr.pack(["src", "README.md"], { cwd: "/work/project", output: "/tmp/project.tar.gz" });
-runtime.log(warnings); // stuffr's summary line plus any fidelity warnings
+const { messages } = await stuffr.pack(["src", "README.md"], { cwd: "/work/project", output: "/tmp/project.tar.gz" });
+runtime.log(messages.join("\n")); // stuffr's summary line (for logging only)
 ```
 
 **Notes**
@@ -8064,14 +8067,19 @@ Hostile entries are refused (`kind: "unsafe"`), so extracting untrusted input is
 safe against path escapes.
 
 ```ts
-const { warnings } = await stuffr.unpack("/tmp/project.tar.gz", { directory: "/tmp/out" });
-const lost = warnings.filter((l) => l.includes("fidelity warning") || l.includes("missing metadata"));
-if (lost.length) runtime.log("metadata not preserved:", lost);
+try {
+  const { messages } = await stuffr.unpack("/tmp/project.tar.gz", { directory: "/tmp/out", strictFidelity: true });
+  runtime.log(messages.join("\n"));
+} catch (e: any) {
+  // exit 4: the files WERE extracted, but metadata (e.g. modes) was lost
+  if (e.kind === "degraded") runtime.log("extracted with metadata loss:", e.stderr);
+  else throw e;
+}
 ```
 
 **Notes**
 - Interim build: file modes come out `0600` and tars with symlinks fail with
-  exit 3 (§5.16.1). Check `warnings` for the fidelity warning.
+  exit 3 (§5.16.1). Pass `strictFidelity: true` to turn that loss into a `degraded` error.
 
 ##### 5.16.2.5 Decompress a gzip stream from memory
 
@@ -19953,7 +19961,7 @@ const bytes = await stuffr.cat("notes.txt.gz");
 #### 17.14.2 stuffr.convert
 
 ```
-convert(input: string, output: string, opts?: { format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ warnings: string[] }>
+convert(input: string, output: string, opts?: { format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>
 ```
 
 Re-encode an archive or compressed file into another format without a manual unpack.
@@ -19962,9 +19970,9 @@ Re-encode an archive or compressed file into another format without a manual unp
 
 - `input` *(string)* — Source path, relative to opts.cwd.
 - `output` *(string)* — Destination path.
-- `opts` *({ format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — format: target format (default: from the output extension). level, allowWeakEncoder, force and memoryLimit as for pack.
+- `opts` *({ format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — format: target format (default: from the output extension). level, allowWeakEncoder, force, strictFidelity and memoryLimit as for pack.
 
-**Returns:** Resolves with { warnings } once the output is written: the non-empty lines of stuffr's stderr from the successful run (its one-line summary, plus any `fidelity warning(s)` lines), or [] when stderr was empty.
+**Returns:** Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
 
 **Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean").
 
@@ -20039,7 +20047,7 @@ runtime.log(entries.map((e) => e.name));
 #### 17.14.6 stuffr.pack
 
 ```
-pack(inputs: string[], opts?: { output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ warnings: string[] }>
+pack(inputs: string[], opts?: { output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>
 ```
 
 Pack files or directories into an archive or compressed file. The format comes from opts.format or the output extension.
@@ -20047,15 +20055,14 @@ Pack files or directories into an archive or compressed file. The format comes f
 **Parameters**
 
 - `inputs` *(string[])* — Paths to pack, relative to opts.cwd. Must not be empty.
-- `opts` *({ output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — output: destination path. format: e.g. "tar.gz", "zip". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default).
+- `opts` *({ output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — output: destination path. format: e.g. "tar.gz", "zip". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. strictFidelity: exit 4 (kind "degraded") if anything would be lost or unverified. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default).
 
-**Returns:** Resolves with { warnings } once the output is written: the non-empty lines of stuffr's stderr from the successful run (its one-line summary, plus any `fidelity warning(s)` lines), or [] when stderr was empty.
+**Returns:** Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
 
 **Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean").
 
 ```ts
-const { warnings } = await stuffr.pack(["src"], { cwd: "/work", output: "src.tar.gz" });
-if (warnings.some((l) => l.includes("fidelity warning"))) runtime.log(warnings);
+await stuffr.pack(["src"], { cwd: "/work", output: "src.tar.gz" });
 ```
 
 #### 17.14.7 stuffr.run
@@ -20083,7 +20090,7 @@ if (r.code === 0) runtime.log(JSON.parse(r.text()));
 #### 17.14.8 stuffr.test
 
 ```
-test(archive: string, opts?: { cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ warnings: string[] }>
+test(archive: string, opts?: { strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>
 ```
 
 Verify an archive's integrity (checksums and structure) without extracting it.
@@ -20091,20 +20098,21 @@ Verify an archive's integrity (checksums and structure) without extracting it.
 **Parameters**
 
 - `archive` *(string)* — Archive path, relative to opts.cwd.
-- `opts` *({ cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — cwd, env, stdin, stream and memoryLimit as for run.
+- `opts` *({ strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — strictFidelity: exit 4 (kind "degraded") if anything would be lost or unverified. cwd, env, stdin, stream and memoryLimit as for run.
 
-**Returns:** Resolves with { warnings } when the archive is intact: the non-empty stderr lines (the verification summary and any warnings).
+**Returns:** Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
 
 **Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean"). A damaged archive rejects with kind "corrupt".
 
 ```ts
-await stuffr.test("backup.tar.zst");
+const { messages } = await stuffr.test("backup.tar.zst");
+runtime.log(messages.join("\n"));
 ```
 
 #### 17.14.9 stuffr.unpack
 
 ```
-unpack(archive: string, opts?: { directory?: string; samePermissions?: boolean; force?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ warnings: string[] }>
+unpack(archive: string, opts?: { directory?: string; samePermissions?: boolean; force?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>
 ```
 
 Extract an archive or decompress a file. Extraction safety equals native stuffr: `../` and absolute entry paths, symlinked ancestors and unsafe symlink targets are refused with exit 7 (kind "unsafe"). Interim: modes, symlinks and owners are not applied (see the manual).
@@ -20112,15 +20120,19 @@ Extract an archive or decompress a file. Extraction safety equals native stuffr:
 **Parameters**
 
 - `archive` *(string)* — Archive path, relative to opts.cwd.
-- `opts` *({ directory?: string; samePermissions?: boolean; force?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. memoryLimit: stuffr's --memory-limit.
+- `opts` *({ directory?: string; samePermissions?: boolean; force?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. strictFidelity: exit 4 (kind "degraded") if metadata would be lost, which makes the helper reject — the programmatic way to detect loss (the output is still written). memoryLimit: stuffr's --memory-limit.
 
-**Returns:** Resolves with { warnings } when extraction finished with exit 0: the non-empty stderr lines, including stuffr's summary line and any `fidelity warning(s)` entries such as `entry `run.sh` is missing metadata: mode`.
+**Returns:** Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
 
-**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean"). A tar holding a symlink fails with exit 3 ("unsupported"); a file whose mode cannot be applied extracts with exit 0 and a fidelity warning, which is returned in `warnings`.
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean"). A tar holding a symlink fails with exit 3 ("unsupported"); a file whose mode cannot be applied extracts with exit 0 and a fidelity warning, which is listed in `messages`, or — with strictFidelity: true — rejects with exit 4 (kind "degraded"; the output WAS written).
 
 ```ts
-const { warnings } = await stuffr.unpack("src.tar.gz", { directory: "/tmp/out" });
-for (const w of warnings) runtime.log(w);
+try {
+  await stuffr.unpack("src.tar.gz", { directory: "/tmp/out", strictFidelity: true });
+} catch (e: any) {
+  if (e.kind === "degraded") runtime.log("extracted, but metadata was lost:", e.stderr);
+  else throw e;
+}
 ```
 
 #### 17.14.10 stuffr.version

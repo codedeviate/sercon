@@ -67,7 +67,7 @@ guided tour.
 | `services` | external-CLI wrappers: `git`, `gh`, `ai`, `agentBrowser`, `webdriver` |
 | `tui` | terminal-UI widgets |
 | `mcp` | Model Context Protocol — author a server (`mcp.serve`) or drive one as a client (`mcp.connect`), over stdio or Streamable HTTP |
-| `stuffr` | archives and compression (tar/zip/gzip/xz/zstd/…) via embedded WebAssembly: `pack`/`unpack`/`convert`/`test`/`list`, raw `run`; helpers return stuffr's warnings |
+| `stuffr` | archives and compression (tar/zip/gzip/xz/zstd/…) via embedded WebAssembly: `pack`/`unpack`/`convert`/`test`/`list`, raw `run`; helpers return stuffr's messages, `strictFidelity` flags metadata loss |
 
 ## Documentation
 
