@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"runtime"
+	"strconv"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -43,8 +45,9 @@ type lineCallback struct {
 	buf      []byte   // bytes since the last newline
 	queue    []string // complete lines awaiting delivery
 	queueCap int
-	draining bool // a drain is scheduled or running
-	inCall   bool // the handler is executing right now (re-entrancy guard)
+	draining bool   // a drain is scheduled or running
+	inCall   bool   // the handler is executing right now (re-entrancy guard)
+	callG    uint64 // goroutine running the handler while inCall (see tryFeed)
 	stopped  bool
 	reported bool // a handler throw has already been reported on stderr
 
@@ -66,14 +69,19 @@ func callbackDest(loop *eventloop.EventLoop, streamName string, fn goja.Callable
 
 // tryFeed accepts p and reports whether it took ownership. false means the
 // caller must fall through to the destination beneath:
-//   - inCall: the handler's own write would otherwise recurse forever
+//   - inCall on the SAME goroutine: the handler's own write would otherwise
+//     recurse forever. A write from any other goroutine while the handler runs
+//     (a server handler, exec.stream, a wasm guest's stderr on its work
+//     goroutine) is not re-entrant and is buffered/queued as usual — refusing
+//     it would split that writer's line, leaking a fragment beneath and
+//     handing the handler a corrupted line.
 //   - stopped: the entry has been popped
 //   - the queue is full
 //
 // Called with the stream's mutex held, so this must not block or call into JS.
 func (c *lineCallback) tryFeed(p []byte) bool {
 	c.mu.Lock()
-	if c.stopped || c.inCall {
+	if c.stopped || (c.inCall && curGoroutineID() == c.callG) {
 		c.mu.Unlock()
 		return false
 	}
@@ -132,6 +140,7 @@ func (c *lineCallback) drain(vm *goja.Runtime) {
 		line := c.queue[0]
 		c.queue = c.queue[1:]
 		c.inCall = true
+		c.callG = curGoroutineID()
 		fn := c.fn
 		c.mu.Unlock()
 
@@ -199,4 +208,22 @@ func (c *lineCallback) stop() []string {
 	leftover := c.queue
 	c.queue = nil
 	return leftover
+}
+
+// curGoroutineID returns the calling goroutine's runtime id, parsed from the
+// "goroutine N [" header runtime.Stack writes. Go deliberately exposes no
+// goroutine identity, but the re-entrancy guard needs exactly that: "is this
+// write coming from the handler that is running right now?". The handler runs
+// on the event-loop goroutine, which tryFeed cannot otherwise tell apart from
+// any other writer. Only paid on drain's per-line handoff and on writes that
+// land while a handler is executing, never on the common write path.
+func curGoroutineID() uint64 {
+	var b [64]byte
+	n := runtime.Stack(b[:], false)
+	f := bytes.Fields(b[:n])
+	if len(f) < 2 {
+		return 0
+	}
+	id, _ := strconv.ParseUint(string(f[1]), 10, 64)
+	return id
 }
