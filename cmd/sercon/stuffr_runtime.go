@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/tetratelabs/wazero"
@@ -61,6 +62,9 @@ func (e *stuffrTrapError) Unwrap() error { return e.Err }
 func (e *stuffrTrapError) ErrorFields() map[string]any {
 	return map[string]any{"kind": "trap", "argv": e.Argv, "detail": e.detail()}
 }
+
+// stuffrGOOS is runtime.GOOS; a var so tests can exercise the Windows guard.
+var stuffrGOOS = runtime.GOOS
 
 // stuffrRuntime holds a wazero runtime with the stuffr module compiled once.
 type stuffrRuntime struct {
@@ -127,6 +131,9 @@ func (r *stuffrRuntime) run(ctx context.Context, req stuffrRunReq) (stuffrRunRes
 	if len(req.Argv) == 0 {
 		return stuffrRunResult{}, errors.New("stuffr.run: argv must not be empty")
 	}
+	if stuffrGOOS == "windows" {
+		return stuffrRunResult{}, errors.New("stuffr is not supported on Windows yet")
+	}
 	argv := req.Argv
 	if !stuffrPersonalities()[argv[0]] {
 		argv = append([]string{"stuffr"}, argv...)
@@ -134,7 +141,9 @@ func (r *stuffrRuntime) run(ctx context.Context, req stuffrRunReq) (stuffrRunRes
 	var stdout, stderr bytes.Buffer
 	var errW io.Writer = &stderr
 	if req.Stream {
-		errW = io.MultiWriter(&stderr, os.Stderr)
+		// Tee through sercon's redirectable stderr, not os.Stderr, so a script's
+		// runtime.stderr.to(...) also sees streamed lines.
+		errW = io.MultiWriter(&stderr, stdioErr())
 	}
 	cfg := wazero.NewModuleConfig().
 		WithName("").

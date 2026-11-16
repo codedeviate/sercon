@@ -235,3 +235,31 @@ func TestClassifyStuffrErr(t *testing.T) {
 		t.Fatalf("msg = %s", trap.Error())
 	}
 }
+
+func TestStuffrRun_StreamFollowsStderrRedirect(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := stuffrScript(t, `
+		const lines: string[] = [];
+		const restore = runtime.stderr.to((l: string) => lines.push(l));
+		const r = await stuffr.pack(["a.txt"], { cwd: `+jsq(dir)+`, output: `+jsq(filepath.Join(dir, "a.tar"))+`, stream: true });
+		await new Promise((res) => setTimeout(res, 100));
+		restore();
+		runtime.log("captured", lines.length > 0, lines.join("|") === r.messages.join("|"));
+	`)
+	if !strings.Contains(out, "captured true true") {
+		t.Fatalf("streamed stderr not captured by runtime.stderr.to: %q", out)
+	}
+}
+
+func TestStuffrRun_WindowsFailsFast(t *testing.T) {
+	old := stuffrGOOS
+	stuffrGOOS = "windows"
+	defer func() { stuffrGOOS = old }()
+	_, err := testStuffr(t).run(context.Background(), stuffrRunReq{Argv: []string{"formats"}, Cwd: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "not supported on Windows yet") {
+		t.Fatalf("err = %v, want not-supported-on-Windows error", err)
+	}
+}
