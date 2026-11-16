@@ -236,7 +236,17 @@ func TestClassifyStuffrErr(t *testing.T) {
 	}
 }
 
+// A streamed run's stderr goes through sercon's redirectable stderr, so a
+// runtime.stderr.to(fn) handler receives every completed line, in write order,
+// and nothing reaches the destination beneath it. The guest writes its stderr
+// in several chunks per line from wazero's goroutine while the handler runs on
+// the loop — this used to trip the line-callback's re-entrancy guard and leak
+// fragments beneath (see TestCallback_ConcurrentWriteDuringHandlerIsNotReentrant).
+// messages holds only the non-empty lines, so empty handler lines are dropped
+// before comparing.
 func TestStuffrRun_StreamFollowsStderrRedirect(t *testing.T) {
+	_, beneath, restoreStdio := withCapturedStdio(t)
+	defer restoreStdio()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
@@ -247,10 +257,13 @@ func TestStuffrRun_StreamFollowsStderrRedirect(t *testing.T) {
 		const r = await stuffr.pack(["a.txt"], { cwd: `+jsq(dir)+`, output: `+jsq(filepath.Join(dir, "a.tar"))+`, stream: true });
 		await new Promise((res) => setTimeout(res, 100));
 		restore();
-		runtime.log("captured", lines.length > 0, lines.join("|") === r.messages.join("|"));
+		runtime.log("captured", r.messages.length > 0, lines.filter((l) => l !== "").join("|") === r.messages.join("|"));
 	`)
 	if !strings.Contains(out, "captured true true") {
 		t.Fatalf("streamed stderr not captured by runtime.stderr.to: %q", out)
+	}
+	if beneath.Len() != 0 {
+		t.Fatalf("streamed stderr leaked beneath the redirect: %q", beneath.String())
 	}
 }
 
