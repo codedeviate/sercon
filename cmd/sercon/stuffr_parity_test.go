@@ -4,8 +4,10 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -323,5 +325,174 @@ func TestStuffrJS_StrictFidelityThrowsDegraded(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "out", "run.sh")); err != nil {
 		t.Fatalf("extracted file should still exist: %v", err)
+	}
+}
+
+// interimFixture creates base/src/{secret (0600), tool (0755), d/ (0700)} and
+// returns base. The stuffr cwd is base.
+func interimFixture(t *testing.T) string {
+	t.Helper()
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	for _, d := range []string{src, filepath.Join(src, "d")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]os.FileMode{"secret": 0o600, "tool": 0o755, "d/in": 0o600}
+	for n, m := range files {
+		p := filepath.Join(src, n)
+		if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(filepath.Join(src, "d"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return base
+}
+
+func tarModes(t *testing.T, path string) map[string]int64 {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	out := map[string]int64{}
+	tr := tar.NewReader(f)
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			break
+		}
+		out[strings.TrimSuffix(h.Name, "/")] = h.Mode & 0o777
+	}
+	return out
+}
+
+func zipModes(t *testing.T, path string) map[string]os.FileMode {
+	t.Helper()
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	out := map[string]os.FileMode{}
+	for _, f := range zr.File {
+		out[strings.TrimSuffix(f.Name, "/")] = f.Mode().Perm()
+	}
+	return out
+}
+
+// TestStuffrInterim_PackKnownDishonest is KNOWN-DISHONEST: it pins what the
+// embedded interim build does TODAY, which is wrong. pack records 0644 for
+// every file regardless of the source mode (a 0600 secret is WIDENED, a 0755
+// tool loses its exec bit) and, for zip and single-stream outputs, says "no
+// fidelity loss" and exits 0 even under --strict-fidelity. The test is meant
+// to FAIL once stuffr's honesty fix (or host-fs layer) lands, forcing the
+// MANUAL / docs_stuffr.go / CHANGELOG warnings to be updated. When it fails,
+// update those docs, then flip these assertions to the corrected behaviour.
+func TestStuffrInterim_PackKnownDishonest(t *testing.T) {
+	t.Run("Tar", func(t *testing.T) {
+		base := interimFixture(t)
+		out := filepath.Join(base, "o.tar")
+		code, stderr := wasiRun(t, base, "pack", "--output", out, "--", "src")
+		m := tarModes(t, out)
+		t.Logf("code=%d modes=%v stderr=%q", code, m, stderr)
+		if code != 0 || m["src/secret"] != 0o644 || m["src/tool"] != 0o644 || m["src/d"] != 0o755 {
+			t.Fatalf("known-dishonest behaviour changed (update docs!): code=%d modes=%v", code, m)
+		}
+		if !strings.Contains(stderr, "uid_gid") {
+			t.Fatalf("expected the owner (uid_gid) warning, got %q", stderr)
+		}
+		out2 := filepath.Join(base, "o2.tar")
+		if c, _ := wasiRun(t, base, "pack", "--strict-fidelity", "--output", out2, "--", "src"); c != 4 {
+			t.Fatalf("strict tar pack exit = %d, want 4 (owner warning)", c)
+		}
+	})
+	t.Run("Zip", func(t *testing.T) {
+		base := interimFixture(t)
+		out := filepath.Join(base, "o.zip")
+		code, stderr := wasiRun(t, base, "pack", "--strict-fidelity", "--output", out, "--", "src")
+		m := zipModes(t, out)
+		t.Logf("code=%d modes=%v stderr=%q", code, m, stderr)
+		if code != 0 || m["src/secret"] != 0o644 || m["src/tool"] != 0o644 || !strings.Contains(stderr, "no fidelity loss") {
+			t.Fatalf("known-dishonest behaviour changed (update docs!): code=%d modes=%v stderr=%q", code, m, stderr)
+		}
+	})
+	t.Run("SingleStreamGz", func(t *testing.T) {
+		base := interimFixture(t)
+		out := filepath.Join(base, "secret.gz")
+		code, stderr := wasiRun(t, base, "pack", "--strict-fidelity", "--output", out, "--", "src/secret")
+		st, err := os.Stat(out)
+		if err != nil {
+			t.Fatalf("no output: %v (code=%d stderr=%q)", err, code, stderr)
+		}
+		t.Logf("code=%d mode=%v stderr=%q", code, st.Mode().Perm(), stderr)
+		if code != 0 || st.Mode().Perm() != 0o600 || !strings.Contains(stderr, "no fidelity loss") {
+			t.Fatalf("known-dishonest behaviour changed (update docs!): code=%d mode=%v stderr=%q", code, st.Mode().Perm(), stderr)
+		}
+	})
+	t.Run("OracleGap", func(t *testing.T) {
+		oracleBin(t)
+		base := interimFixture(t)
+		out := filepath.Join(base, "o.tar")
+		if code, stderr := oracleRun(t, base, "pack", "--output", out, "--", "src"); code != 0 {
+			t.Fatalf("oracle pack: %d %q", code, stderr)
+		}
+		m := tarModes(t, out)
+		t.Logf("oracle modes=%v", m)
+		if m["src/secret"] != 0o600 || m["src/tool"] != 0o755 {
+			t.Fatalf("oracle should preserve 0600/0755, got %v", m)
+		}
+		zout := filepath.Join(base, "o.zip")
+		if code, stderr := oracleRun(t, base, "pack", "--output", zout, "--", "src"); code != 0 {
+			t.Fatalf("oracle zip pack: %d %q", code, stderr)
+		}
+		zm := zipModes(t, zout)
+		t.Logf("oracle zip modes=%v", zm)
+		if zm["src/secret"] != 0o600 || zm["src/tool"] != 0o755 {
+			t.Fatalf("oracle zip should preserve 0600/0755, got %v", zm)
+		}
+	})
+}
+
+// TestStuffrInterim_SalvageKnownDishonest is KNOWN-DISHONEST in the same way:
+// salvage -C restores files 0600 at exit 0 with no warning, and
+// salvage --index N -o FILE traps because std::env::temp_dir() panics on
+// wasip1. Expected to fail once stuffr is fixed; then update the docs.
+func TestStuffrInterim_SalvageKnownDishonest(t *testing.T) {
+	base := interimFixture(t)
+	arc := filepath.Join(base, "s.tar")
+	if code, stderr := wasiRun(t, base, "pack", "--output", arc, "--", "src"); code != 0 {
+		t.Fatalf("pack: %d %q", code, stderr)
+	}
+	dst := filepath.Join(base, "salv")
+	os.MkdirAll(dst, 0o755)
+	code, stderr := wasiRun(t, base, "salvage", "-C", dst, "--", arc)
+	t.Logf("salvage -C: code=%d stderr=%q", code, stderr)
+	var found bool
+	filepath.WalkDir(dst, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			found = true
+			st, _ := os.Stat(p)
+			if st.Mode().Perm() != 0o600 {
+				t.Errorf("%s mode = %v, want 0600 (known-dishonest, update docs if fixed)", p, st.Mode().Perm())
+			}
+		}
+		return nil
+	})
+	if code != 0 || !found || strings.Contains(stderr, "warning") {
+		t.Fatalf("known-dishonest behaviour changed (update docs!): code=%d found=%v stderr=%q", code, found, stderr)
+	}
+	_, err := testStuffr(t).run(context.Background(), stuffrRunReq{
+		Argv: []string{"salvage", "--index", "0", "-o", filepath.Join(base, "one"), "--", arc}, Cwd: base})
+	var trap *stuffrTrapError
+	if !errors.As(err, &trap) {
+		t.Fatalf("salvage --index -o: err = %v, want *stuffrTrapError (known-dishonest, update docs if fixed)", err)
 	}
 }
