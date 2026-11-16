@@ -20,8 +20,9 @@ const lineQueueCap = 1024
 // lineCallback is the destCallback payload: it splits the byte stream into
 // lines and delivers each to a JS function.
 //
-// Delivery is queued, never direct. Writes arrive from arbitrary goroutines
-// (server handlers, exec.stream, async ops) AND from on-loop script code, and
+// Delivery is queued, never direct. Writes arrive from on-loop script code AND
+// from other goroutines (stuffr.run's streamed wasm stderr, `sercon serve`'s
+// access/SMTP loggers, the engine's Verbose writer), and
 // per CLAUDE.md a raw goja.Callable from off-loop is illegal while
 // LoopCallable.Call from on-loop deadlocks. Enqueueing plus a fire-and-forget
 // loop.RunOnLoop drain sidesteps both with one mechanism: delivery is one tick
@@ -71,10 +72,11 @@ func callbackDest(loop *eventloop.EventLoop, streamName string, fn goja.Callable
 // caller must fall through to the destination beneath:
 //   - inCall on the SAME goroutine: the handler's own write would otherwise
 //     recurse forever. A write from any other goroutine while the handler runs
-//     (a server handler, exec.stream, a wasm guest's stderr on its work
-//     goroutine) is not re-entrant and is buffered/queued as usual — refusing
-//     it would split that writer's line, leaking a fragment beneath and
-//     handing the handler a corrupted line.
+//     (stuffr.run's streamed wasm stderr, `sercon serve`'s access/SMTP
+//     loggers, the engine's Verbose writer) is not re-entrant and is
+//     buffered/queued as usual — refusing it would divert that line, wholly
+//     or in part, to the destination beneath, and a partly diverted line
+//     reaches the handler corrupted.
 //   - stopped: the entry has been popped
 //   - the queue is full
 //
@@ -130,6 +132,7 @@ func (c *lineCallback) tryFeed(p []byte) bool {
 // drain delivers every queued line. Runs ON the loop, so it invokes the
 // callable directly — scheduling again from here would deadlock.
 func (c *lineCallback) drain(vm *goja.Runtime) {
+	g := curGoroutineID() // drain runs on the loop goroutine throughout
 	for {
 		c.mu.Lock()
 		if c.stopped || len(c.queue) == 0 {
@@ -140,7 +143,7 @@ func (c *lineCallback) drain(vm *goja.Runtime) {
 		line := c.queue[0]
 		c.queue = c.queue[1:]
 		c.inCall = true
-		c.callG = curGoroutineID()
+		c.callG = g
 		fn := c.fn
 		c.mu.Unlock()
 
@@ -221,7 +224,7 @@ func curGoroutineID() uint64 {
 	var b [64]byte
 	n := runtime.Stack(b[:], false)
 	f := bytes.Fields(b[:n])
-	if len(f) < 2 {
+	if len(f) < 2 || string(f[0]) != "goroutine" {
 		return 0
 	}
 	id, _ := strconv.ParseUint(string(f[1]), 10, 64)
