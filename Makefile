@@ -130,6 +130,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/text-case.ts \
 	examples/scripts/audio-stego.ts \
 	examples/scripts/audio-format.ts \
+	examples/scripts/stuffr.ts \
 	examples/scripts/tui-keys.ts \
 	examples/scripts/agent-browser-core.ts \
 	examples/scripts/agent-browser-capture.ts \

@@ -52,6 +52,7 @@ jobs:
             examples/scripts/charset.ts \
             examples/scripts/checkdigit.ts \
             examples/scripts/archive.ts \
+            examples/scripts/stuffr.ts \
             examples/scripts/diff.ts \
             examples/scripts/jq.ts \
             examples/scripts/exec-shell.ts \
