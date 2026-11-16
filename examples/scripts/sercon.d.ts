@@ -2618,7 +2618,7 @@ declare const mcp: {
 };
 };
 
-/** Archives and compression via the embedded stuffr (WebAssembly under wazero, pure Go): pack/unpack/convert/test/cat/list/info/formats helpers plus run(argv) for raw verbs and gzip/zstd/xz/bzip2-style personalities. Interim build: modes, symlinks and owners are not applied on extract. */
+/** Archives and compression via the embedded stuffr (WebAssembly under wazero, pure Go): pack/unpack/convert/test/cat/list/info/formats helpers plus run(argv) for raw verbs and gzip/zstd/xz/bzip2-style personalities. Embedded-build limits: pack records every file as 0644 (do not use it where modes matter), unpack writes 0600 and cannot create symlinks, and it is not functional on Windows yet. */
 declare const stuffr: {
   /**
    * Decompress a single-stream compressed file (gzip, xz, zstd, ...) and return the bytes. Plain, uncompressed input is rejected by stuffr.
@@ -2631,8 +2631,8 @@ declare const stuffr: {
    * Re-encode an archive or compressed file into another format without a manual unpack.
    * @param input Source path, relative to opts.cwd.
    * @param output Destination path.
-   * @param opts format: target format (default: from the output extension). level, allowWeakEncoder, force, strictFidelity and memoryLimit as for pack.
-   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
+   * @param opts format: target format (default: from the output extension). level, allowWeakEncoder, force and memoryLimit as for pack. convert keeps the modes recorded in the source archive; strictFidelity only turns stuffr's own fidelity warnings into exit 4 and is not a reliable loss detector.
+   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. `strictFidelity: true` (catch kind "degraded") detects metadata loss on `unpack` only; it does NOT detect `pack` loss, and on this build `pack` records modes wrongly (see its Summary).
    */
   convert(input: string, output: string, opts?: { format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>;
   /**
@@ -2656,14 +2656,14 @@ declare const stuffr: {
    */
   list(archive: string, opts?: { cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<unknown>;
   /**
-   * Pack files or directories into an archive or compressed file. The format comes from opts.format or the output extension.
+   * Pack files or directories into an archive or compressed file. The format comes from opts.format or the output extension. WARNING (embedded build): archives pack writes record every file as mode 0644 with owner 0:0 regardless of the source — a 0600 file is widened to 0644 and a 0755 file loses its exec bit (directories are recorded 0755). zip and single-stream (.gz, ...) output print "no fidelity loss" and exit 0; a single-stream output file is written 0600. Do not use pack where file modes matter (secrets, backups, executables) until stuffr's honesty fix lands.
    * @param inputs Paths to pack, relative to opts.cwd. Must not be empty.
-   * @param opts output: destination path. format: e.g. "tar.gz", "zip". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. strictFidelity: exit 4 (kind "degraded") if anything would be lost or unverified. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default).
-   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
+   * @param opts output: destination path. format: e.g. "tar.gz", "zip". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. strictFidelity: does NOT detect pack's mode loss — for tar it always exits 4 (kind "degraded", because of the owner warning; the archive is still written), for zip and single-stream output it exits 0. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default).
+   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. `strictFidelity: true` (catch kind "degraded") detects metadata loss on `unpack` only; it does NOT detect `pack` loss, and on this build `pack` records modes wrongly (see its Summary).
    */
   pack(inputs: string[], opts?: { output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>;
   /**
-   * Run the embedded stuffr with a raw argv and get the exit code and output back — never throws for a non-zero exit. argv[0] is a verb (pack, unpack, list, ...) or a personality name (gzip, unzip, zstdcat, ...), which then returns its reference tool's exit codes.
+   * Run the embedded stuffr with a raw argv and get the exit code and output back — never throws for a non-zero exit. argv[0] is a verb (pack, unpack, list, ...) or a personality name (gzip, unzip, zstdcat, ...), which then returns its reference tool's exit codes. Embedded-build notes: files written by personalities (e.g. `gzip -k`) are mode 0600; `salvage --index N -o FILE` traps (kind "trap") because stuffr cannot find a temp dir under WASI; stuffr is not functional on Windows yet (run rejects with "stuffr is not supported on Windows yet").
    * @param argv The stuffr command line, without a program name. A path argument that is exactly `-` means stdin; use `./-` to name a file called `-`.
    * @param opts cwd: working directory the guest sees (default: the process cwd). env: extra guest environment variables (the host environment is not inherited). stdin: bytes fed to the guest. stream: also tee the guest's stderr to sercon's stderr (the console).
    * @returns The guest's exit code, raw stdout bytes, stderr text, and text() decoding stdout as UTF-8.
@@ -2672,15 +2672,15 @@ declare const stuffr: {
   /**
    * Verify an archive's integrity (checksums and structure) without extracting it.
    * @param archive Archive path, relative to opts.cwd.
-   * @param opts strictFidelity: exit 4 (kind "degraded") if anything would be lost or unverified. cwd, env, stdin, stream and memoryLimit as for run.
-   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
+   * @param opts strictFidelity: exit 4 (kind "degraded") if stuffr reports a fidelity warning. cwd, env, stdin, stream and memoryLimit as for run.
+   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. `strictFidelity: true` (catch kind "degraded") detects metadata loss on `unpack` only; it does NOT detect `pack` loss, and on this build `pack` records modes wrongly (see its Summary).
    */
   test(archive: string, opts?: { strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>;
   /**
-   * Extract an archive or decompress a file. Extraction safety equals native stuffr: `../` and absolute entry paths, symlinked ancestors and unsafe symlink targets are refused with exit 7 (kind "unsafe"). Interim: modes, symlinks and owners are not applied (see the manual).
+   * Extract an archive or decompress a file. Extraction safety equals native stuffr: `../` and absolute entry paths, symlinked ancestors and unsafe symlink targets are refused with exit 7 (kind "unsafe"). Embedded build: extracted modes come out 0600 with a `missing metadata: mode` warning, owners are not applied, and a symlink entry fails with exit 3 (see the manual).
    * @param archive Archive path, relative to opts.cwd.
-   * @param opts directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. strictFidelity: exit 4 (kind "degraded") if metadata would be lost, which makes the helper reject — the programmatic way to detect loss (the output is still written). memoryLimit: stuffr's --memory-limit.
-   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. To detect metadata loss programmatically use strictFidelity: true and catch kind "degraded".
+   * @param opts directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. strictFidelity: exit 4 (kind "degraded") if metadata would be lost, which makes the helper reject (the output is still written). This is the one place it detects loss; on this build it rejects for essentially every entry that records a mode. memoryLimit: stuffr's --memory-limit.
+   * @returns Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. `strictFidelity: true` (catch kind "degraded") detects metadata loss on `unpack` only; it does NOT detect `pack` loss, and on this build `pack` records modes wrongly (see its Summary).
    */
   unpack(archive: string, opts?: { directory?: string; samePermissions?: boolean; force?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>;
   /**

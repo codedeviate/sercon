@@ -657,7 +657,7 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("cloud", cloudDocs())
 	e.SetDocs("mcp", "Model Context Protocol server: mcp.serve({name, version, instructions?}) returns a handle for registering tools/resources/prompts with JS handlers, then serving them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk.")
 	e.SetMemberDocsStructured("mcp", mcpDocs())
-	e.SetDocs("stuffr", "Archives and compression via the embedded stuffr (WebAssembly under wazero, pure Go): pack/unpack/convert/test/cat/list/info/formats helpers plus run(argv) for raw verbs and gzip/zstd/xz/bzip2-style personalities. Interim build: modes, symlinks and owners are not applied on extract.")
+	e.SetDocs("stuffr", "Archives and compression via the embedded stuffr (WebAssembly under wazero, pure Go): pack/unpack/convert/test/cat/list/info/formats helpers plus run(argv) for raw verbs and gzip/zstd/xz/bzip2-style personalities. Embedded-build limits: pack records every file as 0644 (do not use it where modes matter), unpack writes 0600 and cannot create symlinks, and it is not functional on Windows yet.")
 	e.SetMemberDocsStructured("stuffr", stuffrDocs())
 	return nil
 }
