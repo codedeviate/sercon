@@ -19,10 +19,11 @@ inspect an endpoint, reproduce a bug, drive a browser, query a database, or
 stand up a quick server — without spinning up a Node project or pulling in a
 dependency tree.
 
-Scripts get **fifteen** always-present top-level globals covering HTTP and
+Scripts get **sixteen** always-present top-level globals covering HTTP and
 networking, crypto, databases, files, encoding/decoding, image and audio,
 web scraping, cloud provider APIs, terminal UIs, inbound servers, external-CLI
-wrappers, and the Model Context Protocol (both a server and a client). No
+wrappers, archives and compression (embedded wasm), and the Model Context Protocol
+(both a server and a client). No
 `import`, no `npm install` — the batteries are built in, and the whole thing
 ships as a single static binary. Pure Go (no cgo), no Node.
 
@@ -45,7 +46,7 @@ Promises, `setTimeout`, and `require` come from [goja_nodejs](https://github.com
 
 ## What's in the box
 
-Fifteen reserved globals (use them directly — no namespace import). Full
+Sixteen reserved globals (use them directly — no namespace import). Full
 signatures live in `MANUAL.md` §17 and `sercon.d.ts`; `sercon --examples` is a
 guided tour.
 
@@ -66,11 +67,12 @@ guided tour.
 | `services` | external-CLI wrappers: `git`, `gh`, `ai`, `agentBrowser`, `webdriver` |
 | `tui` | terminal-UI widgets |
 | `mcp` | Model Context Protocol — author a server (`mcp.serve`) or drive one as a client (`mcp.connect`), over stdio or Streamable HTTP |
+| `stuffr` | archives and compression (tar/zip/gzip/xz/zstd/…) via embedded WebAssembly: `pack`/`unpack`/`convert`/`test`/`list`, raw `run`; helpers return stuffr's messages, `strictFidelity` flags `unpack` metadata loss (not `pack`; embedded `pack` records every file as 0644) |
 
 ## Documentation
 
-- [`MANUAL.md`](MANUAL.md) — the full reference: CLI, library API, all fifteen
-  reserved globals (incl. `mcp`, `cloud`, `web`, `server`), and the generated
+- [`MANUAL.md`](MANUAL.md) — the full reference: CLI, library API, all sixteen
+  reserved globals (incl. `mcp`, `cloud`, `web`, `server`, `stuffr`), and the generated
   per-binding reference (§17). Also `sercon --help` and `sercon --examples`
   from the command line.
 - [`CHANGELOG.md`](CHANGELOG.md) — per-version change log (Keep a Changelog).

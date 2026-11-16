@@ -6,6 +6,55 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+
+- **`stuffr` global (the sixteenth reserved global).** Archives and
+  compression — tar, zip, gzip, xz, zstd, bzip2 and more — via
+  [stuffr](https://github.com/codedeviate/stuffr) compiled to WebAssembly and
+  embedded in the binary, run under the pure-Go wazero runtime (no cgo, no
+  external tool). `stuffr.run(argv, opts?)` runs a raw verb or a
+  gzip/zstd/xz-style personality and returns `{ code, stdout, stderr, text() }`
+  without throwing; `pack` / `unpack` / `convert` / `test` / `cat` / `list` /
+  `info` / `formats` are typed helpers that throw on a non-zero exit with
+  `{ code, kind, stderr, argv }` (a wasm trap throws `kind: "trap"`), and
+  `stuffr.version` names the embedded build. `pack` / `unpack` / `convert` /
+  `test` resolve `{ messages: string[] }` (the non-empty stderr lines of the
+  successful run — human-readable, not a parse contract; `stream: true` also
+  tees stderr to the console) and accept `strictFidelity: true`
+  (`--strict-fidelity`), which makes `unpack` metadata loss throw `kind: "degraded"` (it does NOT detect `pack` loss). Extraction safety matches native
+  stuffr (`../`, absolute paths, symlinked ancestors and unsafe symlink targets
+  are refused with exit 7). **Interim limits:** only the pure-Rust tier is
+  embedded, there are no threads, and metadata is WASI-default until stuffr's
+  host-filesystem layer lands: `unpack` writes `0600` (with a fidelity warning;
+  strict mode rejects essentially every moded entry) and a tar holding a symlink
+  fails with exit 3; **`pack` records every file as `0644`, owner 0:0** (a `0600`
+  file is widened, a `0755` file loses its exec bit), zip and single-stream
+  output claim "no fidelity loss" and exit 0 even with `--strict-fidelity`, and
+  `salvage --index N -o` traps — **do not use `stuffr.pack` where file modes
+  matter**. stuffr is not functional on Windows yet (`run` rejects with a clear
+  error). The
+  first call compiles the module (about a second) and caches it under
+  `<UserCacheDir>/sercon/wazero`. New dependency: `github.com/tetratelabs/wazero`
+  (pure Go). The embedded module (`cmd/sercon/stuffr/stuffr.wasm.zst`, ~2.2 MB)
+  grows the binary by roughly 6 MB; rebuild it with `make stuffr-wasm
+  STUFFR_DIR=…`. See MANUAL §5.16 and `examples/scripts/stuffr.ts`.
+- The generated binding reference renumbers: `stuffr` is §17.14, so `text`,
+  `tui` and `web` move to §17.15–§17.17.
+
+### Fixed
+
+- A `runtime.stdout.to(fn)` / `runtime.stderr.to(fn)` line handler now
+  receives lines written from another goroutine while the handler is running,
+  such as `stuffr.run(…, { stream: true })` or `sercon serve`'s access log.
+  Before, such a line could be diverted, wholly or in part, to the
+  destination beneath, and a partly diverted line reached the handler
+  corrupted. The re-entrancy guard (which keeps the handler's own
+  `console.log` from recursing) treated every write during a handler call as
+  re-entrant. Only the handler's own goroutine is now treated as re-entrant.
+  This bug was present since 0.103.0.
+
 ## [0.103.0] — 2026-08-20
 
 ### Added

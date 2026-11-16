@@ -89,7 +89,7 @@ write your first script:
 - **Binding errors throw.** When a built-in fails it throws a normal JS
   exception you can `try`/`catch` — see [§13](#13-error-semantics).
 
-**The reserved globals — what's in the box.** sercon scripts get **fifteen**
+**The reserved globals — what's in the box.** sercon scripts get **sixteen**
 reserved top-level globals plus a `console` shim. Use them directly; there is
 no enclosing namespace. This is the map — follow the link for the full
 treatment.
@@ -111,6 +111,7 @@ treatment.
 | `audio` | read/write/convert audio, steganography | [§5.13](#513-audio) |
 | `cloud` | provider APIs — AWS, Azure, Google Cloud (object storage, …) | [§5.14](#514-cloud) |
 | `mcp` | Model Context Protocol — server (`serve`) and client (`connect`): tools/resources/prompts over stdio or HTTP | [§5.15](#515-mcp) |
+| `stuffr` | archives and compression (tar, zip, gzip, xz, zstd, …) via embedded WebAssembly: `pack`/`unpack`/`convert`/`test`/`list`, raw `run` | [§5.16](#516-stuffr) |
 | `console` | browser/Node-compatible logging shim | [§5.1](#51-console-browsernode-compatibility) |
 
 The full per-binding signatures live in the generated
@@ -548,7 +549,7 @@ runs, after the ESM→CJS rewrite + async IIFE wrapper) and every
 module-resolution event, so debugging an unexpected resolve target or a
 mis-rewritten import is straightforward.
 
-The CLI registers fifteen reserved top-level globals; see the next section.
+The CLI registers sixteen reserved top-level globals; see the next section.
 
 ### 4.2 `--watch`: re-run on file change
 
@@ -858,13 +859,13 @@ sercon -emit-dts sercon.d.ts     # emit just the reserved-global .d.ts directly
 
 ## 5. Reserved globals (script surface)
 
-sercon scripts get fifteen reserved top-level globals. Use them directly —
+sercon scripts get sixteen reserved top-level globals. Use them directly —
 there is no enclosing namespace. The full per-binding reference is the
 generated `examples/scripts/sercon.d.ts`; this section is the at-a-glance
 prose.
 
 **Reserved names:** `runtime`, `crypto`, `text`, `codec`, `fs`, `net`,
-`db`, `cloud`, `services`, `tui`, `image`, `web`, `audio`, `server`, `mcp`. User code can shadow these with a
+`db`, `cloud`, `services`, `tui`, `image`, `web`, `audio`, `server`, `mcp`, `stuffr`. User code can shadow these with a
 local `let`/`const`/`var` per normal JavaScript scoping — sercon does
 not intervene at runtime. `server` (added in v0.10.0) covers inbound
 listeners — see [section 6](#6-servers) for the long-form treatment.
@@ -879,7 +880,7 @@ internally.
 
 ### 5.1 `console` (browser/Node compatibility)
 
-Beyond the fifteen reserved globals, sercon provides a `console` global so
+Beyond the sixteen reserved globals, sercon provides a `console` global so
 scripts pasted from a browser or Node run unchanged:
 
 | Method | Stream |
@@ -1618,8 +1619,8 @@ runtime.log(guess.charset, guess.confidence);
 
 `charset` names are WHATWG/HTML5 encoding names or aliases (UTF-8,
 ISO-8859-1, Windows-1252, Shift_JIS, GBK, …); an unknown name or bytes
-invalid for that encoding rejects. Signatures: §17.14.2.3 (`encode`),
-§17.14.2.1 (`decode`), §17.14.2.2 (`detect`).
+invalid for that encoding rejects. Signatures: §17.15.2.3 (`encode`),
+§17.15.2.1 (`decode`), §17.15.2.2 (`detect`).
 runnable: `examples/scripts/charset.ts`
 
 ##### 5.4.2.2 Use the string utilities
@@ -1640,9 +1641,9 @@ text.str.stripHtml("<b>hi</b>");   // "hi"
 `trim`/`ltrim`/`rtrim` take a PHP-style cutset **mask**, not a prefix —
 every character in the mask is stripped (default mask is the whitespace
 set `" \t\n\r\v\f"`). `reverse` and the `pad` family count runes, so
-multi-byte text stays intact. Signatures: §17.14.9.18 (`text.str.trim`), §17.14.9.8
-(`text.str.ltrim`), §17.14.9.15 (`text.str.rtrim`), §17.14.9.11 (`text.str.pad`), §17.14.9.7 (`text.str.lpad`),
-§17.14.9.14 (`text.str.rpad`), §17.14.9.13 (`text.str.reverse`), §17.14.9.17 (`text.str.stripHtml`).
+multi-byte text stays intact. Signatures: §17.15.9.18 (`text.str.trim`), §17.15.9.8
+(`text.str.ltrim`), §17.15.9.15 (`text.str.rtrim`), §17.15.9.11 (`text.str.pad`), §17.15.9.7 (`text.str.lpad`),
+§17.15.9.14 (`text.str.rpad`), §17.15.9.13 (`text.str.reverse`), §17.15.9.17 (`text.str.stripHtml`).
 runnable: `examples/scripts/strings.ts`
 
 ##### 5.4.2.3 Base64 encode/decode
@@ -1662,8 +1663,8 @@ runtime.log(urlSafe, back); // "YT9i" "a?b"
 padding — URL-safe input (`-`/`_`) is *not* auto-detected and throws.
 `base64UrlEncode`/`base64UrlDecode` use the URL-safe alphabet (RFC 4648
 §5): encode emits no padding, and decode accepts both padded and unpadded
-input. Signatures: §17.14.9.2 (`text.str.base64Encode`), §17.14.9.1 (`text.str.base64Decode`),
-§17.14.9.4 (`text.str.base64UrlEncode`), §17.14.9.3 (`text.str.base64UrlDecode`).
+input. Signatures: §17.15.9.2 (`text.str.base64Encode`), §17.15.9.1 (`text.str.base64Decode`),
+§17.15.9.4 (`text.str.base64UrlEncode`), §17.15.9.3 (`text.str.base64UrlDecode`).
 runnable: `examples/scripts/strings.ts`
 
 ##### 5.4.2.4 Convert an identifier between conventions
@@ -1679,8 +1680,8 @@ text.case.camel("my-var--name");     // "myVarName"
 Each named converter runs the same tokenizer (split on separators,
 lower→upper transitions, and acronym→word boundaries) then re-emits the
 words in its target case — there is no "from" case to specify.
-Signatures: §17.14.1.19 (`text.case.snake`), §17.14.1.11 (`text.case.kebab`),
-§17.14.1.13 (`text.case.pascal`), §17.14.1.2 (`text.case.camel`).
+Signatures: §17.15.1.19 (`text.case.snake`), §17.15.1.11 (`text.case.kebab`),
+§17.15.1.13 (`text.case.pascal`), §17.15.1.2 (`text.case.camel`).
 runnable: none
 
 ##### 5.4.2.5 Convert to a case chosen at runtime
@@ -1698,8 +1699,8 @@ text.case.convert("Content-Type", "header"); // "Content-Type"
 
 `convert` accepts any canonical name from `names()` plus the aliases
 (`header`, `cobol`, `slug`) and throws — listing the valid names in the
-message — on anything else. Signatures: §17.14.1.6 (`text.case.convert`),
-§17.14.1.12 (`text.case.names`).
+message — on anything else. Signatures: §17.15.1.6 (`text.case.convert`),
+§17.15.1.12 (`text.case.names`).
 runnable: none
 
 ##### 5.4.2.6 Tokenize with split / guess with detect
@@ -1719,7 +1720,7 @@ returns lowercased words. `detect` is a heuristic — it returns the first
 case (in `names()` order) whose converter round-trips the input exactly,
 or `"unknown"` when none does; a single lowercase word matches several
 converters and resolves to `"camel"` since it comes first in that order.
-Signatures: §17.14.1.20 (`text.case.split`), §17.14.1.7 (`text.case.detect`).
+Signatures: §17.15.1.20 (`text.case.split`), §17.15.1.7 (`text.case.detect`).
 runnable: none
 
 ### 5.5 `codec`
@@ -5412,7 +5413,7 @@ for (const item of feed.items) {
 ```
 
 Format (RSS/Atom/JSON-feed) is auto-detected; `feedType` reports which one.
-See §17.16.1.1 (`web.feed.load`); the feed result model is in §5.12.1. runnable: `examples/scripts/web-feed.ts`
+See §17.17.1.1 (`web.feed.load`); the feed result model is in §5.12.1. runnable: `examples/scripts/web-feed.ts`
 
 ##### 5.12.5.2 Crawl a sitemap, expanding an index
 
@@ -5429,7 +5430,7 @@ every child sitemap and merges their URLs into `urls` (single-level,
 bounded; a child that is itself an index is not recursed). Per-child
 fetch/parse failures land in `errors[]` instead of throwing, so check that
 array rather than wrapping the call in try/catch.
-See §17.16.3.1 (`web.sitemap.load`); the sitemap result model is in §5.12.2. runnable: `examples/scripts/web-sitemap.ts`
+See §17.17.3.1 (`web.sitemap.load`); the sitemap result model is in §5.12.2. runnable: `examples/scripts/web-sitemap.ts`
 
 ##### 5.12.5.3 Scrape a page with CSS selectors
 
@@ -5441,7 +5442,7 @@ const title = doc.find("h1").text();
 
 `find` returns the first match or `null`; `findAll` returns a `Node[]` you
 can `.map`/`.forEach` over, each entry chainable the same way as the root.
-See §17.16.2.1 (`web.html.load`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
+See §17.17.2.1 (`web.html.load`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
 
 ##### 5.12.5.4 Extract with XPath
 
@@ -5455,7 +5456,7 @@ const firstHref = doc.xpath("//a/@href").text(); // "/a"
 `xpath`/`xpathAll` mirror `find`/`findAll` but take an XPath expression
 instead of a CSS selector — useful when a selector can't express the
 match (attribute values, text-content predicates, ancestor axes).
-See §17.16.2.2 (`web.html.parse`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
+See §17.17.2.2 (`web.html.parse`); the Node handle methods are in §5.12.3. runnable: `examples/scripts/web-html.ts`
 
 ### 5.13 `audio`
 
@@ -7928,6 +7929,217 @@ try {
 - This is a connect-time transport setting, not something adjustable
   after the fact — reconnect it with a different `maxRetries` by calling
   `mcp.connect.http` again rather than mutating an existing handle.
+
+### 5.16 `stuffr`
+
+The `stuffr` global packs, unpacks, converts, tests and inspects archives and
+compressed files — tar, zip, gzip, xz, zstd, bzip2 and the tar, ar, cpio, zip, lha, arj, arc and zoo containers —
+by running [stuffr](https://github.com/codedeviate/stuffr) compiled to
+WebAssembly **inside** the sercon binary (under the pure-Go
+[wazero](https://wazero.io) runtime). There is no external tool to install, no
+cgo, and the same behaviour on every platform sercon targets. It has one raw
+entry point, `run(argv, opts?)`, and eight typed helpers (`pack`, `unpack`,
+`convert`, `test`, `cat`, `list`, `info`, `formats`) plus a `version` string.
+Everything is asynchronous. Signatures: §17.14.
+
+#### 5.16.1 Concepts
+
+**`run` versus the helpers.** `run(argv)` takes a stuffr command line (a verb
+such as `list`, or a *personality* name such as `gzip`, `gunzip`, `zcat`,
+`zstdcat`, `unzip` that makes stuffr behave like that tool) and resolves with
+`{ code, stdout, stderr, text() }` — it never throws for a non-zero exit. The
+typed helpers build a safe argv for you (positional paths after `--`) and
+**throw** on a non-zero exit; on success `pack` / `unpack` / `convert` / `test`
+resolve `{ messages }` (see the interim-limits notes below), `cat` the bytes,
+and `list` / `info` / `formats` parsed JSON. Personalities return *their reference tool's*
+exit codes, and the helpers never map those, so use `run()` for personalities.
+A path argument that is exactly `-` means stdin to stuffr; the helpers rewrite
+it to `./-` so it names a file, while with `run()` you pass `./-` yourself.
+
+**Helper errors.** A rejected helper carries `code`, `kind`, `stderr` and
+`argv`. For native verbs the exit code maps to `kind`:
+
+| Exit | `kind` | Meaning |
+|---|---|---|
+| 1 | `failed` | the operation failed |
+| 2 | `usage` | bad arguments or options |
+| 3 | `unsupported` | the build cannot do this (e.g. symlinks, see below) |
+| 4 | `degraded` | the output **was written**, but something was lost or unverified |
+| 5 | `corrupt` | the input is damaged |
+| 6 | `limit` | a resource limit (e.g. `memoryLimit`) was hit |
+| 7 | `unsafe` | an unsafe path was refused |
+
+**Traps.** If the wasm module itself traps — corrupt or hostile input, memory
+exhaustion, or a stuffr bug — the call rejects with `kind: "trap"`, `argv`, and
+wazero's error text in `detail`. A trap is distinct from a normal non-zero exit.
+
+**Extraction safety equals native stuffr.** `../` entries, absolute paths,
+symlinked ancestors and unsafe symlink targets are refused with exit 7
+(`kind: "unsafe"`), and nothing is written outside the destination.
+
+**Interim limits — metadata.** The embedded build runs under WASI with no
+host-filesystem layer yet, so it sees only WASI-default (fake) file metadata.
+This is measured behaviour of the current build; do not rely on it (including
+the warning text) as stable.
+
+> **Warning: do not use `stuffr.pack` where file modes matter** (secrets,
+> backups, executables) until stuffr's honesty fix lands. The archives it writes
+> record `0644` for every file regardless of the source mode, and mostly say
+> nothing about it.
+
+- **`pack` loses modes and `strictFidelity` does not detect it.**
+  - tar: every file is recorded `0644` (`-rw-r--r--`) with owner `0:0`. A `0600`
+    file is **widened** to `0644`; a `0755` file loses its exec bit; a `0700`
+    directory is recorded `0755`. The only warning is about the owner
+    (`uid_gid`), so `pack --strict-fidelity` to tar always exits 4 (`degraded`)
+    on that owner warning, whatever the modes were.
+  - zip: `0600` and `0755` both become `0644`; stderr says `no fidelity loss`
+    and the exit is 0, even with `strictFidelity: true`.
+  - single-stream output (e.g. `.gz`): the output file is written `0600`;
+    stderr says `no fidelity loss` and the exit is 0, even with `strictFidelity`.
+- **`unpack` is honest about modes.** Extracted files come out `0600` with stderr
+  `1 fidelity warning(s): entry `run.sh` is missing metadata: mode`. With
+  `strictFidelity: true` it exits 4 for any entry that records a mode, so on
+  this build strict unpack rejects essentially every real archive (the output is
+  still written). Owners are not applied; there is no macOS xattr/quarantine
+  handling.
+- **`strictFidelity` detects loss on `unpack` only.** It is accepted by `pack`,
+  `unpack`, `convert` and `test`, but it does not detect `pack` loss (above).
+  Loss makes stuffr exit 4 and the helper throw `kind: "degraded"`; the output
+  was still written.
+- **Symlinks.** Extracting a tar holding a symlink fails with exit 3 and stderr
+  `stuffr: unsupported: this build cannot create symlinks; extract on a unix
+  host`. Entries before the symlink entry are left extracted (as `0600`, without
+  a mode warning in that run).
+- **`convert`** keeps the modes recorded in the source archive.
+- **`salvage`:** `salvage -C dir` restores files as `0600`, exit 0, with no
+  warning. `salvage --index N -o FILE` traps (stuffr's `std::env::temp_dir()`
+  panics under WASI: "no filesystem on wasm"), so `run()` rejects with
+  `kind: "trap"`.
+- **Personalities** (e.g. `gzip -k`) write their outputs `0600` (the WASI default).
+- The typed `pack` / `unpack` / `convert` / `test` helpers resolve
+  `{ messages: string[] }` — the non-empty lines of stuffr's stderr from the
+  successful run (a one-line summary such as `tar -> 1 bytes extracted into …`
+  plus any `fidelity warning(s)` lines). `messages` is human-readable output for
+  logging, **not** a stable contract to parse, and is effectively never empty.
+  Pass `stream: true` to also tee the guest's stderr through sercon's stderr
+  (so `runtime.stderr.to(...)` sees it).
+
+Modes, symlinks and owners are expected to improve with stuffr's planned
+host-filesystem layer.
+
+**Other limits and notes.**
+
+- Only stuffr's pure-Rust tier is embedded (no C-library tier), and there are no
+  threads (`--threads` clamps to 1). `bench` memory columns are unavailable.
+- The first call compiles the module (about a second) and caches the result at
+  `<UserCacheDir>/sercon/wazero`; an unusable cache never fails a call.
+- WASI gives the guest a 256 MiB memory floor by default. Pass `memoryLimit`
+  (e.g. `"1GiB"`) for large xz or zstd inputs.
+- `allowWeakEncoder: true` is required to `pack` zstd, because the embedded pure
+  zstd encoder is weaker than the reference one. Brotli's default level is slow:
+  pass `level`.
+- The guest sees `STUFFR_CWD=<cwd>`, `NO_COLOR=1`, `TERM=dumb` plus your `env`;
+  the host environment is not inherited. `cwd` defaults to the process cwd.
+- **Not functional on Windows yet:** `STUFFR_CWD=C:\…` is not an absolute guest path, so stuffr would exit 2 on every call; `stuffr.run` therefore rejects with "stuffr is not supported on Windows yet".
+- The embedded build is refreshed by maintainers with
+  `make stuffr-wasm STUFFR_DIR=<stuffr checkout>`; a plain `go build` needs no Rust.
+
+#### 5.16.2 Recipes
+
+Snippets are illustrative; the runnable demo is `examples/scripts/stuffr.ts`.
+Full signatures are in §17.14.
+
+##### 5.16.2.1 Pack a directory into a tar.gz
+
+The format is taken from the output extension; paths are relative to `cwd`.
+
+```ts
+const { messages } = await stuffr.pack(["src", "README.md"], { cwd: "/work/project", output: "/tmp/project.tar.gz" });
+runtime.log(messages.join("\n")); // stuffr's summary line (for logging only)
+```
+
+**Notes**
+- Embedded build: the archive records every file as `0644` whatever the source
+  mode — do not use this for secrets, backups or executables (§5.16.1).
+- `force: true` overwrites an existing output; otherwise stuffr refuses.
+- Packing zstd needs `allowWeakEncoder: true`; pass `level` for brotli or xz.
+
+##### 5.16.2.2 See what is inside an archive
+
+`list` returns stuffr's own `list --json`, one object per entry.
+
+```ts
+const entries: any[] = await stuffr.list("/tmp/project.tar.gz");
+for (const e of entries) runtime.log(e.kind, e.size, e.name);
+```
+
+##### 5.16.2.3 Check an archive before trusting it
+
+`test` rejects with `kind: "corrupt"` if the archive is damaged; `info` reports
+the detected format and chain.
+
+```ts
+try {
+  await stuffr.test("/tmp/download.tar.zst");
+  const info: any = await stuffr.info("/tmp/download.tar.zst");
+  runtime.log(info.format, info.chain);
+} catch (e: any) {
+  if (e.kind === "corrupt") runtime.log("damaged:", e.stderr);
+  else throw e;
+}
+```
+
+##### 5.16.2.4 Extract an archive to a directory
+
+Hostile entries are refused (`kind: "unsafe"`), so extracting untrusted input is
+safe against path escapes.
+
+```ts
+try {
+  const { messages } = await stuffr.unpack("/tmp/project.tar.gz", { directory: "/tmp/out", strictFidelity: true });
+  runtime.log(messages.join("\n"));
+} catch (e: any) {
+  // exit 4: the files WERE extracted, but metadata (e.g. modes) was lost.
+  // On the embedded build this fires for essentially any entry with a mode.
+  if (e.kind === "degraded") runtime.log("extracted with metadata loss:", e.stderr);
+  else throw e;
+}
+```
+
+**Notes**
+- Interim build: file modes come out `0600` and tars with symlinks fail with
+  exit 3 (§5.16.1). `strictFidelity: true` turns the mode loss into a `degraded`
+  error — it works on `unpack` only; it does not detect `pack` loss.
+
+##### 5.16.2.5 Decompress a gzip stream from memory
+
+Feed bytes through stdin with `run` and a lone `-`.
+
+```ts
+const gz = await fs.readBytes("/tmp/notes.txt.gz");
+const r = await stuffr.run(["cat", "-"], { stdin: gz });
+if (r.code !== 0) throw new Error(r.stderr);
+runtime.log(r.text());
+```
+
+##### 5.16.2.6 Handle a big xz or zstd file
+
+Raise the guest memory limit rather than hitting exit 6.
+
+```ts
+await stuffr.unpack("/data/dump.tar.xz", { directory: "/data/dump", memoryLimit: "2GiB" });
+```
+
+##### 5.16.2.7 Use a gzip-style personality
+
+Personalities answer to their reference tool's conventions and exit codes, so
+check `code` yourself.
+
+```ts
+const r = await stuffr.run(["zcat", "notes.txt.gz"], { cwd: "/tmp" });
+runtime.log(r.code, r.text());
+```
 
 ## 6. Servers
 
@@ -17517,7 +17729,7 @@ Point stderr at a target and return a restore function. The target is "stdout"/"
 
 **Returns:** () => void — an idempotent restore function that removes this redirect.
 
-**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.error while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
+**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.error while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; an overflowing write can split a line between the handler and the destination beneath, since bytes of that line already buffered stay with the handler; a write the handler causes asynchronously on its own stream (from a timer, a promise, or another goroutine) is not re-entrant and IS delivered back to it, so a handler that does that once per line feeds itself forever; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
 
 ```ts
 const restore = runtime.stderr.to("stdout");
@@ -17863,7 +18075,7 @@ Point stdout at a target and return a restore function. The target is "stdout"/"
 
 **Returns:** () => void — an idempotent restore function that removes this redirect.
 
-**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.log while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
+**Throws:** Throws on an unknown target name, an object target without a `file` property, a file that cannot be opened, or { tee: true } combined with the "null" target. A later write failure does NOT throw: the destination is marked dead and every subsequent write falls through to the destination BENEATH it in the stack — "beneath", not "the process stream", which coincide only when this is the sole redirect — so a destination that goes bad costs at most the one write that was in flight when it failed. The failure is reported once on the real stderr, not once per line, and the dead destination is never written to again. The process stream itself is never taken out of service — a failed write straight to stdout/stderr is reported once and later writes are still attempted — so one transient error cannot silence the rest of the session. A function target has its own delivery caveats, none of which throw: the pending-line queue is bounded (1024 lines) — on overflow, or on a write that re-enters the handler (e.g. the handler's own console.log while it runs), the write falls through to the destination beneath instead of blocking or being lost twice; an overflowing write can split a line between the handler and the destination beneath, since bytes of that line already buffered stay with the handler; a write the handler causes asynchronously on its own stream (from a timer, a promise, or another goroutine) is not re-entrant and IS delivered back to it, so a handler that does that once per line feeds itself forever; any line still queued when the redirect is popped or the run ends is written to the destination beneath rather than delivered; and a handler that throws has that one line reported once on the real stderr (not retried, not recovered) without aborting the rest of the run.
 
 ```ts
 const restore = runtime.stdout.to({ file: "/tmp/out.log" }, { tee: true });
@@ -19752,13 +19964,231 @@ const r = await services.webdriver.probe({ url: "http://127.0.0.1:9515" });
 runtime.log("ready:", r.ready);
 ```
 
-### 17.14 text
+### 17.14 stuffr
+
+Archives and compression via the embedded stuffr (WebAssembly under wazero, pure Go): pack/unpack/convert/test/cat/list/info/formats helpers plus run(argv) for raw verbs and gzip/zstd/xz/bzip2-style personalities. Embedded-build limits: pack records every file as 0644 (do not use it where modes matter), unpack writes 0600 and cannot create symlinks, and it is not functional on Windows yet.
+
+#### 17.14.1 stuffr.cat
+
+```
+cat(path: string, opts?: { cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<Uint8Array>
+```
+
+Decompress a single-stream compressed file (gzip, xz, zstd, ...) and return the bytes. Plain, uncompressed input is rejected by stuffr.
+
+**Parameters**
+
+- `path` *(string)* — Compressed file path, relative to opts.cwd. A lone `-` means stdin (pass stdin in opts).
+- `opts` *({ cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — cwd, env, stdin, stream and memoryLimit as for run.
+
+**Returns:** The decompressed bytes.
+
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean").
+
+```ts
+const bytes = await stuffr.cat("notes.txt.gz");
+```
+
+#### 17.14.2 stuffr.convert
+
+```
+convert(input: string, output: string, opts?: { format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>
+```
+
+Re-encode an archive or compressed file into another format without a manual unpack.
+
+**Parameters**
+
+- `input` *(string)* — Source path, relative to opts.cwd.
+- `output` *(string)* — Destination path.
+- `opts` *({ format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — format: target format (default: from the output extension). level, allowWeakEncoder, force and memoryLimit as for pack. convert keeps the modes recorded in the source archive; strictFidelity only turns stuffr's own fidelity warnings into exit 4 and is not a reliable loss detector.
+
+**Returns:** Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. `strictFidelity: true` (catch kind "degraded") detects metadata loss on `unpack` only; it does NOT detect `pack` loss, and on this build `pack` records modes wrongly (see its Summary).
+
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean").
+
+```ts
+await stuffr.convert("a.tar.gz", "a.tar.xz");
+```
+
+#### 17.14.3 stuffr.formats
+
+```
+formats(opts?: { cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<unknown>
+```
+
+List the formats the embedded build supports, as parsed JSON (runs `stuffr formats --json`). The embedded build has the pure-Rust tier only.
+
+**Parameters**
+
+- `opts` *({ cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — Accepted for symmetry; none of the options changes the result.
+
+**Returns:** The parsed JSON document; its `formats` array names each supported format.
+
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean").
+
+```ts
+const f: any = await stuffr.formats();
+runtime.log(f.formats.length);
+```
+
+#### 17.14.4 stuffr.info
+
+```
+info(archive: string, opts?: { cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<unknown>
+```
+
+Describe an archive — format, sizes, compression — as parsed JSON (runs `stuffr info --json`).
+
+**Parameters**
+
+- `archive` *(string)* — Archive path, relative to opts.cwd.
+- `opts` *({ cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — cwd, env, stdin, stream and memoryLimit as for run.
+
+**Returns:** The parsed JSON object — e.g. { format, container, chain, bytes_in, rung, warnings, ... } — in stuffr's own `info --json` schema.
+
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean").
+
+```ts
+const i: any = await stuffr.info("a.tar.gz");
+```
+
+#### 17.14.5 stuffr.list
+
+```
+list(archive: string, opts?: { cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<unknown>
+```
+
+List an archive's entries as parsed JSON (runs `stuffr list --json`).
+
+**Parameters**
+
+- `archive` *(string)* — Archive path, relative to opts.cwd.
+- `opts` *({ cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — cwd, env, stdin, stream and memoryLimit as for run.
+
+**Returns:** The parsed JSON array, one object per entry — e.g. { index, kind: "file" | ..., name, size } — in stuffr's own `list --json` schema and key order.
+
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean"). Rejects with "invalid JSON output" if stuffr printed something unparseable.
+
+```ts
+const entries: any[] = await stuffr.list("a.tar.gz");
+runtime.log(entries.map((e) => e.name));
+```
+
+#### 17.14.6 stuffr.pack
+
+```
+pack(inputs: string[], opts?: { output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>
+```
+
+Pack files or directories into an archive or compressed file. The format comes from opts.format or the output extension. WARNING (embedded build): archives pack writes record every file as mode 0644 with owner 0:0 regardless of the source — a 0600 file is widened to 0644 and a 0755 file loses its exec bit (directories are recorded 0755). zip and single-stream (.gz, ...) output print "no fidelity loss" and exit 0; a single-stream output file is written 0600. Do not use pack where file modes matter (secrets, backups, executables) until stuffr's honesty fix lands.
+
+**Parameters**
+
+- `inputs` *(string[])* — Paths to pack, relative to opts.cwd. Must not be empty.
+- `opts` *({ output?: string; format?: string; force?: boolean; level?: number; allowWeakEncoder?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — output: destination path. format: e.g. "tar.gz", "zip". level: compression level (brotli's default level is slow; pass a lower one). allowWeakEncoder: required for zstd because the embedded pure-Rust zstd encoder is weak. force: overwrite. strictFidelity: does NOT detect pack's mode loss — for tar it always exits 4 (kind "degraded", because of the owner warning; the archive is still written), for zip and single-stream output it exits 0. memoryLimit: stuffr's --memory-limit (xz/zstd on big inputs may need more than the 256 MiB WASI default).
+
+**Returns:** Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. `strictFidelity: true` (catch kind "degraded") detects metadata loss on `unpack` only; it does NOT detect `pack` loss, and on this build `pack` records modes wrongly (see its Summary).
+
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean").
+
+```ts
+await stuffr.pack(["src"], { cwd: "/work", output: "src.tar.gz" });
+```
+
+#### 17.14.7 stuffr.run
+
+```
+run(argv: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean }): Promise<{ code: number; stdout: Uint8Array; stderr: string; text(): string }>
+```
+
+Run the embedded stuffr with a raw argv and get the exit code and output back — never throws for a non-zero exit. argv[0] is a verb (pack, unpack, list, ...) or a personality name (gzip, unzip, zstdcat, ...), which then returns its reference tool's exit codes. Embedded-build notes: files written by personalities (e.g. `gzip -k`) are mode 0600; `salvage --index N -o FILE` traps (kind "trap") because stuffr cannot find a temp dir under WASI; stuffr is not functional on Windows yet (run rejects with "stuffr is not supported on Windows yet").
+
+**Parameters**
+
+- `argv` *(string[])* — The stuffr command line, without a program name. A path argument that is exactly `-` means stdin; use `./-` to name a file called `-`.
+- `opts` *({ cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean }, optional)* — cwd: working directory the guest sees (default: the process cwd). env: extra guest environment variables (the host environment is not inherited). stdin: bytes fed to the guest. stream: also tee the guest's stderr to sercon's stderr (the console).
+
+**Returns:** The guest's exit code, raw stdout bytes, stderr text, and text() decoding stdout as UTF-8.
+
+**Throws:** Rejects for a malformed argv/options value, or with `kind: "trap"` (see the other members) if the wasm module traps. A non-zero exit is NOT an error here — inspect `code`.
+
+```ts
+const r = await stuffr.run(["list", "--json", "a.tar.gz"]);
+if (r.code === 0) runtime.log(JSON.parse(r.text()));
+```
+
+#### 17.14.8 stuffr.test
+
+```
+test(archive: string, opts?: { strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>
+```
+
+Verify an archive's integrity (checksums and structure) without extracting it.
+
+**Parameters**
+
+- `archive` *(string)* — Archive path, relative to opts.cwd.
+- `opts` *({ strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — strictFidelity: exit 4 (kind "degraded") if stuffr reports a fidelity warning. cwd, env, stdin, stream and memoryLimit as for run.
+
+**Returns:** Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. `strictFidelity: true` (catch kind "degraded") detects metadata loss on `unpack` only; it does NOT detect `pack` loss, and on this build `pack` records modes wrongly (see its Summary).
+
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean"). A damaged archive rejects with kind "corrupt".
+
+```ts
+const { messages } = await stuffr.test("backup.tar.zst");
+runtime.log(messages.join("\n"));
+```
+
+#### 17.14.9 stuffr.unpack
+
+```
+unpack(archive: string, opts?: { directory?: string; samePermissions?: boolean; force?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }): Promise<{ messages: string[] }>
+```
+
+Extract an archive or decompress a file. Extraction safety equals native stuffr: `../` and absolute entry paths, symlinked ancestors and unsafe symlink targets are refused with exit 7 (kind "unsafe"). Embedded build: extracted modes come out 0600 with a `missing metadata: mode` warning, owners are not applied, and a symlink entry fails with exit 3 (see the manual).
+
+**Parameters**
+
+- `archive` *(string)* — Archive path, relative to opts.cwd.
+- `opts` *({ directory?: string; samePermissions?: boolean; force?: boolean; strictFidelity?: boolean; cwd?: string; env?: Record<string, string>; stdin?: string | Uint8Array | ArrayBuffer; stream?: boolean; memoryLimit?: string | number }, optional)* — directory: extraction destination (-C). samePermissions: restore recorded permissions (not effective in the embedded build yet). force: overwrite. strictFidelity: exit 4 (kind "degraded") if metadata would be lost, which makes the helper reject (the output is still written). This is the one place it detects loss; on this build it rejects for essentially every entry that records a mode. memoryLimit: stuffr's --memory-limit.
+
+**Returns:** Resolves with { messages } once the work succeeded: the non-empty lines of stuffr's stderr (its one-line summary plus any `fidelity warning(s)` lines). Human-readable output for logging, NOT a stable contract to parse; it is never empty in practice. `strictFidelity: true` (catch kind "degraded") detects metadata loss on `unpack` only; it does NOT detect `pack` loss, and on this build `pack` records modes wrongly (see its Summary).
+
+**Throws:** Rejects with a stuffr error carrying `code` (the exit code), `kind` ("failed" 1, "usage" 2, "unsupported" 3, "degraded" 4 — output WAS written but something was lost or unverified, "corrupt" 5, "limit" 6, "unsafe" 7), `stderr` and `argv` when stuffr exits non-zero. Rejects with `kind: "trap"`, `argv` and `detail` (wazero's error text) if the wasm module traps (corrupt or hostile input, memory exhaustion, or a stuffr bug). Rejects on an invalid option type (e.g. "option \"force\" must be a boolean"). A tar holding a symlink fails with exit 3 ("unsupported"); a file whose mode cannot be applied extracts (as 0600) with exit 0 and a fidelity warning listed in `messages`, or — with strictFidelity: true — rejects with exit 4 (kind "degraded"; the output WAS written). Entries before a symlink entry stay extracted.
+
+```ts
+try {
+  await stuffr.unpack("src.tar.gz", { directory: "/tmp/out", strictFidelity: true });
+} catch (e: any) {
+  if (e.kind === "degraded") runtime.log("extracted, but metadata was lost:", e.stderr);
+  else throw e;
+}
+```
+
+#### 17.14.10 stuffr.version
+
+```
+version: string
+```
+
+The version string of the embedded stuffr build (the first line of the committed VERSION file, e.g. a git describe plus build date). A plain string value, not a function.
+
+**Returns:** The embedded build's version identifier.
+
+**Throws:** Never throws.
+
+```ts
+runtime.log(stuffr.version);
+```
+
+### 17.15 text
 
 String / regex / charset / data manipulation — all text-shaped transforms.
 
-#### 17.14.1 text.case
+#### 17.15.1 text.case
 
-##### 17.14.1.1 text.case.ada
+##### 17.15.1.1 text.case.ada
 
 ```
 ada(input: string): string
@@ -19778,7 +20208,7 @@ Convert to Ada_Case (every word capitalized, underscore-separated).
 text.case.ada("my-var"); // "My_Var"
 ```
 
-##### 17.14.1.2 text.case.camel
+##### 17.15.1.2 text.case.camel
 
 ```
 camel(input: string): string
@@ -19798,7 +20228,7 @@ Convert to camelCase (first word lower, rest capitalized, no separator).
 text.case.camel("my-var-name"); // "myVarName"
 ```
 
-##### 17.14.1.3 text.case.camelSnake
+##### 17.15.1.3 text.case.camelSnake
 
 ```
 camelSnake(input: string): string
@@ -19818,7 +20248,7 @@ Convert to camel_Snake_Case (first word lower, rest capitalized, underscore-sepa
 text.case.camelSnake("my-var"); // "my_Var"
 ```
 
-##### 17.14.1.4 text.case.capital
+##### 17.15.1.4 text.case.capital
 
 ```
 capital(input: string): string
@@ -19838,7 +20268,7 @@ Convert to Capital Case (every word capitalized, space-separated). Synonym of ti
 text.case.capital("my_var_name"); // "My Var Name"
 ```
 
-##### 17.14.1.5 text.case.cobol
+##### 17.15.1.5 text.case.cobol
 
 ```
 cobol(input: string): string
@@ -19858,7 +20288,7 @@ Alias of screamingKebab (COBOL-CASE).
 text.case.cobol("myVar"); // "MY-VAR"
 ```
 
-##### 17.14.1.6 text.case.convert
+##### 17.15.1.6 text.case.convert
 
 ```
 convert(input: string, name: string): string
@@ -19879,7 +20309,7 @@ Convert input to the named case (dynamic dispatch; accepts canonical names and a
 text.case.convert("userID", "kebab"); // "user-id"
 ```
 
-##### 17.14.1.7 text.case.detect
+##### 17.15.1.7 text.case.detect
 
 ```
 detect(input: string): string
@@ -19899,7 +20329,7 @@ Best-effort guess of the input's case name (heuristic).
 text.case.detect("my_var"); // "snake"
 ```
 
-##### 17.14.1.8 text.case.dot
+##### 17.15.1.8 text.case.dot
 
 ```
 dot(input: string): string
@@ -19919,7 +20349,7 @@ Convert to dot.case (all lower, dot-separated).
 text.case.dot("myVarName"); // "my.var.name"
 ```
 
-##### 17.14.1.9 text.case.flat
+##### 17.15.1.9 text.case.flat
 
 ```
 flat(input: string): string
@@ -19939,7 +20369,7 @@ Convert to flatcase (all lower, no separator). Lossy: boundaries are gone and ca
 text.case.flat("myVarName"); // "myvarname"
 ```
 
-##### 17.14.1.10 text.case.header
+##### 17.15.1.10 text.case.header
 
 ```
 header(input: string): string
@@ -19959,7 +20389,7 @@ Alias of train (Header-Case, e.g. Content-Type).
 text.case.header("content-type"); // "Content-Type"
 ```
 
-##### 17.14.1.11 text.case.kebab
+##### 17.15.1.11 text.case.kebab
 
 ```
 kebab(input: string): string
@@ -19979,7 +20409,7 @@ Convert to kebab-case (all lower, hyphen-separated).
 text.case.kebab("myVarName"); // "my-var-name"
 ```
 
-##### 17.14.1.12 text.case.names
+##### 17.15.1.12 text.case.names
 
 ```
 names(): string[]
@@ -19995,7 +20425,7 @@ List the canonical case names (drives convert() and detect(); excludes aliases).
 text.case.names(); // ["camel","pascal","snake",...]
 ```
 
-##### 17.14.1.13 text.case.pascal
+##### 17.15.1.13 text.case.pascal
 
 ```
 pascal(input: string): string
@@ -20015,7 +20445,7 @@ Convert to PascalCase (every word capitalized, no separator).
 text.case.pascal("my_var"); // "MyVar"
 ```
 
-##### 17.14.1.14 text.case.path
+##### 17.15.1.14 text.case.path
 
 ```
 path(input: string): string
@@ -20035,7 +20465,7 @@ Convert to path/case (all lower, slash-separated).
 text.case.path("myVarName"); // "my/var/name"
 ```
 
-##### 17.14.1.15 text.case.screamingKebab
+##### 17.15.1.15 text.case.screamingKebab
 
 ```
 screamingKebab(input: string): string
@@ -20055,7 +20485,7 @@ Convert to SCREAMING-KEBAB-CASE (all upper, hyphen-separated).
 text.case.screamingKebab("myVar"); // "MY-VAR"
 ```
 
-##### 17.14.1.16 text.case.screamingSnake
+##### 17.15.1.16 text.case.screamingSnake
 
 ```
 screamingSnake(input: string): string
@@ -20075,7 +20505,7 @@ Convert to SCREAMING_SNAKE_CASE (all upper, underscore-separated).
 text.case.screamingSnake("myVar"); // "MY_VAR"
 ```
 
-##### 17.14.1.17 text.case.sentence
+##### 17.15.1.17 text.case.sentence
 
 ```
 sentence(input: string): string
@@ -20095,7 +20525,7 @@ Convert to Sentence case (first word capitalized, rest lower, space-separated).
 text.case.sentence("my_var_name"); // "My var name"
 ```
 
-##### 17.14.1.18 text.case.slug
+##### 17.15.1.18 text.case.slug
 
 ```
 slug(input: string): string
@@ -20115,7 +20545,7 @@ Alias of kebab. NOTE: kebab only — does NOT transliterate or strip diacritics/
 text.case.slug("My Var"); // "my-var"
 ```
 
-##### 17.14.1.19 text.case.snake
+##### 17.15.1.19 text.case.snake
 
 ```
 snake(input: string): string
@@ -20135,7 +20565,7 @@ Convert to snake_case (all lower, underscore-separated).
 text.case.snake("myVarName"); // "my_var_name"
 ```
 
-##### 17.14.1.20 text.case.split
+##### 17.15.1.20 text.case.split
 
 ```
 split(input: string): string[]
@@ -20155,7 +20585,7 @@ Tokenize any input into an array of lowercased words (the primitive every conver
 text.case.split("getHTTPCode"); // ["get","http","code"]
 ```
 
-##### 17.14.1.21 text.case.title
+##### 17.15.1.21 text.case.title
 
 ```
 title(input: string): string
@@ -20175,7 +20605,7 @@ Convert to Title Case (every word capitalized, space-separated). Synonym of capi
 text.case.title("my_var_name"); // "My Var Name"
 ```
 
-##### 17.14.1.22 text.case.train
+##### 17.15.1.22 text.case.train
 
 ```
 train(input: string): string
@@ -20195,7 +20625,7 @@ Convert to Train-Case (every word capitalized, hyphen-separated).
 text.case.train("my_var"); // "My-Var"
 ```
 
-##### 17.14.1.23 text.case.upperFlat
+##### 17.15.1.23 text.case.upperFlat
 
 ```
 upperFlat(input: string): string
@@ -20215,9 +20645,9 @@ Convert to UPPERFLATCASE (all upper, no separator). Lossy: boundaries are gone.
 text.case.upperFlat("myVar"); // "MYVAR"
 ```
 
-#### 17.14.2 text.charset
+#### 17.15.2 text.charset
 
-##### 17.14.2.1 text.charset.decode
+##### 17.15.2.1 text.charset.decode
 
 ```
 decode(input: string | Uint8Array | ArrayBuffer, charset: string): Promise<string>
@@ -20238,7 +20668,7 @@ Decode bytes in a named charset to a UTF-8 string.
 const s = await text.charset.decode(bytes, "Windows-1252");
 ```
 
-##### 17.14.2.2 text.charset.detect
+##### 17.15.2.2 text.charset.detect
 
 ```
 detect(input: string | Uint8Array | ArrayBuffer): Promise<{ charset: string; confidence: number; language?: string; candidates: { charset: string; confidence: number; language?: string }[] }>
@@ -20259,7 +20689,7 @@ const r = await text.charset.detect(bytes);
 runtime.log(r.charset, r.confidence);
 ```
 
-##### 17.14.2.3 text.charset.encode
+##### 17.15.2.3 text.charset.encode
 
 ```
 encode(input: string, charset: string): Promise<Uint8Array>
@@ -20280,9 +20710,9 @@ Encode a UTF-8 string to bytes in the named charset.
 const bytes = await text.charset.encode("café", "ISO-8859-1");
 ```
 
-#### 17.14.3 text.diff
+#### 17.15.3 text.diff
 
-##### 17.14.3.1 text.diff.compare
+##### 17.15.3.1 text.diff.compare
 
 ```
 compare(a: string | Uint8Array | ArrayBuffer, b: string | Uint8Array | ArrayBuffer, opts?: { context?: number; fromFile?: string; toFile?: string }): Promise<{ identical: boolean; binary: boolean; added: number; removed: number; diff: string; format: "unified" }>
@@ -20305,9 +20735,9 @@ const d = await text.diff.compare("a\n", "b\n");
 runtime.log(d.diff, d.added, d.removed);
 ```
 
-#### 17.14.4 text.jq
+#### 17.15.4 text.jq
 
-##### 17.14.4.1 text.jq.query
+##### 17.15.4.1 text.jq.query
 
 ```
 query(data: unknown, filter: string): Promise<unknown>
@@ -20328,7 +20758,7 @@ Run a jq filter over data and return the first emitted value (or null).
 const name = await text.jq.query(obj, ".users[0].name");
 ```
 
-##### 17.14.4.2 text.jq.queryAll
+##### 17.15.4.2 text.jq.queryAll
 
 ```
 queryAll(data: unknown, filter: string): Promise<unknown[]>
@@ -20349,9 +20779,9 @@ Run a jq filter and drain the iterator into an array.
 const ids = await text.jq.queryAll(obj, ".users[].id");
 ```
 
-#### 17.14.5 text.markdown
+#### 17.15.5 text.markdown
 
-##### 17.14.5.1 text.markdown.toHtml
+##### 17.15.5.1 text.markdown.toHtml
 
 ```
 toHtml(md: string, opts?: { gfm?: boolean, hardBreaks?: boolean }): string
@@ -20372,9 +20802,9 @@ Render a Markdown string to an HTML string (CommonMark, backed by the pure-Go go
 const html = text.markdown.toHtml("# Hi\n\n- a\n- b");
 ```
 
-#### 17.14.6 text.preg
+#### 17.15.6 text.preg
 
-##### 17.14.6.1 text.preg.match
+##### 17.15.6.1 text.preg.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -20395,7 +20825,7 @@ First hit of /pattern/flags against subject, or null. Returns { match, groups, i
 const m = text.preg.match("/(\\d+)/", "x42"); // { match: "42", groups: ["42"], index: 1 }
 ```
 
-##### 17.14.6.2 text.preg.matchAll
+##### 17.15.6.2 text.preg.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -20416,7 +20846,7 @@ Every hit of /pattern/flags against subject, as an array of { match, groups, ind
 const all = text.preg.matchAll("/\\d+/", "1 22 333"); // 3 matches
 ```
 
-##### 17.14.6.3 text.preg.replace
+##### 17.15.6.3 text.preg.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -20438,9 +20868,9 @@ Substitute every match of /pattern/flags in subject. Replacement uses Go's $1 / 
 text.preg.replace("/(\\w+)@/", "${1}_at_", "a@b"); // "a_at_b"
 ```
 
-#### 17.14.7 text.preg2
+#### 17.15.7 text.preg2
 
-##### 17.14.7.1 text.preg2.match
+##### 17.15.7.1 text.preg2.match
 
 ```
 match(pattern: string, subject: string): { match: string; groups: string[]; index: number } | null
@@ -20461,7 +20891,7 @@ First hit of /pattern/flags via regexp2 (PCRE). Supports lookahead/lookbehind/ba
 const m = text.preg2.match("/(?<=@)\\w+/", "a@host"); // { match: "host", ... }
 ```
 
-##### 17.14.7.2 text.preg2.matchAll
+##### 17.15.7.2 text.preg2.matchAll
 
 ```
 matchAll(pattern: string, subject: string): { match: string; groups: string[]; index: number }[]
@@ -20482,7 +20912,7 @@ Every hit of /pattern/flags via regexp2 (PCRE), as an array of { match, groups, 
 const all = text.preg2.matchAll("/\\w+/", "a b c"); // 3 matches
 ```
 
-##### 17.14.7.3 text.preg2.replace
+##### 17.15.7.3 text.preg2.replace
 
 ```
 replace(pattern: string, replacement: string, subject: string): string
@@ -20504,9 +20934,9 @@ Substitute every match of /pattern/flags via regexp2. Replacement uses .NET $1 /
 text.preg2.replace("/(\\w)\\1/", "X", "aabb"); // backref-aware: "XX"
 ```
 
-#### 17.14.8 text.stego
+#### 17.15.8 text.stego
 
-##### 17.14.8.1 text.stego.embed
+##### 17.15.8.1 text.stego.embed
 
 ```
 embed(cover: string, payload: string | Uint8Array, opts?: { password?: string }): string
@@ -20528,7 +20958,7 @@ Hide a payload inside cover text using zero-width characters (U+200B / U+200C), 
 const out = text.stego.embed("Hello there.", "meet at noon", { password: "s3cret" });
 ```
 
-##### 17.14.8.2 text.stego.extract
+##### 17.15.8.2 text.stego.extract
 
 ```
 extract(stegoText: string, opts?: { password?: string }): string | Uint8Array
@@ -20549,9 +20979,9 @@ Recover a payload hidden by text.stego.embed. Scans the string for zero-width ca
 const msg = text.stego.extract(out, { password: "s3cret" });
 ```
 
-#### 17.14.9 text.str
+#### 17.15.9 text.str
 
-##### 17.14.9.1 text.str.base64Decode
+##### 17.15.9.1 text.str.base64Decode
 
 ```
 base64Decode(input: string): string
@@ -20571,7 +21001,7 @@ Decode standard (RFC 4648) base64 with padding. The standard alphabet only — U
 text.str.base64Decode("aGk="); // "hi"
 ```
 
-##### 17.14.9.2 text.str.base64Encode
+##### 17.15.9.2 text.str.base64Encode
 
 ```
 base64Encode(input: string): string
@@ -20591,7 +21021,7 @@ Standard base64 (with padding).
 text.str.base64Encode("hi"); // "aGk="
 ```
 
-##### 17.14.9.3 text.str.base64UrlDecode
+##### 17.15.9.3 text.str.base64UrlDecode
 
 ```
 base64UrlDecode(input: string): string
@@ -20611,7 +21041,7 @@ Decode URL-safe (RFC 4648 §5) base64. Tolerant of both padded and unpadded inpu
 text.str.base64UrlDecode("YT9i"); // "a?b"
 ```
 
-##### 17.14.9.4 text.str.base64UrlEncode
+##### 17.15.9.4 text.str.base64UrlEncode
 
 ```
 base64UrlEncode(input: string): string
@@ -20631,7 +21061,7 @@ URL-safe base64 (RFC 4648 §5: `-`/`_` alphabet), without `=` padding — safe t
 text.str.base64UrlEncode("a?b"); // "YT9i"
 ```
 
-##### 17.14.9.5 text.str.br2nl
+##### 17.15.9.5 text.str.br2nl
 
 ```
 br2nl(input: string): string
@@ -20651,7 +21081,7 @@ Inverse of nl2br: <br>, <br/>, <br /> → '\n'.
 text.str.br2nl("a<br/>b"); // "a\nb"
 ```
 
-##### 17.14.9.6 text.str.htmlEntityDecode
+##### 17.15.9.6 text.str.htmlEntityDecode
 
 ```
 htmlEntityDecode(input: string): string
@@ -20671,7 +21101,7 @@ Decode named and numeric HTML entities to their UTF-8 equivalents.
 text.str.htmlEntityDecode("a &amp; b"); // "a & b"
 ```
 
-##### 17.14.9.7 text.str.lpad
+##### 17.15.9.7 text.str.lpad
 
 ```
 lpad(input: string, len: number, padChar?: string): string
@@ -20693,7 +21123,7 @@ Shortcut for pad(side: 'left').
 text.str.lpad("7", 3, "0"); // "007"
 ```
 
-##### 17.14.9.8 text.str.ltrim
+##### 17.15.9.8 text.str.ltrim
 
 ```
 ltrim(input: string, mask?: string): string
@@ -20714,7 +21144,7 @@ Like trim, left side only.
 text.str.ltrim("--x", "-"); // "x"
 ```
 
-##### 17.14.9.9 text.str.nl2br
+##### 17.15.9.9 text.str.nl2br
 
 ```
 nl2br(input: string, xhtml?: boolean): string
@@ -20735,7 +21165,7 @@ Replace newlines with <br> (or <br/> when xhtml=true).
 text.str.nl2br("a\nb"); // "a<br>\nb"
 ```
 
-##### 17.14.9.10 text.str.normalizeNewlines
+##### 17.15.9.10 text.str.normalizeNewlines
 
 ```
 normalizeNewlines(input: string, style?: "lf" | "crlf" | "cr"): string
@@ -20756,7 +21186,7 @@ Canonicalise any mix of \r\n, \r, \n to the requested style ('lf' | 'crlf' | 'cr
 text.str.normalizeNewlines("a\r\nb", "lf"); // "a\nb"
 ```
 
-##### 17.14.9.11 text.str.pad
+##### 17.15.9.11 text.str.pad
 
 ```
 pad(input: string, len: number, padChar?: string, side?: "right" | "left" | "both"): string
@@ -20779,7 +21209,7 @@ Pad to `len` with `padChar` (default ' '). `side` is 'right' (default), 'left', 
 text.str.pad("7", 3, "0", "left"); // "007"
 ```
 
-##### 17.14.9.12 text.str.printf
+##### 17.15.9.12 text.str.printf
 
 ```
 printf(format: string, ...args: unknown[]): void
@@ -20800,7 +21230,7 @@ sprintf + write to stdout.
 text.str.printf("%d items\n", 3);
 ```
 
-##### 17.14.9.13 text.str.reverse
+##### 17.15.9.13 text.str.reverse
 
 ```
 reverse(input: string): string
@@ -20820,7 +21250,7 @@ Rune-aware reversal — `reverse('café')` is `'éfac'`.
 text.str.reverse("café"); // "éfac"
 ```
 
-##### 17.14.9.14 text.str.rpad
+##### 17.15.9.14 text.str.rpad
 
 ```
 rpad(input: string, len: number, padChar?: string): string
@@ -20842,7 +21272,7 @@ Shortcut for pad(side: 'right').
 text.str.rpad("7", 3, "."); // "7.."
 ```
 
-##### 17.14.9.15 text.str.rtrim
+##### 17.15.9.15 text.str.rtrim
 
 ```
 rtrim(input: string, mask?: string): string
@@ -20863,7 +21293,7 @@ Like trim, right side only.
 text.str.rtrim("x...", "."); // "x"
 ```
 
-##### 17.14.9.16 text.str.sprintf
+##### 17.15.9.16 text.str.sprintf
 
 ```
 sprintf(format: string, ...args: unknown[]): string
@@ -20884,7 +21314,7 @@ Go's fmt verbs (%s, %d, %x, %.2f, %v, %t, %q, …) — not PHP's.
 text.str.sprintf("%s=%d", "n", 5); // "n=5"
 ```
 
-##### 17.14.9.17 text.str.stripHtml
+##### 17.15.9.17 text.str.stripHtml
 
 ```
 stripHtml(input: string): string
@@ -20904,7 +21334,7 @@ Remove HTML tags and decode common entities.
 text.str.stripHtml("<b>hi</b>"); // "hi"
 ```
 
-##### 17.14.9.18 text.str.trim
+##### 17.15.9.18 text.str.trim
 
 ```
 trim(input: string, mask?: string): string
@@ -20925,7 +21355,7 @@ Strip whitespace (or any char in the optional mask string) from both ends.
 text.str.trim("  hi  "); // "hi"
 ```
 
-##### 17.14.9.19 text.str.urlDecode
+##### 17.15.9.19 text.str.urlDecode
 
 ```
 urlDecode(input: string): string
@@ -20945,7 +21375,7 @@ Inverse of urlEncode.
 text.str.urlDecode("a+b%26c"); // "a b&c"
 ```
 
-##### 17.14.9.20 text.str.urlEncode
+##### 17.15.9.20 text.str.urlEncode
 
 ```
 urlEncode(input: string): string
@@ -20965,11 +21395,11 @@ Form-encoding ('+' for space). For path segments use encodeURIComponent (provide
 text.str.urlEncode("a b&c"); // "a+b%26c"
 ```
 
-### 17.15 tui
+### 17.16 tui
 
 Multi-pane terminal UI: layout, pane, write, focus.
 
-#### 17.15.1 tui.layout
+#### 17.16.1 tui.layout
 
 ```
 layout(tree: { name: string; title?: string; weight?: number } | { rows: object[]; weight?: number } | { cols: object[]; weight?: number }): void
@@ -20990,7 +21420,7 @@ tui.layout({ cols: [{ name: "log", title: "Log" }, { name: "out", weight: 2 }] }
 tui.pane("log").writeln("started");
 ```
 
-#### 17.15.2 tui.onKey
+#### 17.16.2 tui.onKey
 
 ```
 onKey(handler: (key: { name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }) => void): () => void
@@ -21011,7 +21441,7 @@ tui.layout({ rows: [{ name: "log" }] });
 const off = tui.onKey((k) => { if (k.name === "Rune" && k.rune === "q") off(); });
 ```
 
-#### 17.15.3 tui.pane
+#### 17.16.3 tui.pane
 
 ```
 pane(name: string): { write(text: string): void; writeln(text: string): void; clear(): void; title(text: string): void }
@@ -21033,7 +21463,7 @@ p.title("Output");
 p.writeln("hello");
 ```
 
-#### 17.15.4 tui.waitKey
+#### 17.16.4 tui.waitKey
 
 ```
 waitKey(...args: unknown[]): Promise<{ name: string; rune: string; ctrl: boolean; alt: boolean; shift: boolean }>
@@ -21051,13 +21481,13 @@ tui.pane("log").writeln("Done. Press any key to close.");
 await tui.waitKey();
 ```
 
-### 17.16 web
+### 17.17 web
 
 Fetch & parse web documents: RSS/Atom/JSON feeds (web.feed), sitemaps incl. gzip + index expand (web.sitemap), and lenient HTML scraping with CSS + XPath (web.html). Each offers parse(string) and async load(url, opts?).
 
-#### 17.16.1 web.feed
+#### 17.17.1 web.feed
 
-##### 17.16.1.1 web.feed.load
+##### 17.17.1.1 web.feed.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }>
@@ -21078,7 +21508,7 @@ Fetch a URL and parse it as a feed (see feed.parse). Reuses the net.http option 
 const f = await web.feed.load("https://example.com/feed.xml");
 ```
 
-##### 17.16.1.2 web.feed.parse
+##### 17.17.1.2 web.feed.parse
 
 ```
 parse(source: string): { feedType: string; title: string; description: string; link: string; updated: string | null; items: Array<{ title: string; link: string; published: string | null; updated: string | null; content: string; summary: string; author: string; guid: string; categories: string[]; raw: Record<string, unknown> }> }
@@ -21098,9 +21528,9 @@ Parse RSS, Atom, or JSON-feed text into a normalized feed model. Format is auto-
 const f = web.feed.parse(xml); f.items[0].title;
 ```
 
-#### 17.16.2 web.html
+#### 17.17.2 web.html
 
-##### 17.16.2.1 web.html.load
+##### 17.17.2.1 web.html.load
 
 ```
 load(url: string, opts?: { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }>
@@ -21121,7 +21551,7 @@ Fetch a URL and parse the response as lenient HTML (see html.parse). Reuses the 
 const doc = await web.html.load("https://example.com"); doc.findAll("a").map(a => a.attr("href"));
 ```
 
-##### 17.16.2.2 web.html.parse
+##### 17.17.2.2 web.html.parse
 
 ```
 parse(source: string): { find(selector: string): unknown; findAll(selector: string): unknown[]; xpath(expr: string): unknown; xpathAll(expr: string): unknown[]; text(): string; html(): string; innerHTML(): string; tag(): string; attr(name: string): string | null; attrs(): Record<string, string>; }
@@ -21141,9 +21571,9 @@ Parse HTML leniently (real-world tag soup is accepted, never throws on bad marku
 const doc = web.html.parse(html); doc.find("h1").text();
 ```
 
-#### 17.16.3 web.sitemap
+#### 17.17.3 web.sitemap
 
-##### 17.16.3.1 web.sitemap.load
+##### 17.17.3.1 web.sitemap.load
 
 ```
 load(url: string, opts?: { expand?: boolean } & { timeout?: number | string; headers?: Record<string, string>; follow?: boolean; userAgent?: string; username?: string; password?: string; maxBytes?: number }): Promise<{ type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }>
@@ -21164,7 +21594,7 @@ Fetch a sitemap URL and parse it. Transparently decompresses .xml.gz (gzip magic
 const sm = await web.sitemap.load("https://example.com/sitemap.xml", { expand: true });
 ```
 
-##### 17.16.3.2 web.sitemap.parse
+##### 17.17.3.2 web.sitemap.parse
 
 ```
 parse(source: string): { type: "urlset" | "sitemapindex"; urls: Array<{ loc: string; lastmod?: string; changefreq?: string; priority?: number }>; sitemaps: string[]; errors: Array<{ url: string; error: string }> }

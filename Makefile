@@ -47,7 +47,7 @@ RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 MANUAL_VERSION    := $(shell sed -nE 's|^const Version = "([^"]+)".*|\1|p' pkg/scriptengine/version.go)
 MANUAL_DATE       := $(shell date +%F)
 
-.PHONY: build release manual reference test test-integration vet lint fmt fmt-check demo types release-prep release-verify version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean favro favro-check
+.PHONY: build release manual reference test test-integration vet lint fmt fmt-check demo types release-prep release-verify version-check homebrew-bump paymentproviders paymentproviders-check sample-data clean favro favro-check stuffr-wasm
 
 DEMO_SCRIPTS = \
 	examples/scripts/smoke.ts \
@@ -130,6 +130,7 @@ examples/scripts/server-sse.ts \
 	examples/scripts/text-case.ts \
 	examples/scripts/audio-stego.ts \
 	examples/scripts/audio-format.ts \
+	examples/scripts/stuffr.ts \
 	examples/scripts/tui-keys.ts \
 	examples/scripts/agent-browser-core.ts \
 	examples/scripts/agent-browser-capture.ts \
@@ -197,6 +198,19 @@ build:
 release:
 	CGO_ENABLED=0 $(GO) build $(RELEASE_FLAGS) -o $(BIN) ./cmd/sercon
 	@ls -lh $(BIN) | awk '{print "  built:", $$NF, "(" $$5 ")"}'
+
+# Rebuild the embedded stuffr wasm module (needs the stuffr checkout + Rust
+# wasm32-wasip1 toolchain). Output is committed; plain `go build` needs none of this.
+STUFFR_DIR ?= /Users/thomas/Development/Thomas/Rust/stuffr-wasi
+STUFFR_OUT := cmd/sercon/stuffr
+STUFFR_WASM := $(STUFFR_DIR)/target/wasm32-wasip1/release/stuffr.wasm
+stuffr-wasm:
+	$(MAKE) -C $(STUFFR_DIR) wasm
+	mkdir -p $(STUFFR_OUT)
+	go run ./scripts/zstdpack $(STUFFR_WASM) $(STUFFR_OUT)/stuffr.wasm.zst
+	go run ./scripts/stuffrmeta $(STUFFR_WASM) $(STUFFR_OUT)/version.json
+	echo "stuffr $$(git -C $(STUFFR_DIR) describe --always --dirty) $$(date +%Y-%m-%d)" > $(STUFFR_OUT)/VERSION
+	@echo "Embedded $$(cat $(STUFFR_OUT)/VERSION)"
 
 reference: build
 	@./$(BIN) --emit-reference .manual-reference.tmp

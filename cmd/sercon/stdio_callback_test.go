@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/dop251/goja"
 )
 
 // queueLen reports how many complete lines are currently queued, under
@@ -285,4 +287,47 @@ func TestCallback_ThrowingHandlerReportsOnceOnRealStderr(t *testing.T) {
 	if !strings.Contains(got, "boom: one") {
 		t.Fatalf("diagnostic should report the first (oldest-delivered) throw, got %q", got)
 	}
+}
+
+// A write from ANOTHER goroutine that lands while the handler is running is
+// not re-entrant and must be accepted by the callback like any other write.
+// The re-entrancy guard used to be goroutine-agnostic, so a concurrent
+// writer's chunk (an exec.stream / server handler / stuffr guest writing a
+// line in pieces) fell through to the destination beneath mid-line — leaking
+// a fragment to the real stream and delivering a corrupted line to the
+// handler. Driven at the Go level: the test goroutine plays the loop.
+func TestCallback_ConcurrentWriteDuringHandlerIsNotReentrant(t *testing.T) {
+	var base strings.Builder
+	s := newStream("stderr", &base)
+	vm := goja.New()
+
+	var got []string
+	cb := &lineCallback{queueCap: lineQueueCap}
+	first := true
+	cb.fn = func(_ goja.Value, args ...goja.Value) (goja.Value, error) {
+		got = append(got, args[0].String())
+		if first {
+			first = false
+			// While the handler runs, another goroutine writes the middle
+			// chunk of a line that is already partially buffered.
+			done := make(chan struct{})
+			go func() { _, _ = s.Write([]byte("middle-")); close(done) }()
+			<-done
+		}
+		return goja.Undefined(), nil
+	}
+	s.push(destination{kind: destCallback, cb: cb})
+
+	_, _ = s.Write([]byte("one\nhead-"))
+	cb.drain(vm) // delivers "one"; the concurrent write happens inside it
+	_, _ = s.Write([]byte("tail\n"))
+	cb.drain(vm)
+
+	if base.Len() != 0 {
+		t.Fatalf("concurrent write leaked beneath: %q", base.String())
+	}
+	if want := "one|head-middle-tail"; strings.Join(got, "|") != want {
+		t.Fatalf("handler got %q want %q", strings.Join(got, "|"), want)
+	}
+	s.reset()
 }

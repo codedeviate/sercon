@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"runtime"
+	"strconv"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -18,8 +20,9 @@ const lineQueueCap = 1024
 // lineCallback is the destCallback payload: it splits the byte stream into
 // lines and delivers each to a JS function.
 //
-// Delivery is queued, never direct. Writes arrive from arbitrary goroutines
-// (server handlers, exec.stream, async ops) AND from on-loop script code, and
+// Delivery is queued, never direct. Writes arrive from on-loop script code AND
+// from other goroutines (stuffr.run's streamed wasm stderr, `sercon serve`'s
+// access/SMTP loggers, the engine's Verbose writer), and
 // per CLAUDE.md a raw goja.Callable from off-loop is illegal while
 // LoopCallable.Call from on-loop deadlocks. Enqueueing plus a fire-and-forget
 // loop.RunOnLoop drain sidesteps both with one mechanism: delivery is one tick
@@ -43,8 +46,9 @@ type lineCallback struct {
 	buf      []byte   // bytes since the last newline
 	queue    []string // complete lines awaiting delivery
 	queueCap int
-	draining bool // a drain is scheduled or running
-	inCall   bool // the handler is executing right now (re-entrancy guard)
+	draining bool   // a drain is scheduled or running
+	inCall   bool   // the handler is executing right now (re-entrancy guard)
+	callG    uint64 // goroutine running the handler while inCall (see tryFeed)
 	stopped  bool
 	reported bool // a handler throw has already been reported on stderr
 
@@ -66,14 +70,20 @@ func callbackDest(loop *eventloop.EventLoop, streamName string, fn goja.Callable
 
 // tryFeed accepts p and reports whether it took ownership. false means the
 // caller must fall through to the destination beneath:
-//   - inCall: the handler's own write would otherwise recurse forever
+//   - inCall on the SAME goroutine: the handler's own write would otherwise
+//     recurse forever. A write from any other goroutine while the handler runs
+//     (stuffr.run's streamed wasm stderr, `sercon serve`'s access/SMTP
+//     loggers, the engine's Verbose writer) is not re-entrant and is
+//     buffered/queued as usual — refusing it would divert that line, wholly
+//     or in part, to the destination beneath, and a partly diverted line
+//     reaches the handler corrupted.
 //   - stopped: the entry has been popped
 //   - the queue is full
 //
 // Called with the stream's mutex held, so this must not block or call into JS.
 func (c *lineCallback) tryFeed(p []byte) bool {
 	c.mu.Lock()
-	if c.stopped || c.inCall {
+	if c.stopped || (c.inCall && curGoroutineID() == c.callG) {
 		c.mu.Unlock()
 		return false
 	}
@@ -122,6 +132,7 @@ func (c *lineCallback) tryFeed(p []byte) bool {
 // drain delivers every queued line. Runs ON the loop, so it invokes the
 // callable directly — scheduling again from here would deadlock.
 func (c *lineCallback) drain(vm *goja.Runtime) {
+	g := curGoroutineID() // drain runs on the loop goroutine throughout
 	for {
 		c.mu.Lock()
 		if c.stopped || len(c.queue) == 0 {
@@ -132,6 +143,7 @@ func (c *lineCallback) drain(vm *goja.Runtime) {
 		line := c.queue[0]
 		c.queue = c.queue[1:]
 		c.inCall = true
+		c.callG = g
 		fn := c.fn
 		c.mu.Unlock()
 
@@ -199,4 +211,22 @@ func (c *lineCallback) stop() []string {
 	leftover := c.queue
 	c.queue = nil
 	return leftover
+}
+
+// curGoroutineID returns the calling goroutine's runtime id, parsed from the
+// "goroutine N [" header runtime.Stack writes. Go deliberately exposes no
+// goroutine identity, but the re-entrancy guard needs exactly that: "is this
+// write coming from the handler that is running right now?". The handler runs
+// on the event-loop goroutine, which tryFeed cannot otherwise tell apart from
+// any other writer. Only paid on drain's per-line handoff and on writes that
+// land while a handler is executing, never on the common write path.
+func curGoroutineID() uint64 {
+	var b [64]byte
+	n := runtime.Stack(b[:], false)
+	f := bytes.Fields(b[:n])
+	if len(f) < 2 || string(f[0]) != "goroutine" {
+		return 0
+	}
+	id, _ := strconv.ParseUint(string(f[1]), 10, 64)
+	return id
 }

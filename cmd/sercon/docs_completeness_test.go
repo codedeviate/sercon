@@ -27,6 +27,7 @@ func docsByNamespace() map[string]map[string]scriptengine.MemberDoc {
 		"server":   serverDocs(),
 		"console":  consoleDocs(),
 		"mcp":      mcpDocs(),
+		"stuffr":   stuffrDocs(),
 	}
 }
 
@@ -39,7 +40,7 @@ func docsByNamespace() map[string]map[string]scriptengine.MemberDoc {
 // cloudDocs())) but is intentionally absent from both this list and
 // docsByNamespace() above — a pre-existing gap from an earlier task, left
 // untouched here since closing it is out of scope for the mcp namespace work.
-var sweptNamespaces = []string{"runtime", "crypto", "text", "codec", "fs", "net", "db", "services", "tui", "image", "web", "audio", "server", "console", "mcp"}
+var sweptNamespaces = []string{"runtime", "crypto", "text", "codec", "fs", "net", "db", "services", "tui", "image", "web", "audio", "server", "console", "mcp", "stuffr"}
 
 // checkMember asserts a single MemberDoc meets the completeness standard:
 // non-empty Summary/ReturnType/Returns/Errors/Example, and every Param has
