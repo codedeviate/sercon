@@ -30,6 +30,6 @@ func run(in, out string) error {
 	if err != nil {
 		return err
 	}
-	defer enc.Close()
+	defer func() { _ = enc.Close() }()
 	return os.WriteFile(out, enc.EncodeAll(data, nil), 0o644)
 }

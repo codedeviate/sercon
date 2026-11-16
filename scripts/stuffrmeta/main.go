@@ -31,7 +31,7 @@ func run(wasmPath, out string) error {
 	}
 	ctx := context.Background()
 	rt := wazero.NewRuntime(ctx)
-	defer rt.Close(ctx)
+	defer func() { _ = rt.Close(ctx) }()
 	wasi_snapshot_preview1.MustInstantiate(ctx, rt)
 
 	var stdout, stderr bytes.Buffer

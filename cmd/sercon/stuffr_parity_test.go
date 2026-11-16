@@ -274,7 +274,7 @@ func TestStuffrInterim_MetadataReported(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("exit code = %d, want 0", code)
 		}
-		if mode != 0o755 && !(strings.Contains(stderr, "missing metadata") && strings.Contains(stderr, "mode")) {
+		if mode != 0o755 && (!strings.Contains(stderr, "missing metadata") || !strings.Contains(stderr, "mode")) {
 			t.Fatalf("mode %v silently dropped: no fidelity warning naming mode in stderr %q", mode, stderr)
 		}
 	})
