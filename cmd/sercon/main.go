@@ -619,6 +619,9 @@ func registerSurface(e *scriptengine.Engine) error {
 	}); err != nil {
 		return err
 	}
+	if err := e.RegisterNamespaceFactory("stuffr", stuffrNamespace); err != nil {
+		return err
+	}
 	// Decorate the registered surface with JSDoc strings so the emitted
 	// .d.ts grows useful editor hover. Docs are gathered in docs.go
 	// (centralised so lockstep updates touch one file).
