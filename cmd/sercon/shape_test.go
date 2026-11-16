@@ -11,7 +11,7 @@ import (
 )
 
 // TestTopLevelGlobals_Shape asserts a representative subset of the (now
-// fifteen) reserved top-level globals are present — and crucially that
+// sixteen) reserved top-level globals are present — and crucially that
 // `api` is NOT present. Guards against accidental re-introduction of the
 // old wrapper.
 func TestTopLevelGlobals_Shape(t *testing.T) {

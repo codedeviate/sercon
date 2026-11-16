@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+
+- **`stuffr` global (the sixteenth reserved global).** Archives and
+  compression — tar, zip, gzip, xz, zstd, bzip2 and more — via
+  [stuffr](https://github.com/codedeviate/stuffr) compiled to WebAssembly and
+  embedded in the binary, run under the pure-Go wazero runtime (no cgo, no
+  external tool). `stuffr.run(argv, opts?)` runs a raw verb or a
+  gzip/zstd/xz-style personality and returns `{ code, stdout, stderr, text() }`
+  without throwing; `pack` / `unpack` / `convert` / `test` / `cat` / `list` /
+  `info` / `formats` are typed helpers that throw on a non-zero exit with
+  `{ code, kind, stderr, argv }` (a wasm trap throws `kind: "trap"`), and
+  `stuffr.version` names the embedded build. Extraction safety matches native
+  stuffr (`../`, absolute paths, symlinked ancestors and unsafe symlink targets
+  are refused with exit 7). **Interim limits:** only the pure-Rust tier is
+  embedded, there are no threads, and extraction applies WASI-default metadata
+  — a `0755` file extracts as `0600` with a fidelity warning, and a tar holding a
+  symlink fails with exit 3 — until stuffr's host-filesystem layer lands. The
+  first call compiles the module (about a second) and caches it under
+  `<UserCacheDir>/sercon/wazero`. New dependency: `github.com/tetratelabs/wazero`
+  (pure Go). The embedded module (`cmd/sercon/stuffr/stuffr.wasm.zst`, ~2.2 MB)
+  grows the binary by roughly 6 MB; rebuild it with `make stuffr-wasm
+  STUFFR_DIR=…`. See MANUAL §5.16 and `examples/scripts/stuffr.ts`.
+- The generated binding reference renumbers: `stuffr` is §17.14, so `text`,
+  `tui` and `web` move to §17.15–§17.17.
+
 ## [0.103.0] — 2026-08-20
 
 ### Added

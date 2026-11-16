@@ -172,16 +172,17 @@ func showHelp(w io.Writer) {
 	fmt.Fprintf(w, "    %s --examples | --help | --version\n\n", s.cyan("sercon"))
 
 	fmt.Fprintln(w, s.bold("DESCRIPTION"))
-	fmt.Fprintln(w, "    Scripts get fifteen reserved top-level globals — runtime, crypto,")
+	fmt.Fprintln(w, "    Scripts get sixteen reserved top-level globals — runtime, crypto,")
 	fmt.Fprintln(w, "    text, codec, fs, net, db, cloud, server, services, tui, image,")
-	fmt.Fprintln(w, "    web, audio, mcp — each holding a related group of bindings:")
+	fmt.Fprintln(w, "    web, audio, mcp, stuffr — each holding a related group of bindings:")
 	fmt.Fprintln(w, "    runtime (logging, assertions, time, env, argv), crypto (hash/jwt/")
 	fmt.Fprintln(w, "    encrypt), text (string/regex/charset/jq/diff), codec (compression/")
 	fmt.Fprintln(w, "    barcode/checkdigit), fs (path/archive), net (http/probe/email send")
 	fmt.Fprintln(w, "    + ...), db (sqlite/redis/...), cloud (aws/azure/gcp), server (http/")
 	fmt.Fprintln(w, "    https listeners + WebSocket + smtp), services (exec/git/gh/ai), tui")
 	fmt.Fprintln(w, "    (multi-pane UI), image (decode/encode/transform), web (fetch/html/")
-	fmt.Fprintln(w, "    feed/sitemap), audio (decode/encode/transform), mcp (client/server).")
+	fmt.Fprintln(w, "    feed/sitemap), audio (decode/encode/transform), mcp (client/server),")
+	fmt.Fprintln(w, "    stuffr (archives/compression via embedded wasm).")
 	fmt.Fprintln(w, "    Each script gets a fresh runtime; helpers are loaded via")
 	fmt.Fprintln(w, "    require()/import. See MANUAL.md")
 	fmt.Fprintln(w, "    §5 for the full reference and §6 for the server surface, or")
@@ -288,7 +289,7 @@ func showExamples(w io.Writer) {
 
 	fmt.Fprintln(w, s.bold(s.cyan("sercon")), s.dim("— script feature tour"))
 	fmt.Fprintln(w, s.dim("Each example is a complete .ts file you can save and run with"))
-	fmt.Fprintln(w, s.dim("`sercon path/to/file.ts`. Snippets use the fifteen reserved top-level globals."))
+	fmt.Fprintln(w, s.dim("`sercon path/to/file.ts`. Snippets use the sixteen reserved top-level globals."))
 
 	header(1, "Logging")
 	code(`runtime.log("hello", 1 + 2, { a: 1 });
@@ -1415,7 +1416,7 @@ text.case.convert(id, "title"); // "Get Http Response Code" (dynamic dispatch)
 text.case.split(id);           // ["get","http","response","code"] (acronym-aware)
 text.case.detect("get_http");  // "snake"
 text.case.names();             // all 16 canonical case names`)
-	note("16 canonical cases (camel/pascal/snake/screamingSnake/ada/camelSnake/kebab/train/screamingKebab/flat/upperFlat/dot/path/title/sentence/capital) plus header/cobol/slug aliases. The tokenizer is acronym-aware (HTTPServer → [http, server]) and works from any input case, not just the one you started with. Pure-Go, no dependencies. See examples/scripts/text-case.ts and MANUAL.md §5.4 / the generated §17.14 reference.")
+	note("16 canonical cases (camel/pascal/snake/screamingSnake/ada/camelSnake/kebab/train/screamingKebab/flat/upperFlat/dot/path/title/sentence/capital) plus header/cobol/slug aliases. The tokenizer is acronym-aware (HTTPServer → [http, server]) and works from any input case, not just the one you started with. Pure-Go, no dependencies. See examples/scripts/text-case.ts and MANUAL.md §5.4 / the generated §17.15 reference.")
 
 	header(74, "Redirect your own output (runtime.stdout / stderr / stdin)")
 	code(`// Every setter returns an idempotent restore fn; redirects nest.
@@ -1436,10 +1437,22 @@ runtime.stdin.fromString("a\nb\n");
 for await (const line of runtime.stdin.lines()) runtime.log(line);`)
 	note("Covers sercon's own writers (console.*, runtime.log, the default-export JSON, PASS/FAIL, --verbose, the TUI fallback). services.exec.shell/.run, services.git, services.gh and services.typst.* capture a child's output into a buffer instead of touching sercon's streams, so redirection is simply irrelevant to them; only services.exec.interactive genuinely bypasses it, by inheriting fd 1/2 (and fd 0) directly. Redirects reset at the start of each script, so `sercon a.ts b.ts` and --watch re-runs start clean, plus once more on the way out (after the last reporting write) so a line callback left pushed can't swallow the result JSON or PASS/FAIL. See examples/scripts/stdio-redirect.ts and MANUAL.md §5.2 / the generated §17.11 reference.")
 
+	header(75, "Archives and compression (stuffr)")
+	code(`// stuffr is embedded WebAssembly (wazero) — no external tools, no cgo.
+await stuffr.pack(["src"], { cwd: "/work", output: "src.tar.gz" });
+const listing = await stuffr.list("/work/src.tar.gz");   // parsed JSON
+await stuffr.test("/work/src.tar.gz");                    // integrity check
+await stuffr.unpack("/work/src.tar.gz", { directory: "/tmp/out" });
+
+// Raw verbs and gzip/zstd/xz-style personalities never throw on exit codes.
+const r = await stuffr.run(["gzcat"], { stdin: gzBytes });
+runtime.log(r.code, r.text());`)
+	note("The first call compiles the module (~1 s) and caches it under <UserCacheDir>/sercon/wazero. Helpers reject with {code, kind, stderr, argv} on a non-zero exit; a wasm trap rejects with kind \"trap\". Interim build: extraction applies WASI-default metadata only — a 0755 file comes out 0600 with a fidelity warning, a tar holding a symlink fails with exit 3 — until stuffr's host-fs layer lands; extraction safety (../, absolute, symlinked ancestors) still matches native stuffr (exit 7). Pass level for brotli, memoryLimit for big xz/zstd, allowWeakEncoder to pack zstd. See examples/scripts/stuffr.ts and MANUAL.md §5.16 / the generated §17.14 reference.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 74
+const exampleCount = 75

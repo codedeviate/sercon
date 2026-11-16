@@ -327,9 +327,9 @@ func classifyErr(err error) int {
 	}
 }
 
-// registerSurface wires sercon's fifteen top-level script-facing globals:
+// registerSurface wires sercon's sixteen top-level script-facing globals:
 // runtime, crypto, text, codec, fs, net, db, cloud, server, services, tui,
-// image, web, audio, mcp.
+// image, web, audio, mcp, stuffr.
 // (The count was already stale at "thirteen" before this edit — `cloud` had
 // been added without updating this comment; both `cloud` and the new `mcp`
 // are folded in here so the count and list are accurate again.)
@@ -340,7 +340,7 @@ func classifyErr(err error) int {
 // namespace at Run time.
 func registerSurface(e *scriptengine.Engine) error {
 	// `console` is a browser/Node-compat shim (see console.go). Registered
-	// alongside the fifteen reserved globals; the CLI disables the engine's
+	// alongside the sixteen reserved globals; the CLI disables the engine's
 	// built-in console (Options.DisableConsole) so this one is authoritative.
 	if err := e.RegisterNamespaceFactory("console", func(vm *goja.Runtime, _ *eventloop.EventLoop) map[string]any {
 		return consoleNamespace(vm)
@@ -657,6 +657,8 @@ func registerSurface(e *scriptengine.Engine) error {
 	e.SetMemberDocsStructured("cloud", cloudDocs())
 	e.SetDocs("mcp", "Model Context Protocol server: mcp.serve({name, version, instructions?}) returns a handle for registering tools/resources/prompts with JS handlers, then serving them over stdio() (Unix-only this phase) or listen() (Streamable HTTP, cross-platform). Built on the official modelcontextprotocol/go-sdk.")
 	e.SetMemberDocsStructured("mcp", mcpDocs())
+	e.SetDocs("stuffr", "Archives and compression via the embedded stuffr (WebAssembly under wazero, pure Go): pack/unpack/convert/test/cat/list/info/formats helpers plus run(argv) for raw verbs and gzip/zstd/xz/bzip2-style personalities. Interim build: modes, symlinks and owners are not applied on extract.")
+	e.SetMemberDocsStructured("stuffr", stuffrDocs())
 	return nil
 }
 
