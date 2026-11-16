@@ -105,6 +105,7 @@ require (
 	github.com/charlievieth/fastwalk v1.0.14
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00
+	github.com/tetratelabs/wazero v1.12.0
 	github.com/yuin/goldmark v1.4.13
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/oauth2 v0.36.0
