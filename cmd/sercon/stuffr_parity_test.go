@@ -98,51 +98,66 @@ func listTree(t *testing.T, root string) []string {
 }
 
 // safetyCase runs one hostile archive through both builds. setup prepares a
-// fresh scenario (dst, outside) and returns the tar entries.
-func safetyCase(t *testing.T, setup func(dst, outside string) []tarEnt) {
+// fresh scenario (dst, outside) and returns the tar entries. With strict set,
+// both builds must refuse (non-zero) with equal exit codes; otherwise only the
+// "nothing outside dst" invariant is enforced and each outcome is logged.
+// Layout: base/{dst,outside,a.tar,work/cwd}; the stuffr cwd is nested inside
+// the scanned tree so a cwd-relative escape is also caught.
+func safetyCase(t *testing.T, strict bool, setup func(dst, outside string) []tarEnt) {
 	oracleBin(t)
 	run := func(name string, fn func(t *testing.T, cwd string, argv ...string) (int, string)) int {
 		base := t.TempDir()
 		dst := filepath.Join(base, "dst")
 		outside := filepath.Join(base, "outside")
-		os.MkdirAll(dst, 0o755)
-		os.MkdirAll(outside, 0o755)
+		cwd := filepath.Join(base, "work", "cwd")
+		for _, d := range []string{dst, outside, cwd} {
+			os.MkdirAll(d, 0o755)
+		}
 		arc := filepath.Join(base, "a.tar")
 		makeTar(t, arc, setup(dst, outside))
-		code, stderr := fn(t, base, "unpack", "--directory", dst, "--", arc)
+		code, stderr := fn(t, cwd, "unpack", "--directory", dst, "--", arc)
 		t.Logf("%s: code=%d stderr=%q", name, code, strings.TrimSpace(stderr))
-		if code == 0 {
+		if strict && code == 0 {
 			t.Errorf("%s: hostile archive was accepted (exit 0)", name)
 		}
 		if got := listTree(t, outside); len(got) != 0 {
 			t.Errorf("%s: files written outside destination: %v", name, got)
 		}
-		// Nothing may have escaped to the base dir either (e.g. ../evil).
+		sep := string(filepath.Separator)
 		for _, e := range listTree(t, base) {
-			if e != "dst" && e != "outside" && e != "a.tar" && !strings.HasPrefix(e, "dst"+string(filepath.Separator)) {
-				t.Errorf("%s: stray path in base dir: %s", name, e)
+			switch {
+			case e == "dst", e == "outside", e == "a.tar", e == "work", e == "work"+sep+"cwd":
+			case strings.HasPrefix(e, "dst"+sep):
+			default:
+				t.Errorf("%s: stray path in tree: %s", name, e)
 			}
 		}
 		return code
 	}
 	w := run("wasi", wasiRun)
 	o := run("oracle", oracleRun)
-	if w != o {
+	if strict && w != o {
 		t.Errorf("exit code mismatch: wasi=%d oracle=%d", w, o)
 	}
 }
 
 func TestStuffrParity_EscapeRefused(t *testing.T) {
-	safetyCase(t, func(dst, outside string) []tarEnt {
-		return []tarEnt{
-			{name: "../evil", mode: 0o644, body: "x"},
-			{name: filepath.Join(outside, "abs-evil"), mode: 0o644, body: "x"},
-		}
+	// One entry per case: a single archive would abort at the first entry and
+	// never evaluate the second.
+	t.Run("DotDot", func(t *testing.T) {
+		safetyCase(t, true, func(dst, outside string) []tarEnt {
+			return []tarEnt{{name: "../evil", mode: 0o644, body: "x"}}
+		})
+	})
+	t.Run("Absolute", func(t *testing.T) {
+		safetyCase(t, true, func(dst, outside string) []tarEnt {
+			return []tarEnt{{name: filepath.Join(outside, "abs-evil"), mode: 0o644, body: "x"}}
+		})
 	})
 }
 
 func TestStuffrParity_SymlinkAncestorRefused(t *testing.T) {
-	safetyCase(t, func(dst, outside string) []tarEnt {
+	safetyCase(t, true, func(dst, outside string) []tarEnt {
 		if err := os.Symlink(outside, filepath.Join(dst, "sub")); err != nil {
 			t.Fatal(err)
 		}
@@ -152,11 +167,11 @@ func TestStuffrParity_SymlinkAncestorRefused(t *testing.T) {
 
 func TestStuffrParity_ArchiveSymlinkThenFile(t *testing.T) {
 	for name, link := range map[string]func(outside string) string{
-		"absolute": func(o string) string { return o },
-		"relative": func(string) string { return "../outside" },
+		"UnsafeAbsoluteSymlinkTargetRefused": func(o string) string { return o },
+		"UnsafeClimbingSymlinkTargetRefused": func(string) string { return "../outside" },
 	} {
 		t.Run(name, func(t *testing.T) {
-			safetyCase(t, func(dst, outside string) []tarEnt {
+			safetyCase(t, true, func(dst, outside string) []tarEnt {
 				return []tarEnt{
 					{name: "l", typ: tar.TypeSymlink, link: link(outside)},
 					{name: "l/file", mode: 0o644, body: "x"},
@@ -164,6 +179,19 @@ func TestStuffrParity_ArchiveSymlinkThenFile(t *testing.T) {
 			})
 		})
 	}
+	// Safe in-dst symlink, then a write through it. DOCUMENTED DIVERGENCE: the
+	// interim WASI build cannot create symlinks (exit 3 at `l`) until stuffr's
+	// item 4, while the native oracle may support them, so exit-code parity is
+	// not required here; only that nothing lands outside dst.
+	t.Run("SafeSymlinkThenWriteThrough", func(t *testing.T) {
+		safetyCase(t, false, func(dst, outside string) []tarEnt {
+			return []tarEnt{
+				{name: "sub/", typ: tar.TypeDir, mode: 0o755},
+				{name: "l", typ: tar.TypeSymlink, link: "sub"},
+				{name: "l/file", mode: 0o644, body: "x"},
+			}
+		})
+	})
 }
 
 func TestStuffrParity_ContentRoundTrip(t *testing.T) {
@@ -224,31 +252,44 @@ func TestStuffrParity_ContentRoundTrip(t *testing.T) {
 
 // TestStuffrInterim_MetadataReported pins what the interim embedded build does
 // with file modes and symlinks (no host-fs metadata layer yet) and requires it
-// to be honest: applied, or reported via stderr / a non-zero exit.
+// to be honest: applied, or reported by the relevant warning / refusal.
 func TestStuffrInterim_MetadataReported(t *testing.T) {
-	base := t.TempDir()
-	dst := filepath.Join(base, "dst")
-	os.MkdirAll(dst, 0o755)
-	arc := filepath.Join(base, "m.tar")
-	makeTar(t, arc, []tarEnt{
-		{name: "run.sh", mode: 0o755, body: "#!/bin/sh\n"},
-		{name: "link", typ: tar.TypeSymlink, link: "run.sh"},
+	unpack := func(t *testing.T, ents []tarEnt) (code int, stderr, dst string) {
+		base := t.TempDir()
+		dst = filepath.Join(base, "dst")
+		os.MkdirAll(dst, 0o755)
+		arc := filepath.Join(base, "m.tar")
+		makeTar(t, arc, ents)
+		code, stderr = wasiRun(t, base, "unpack", "--directory", dst, "--", arc)
+		return
+	}
+	t.Run("Mode", func(t *testing.T) {
+		code, stderr, dst := unpack(t, []tarEnt{{name: "run.sh", mode: 0o755, body: "#!/bin/sh\n"}})
+		st, err := os.Stat(filepath.Join(dst, "run.sh"))
+		if err != nil {
+			t.Fatalf("run.sh not extracted: %v (code=%d stderr=%q)", err, code, stderr)
+		}
+		mode := st.Mode().Perm()
+		t.Logf("code=%d mode=%v stderr=%q", code, mode, stderr)
+		if code != 0 {
+			t.Fatalf("exit code = %d, want 0", code)
+		}
+		if mode != 0o755 && !(strings.Contains(stderr, "missing metadata") && strings.Contains(stderr, "mode")) {
+			t.Fatalf("mode %v silently dropped: no fidelity warning naming mode in stderr %q", mode, stderr)
+		}
 	})
-	code, stderr := wasiRun(t, base, "unpack", "--directory", dst, "--", arc)
-	st, ferr := os.Stat(filepath.Join(dst, "run.sh"))
-	var mode os.FileMode
-	if ferr == nil {
-		mode = st.Mode().Perm()
-	}
-	target, lerr := os.Readlink(filepath.Join(dst, "link"))
-	t.Logf("code=%d mode=%v fileErr=%v symlinkTarget=%q symlinkErr=%v stderr=%q", code, mode, ferr, target, lerr, stderr)
-	modeOK := ferr == nil && mode == 0o755
-	linkOK := lerr == nil && target == "run.sh"
-	if modeOK && linkOK {
-		return // metadata applied
-	}
-	if code == 0 && strings.TrimSpace(stderr) == "" {
-		t.Skip("BLOCKER: interim build silently drops metadata; see design note")
-	}
-	// honest: non-zero code or a warning on stderr
+	t.Run("Symlink", func(t *testing.T) {
+		code, stderr, dst := unpack(t, []tarEnt{
+			{name: "run.sh", mode: 0o755, body: "#!/bin/sh\n"},
+			{name: "link", typ: tar.TypeSymlink, link: "run.sh"},
+		})
+		target, lerr := os.Readlink(filepath.Join(dst, "link"))
+		t.Logf("code=%d symlinkTarget=%q symlinkErr=%v stderr=%q", code, target, lerr, stderr)
+		if lerr == nil && target == "run.sh" {
+			return // symlink applied
+		}
+		if code == 0 || !strings.Contains(stderr, "symlink") {
+			t.Fatalf("symlink silently dropped: code=%d stderr=%q", code, stderr)
+		}
+	})
 }
