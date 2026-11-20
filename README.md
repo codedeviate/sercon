@@ -67,7 +67,7 @@ guided tour.
 | `services` | external-CLI wrappers: `git`, `gh`, `ai`, `agentBrowser`, `webdriver` |
 | `tui` | terminal-UI widgets |
 | `mcp` | Model Context Protocol — author a server (`mcp.serve`) or drive one as a client (`mcp.connect`), over stdio or Streamable HTTP |
-| `stuffr` | archives and compression (tar/zip/gzip/xz/zstd/…) via embedded WebAssembly: `pack`/`unpack`/`convert`/`test`/`list`, raw `run`; helpers return stuffr's messages, `strictFidelity` flags `unpack` metadata loss (not `pack`; embedded `pack` records every file as 0644) |
+| `stuffr` | archives and compression (tar/zip/gzip/xz/zstd/…) via embedded WebAssembly: `pack`/`unpack`/`convert`/`test`/`list`, raw `run`; helpers return stuffr's messages, `strictFidelity` turns metadata loss into an error (embedded `pack` records every file as 0644 and warns about it) |
 
 ## Documentation
 
