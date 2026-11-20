@@ -23,18 +23,20 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
   `test` resolve `{ messages: string[] }` (the non-empty stderr lines of the
   successful run — human-readable, not a parse contract; `stream: true` also
   tees stderr to the console) and accept `strictFidelity: true`
-  (`--strict-fidelity`), which makes `unpack` metadata loss throw `kind: "degraded"` (it does NOT detect `pack` loss). Extraction safety matches native
+  (`--strict-fidelity`), which makes any metadata loss throw `kind: "degraded"`
+  (the output is still written). The embedded build is stuffr 0.31.0.
+  Extraction safety matches native
   stuffr (`../`, absolute paths, symlinked ancestors and unsafe symlink targets
   are refused with exit 7). **Interim limits:** only the pure-Rust tier is
   embedded, there are no threads, and metadata is WASI-default until stuffr's
   host-filesystem layer lands: `unpack` writes `0600` (with a fidelity warning;
   strict mode rejects essentially every moded entry) and a tar holding a symlink
-  fails with exit 3; **`pack` records every file as `0644`, owner 0:0** (a `0600`
-  file is widened, a `0755` file loses its exec bit), zip and single-stream
-  output claim "no fidelity loss" and exit 0 even with `--strict-fidelity`, and
-  `salvage --index N -o` traps — **do not use `stuffr.pack` where file modes
-  matter**. stuffr is not functional on Windows yet (`run` rejects with a clear
-  error). The
+  fails with exit 3; **`pack` records every file as `0644`** (tar also owner
+  0:0; a `0600` file is widened, a `0755` file loses its exec bit) and warns
+  `missing metadata: mode` for every entry, so strict `pack` always throws
+  `degraded` — **do not use `stuffr.pack` where file modes matter**. `salvage`
+  notes each file whose mode it could not apply. stuffr is not functional on
+  Windows yet (`run` rejects with a clear error). The
   first call compiles the module (about a second) and caches it under
   `<UserCacheDir>/sercon/wazero`. New dependency: `github.com/tetratelabs/wazero`
   (pure Go). The embedded module (`cmd/sercon/stuffr/stuffr.wasm.zst`, ~2.2 MB)
