@@ -209,7 +209,7 @@ stuffr-wasm:
 	mkdir -p $(STUFFR_OUT)
 	go run ./scripts/zstdpack $(STUFFR_WASM) $(STUFFR_OUT)/stuffr.wasm.zst
 	go run ./scripts/stuffrmeta $(STUFFR_WASM) $(STUFFR_OUT)/version.json
-	echo "stuffr $$(git -C $(STUFFR_DIR) describe --always --dirty) $$(date +%Y-%m-%d)" > $(STUFFR_OUT)/VERSION
+	echo "stuffr $$(git -C $(STUFFR_DIR) describe --tags --always --dirty) $$(date +%Y-%m-%d)" > $(STUFFR_OUT)/VERSION
 	@echo "Embedded $$(cat $(STUFFR_OUT)/VERSION)"
 
 reference: build
