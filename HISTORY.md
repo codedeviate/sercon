@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.103.0 (2026-08-20).
+covered is v0.1.0 (2026-05-25) through v0.104.0 (2026-11-20).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -415,6 +415,12 @@ all *capture* output into a buffer handed back to the script, so they never touc
 these streams; only `services.exec.interactive` genuinely bypasses redirection,
 by inheriting fd 1/2/0.
 
+A v0.104.0 fix narrowed the callback's re-entrancy guard. It had bypassed the
+handler for *every* write made while the handler was running, so a second
+goroutine writing at that moment (the `stuffr` stream tee, `sercon serve`'s
+access log) had its lines split between the handler and the destination
+beneath. The guard is now scoped to the handler's own goroutine.
+
 ### `crypto`
 
 **Hash family** (`crypto.hash.*`, nine algorithms: md5/sha1/sha256/sha384/
@@ -772,6 +778,35 @@ into a chainable `Node` queryable by CSS (`andybalholm/cascadia` — `find`/
 `text`/`html`/`innerHTML`/`tag`/`attr`/`attrs`. Every `load` reuses the
 `net.http` option surface, sends a default `sercon-web/<version>` User-Agent,
 and throws on non-2xx.
+
+### `stuffr` (v0.104.0)
+
+The sixteenth top-level global — archives and compression (tar, zip, gzip, xz,
+zstd, bzip2 and stuffr's legacy containers) by running the maintainer's Rust
+tool [stuffr](https://github.com/codedeviate/stuffr) compiled to
+`wasm32-wasip1` **inside** the binary, under the pure-Go wazero runtime. That
+keeps sercon cgo-free and needs no external tool: the zstd-packed module
+(~2.2 MB) is committed under `cmd/sercon/stuffr/` with the `version.json` that
+lists its features and personalities, rebuilt by `make stuffr-wasm`. One shared
+runtime compiles the module once (cached under `<UserCacheDir>/sercon/wazero`);
+every call gets a fresh WASI instance with the host filesystem mounted and the
+working directory passed as `STUFFR_CWD`. `run(argv)` never throws on an exit
+code; the typed helpers (`pack`/`unpack`/`convert`/`test`/`cat`/`list`/`info`/
+`formats`) throw `{code, kind, stderr, argv}` with `kind` from stuffr's exit
+table, and a wasm trap throws `kind: "trap"`. Extraction safety is native parity,
+pinned by oracle tests against a native pure build.
+
+It was built **upstream-first**. Rather than patch around WASI in sercon, the
+gaps went to stuffr as a wishlist, and stuffr shipped them on its own branches
+in 0.31.0: `STUFFR_CWD`/`--cwd`, `formats --json`, `version --json`, a
+`wasm32-wasip1` CI smoke job, and fixes the first WASI run exposed
+(`process::id()` and `std::env::temp_dir()` panic there, `File::try_clone` is
+unsupported, threads don't exist). The rule both sides held to was "feature off
+is honest": the interim build cannot read or set file modes, and when review
+found `pack` silently widening a `0600` file to `0644`, sercon pinned it as a
+known-dishonest test and documented it as a release gate until stuffr made pack
+warn `missing metadata: mode` per entry. Real metadata waits on a host
+filesystem ABI (`stuffr_host_fs_v1`) agreed in a joint design note.
 
 ---
 
