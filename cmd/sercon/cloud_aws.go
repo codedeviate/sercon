@@ -12,6 +12,8 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
+
+	"github.com/codedeviate/sercon/pkg/scriptengine"
 )
 
 // awsConfig is the resolved config for a cloud.aws(...) handle. Credential
@@ -128,6 +130,9 @@ func awsHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg awsConfig) map[s
 		"sqs":            func(goja.FunctionCall) goja.Value { return vm.ToValue(awsSQS(vm, loop, cfg)) },
 		"cloudwatch":     func(goja.FunctionCall) goja.Value { return vm.ToValue(awsCloudWatch(vm, loop, cfg)) },
 		"cloudwatchlogs": func(goja.FunctionCall) goja.Value { return vm.ToValue(awsCloudWatchLogs(vm, loop, cfg)) },
+		"whoami": scriptengine.PromisifyAsync(vm, loop,
+			func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
+			func(ctx context.Context, _ struct{}) (any, error) { return awsWhoami(ctx, cfg) }).Func,
 	}
 }
 
