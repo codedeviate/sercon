@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
+## [Unreleased]
+
+### Added
+
+- **`cloud.google(...).whoami()` and `cloud.aws(...).whoami()`** — a
+  pre-flight "am I logged in?" check. AWS resolves `{ account, arn, userId }`
+  via STS GetCallerIdentity; Google resolves `{ email, type, project, scopes,
+  expiresIn }` by fetching a token and asking Google's tokeninfo endpoint
+  (Google has no caller-identity API). A missing or expired login rejects
+  with an `UNAUTHENTICATED` error (`code: "UNAUTHENTICATED"` on AWS;
+  `code: 401, status: "UNAUTHENTICATED"` on Google) whose message names the
+  fix — `aws sso login` / `gcloud auth application-default login`. Network
+  failures keep their usual transport error, so an offline machine is not
+  reported as logged out. The access token is never returned or put in an
+  error. The cloud smoke examples now call it first.
+
 ## [0.104.0] — 2026-11-20
 
 ### Added

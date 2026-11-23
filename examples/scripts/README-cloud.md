@@ -49,6 +49,7 @@ PROJECT=my-gcp-project sercon examples/scripts/cloud-google-smoke.ts
 
 Without `PROJECT` set, the script logs a message and exits 0 (self-skip —
 safe to leave in any script glob). With `PROJECT` set it calls, in order:
+`whoami()` (fails fast with the login command if ADC is missing or expired),
 `storage().listBuckets()` (+ `listObjects()` on the first bucket, if any),
 `iam().listServiceAccounts()`, `compute().listZones()`,
 `secrets().listSecrets()`, and finally `call()` against the same
@@ -119,7 +120,8 @@ Without `AWS_REGION`/`AWS_DEFAULT_REGION` set, the script logs a message and
 exits 0 (self-skip — safe to leave in any script glob; note there is no
 `runtime.exit()` in this sercon build, so the skip path is a plain if/else
 rather than an early exit call). With a region set it calls, in order:
-`sts().getCallerIdentity({})`, `s3().listBuckets()`, and
+`whoami()` (fails fast with the login command if the login is missing or
+expired), `sts().getCallerIdentity({})`, `s3().listBuckets()`, and
 `cloudwatchlogs().describeLogGroups({})`. Every call is read-only — nothing
 is created, modified, or deleted.
 

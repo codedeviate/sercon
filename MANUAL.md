@@ -5616,6 +5616,30 @@ up, and each also accepts an explicit override on the handle:
 Secret material (`clientSecret`, SA keys, tokens) is never written to logs or
 error strings.
 
+**Check you're logged in first.** `cloud.google(...)` and `cloud.aws(...)` handles
+have a `whoami()` method: it resolves the identity behind the handle's
+credentials, or rejects with an `UNAUTHENTICATED` error whose message names
+the login command to run. Call it at the top of a script so a forgotten or
+expired login fails immediately, with the fix, instead of halfway through:
+
+```ts
+const g   = cloud.google({ project: "my-gcp-project" });
+const aws = cloud.aws({ region: "eu-north-1" });
+try {
+  const [gme, ame] = await Promise.all([g.whoami(), aws.whoami()]);
+  runtime.log(`Google: ${gme.email}  AWS: ${ame.arn}`);
+} catch (e: any) {
+  // Google: e.status === "UNAUTHENTICATED" (e.code 401)
+  // AWS:    e.code   === "UNAUTHENTICATED"
+  throw new Error(e.message); // "... — run `gcloud auth application-default login` ..."
+}
+```
+
+`whoami()` proves the login is valid; it does not prove the identity can
+reach a particular project or perform a particular action — the real call
+still decides that. A network failure is reported as a transport error, not
+as "not logged in".
+
 **Scoping differs by provider — this is the main thing to get right:**
 
 - **Google** is scoped per **project**. `cloud.google({ project })` sets a
@@ -5756,6 +5780,32 @@ try {
 ```
 
 See §17.2 for the full type signatures of every method below.
+
+##### whoami()
+
+`g.whoami()` checks that the handle's credentials work and says whose they
+are. Google has no "who am I" API, so it fetches an access token the same
+way every other call does and asks Google's `tokeninfo` endpoint about it.
+It resolves:
+
+- `email` — the signed-in user or service account (omitted if unknown);
+- `type` — `"user"` (a gcloud user login), `"service_account"`,
+  `"external_account"`, `"impersonated_service_account"`, or `"metadata"`
+  (the GCE/GKE/Cloud Run metadata server);
+- `project` — the handle's `project`, else the credentials' own (omitted if
+  neither);
+- `scopes` and `expiresIn` (seconds) — of the access token.
+
+No credentials, an expired gcloud login, or a rejected token reject with
+`{ code: 401, status: "UNAUTHENTICATED" }` and a message telling you to run
+`gcloud auth application-default login`. Note that it is the
+*application-default* login that sercon reads — a plain `gcloud auth login`
+only logs in the `gcloud` command itself.
+
+```ts
+const me = await cloud.google({ project: "my-gcp-project" }).whoami();
+runtime.log(`${me.email} (${me.type}), token valid ${me.expiresIn}s`);
+```
 
 ##### storage()
 
@@ -6002,6 +6052,17 @@ try {
 } catch (e: any) {
   runtime.log(`sts.getCallerIdentity failed: ${e.code} ${e.status} ${e.message}`);
 }
+```
+
+`aws.whoami()` is the same check in shorter form: it resolves
+`{ account, arn, userId }` (lowercase keys), and a missing or expired login
+— no credentials found, an expired SSO session, a profile that will not
+load, or an invalid/expired token — rejects with `code: "UNAUTHENTICATED"`
+and a message telling you to run `aws sso login` (or `aws configure`):
+
+```ts
+const me = await cloud.aws({ region: "eu-north-1" }).whoami();
+runtime.log(`AWS account ${me.account} as ${me.arn}`);
 ```
 
 See §17.2 for the full typed signatures of every method below.
@@ -10525,6 +10586,7 @@ aws(opts?: { region?: string; profile?: string; credentials?: { accessKeyId: str
     startQuery(opts: { logGroupName: string; queryString: string; startTime: number; endTime: number }): Promise<Record<string, unknown>>;
     getQueryResults(opts: { queryId: string }): Promise<Record<string, unknown>>;
   };
+  whoami(): Promise<{ account: string; arn: string; userId: string }>;
 }
 ```
 
@@ -11692,6 +11754,28 @@ Get temporary credentials for the current principal.
 const r = await cloud.aws({ region: "eu-north-1" }).sts().getSessionToken();
 ```
 
+##### 17.2.1.10 cloud.aws.whoami
+
+```
+whoami(): Promise<{ account: string; arn: string; userId: string }>
+```
+
+Check that this handle's AWS login works and report whose it is — a pre-flight "am I logged in?" check. Calls STS GetCallerIdentity, which needs no permissions. Proves the login is valid, not that it may perform a given action.
+
+**Returns:** A promise resolving to { account, arn, userId } — the identity behind the handle's credentials (lowercase keys, unlike sts().getCallerIdentity's raw PascalCase response). Contains no secrets.
+
+**Throws:** Rejects with code "UNAUTHENTICATED" when no credentials can be found or retrieved (e.g. an expired SSO session), the profile/config will not load, or STS rejects the token (InvalidClientTokenId, ExpiredToken, …) — the message names the fix (`aws sso login` or `aws configure`). Other failures use the usual shape: Rejects with a structured Error { code, status, message, details } on API or transport failure. code is the AWS/smithy error code and status the HTTP status; both are ""/0 for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+try {
+  const me = await cloud.aws({ region: "eu-north-1" }).whoami();
+  runtime.log(`AWS: ${me.arn}`);
+} catch (e) {
+  if (e.code === "UNAUTHENTICATED") throw new Error(e.message);
+  throw e;
+}
+```
+
 #### 17.2.2 cloud.azure
 
 ```
@@ -12274,6 +12358,7 @@ google(opts?: { project?: string; credentials?: string | Record<string, unknown>
     deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
   };
   call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>;
+  whoami(): Promise<{ email?: string; type: string; project?: string; scopes: string[]; expiresIn?: number }>;
 }
 ```
 
@@ -12959,6 +13044,28 @@ Get an object's metadata without downloading its content.
 
 ```ts
 const meta = await cloud.google({ project: "p" }).storage().statObject({ bucket: "my-bucket", key: "logs/a.txt" });
+```
+
+##### 17.2.3.6 cloud.google.whoami
+
+```
+whoami(): Promise<{ email?: string; type: string; project?: string; scopes: string[]; expiresIn?: number }>
+```
+
+Check that this handle's Google Cloud login works and report whose it is — a pre-flight "am I logged in?" check. Resolves the same credentials as every other call (explicit credentials, else Application Default Credentials), fetches an access token, and asks Google's tokeninfo endpoint about it. Proves the login is valid, not that it can reach a particular project.
+
+**Returns:** A promise resolving to { email, type, project, scopes, expiresIn }. email: the signed-in user or service account (a service-account key's client_email when tokeninfo has none; omitted if unknown). type: "user" (gcloud user login), "service_account", "external_account", "impersonated_service_account", or "metadata" (GCE/GKE/Cloud Run metadata server). project: the handle's project, else the credentials' own; omitted if neither. scopes: the token's OAuth scopes. expiresIn: seconds until the token expires. The token itself is never returned.
+
+**Throws:** Rejects with { code: 401, status: "UNAUTHENTICATED" } when there are no usable credentials, the token refresh is rejected (e.g. an expired gcloud login), or tokeninfo rejects the token — the message names the fix (`gcloud auth application-default login`). Other failures use the usual shape: Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/"TRANSPORT" for non-API errors (DNS, TLS, timeout, connection refused).
+
+```ts
+try {
+  const me = await cloud.google({ project: "my-proj" }).whoami();
+  runtime.log(`Google: ${me.email} (${me.type})`);
+} catch (e) {
+  if (e.status === "UNAUTHENTICATED") throw new Error(e.message);
+  throw e;
+}
 ```
 
 ### 17.3 codec

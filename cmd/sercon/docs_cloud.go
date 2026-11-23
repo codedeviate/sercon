@@ -67,6 +67,7 @@ const (
     deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
   };
   call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>;
+  whoami(): Promise<{ email?: string; type: string; project?: string; scopes: string[]; expiresIn?: number }>;
 }`
 
 	googleErrors = "Rejects with a structured Error { code, status, message, details } on API or transport failure. code/status are 0/\"TRANSPORT\" for non-API errors (DNS, TLS, timeout, connection refused)."
@@ -165,6 +166,7 @@ const (
     startQuery(opts: { logGroupName: string; queryString: string; startTime: number; endTime: number }): Promise<Record<string, unknown>>;
     getQueryResults(opts: { queryId: string }): Promise<Record<string, unknown>>;
   };
+  whoami(): Promise<{ account: string; arn: string; userId: string }>;
 }`
 
 	// azureHandleType is the object cloud.azure(...) resolves to — spliced
@@ -279,6 +281,20 @@ runtime.log(r.items?.length ?? 0);`,
 			Example: `const g = cloud.google({ project: "my-proj" });
 const zones = await g.call({ api: "compute", path: "/compute/v1/projects/my-proj/zones" });
 runtime.log(zones.items?.length ?? 0);`,
+		},
+
+		"google.whoami": {
+			Summary:    "Check that this handle's Google Cloud login works and report whose it is — a pre-flight \"am I logged in?\" check. Resolves the same credentials as every other call (explicit credentials, else Application Default Credentials), fetches an access token, and asks Google's tokeninfo endpoint about it. Proves the login is valid, not that it can reach a particular project.",
+			ReturnType: "Promise<{ email?: string; type: string; project?: string; scopes: string[]; expiresIn?: number }>",
+			Returns:    "A promise resolving to { email, type, project, scopes, expiresIn }. email: the signed-in user or service account (a service-account key's client_email when tokeninfo has none; omitted if unknown). type: \"user\" (gcloud user login), \"service_account\", \"external_account\", \"impersonated_service_account\", or \"metadata\" (GCE/GKE/Cloud Run metadata server). project: the handle's project, else the credentials' own; omitted if neither. scopes: the token's OAuth scopes. expiresIn: seconds until the token expires. The token itself is never returned.",
+			Errors:     "Rejects with { code: 401, status: \"UNAUTHENTICATED\" } when there are no usable credentials, the token refresh is rejected (e.g. an expired gcloud login), or tokeninfo rejects the token — the message names the fix (`gcloud auth application-default login`). Other failures use the usual shape: " + googleErrors,
+			Example: `try {
+  const me = await cloud.google({ project: "my-proj" }).whoami();
+  runtime.log(` + "`Google: ${me.email} (${me.type})`" + `);
+} catch (e) {
+  if (e.status === "UNAUTHENTICATED") throw new Error(e.message);
+  throw e;
+}`,
 		},
 
 		// --- storage() — Cloud Storage (google.golang.org/api/storage/v1) ---
@@ -632,6 +648,19 @@ runtime.log(value);`,
 
 		// --- s3() — S3 buckets and objects (github.com/aws/aws-sdk-go-v2/service/s3) ---
 
+		"aws.whoami": {
+			Summary:    "Check that this handle's AWS login works and report whose it is — a pre-flight \"am I logged in?\" check. Calls STS GetCallerIdentity, which needs no permissions. Proves the login is valid, not that it may perform a given action.",
+			ReturnType: "Promise<{ account: string; arn: string; userId: string }>",
+			Returns:    "A promise resolving to { account, arn, userId } — the identity behind the handle's credentials (lowercase keys, unlike sts().getCallerIdentity's raw PascalCase response). Contains no secrets.",
+			Errors:     "Rejects with code \"UNAUTHENTICATED\" when no credentials can be found or retrieved (e.g. an expired SSO session), the profile/config will not load, or STS rejects the token (InvalidClientTokenId, ExpiredToken, …) — the message names the fix (`aws sso login` or `aws configure`). Other failures use the usual shape: " + awsErrors,
+			Example: `try {
+  const me = await cloud.aws({ region: "eu-north-1" }).whoami();
+  runtime.log(` + "`AWS: ${me.arn}`" + `);
+} catch (e) {
+  if (e.code === "UNAUTHENTICATED") throw new Error(e.message);
+  throw e;
+}`,
+		},
 		"aws.s3": {
 			Summary: "S3 — buckets and objects (github.com/aws/aws-sdk-go-v2/service/s3). Reached via `cloud.aws({...}).s3()`; each method below is called on that service handle.",
 		},

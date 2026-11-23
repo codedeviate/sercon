@@ -34,6 +34,10 @@ if (!region) {
   const aws = cloud.aws({ region });
 
   try {
+    // whoami() — fail fast, with the login command, if we're not logged in.
+    const me = await aws.whoami();
+    runtime.log(`whoami ok: ${me.arn}`);
+
     // sts() — who are we running as (read-only, no secrets in the response).
     const id = await aws.sts().getCallerIdentity({});
     runtime.log(`sts.getCallerIdentity ok: account ${id.Account}`);

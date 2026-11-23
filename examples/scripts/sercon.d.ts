@@ -1793,6 +1793,7 @@ declare const cloud: {
     startQuery(opts: { logGroupName: string; queryString: string; startTime: number; endTime: number }): Promise<Record<string, unknown>>;
     getQueryResults(opts: { queryId: string }): Promise<Record<string, unknown>>;
   };
+  whoami(): Promise<{ account: string; arn: string; userId: string }>;
 };
   /**
    * PROVISIONAL — built against the Azure SDK but not yet verified against a live Azure account. Microsoft Azure provider. cloud.azure(opts?) returns a handle with three ARM (Resource Manager) services — resourceGroups, compute, resources — plus a generic ARM call() REST escape hatch, and two data-plane services — blob, keyvaultSecrets — that take an endpoint URL directly. Pure-Go, CGO-free (azure-sdk-for-go); reuses the standard Azure credential chain.
@@ -1879,6 +1880,7 @@ declare const cloud: {
     deleteSecret(opts: { project: string; name: string }): Promise<Record<string, unknown>>;
   };
   call(opts: { api: string; version?: string; httpMethod?: string; path: string; params?: Record<string, string>; body?: unknown }): Promise<unknown>;
+  whoami(): Promise<{ email?: string; type: string; project?: string; scopes: string[]; expiresIn?: number }>;
 };
 };
 

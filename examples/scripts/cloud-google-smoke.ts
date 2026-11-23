@@ -32,6 +32,10 @@ if (!project) {
   const g = cloud.google({ project });
 
   try {
+    // whoami() — fail fast, with the login command, if we're not logged in.
+    const me = await g.whoami();
+    runtime.log(`whoami ok: ${me.email ?? "(no email)"} (${me.type})`);
+
     // storage() — list buckets (read-only).
     const buckets = await g.storage().listBuckets({ project });
     const bucketList = (buckets.items ?? []) as Array<Record<string, unknown>>;

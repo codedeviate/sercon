@@ -1449,10 +1449,21 @@ const r = await stuffr.run(["gzcat"], { stdin: gzBytes });
 runtime.log(r.code, r.text());`)
 	note("The first call compiles the module (~1 s) and caches it under <UserCacheDir>/sercon/wazero. Helpers reject with {code, kind, stderr, argv} on a non-zero exit, and pack/unpack/convert/test resolve {messages: string[]} (stuffr's stderr lines for logging; strictFidelity:true throws kind \"degraded\" on any metadata loss; stream:true also tees stderr to the console); a wasm trap rejects with kind \"trap\". Embedded build until stuffr's host-fs layer lands: unpack writes 0600 (with a fidelity warning) and a tar holding a symlink fails with exit 3; pack records every file as 0644 whatever the source mode (a 0600 file is widened, a 0755 loses its exec bit) and warns \"missing metadata: mode\" per entry — do NOT use pack where modes matter; not functional on Windows yet; extraction safety (../, absolute, symlinked ancestors) still matches native stuffr (exit 7). Pass level for brotli, memoryLimit for big xz/zstd, allowWeakEncoder to pack zstd. See examples/scripts/stuffr.ts and MANUAL.md §5.16 / the generated §17.14 reference.")
 
+	header(76, "Cloud login check (whoami)")
+	code(`// Fail fast, with the fix, when a cloud login is missing or expired.
+try {
+  const g  = await cloud.google({ project: "my-gcp-project" }).whoami();
+  const aw = await cloud.aws({ region: "eu-north-1" }).whoami();
+  runtime.log(` + "`Google: ${g.email} (${g.type})  AWS: ${aw.arn}`" + `);
+} catch (e) {
+  throw new Error(e.message); // "... — run ` + "`gcloud auth application-default login`" + `"
+}`)
+	note("Google resolves {email, type, project, scopes, expiresIn} via tokeninfo; AWS resolves {account, arn, userId} via STS. Not logged in rejects with UNAUTHENTICATED (AWS: e.code; Google: e.status, with e.code 401) and a message naming `aws sso login` / `gcloud auth application-default login` — sercon reads the application-default login, not the one `gcloud auth login` sets. A network failure is a transport error, not \"not logged in\". whoami proves the login, not access to a given project/account. See examples/scripts/cloud-*-smoke.ts and MANUAL.md §5.14 / the generated §17.2 reference.")
+
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, s.dim("End of tour. Run `sercon --help` for flags, or open MANUAL.md."))
 }
 
 // exampleCount stays in sync with the header() calls above; bump it when
 // adding an example so the [N/M] counters stay correct.
-const exampleCount = 75
+const exampleCount = 76
