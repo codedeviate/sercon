@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -85,18 +86,7 @@ func googleWhoami(ctx context.Context, cfg googleConfig) (map[string]any, error)
 func googleWhoamiFrom(ctx context.Context, creds *google.Credentials, handleProject, tokeninfoURL string, hc *http.Client) (map[string]any, error) {
 	tok, err := creds.TokenSource.Token()
 	if err != nil {
-		var re *oauth2.RetrieveError
-		if errors.As(err, &re) {
-			cause := re.ErrorCode
-			if re.ErrorDescription != "" {
-				cause += ": " + re.ErrorDescription
-			}
-			if cause == "" {
-				cause = "token refresh rejected"
-			}
-			return nil, googleUnauthenticated(cause)
-		}
-		return nil, mapGoogleError(err)
+		return nil, classifyGoogleTokenError(err)
 	}
 
 	u, err := url.Parse(tokeninfoURL)
@@ -121,7 +111,7 @@ func googleWhoamiFrom(ctx context.Context, creds *google.Credentials, handleProj
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+	if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized {
 		return nil, googleUnauthenticated("tokeninfo rejected the access token: " + strings.TrimSpace(string(body)))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -165,6 +155,43 @@ func googleWhoamiFrom(ctx context.Context, creds *google.Credentials, handleProj
 		out["project"] = project
 	}
 	return out, nil
+}
+
+// classifyGoogleTokenError maps a failure to obtain an access token. The
+// token endpoint rejecting the login (an OAuth error code, or a 400/401) is
+// UNAUTHENTICATED; a token-endpoint outage (5xx, 429, …) keeps its HTTP
+// status; a network failure stays TRANSPORT. Impersonated and
+// external-account credentials flatten the source RetrieveError into a plain
+// string (fmt %v), so those are recognised by their text — but only when the
+// error is not a network error.
+func classifyGoogleTokenError(err error) error {
+	var re *oauth2.RetrieveError
+	if errors.As(err, &re) {
+		if re.ErrorCode == "" && re.Response != nil &&
+			re.Response.StatusCode != http.StatusBadRequest && re.Response.StatusCode != http.StatusUnauthorized {
+			return googleError{code: re.Response.StatusCode, status: http.StatusText(re.Response.StatusCode),
+				message: "token endpoint: " + strings.TrimSpace(string(re.Body))}
+		}
+		cause := re.ErrorCode
+		if re.ErrorDescription != "" {
+			cause += ": " + re.ErrorDescription
+		}
+		if cause == "" {
+			cause = "token refresh rejected"
+		}
+		return googleUnauthenticated(cause)
+	}
+	var ue *url.Error
+	var ne net.Error
+	if !errors.As(err, &ue) && !errors.As(err, &ne) {
+		msg := err.Error()
+		for _, marker := range []string{"invalid_grant", "invalid_rapt", "status code 400", "status code 401"} {
+			if strings.Contains(msg, marker) {
+				return googleUnauthenticated(msg)
+			}
+		}
+	}
+	return mapGoogleError(err)
 }
 
 // googleCredType names the kind of login behind credentials JSON: "metadata"

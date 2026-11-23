@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -195,5 +196,32 @@ func TestGoogleWhoami_TokeninfoUnreachableDoesNotLeakToken(t *testing.T) {
 	var ge googleError
 	if !errors.As(err, &ge) || ge.status != "TRANSPORT" {
 		t.Fatalf("expected TRANSPORT, got %T %v", err, err)
+	}
+}
+
+func TestGoogleWhoami_ImpersonatedSourceExpiredIsUnauthenticated(t *testing.T) {
+	// impersonate.go flattens the source RetrieveError with %v.
+	inner := &oauth2.RetrieveError{ErrorCode: "invalid_grant", ErrorDescription: "Bad Request"}
+	creds := &google.Credentials{TokenSource: errTokenSource{fmt.Errorf("impersonate: unable to generate access token: %v", inner)}}
+	_, err := googleWhoamiFrom(context.Background(), creds, "", "http://unused.invalid", http.DefaultClient)
+	wantGoogleUnauth(t, err)
+}
+
+func TestGoogleWhoami_TokenEndpoint5xxIsNotUnauthenticated(t *testing.T) {
+	re := &oauth2.RetrieveError{Response: &http.Response{StatusCode: 503}, Body: []byte("unavailable")}
+	creds := &google.Credentials{TokenSource: errTokenSource{re}}
+	_, err := googleWhoamiFrom(context.Background(), creds, "", "http://unused.invalid", http.DefaultClient)
+	var ge googleError
+	if !errors.As(err, &ge) || ge.status == "UNAUTHENTICATED" || ge.code != 503 {
+		t.Fatalf("expected non-auth 503 googleError, got %T %+v", err, err)
+	}
+}
+
+func TestGoogleWhoami_Tokeninfo429IsNotUnauthenticated(t *testing.T) {
+	ts := tokeninfoServer(t, 429, `{"error":"rate_limited"}`, nil)
+	_, err := googleWhoamiFrom(context.Background(), staticCreds(`{"type":"authorized_user"}`, ""), "", ts.URL, ts.Client())
+	var ge googleError
+	if !errors.As(err, &ge) || ge.status == "UNAUTHENTICATED" || ge.code != 429 {
+		t.Fatalf("expected non-auth 429 googleError, got %T %+v", err, err)
 	}
 }

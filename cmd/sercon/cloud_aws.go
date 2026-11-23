@@ -28,6 +28,7 @@ type awsConfig struct {
 type awsTestSeam struct {
 	endpoint   string
 	httpClient aws.HTTPClient
+	creds      aws.CredentialsProvider // nil ⇒ static "test" creds
 }
 
 var awsTestOptions *awsTestSeam
@@ -84,9 +85,13 @@ func parseAWSConfig(vm *goja.Runtime, call goja.FunctionCall) (awsConfig, error)
 // client); otherwise the default chain plus any explicit region/profile/creds.
 func (c awsConfig) load(ctx context.Context) (aws.Config, error) {
 	if awsTestOptions != nil {
+		var cp aws.CredentialsProvider = credentials.NewStaticCredentialsProvider("test", "test", "")
+		if awsTestOptions.creds != nil {
+			cp = awsTestOptions.creds
+		}
 		return awsconfig.LoadDefaultConfig(ctx,
 			awsconfig.WithRegion("us-east-1"),
-			awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "")),
+			awsconfig.WithCredentialsProvider(cp),
 			awsconfig.WithHTTPClient(awsTestOptions.httpClient),
 		)
 	}
