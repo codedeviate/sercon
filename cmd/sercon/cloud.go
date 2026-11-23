@@ -104,5 +104,8 @@ func googleHandle(vm *goja.Runtime, loop *eventloop.EventLoop, cfg googleConfig)
 		"secrets": func(goja.FunctionCall) goja.Value { return vm.ToValue(googleSecrets(vm, loop, cfg)) },
 		"call": scriptengine.PromisifyAsync(vm, loop, googleCallExtract(cfg),
 			func(ctx context.Context, a googleCallArgs) (any, error) { return googleCallWork(ctx, cfg, a) }).Func,
+		"whoami": scriptengine.PromisifyAsync(vm, loop,
+			func(goja.FunctionCall) (struct{}, error) { return struct{}{}, nil },
+			func(ctx context.Context, _ struct{}) (any, error) { return googleWhoami(ctx, cfg) }).Func,
 	}
 }
