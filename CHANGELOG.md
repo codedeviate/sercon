@@ -8,6 +8,8 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+## [0.105.0] — 2026-11-24
+
 ### Added
 
 - **`cloud.google(...).whoami()` and `cloud.aws(...).whoami()`** — a

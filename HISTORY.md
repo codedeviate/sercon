@@ -3,7 +3,7 @@
 This file is the thematic companion to `CHANGELOG.md`. Where the changelog
 gives per-version detail, this document tells the story by subsystem: when
 each capability arrived, how it grew, and what shape it has today. The span
-covered is v0.1.0 (2026-05-25) through v0.104.0 (2026-11-20).
+covered is v0.1.0 (2026-05-25) through v0.105.0 (2026-11-24).
 
 `OUT-OF-SCOPE.md` tracks open/parked backlog and is not duplicated here.
 
@@ -1212,6 +1212,25 @@ counterparts it is excluded from `make demo`/CI, which stays fully offline
 via the `httptest`-mocked Go unit tests — but unlike them, **this script has
 never actually been run against live Azure**, so its first real run is the
 actual validation of the `cloud.azure` surface, not this document.
+
+### Login check: `whoami()` (v0.105.0)
+
+`cloud.google(...).whoami()` and `cloud.aws(...).whoami()` give scripts a
+pre-flight "am I logged in?" check, so a forgotten `gcloud auth
+application-default login` / `aws sso login` fails up front with a message
+naming the fix instead of midway through with a raw SDK error. AWS returns
+`{ account, arn, userId }` from STS GetCallerIdentity; Google, which has no
+caller-identity API, fetches a token from the resolved credentials and asks
+the tokeninfo endpoint, returning `{ email?, type, project?, scopes,
+expiresIn? }`. No usable login rejects with `UNAUTHENTICATED` (AWS
+`code: "UNAUTHENTICATED"`; Google `code: 401, status: "UNAUTHENTICATED"`);
+network failures and provider outages (5xx/429) keep their normal mapping so
+an offline laptop is never reported as logged out. One non-obvious mechanic:
+the STS client resolves credentials inside its own middleware and wraps a
+failure as "get identity: …", so AWS `whoami()` retrieves credentials itself
+first and classifies that step (the EC2 IMDS fallback's network error still
+means "no credentials"). The access token is never returned or put in an
+error — including the tokeninfo URL inside a transport error.
 
 ## 10. MCP server (`mcp.*`)
 
