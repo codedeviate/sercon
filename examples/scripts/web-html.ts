@@ -20,9 +20,9 @@ runtime.log("web.html (offline) OK: links", links.join(", "));
 // --- live: runs only when reachable ---
 try {
   const live = await web.html.load("https://example.com", { timeout: "5s" });
-  const h1 = live.find("h1");
-  runtime.assert.ok(h1 !== null, "example.com has an <h1>");
-  runtime.log("web.html (live) OK: <h1> =", h1.text());
+  const title = live.find("title");
+  runtime.assert.ok(title !== null, "example.com has a <title>");
+  runtime.log("web.html (live) OK: <title> =", title.text());
 } catch (e) {
   if (!netSkip(e)) throw e;
   runtime.log("web.html (live) skipped — no network:", String(e));
