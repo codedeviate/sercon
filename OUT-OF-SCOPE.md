@@ -278,3 +278,16 @@ addressed.
   Wayland) are verified end-to-end, Windows is not. Windows isn't a focus right
   now; re-promote when a Windows host/CI runner is available to round-trip text
   + PNG (watch for PowerShell `-STA` and the temp-file marshalling).
+- **`cloud.google().whoami()` with federated logins.** Workforce /
+  external-account (`external_account`) tokens are checked via Google's
+  tokeninfo endpoint, which may not recognise them — such a login could be
+  wrongly reported as `UNAUTHENTICATED`. **Reason:** unverified; needs a live
+  run with a federated credential, then either a fallback or a doc note.
+- **`cloud.aws().whoami()` slow "no credentials" answer.** With no AWS
+  credentials at all, the default chain ends at the EC2 IMDS lookup, so the
+  rejection can take ~1–5 s off-EC2. **Reason:** correct result, only slow;
+  shortening it means overriding the SDK's IMDS timeout for this one call.
+- **`cloud_google_whoami.go` tidy-ups.** Comment that the type passed to
+  `CredentialsFromJSONWithTypeAndParams` is read from the same JSON, and drop
+  `googleCredType`'s effectively unreachable `"unknown"` branch. **Reason:**
+  cosmetic; fold into the next change that touches the file.
