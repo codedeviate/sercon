@@ -8,6 +8,14 @@ See [CLAUDE.md](./CLAUDE.md) for the project's commit-message conventions.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`sercon.d.ts`: `runtime.stdout.scoped` / `runtime.stderr.scoped` are
+  valid TypeScript again.** The declaration put an optional `opts?` before
+  the required `fn`, which `tsc` rejects (TS1016). The two call shapes,
+  `scoped(target, fn)` and `scoped(target, opts, fn)`, are now declared as
+  `scoped(target, optsOrFn, fn?)`. Runtime behaviour is unchanged.
+
 ## [0.105.0] — 2026-11-24
 
 ### Added

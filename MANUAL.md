@@ -17771,7 +17771,7 @@ runtime.stderr.reset(); // back to the real stderr, however deep the stack got
 ##### 17.11.12.3 runtime.stderr.scoped
 
 ```
-scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }, fn: () => void | Promise<void>): Promise<void>
+scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), optsOrFn: { tee?: boolean } | (() => void | Promise<void>), fn?: () => void | Promise<void>): Promise<void>
 ```
 
 Apply a target to stderr for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).
@@ -17779,8 +17779,8 @@ Apply a target to stderr for the duration of fn (sync or async), then restore �
 **Parameters**
 
 - `target` *("stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void))* — Same target union as `to`.
-- `opts` *({ tee?: boolean }, optional)* — Same as `to`'s opts; only meaningful in the three-argument form.
-- `fn` *(() => void | Promise<void>)* — Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
+- `optsOrFn` *({ tee?: boolean } | (() => void | Promise<void>))* — In the two-argument form scoped(target, fn), this is fn. In the three-argument form scoped(target, opts, fn), this is opts — same as `to`'s opts.
+- `fn` *(() => void | Promise<void>, optional)* — The function, in the three-argument form only. Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
 
 **Returns:** Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.
 
@@ -18117,7 +18117,7 @@ runtime.stdout.reset(); // back to the real stdout, however deep the stack got
 ##### 17.11.14.3 runtime.stdout.scoped
 
 ```
-scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }, fn: () => void | Promise<void>): Promise<void>
+scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), optsOrFn: { tee?: boolean } | (() => void | Promise<void>), fn?: () => void | Promise<void>): Promise<void>
 ```
 
 Apply a target to stdout for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).
@@ -18125,8 +18125,8 @@ Apply a target to stdout for the duration of fn (sync or async), then restore �
 **Parameters**
 
 - `target` *("stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void))* — Same target union as `to`.
-- `opts` *({ tee?: boolean }, optional)* — Same as `to`'s opts; only meaningful in the three-argument form.
-- `fn` *(() => void | Promise<void>)* — Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
+- `optsOrFn` *({ tee?: boolean } | (() => void | Promise<void>))* — In the two-argument form scoped(target, fn), this is fn. In the three-argument form scoped(target, opts, fn), this is opts — same as `to`'s opts.
+- `fn` *(() => void | Promise<void>, optional)* — The function, in the three-argument form only. Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
 
 **Returns:** Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.
 

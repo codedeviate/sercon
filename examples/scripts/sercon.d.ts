@@ -319,11 +319,11 @@ declare const runtime: {
     /**
      * Apply a target to stderr for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).
      * @param target Same target union as `to`.
-     * @param opts Same as `to`'s opts; only meaningful in the three-argument form.
-     * @param fn Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
+     * @param optsOrFn In the two-argument form scoped(target, fn), this is fn. In the three-argument form scoped(target, opts, fn), this is opts — same as `to`'s opts.
+     * @param fn The function, in the three-argument form only. Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
      * @returns Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.
      */
-    scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }, fn: () => void | Promise<void>): Promise<void>;
+    scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), optsOrFn: { tee?: boolean } | (() => void | Promise<void>), fn?: () => void | Promise<void>): Promise<void>;
     /**
      * Discard everything written to stderr until the returned restore function is called. Shorthand for stderr.to("null").
      * @returns () => void — an idempotent restore function that removes the silence and reveals whatever was beneath it.
@@ -421,11 +421,11 @@ declare const runtime: {
     /**
      * Apply a target to stdout for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).
      * @param target Same target union as `to`.
-     * @param opts Same as `to`'s opts; only meaningful in the three-argument form.
-     * @param fn Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
+     * @param optsOrFn In the two-argument form scoped(target, fn), this is fn. In the three-argument form scoped(target, opts, fn), this is opts — same as `to`'s opts.
+     * @param fn The function, in the three-argument form only. Called with no arguments. Its own return value is discarded — scoped always resolves to undefined.
      * @returns Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.
      */
-    scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), opts?: { tee?: boolean }, fn: () => void | Promise<void>): Promise<void>;
+    scoped(target: "stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void), optsOrFn: { tee?: boolean } | (() => void | Promise<void>), fn?: () => void | Promise<void>): Promise<void>;
     /**
      * Discard everything written to stdout until the returned restore function is called. Shorthand for stdout.to("null").
      * @returns () => void — an idempotent restore function that removes the silence and reveals whatever was beneath it.

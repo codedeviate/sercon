@@ -296,8 +296,8 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Summary: "Apply a target to stdout for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).",
 			Params: []scriptengine.Param{
 				{Name: "target", Type: `"stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void)`, Desc: "Same target union as `to`."},
-				{Name: "opts", Type: "{ tee?: boolean }", Optional: true, Desc: "Same as `to`'s opts; only meaningful in the three-argument form."},
-				{Name: "fn", Type: "() => void | Promise<void>", Desc: "Called with no arguments. Its own return value is discarded — scoped always resolves to undefined."},
+				{Name: "optsOrFn", Type: "{ tee?: boolean } | (() => void | Promise<void>)", Desc: "In the two-argument form scoped(target, fn), this is fn. In the three-argument form scoped(target, opts, fn), this is opts — same as `to`'s opts."},
+				{Name: "fn", Type: "() => void | Promise<void>", Optional: true, Desc: "The function, in the three-argument form only. Called with no arguments. Its own return value is discarded — scoped always resolves to undefined."},
 			},
 			ReturnType: "Promise<void>",
 			Returns:    "Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.",
@@ -362,8 +362,8 @@ func runtimeDocs() map[string]scriptengine.MemberDoc {
 			Summary: "Apply a target to stderr for the duration of fn (sync or async), then restore — even if fn throws or its returned promise rejects. Two call shapes: scoped(target, fn) or scoped(target, opts, fn).",
 			Params: []scriptengine.Param{
 				{Name: "target", Type: `"stdout" | "stderr" | "null" | { file: string, append?: boolean } | ((line: string) => void)`, Desc: "Same target union as `to`."},
-				{Name: "opts", Type: "{ tee?: boolean }", Optional: true, Desc: "Same as `to`'s opts; only meaningful in the three-argument form."},
-				{Name: "fn", Type: "() => void | Promise<void>", Desc: "Called with no arguments. Its own return value is discarded — scoped always resolves to undefined."},
+				{Name: "optsOrFn", Type: "{ tee?: boolean } | (() => void | Promise<void>)", Desc: "In the two-argument form scoped(target, fn), this is fn. In the three-argument form scoped(target, opts, fn), this is opts — same as `to`'s opts."},
+				{Name: "fn", Type: "() => void | Promise<void>", Optional: true, Desc: "The function, in the three-argument form only. Called with no arguments. Its own return value is discarded — scoped always resolves to undefined."},
 			},
 			ReturnType: "Promise<void>",
 			Returns:    "Promise<void> — resolves once fn (and any promise it returns) settles. The redirect has already been restored by the time this resolves.",
