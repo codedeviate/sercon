@@ -41,7 +41,7 @@ GO                ?= go
 RECON             ?= recon
 HOMEBREW_TAP      ?= /Users/thomas/Development/Thomas/Rust/homebrew-cli
 RELEASE_REPO      ?= codedeviate/sercon
-GOLANGCI_VERSION  ?= v2.12.2
+GOLANGCI_VERSION  ?= v2.15.0
 BIN                = sercon
 RELEASE_FLAGS      = -trimpath -ldflags=-s\ -w
 MANUAL_VERSION    := $(shell sed -nE 's|^const Version = "([^"]+)".*|\1|p' pkg/scriptengine/version.go)
